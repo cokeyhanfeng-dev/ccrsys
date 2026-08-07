@@ -81,7 +81,10 @@
 
     <!-- 4. 申请内容 -->
     <div class="card">
-      <div class="card__head"><span>申请内容</span></div>
+      <div class="card__head">
+        <span>申请内容</span>
+        <span v-if="pi.inherit_flag === 'Y' || pi.inheritFlag === 'Y'" class="badge badge--info">沿用原决议</span>
+      </div>
       <div class="detail-grid">
         <div><span class="dg-label">申请号</span>{{ application.applicationNo || '—' }}</div>
         <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
@@ -286,6 +289,63 @@
       <div v-else class="empty">暂无数据</div>
     </div>
 
+    <!-- 11b. 决议与执行核验(§12.7 ⑪:决议日期=issue_time,无有效期周期) -->
+    <div class="card" v-if="resolutions.length">
+      <div class="card__head"><span>决议</span><span class="badge badge--success">已签发</span></div>
+      <table class="table">
+        <thead><tr><th>决议号</th><th>最终利率</th><th>决策来源</th><th>决议日期</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr v-for="(r, i) in resolutions" :key="i">
+            <td>{{ r.resolutionNo || '—' }}</td>
+            <td class="num">{{ fmtRate(r.finalRate) }}</td>
+            <td>{{ r.decisionSource || '—' }}</td>
+            <td>{{ fmtDate(r.issueTime) }}</td>
+            <td><span class="badge" :class="resolutionStatusBadge(r.status)">{{ resolutionStatusText(r.status) }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="table" style="margin-top:8px" v-if="resolutionExecutions.length">
+        <thead><tr><th>贷款合同号</th><th>补充协议号</th><th>执行利率</th><th>执行状态</th><th>核验结果</th><th>核验时间</th></tr></thead>
+        <tbody>
+          <tr v-for="(e, i) in resolutionExecutions" :key="i">
+            <td>{{ e.loanContractNo || '—' }}</td>
+            <td>{{ e.supplementAgreementNo || '—' }}</td>
+            <td class="num">{{ fmtRate(e.executionRate) }}</td>
+            <td>{{ e.executionStatus || '—' }}</td>
+            <td>{{ e.reconcileResult || '—' }}</td>
+            <td>{{ fmtDate(e.reconcileTime) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 11c. 表决与行长决策(§12.7:小组表决计票汇总 + 行长决策) -->
+    <div class="card" v-if="voteRounds.length || presidentDecisions.length">
+      <div class="card__head"><span>表决与行长决策</span></div>
+      <table class="table" v-if="voteRounds.length">
+        <thead><tr><th>轮次</th><th>状态</th><th>计票(通过/否决)</th><th>开始时间</th><th>结束时间</th></tr></thead>
+        <tbody>
+          <tr v-for="(v, i) in voteRounds" :key="i">
+            <td>{{ v.roundName || v.roundNo || '—' }}</td>
+            <td><span class="badge" :class="v.status === 'PASSED' ? 'badge--success' : v.status === 'FAILED' ? 'badge--danger' : 'badge--warning'">{{ voteRoundStatusText(v.status) }}</span></td>
+            <td class="num">{{ voteResultOf(v.id) }}</td>
+            <td>{{ fmtDate(v.roundStartTime) }}</td>
+            <td>{{ fmtDate(v.roundEndTime) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="table" style="margin-top:8px" v-if="presidentDecisions.length">
+        <thead><tr><th>行长决策</th><th>意见</th><th>决策时间</th></tr></thead>
+        <tbody>
+          <tr v-for="(d, i) in presidentDecisions" :key="i">
+            <td><span class="badge" :class="d.decision === 'AGREE' ? 'badge--success' : d.decision === 'VETO' ? 'badge--danger' : 'badge--warning'">{{ d.decision || '—' }}</span></td>
+            <td>{{ d.opinion || '—' }}</td>
+            <td>{{ fmtDate(d.decisionTime) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- 12. 流程轨迹 -->
     <div class="card">
       <div class="card__head"><span>流程轨迹</span></div>
@@ -373,6 +433,11 @@ const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
 const orgPerformance = ref<any[]>([])
 const depositAccounts = ref<any[]>([])
+const resolutions = ref<any[]>([])
+const resolutionExecutions = ref<any[]>([])
+const voteRounds = ref<any[]>([])
+const voteResults = ref<any[]>([])
+const presidentDecisions = ref<any[]>([])
 
 const opRate = ref<number | undefined>(undefined)
 const opComment = ref('')
@@ -461,6 +526,35 @@ function statusTextOf(s?: string) {
   return s ? (STATUS_TEXT[s] || s) : '—'
 }
 
+function fmtDate(v: any) {
+  return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
+}
+
+// §12.7 ⑪ 决议状态:决议日期=issue_time,无有效期周期
+const RESOLUTION_STATUS: Record<string, string> = {
+  ISSUED: '已签发', CONTRACT_PENDING: '待签合同', EXECUTED: '已执行', VOID: '已作废'
+}
+function resolutionStatusText(s?: string) {
+  return s ? (RESOLUTION_STATUS[s] || s) : '—'
+}
+function resolutionStatusBadge(s?: string) {
+  const map: Record<string, string> = {
+    ISSUED: 'badge--info', CONTRACT_PENDING: 'badge--warning', EXECUTED: 'badge--success', VOID: 'badge--neutral'
+  }
+  return map[s] || 'badge--neutral'
+}
+
+const VOTE_ROUND_STATUS: Record<string, string> = {
+  VOTING: '表决中', PASSED: '通过', FAILED: '未通过', CLOSED: '已结束'
+}
+function voteRoundStatusText(s?: string) {
+  return s ? (VOTE_ROUND_STATUS[s] || s) : '—'
+}
+function voteResultOf(roundId: any) {
+  const r = voteResults.value.find((x) => x.roundId === roundId)
+  return r ? `${r.approveCount ?? 0} / ${r.rejectCount ?? 0}` : '—'
+}
+
 async function load() {
   try {
     const data = await getApprovalDetail(pricingItemId.value)
@@ -481,6 +575,11 @@ async function load() {
     tracking.value = data.tracking || []
     orgPerformance.value = data.orgPerformance || []
     depositAccounts.value = data.depositAccounts || []
+    resolutions.value = data.resolutions || []
+    resolutionExecutions.value = data.resolutionExecutions || []
+    voteRounds.value = data.voteRounds || []
+    voteResults.value = data.voteResults || []
+    presidentDecisions.value = data.presidentDecisions || []
     const base = pi.value.current_approval_rate ?? pi.value.requested_rate
     opRate.value = base != null ? Number(base) : undefined
     loaded.value = true

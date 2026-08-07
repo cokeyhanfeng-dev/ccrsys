@@ -25,7 +25,7 @@
             <td>{{ fmtTime(row.finalTime) }}</td>
             <td>
               <button class="btn btn--text" @click="goArchive(row)">档案</button>
-              <button class="btn btn--text" @click="goReapply(row)">关联重提</button>
+              <button v-if="canReapply(row)" class="btn btn--text" @click="goReapply(row)">重新发起</button>
             </td>
           </tr>
           <tr v-if="!records.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
@@ -112,6 +112,10 @@ function badgeClass(s: string) {
 // 档案:进入单笔申请档案(§14.4)
 function goArchive(row: any) {
   router.push(`/history/archive/${row.id}`)
+}
+// 重新发起(§12.10):仅"被否决/表决未通过"且客户经理视角显示;审批人视角(§12.9)仅档案查看
+function canReapply(row: any) {
+  return !isApprover.value && ['REJECTED', 'PARTIAL_APPROVED'].includes(row.status)
 }
 // 关联重提:跳转申请页并携带原申请 id(与申请页约定 reapply 参数)
 function goReapply(row: any) {
