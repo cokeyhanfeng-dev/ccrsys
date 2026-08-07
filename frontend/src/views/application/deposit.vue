@@ -115,6 +115,12 @@
       <RelatedPersonsEditor v-model="relations" />
     </div>
 
+    <!-- 1c. 当前贡献度参考(D1,数仓取数只读) -->
+    <div class="form-card">
+      <div class="form-card__title">贡献度参考 <span class="badge badge--info">数仓取数</span></div>
+      <ContributionPanel :contribution="contribution" :show-commitments="false" />
+    </div>
+
     <!-- 2. 存款分项(结构化 depositItems,不再拼 remark) -->
     <div class="form-card">
       <div class="form-card__title">
@@ -278,7 +284,8 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import RelatedPersonsEditor, { serializeRelations, parseRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 
 const userStore = useUserStore()
@@ -341,6 +348,7 @@ const form = reactive({
 const items = ref<DepositItemRow[]>([newItem()])
 // 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
 const relations = ref<RelatedPersonRow[]>([])
+const contribution = ref<any[]>([])
 // 产品标准上限(生效中的存款硬边界;非 admin 可能 403,失败则隐藏)
 const productLimits = ref<any[]>([])
 
@@ -405,6 +413,7 @@ async function loadCustomerDetail() {
     form.occupation = basic.occupation || ''
     form.phone = basic.phone || ''
     form.customerNature = basic.customerClass === 'NEW' ? 'NEW' : 'EXISTING'
+    contribution.value = detail.contribution || []
   } catch {
     // 拦截器已提示
   }
@@ -550,6 +559,11 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
+  const missingRel = validateRelations(relations.value)
+  if (missingRel.length) {
+    ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
+    return
+  }
   if (!(await ensureDraft()) || !draft.id) return
   try {
     checkResult.value = await submitCheck(draft.id)

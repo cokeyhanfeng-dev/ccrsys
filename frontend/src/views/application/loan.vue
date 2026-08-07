@@ -223,7 +223,7 @@
         <div class="form-field">
           <label class="form-field__label">贷款品种 <span class="req">*</span></label>
           <select class="form-select" v-model="form.loanType">
-            <option value="CORP_LOAN">对公经营性贷款</option>
+            <option value="CORP_LOAN">对公贷款</option>
             <option value="PERSONAL_LOAN">个人经营性贷款</option>
           </select>
         </div>
@@ -240,6 +240,9 @@
             <option value="GE_5000">5000万以上(含)贷款</option>
             <option value="LT_5000">5000万以下贷款</option>
           </select>
+          <div v-if="form.amountTier === 'GE_5000'" class="section-tip" style="color:var(--color-warning);margin-top:6px">
+            5000万以上贷款必经六人小组表决 + 总行行长决策(§8A.5②),请确认材料齐全
+          </div>
         </div>
       </div>
 
@@ -504,18 +507,7 @@
       </div>
 
       <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
-      <table class="table" v-if="contributionCurrent.length" style="margin-bottom:16px">
-        <thead><tr><th>指标</th><th>当前值(万元)</th><th>口径</th><th>范围</th></tr></thead>
-        <tbody>
-          <tr v-for="m in contributionCurrent" :key="m.metricCode">
-            <td>{{ m.metricName || m.metricCode }}</td>
-            <td class="num">{{ m.metricValue ?? '暂无数据' }}</td>
-            <td>{{ m.valueType || '—' }}</td>
-            <td><span class="badge badge--neutral">{{ m.metricScope || '—' }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty" v-else style="margin-bottom:16px">暂无当前贡献度数据(选择客户后由数仓带出)</div>
+      <ContributionPanel :contribution="contributionCurrent" :show-commitments="false" />
 
       <div class="sub-title">拟达成承诺</div>
       <table class="table" v-if="commitments.length">
@@ -537,18 +529,29 @@
                 <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
             </td>
-            <td class="num">{{ currentOf(c.metricCode) }}</td>
+            <td class="num">{{ c.metricCode === 'OTHER' ? '—' : (currentOf(c.metricCode) ?? '—') }}</td>
             <td>
-              <select class="form-select" v-model="c.targetType">
+              <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral">手工描述</span>
+              <select v-else class="form-select" v-model="c.targetType">
                 <option value="AVG_BALANCE">日均余额</option>
                 <option value="INCOME">收入</option>
                 <option value="CONTRIBUTION_AMOUNT">贡献额</option>
               </select>
             </td>
-            <td><input class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" /></td>
-            <td><input class="form-input form-input--amount" v-model="c.targetValue" /></td>
             <td>
-              <select class="form-select" v-model="c.unit">
+              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" />
+              <span v-else class="section-tip">—</span>
+            </td>
+            <td>
+              <template v-if="c.metricCode === 'OTHER'">
+                <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本,§6.4)" />
+                <div class="section-tip" style="color:var(--color-warning);margin-top:4px">手工描述跟踪,无数值达成率,不参与机构达成率</div>
+              </template>
+              <input v-else class="form-input form-input--amount" v-model="c.targetValue" />
+            </td>
+            <td>
+              <template v-if="c.metricCode === 'OTHER'"><span class="section-tip">—</span></template>
+              <select v-else class="form-select" v-model="c.unit">
                 <option value="WAN_YUAN">万元</option>
                 <option value="COUNT">户/笔</option>
               </select>
@@ -707,7 +710,8 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import RelatedPersonsEditor, { serializeRelations, parseRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -737,7 +741,9 @@ const metricDict = [
   { code: 'PUBLIC_WEALTH_INCOME', name: '对公财富中收' },
   { code: 'PRIVATE_DEPOSIT_AVG', name: '对私存款日均' },
   { code: 'PRIVATE_LOAN_AVG', name: '对私贷款日均' },
-  { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' }
+  { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' },
+  // §6.4 承诺类型"其它":手工录入(金额或文本),数仓无指标,无数值达成率、不参与机构达成率(D19)
+  { code: 'OTHER', name: '其它(手工录入,无数值达成率)' }
 ]
 
 // ---------- 表单状态 ----------
@@ -762,6 +768,8 @@ interface CommitmentRow {
   targetType: string
   baselineValue: string
   targetValue: string
+  /** 承诺类型"其它"手工目标描述(金额或文本,§6.4;后端 application_commitment 未接收字段,登记依赖) */
+  commitmentDesc: string
   unit: string
   metricScope: string
   memberCustomerNo: string
@@ -1004,7 +1012,7 @@ function currentOf(code: string) {
 function addCommitment() {
   commitments.value.push({
     metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'AVG_BALANCE',
-    baselineValue: '', targetValue: '', unit: 'WAN_YUAN',
+    baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
     metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: ''
   })
 }
@@ -1081,7 +1089,11 @@ function validateForDraft(): string | null {
   }
   for (let i = 0; i < commitments.value.length; i++) {
     const c = commitments.value[i]
-    if (isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入拟达成目标`
+    if (c.metricCode === 'OTHER') {
+      if (isBlank(c.commitmentDesc)) return `第 ${i + 1} 条承诺(其它)未录入目标描述`
+    } else if (isBlank(c.targetValue)) {
+      return `第 ${i + 1} 条承诺未录入拟达成目标`
+    }
   }
   return null
 }
@@ -1145,7 +1157,8 @@ function buildPayload(): ApplicationPayload {
       metricCode: c.metricCode,
       targetType: c.targetType,
       baselineValue: isBlank(c.baselineValue) ? undefined : c.baselineValue,
-      targetValue: c.targetValue,
+      // "其它"承诺无数值目标,以 commitmentDesc 手工描述为准(后端未接收字段,登记依赖)
+      targetValue: c.metricCode === 'OTHER' ? undefined : c.targetValue,
       unit: c.unit || 'WAN_YUAN',
       metricScope: c.metricScope || 'PUBLIC',
       memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo
@@ -1201,6 +1214,11 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
+  const missingRel = validateRelations(relations.value)
+  if (missingRel.length) {
+    ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
+    return
+  }
   if (!(await ensureDraft()) || !draft.id) return
   try {
     checkResult.value = await submitCheck(draft.id)
