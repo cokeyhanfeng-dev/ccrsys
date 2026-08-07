@@ -9,6 +9,10 @@ spring:
     name: ccr-rate
   profiles:
     active: dev
+  # 数据源连接参数外部化(详设 §3.7):额外加载部署侧 config/ 目录同名 profile 文件覆盖(jar 内不包含真实连接参数)。
+  # optional: 目录不存在时静默跳过;相对 ./config/ 解析自启动工作目录;可用 --spring.config.additional-location=... 覆盖。
+  config:
+    additional-location: optional:file:./config/
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -17,6 +21,18 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 20MB
+  # Redis 缓存(§3.6):host/port 可按环境覆盖(docker 内由 SPRING_DATA_REDIS_HOST=redis 注入)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 0
 
 mybatis-plus:
   global-config:
@@ -30,11 +46,11 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-# Sa-Token 配置
+# Sa-Token 配置(§5.1 会话活跃超时 2 小时:任意合法请求自动续期;连续 2 小时无操作会话失效强制退出)
 sa-token:
   token-name: Authorization
   timeout: 86400
-  active-timeout: -1
+  active-timeout: 7200
   is-concurrent: true
   is-share: false
   token-style: uuid
@@ -56,6 +72,13 @@ logging:
   level:
     com.ccr: info
     com.baomidou.mybatisplus: warn
+
+# 缓存配置(§3.6):enabled=false 时缓存全部直查库(Redis 未就绪场景不阻塞业务)
+ccr:
+  cache:
+    enabled: true
+    default-ttl-seconds: 300
+    ttl-jitter: 0.2
 
 # 业务参数(代码内均有默认值,以下仅注释说明;需调整时取消注释)
 # ccr:

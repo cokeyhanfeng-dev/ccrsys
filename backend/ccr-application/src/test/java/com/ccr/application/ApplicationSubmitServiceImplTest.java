@@ -11,6 +11,7 @@ import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.domain.CcrPricingItemContractRel;
 import com.ccr.application.dto.SnapshotBundleResult;
 import com.ccr.application.dto.SubmitResponse;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.application.mapper.CcrApplicationCommitmentMapper;
 import com.ccr.application.mapper.CcrApplicationMapper;
@@ -100,6 +101,8 @@ class ApplicationSubmitServiceImplTest {
     private CcrRateRuleSetMapper ruleSetMapper;
     @Mock
     private com.ccr.common.outbox.OutboxService outboxService;
+    @Mock
+    private CcrCacheUtil cacheUtil;
 
     @InjectMocks
     private ApplicationSubmitServiceImpl service;

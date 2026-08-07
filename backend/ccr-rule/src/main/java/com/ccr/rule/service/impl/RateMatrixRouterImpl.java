@@ -2,6 +2,7 @@ package com.ccr.rule.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrLprVersion;
@@ -57,6 +58,9 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     @Resource
     private CcrProductRateLimitMapper productRateLimitMapper;
 
+    @Resource
+    private CcrCacheUtil cacheUtil;
+
     @Override
     public RouteResult calcRoute(MatrixRouteInput input) {
         if (input == null || StrUtil.isBlank(input.getBusinessBigType())) {
@@ -64,13 +68,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         }
         // 冻结口径:按提交时冻结的生效日期取矩阵行(§8.4),缺省取当前时间
         LocalDateTime asOf = input.getAsOfDate() == null ? LocalDateTime.now() : input.getAsOfDate();
-        List<CcrRateMatrix> rows = matrixMapper.selectList(new LambdaQueryWrapper<CcrRateMatrix>()
-                .eq(CcrRateMatrix::getStatus, "EFFECTIVE")
-                .eq(CcrRateMatrix::getBusinessBigType, input.getBusinessBigType())
-                .eq(CcrRateMatrix::getNewOrExisting, input.getNewOrExisting())
-                .le(CcrRateMatrix::getEffectiveFrom, asOf)
-                .and(w -> w.isNull(CcrRateMatrix::getEffectiveTo)
-                        .or().gt(CcrRateMatrix::getEffectiveTo, asOf)));
+        List<CcrRateMatrix> rows = effectiveRows(input.getBusinessBigType(), input.getNewOrExisting(), asOf);
         if (rows.isEmpty()) {
             throw new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(),
                     "权限矩阵无匹配(业务大类=" + input.getBusinessBigType() + ",存量新增=" + input.getNewOrExisting() + ")");
@@ -141,6 +139,26 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     }
 
     // ---------- 私有 ----------
+
+    /**
+     * 按业务维度取生效矩阵行(§3.6 缓存 key ccr:cfg:matrix:effective):
+     * 全量生效行整体缓存,按 businessBigType/newOrExisting/生效窗口内存过滤;矩阵发布时失效。
+     */
+    @SuppressWarnings("unchecked")
+    private List<CcrRateMatrix> effectiveRows(String businessBigType, String newOrExisting, LocalDateTime asOf) {
+        List<CcrRateMatrix> effective = (List<CcrRateMatrix>) cacheUtil.get(CcrCacheUtil.KEY_MATRIX_EFFECTIVE);
+        if (effective == null) {
+            effective = matrixMapper.selectList(new LambdaQueryWrapper<CcrRateMatrix>()
+                    .eq(CcrRateMatrix::getStatus, "EFFECTIVE"));
+            cacheUtil.set(CcrCacheUtil.KEY_MATRIX_EFFECTIVE, effective);
+        }
+        return effective.stream()
+                .filter(r -> businessBigType.equals(r.getBusinessBigType()))
+                .filter(r -> newOrExisting.equals(r.getNewOrExisting()))
+                .filter(r -> r.getEffectiveFrom() == null || !r.getEffectiveFrom().isAfter(asOf))
+                .filter(r -> r.getEffectiveTo() == null || r.getEffectiveTo().isAfter(asOf))
+                .toList();
+    }
 
     private boolean match(CcrRateMatrix r, MatrixRouteInput in) {
         if (StrUtil.isNotBlank(r.getCustomerType()) && !r.getCustomerType().equals(in.getCustomerType())) return false;
@@ -232,6 +250,11 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             }
             return frozen;
         }
+        // 当前生效版本走缓存(§3.6 key ccr:cfg:lpr:effective;发布/停用时递增全局版本号感知)
+        Object cached = cacheUtil.get(CcrCacheUtil.KEY_LPR_EFFECTIVE);
+        if (cached instanceof CcrLprVersion v) {
+            return v;
+        }
         CcrLprVersion lpr = lprVersionMapper.selectOne(new LambdaQueryWrapper<CcrLprVersion>()
                 .eq(CcrLprVersion::getStatus, "EFFECTIVE")
                 .le(CcrLprVersion::getEffectiveFrom, asOf)
@@ -242,6 +265,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         if (lpr == null) {
             throw new ServiceException(ErrorCode.LPR_NOT_EFFECTIVE.getCode(), "当前无生效的LPR版本,请先维护并发布LPR");
         }
+        cacheUtil.set(CcrCacheUtil.KEY_LPR_EFFECTIVE, lpr);
         return lpr;
     }
 

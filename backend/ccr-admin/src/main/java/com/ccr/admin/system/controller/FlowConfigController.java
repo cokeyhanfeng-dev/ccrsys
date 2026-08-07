@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -72,6 +73,9 @@ public class FlowConfigController {
 
     @Resource
     private ConfigChangeLogService configChangeLogService;
+
+    @Resource
+    private CcrCacheUtil cacheUtil;
 
     /** 流程定义列表(flow_definition) */
     @GetMapping("/definitions")
@@ -200,6 +204,7 @@ public class FlowConfigController {
         lprVersionMapper.updateById(lpr);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_LPR, id, lpr.getVersionNo(),
                 ConfigChangeLogService.ACTION_PUBLISH, oldJson, JSONUtil.toJsonStr(lpr), null);
+        evictConfig(CcrCacheUtil.KEY_LPR_EFFECTIVE);
         return R.ok();
     }
 
@@ -242,6 +247,7 @@ public class FlowConfigController {
         lprVersionMapper.updateById(lpr);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_LPR, id, lpr.getVersionNo(),
                 ConfigChangeLogService.ACTION_DISABLE, oldJson, JSONUtil.toJsonStr(lpr), null);
+        evictConfig(CcrCacheUtil.KEY_LPR_EFFECTIVE);
         return R.ok();
     }
 
@@ -328,6 +334,7 @@ public class FlowConfigController {
         rateMatrixMapper.updateById(row);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_MATRIX, id, row.getVersionNo(),
                 ConfigChangeLogService.ACTION_PUBLISH, oldJson, JSONUtil.toJsonStr(row), null);
+        evictConfig(CcrCacheUtil.KEY_MATRIX_EFFECTIVE);
         return R.ok();
     }
 
@@ -370,7 +377,14 @@ public class FlowConfigController {
         rateMatrixMapper.updateById(row);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_MATRIX, id, row.getVersionNo(),
                 ConfigChangeLogService.ACTION_DISABLE, oldJson, JSONUtil.toJsonStr(row), null);
+        evictConfig(CcrCacheUtil.KEY_MATRIX_EFFECTIVE);
         return R.ok();
+    }
+
+    /** 配置发布/停用后缓存失效(§8A.2/§3.6):删除对应域缓存 key + 递增全局版本号,下次请求重建 */
+    private void evictConfig(String... keys) {
+        cacheUtil.delete(keys);
+        cacheUtil.increment(CcrCacheUtil.GLOBAL_VER_KEY);
     }
 
     // ---------- 产品硬边界生命周期(§8A.5/§11.9,复用 LPR 双人复核模式) ----------

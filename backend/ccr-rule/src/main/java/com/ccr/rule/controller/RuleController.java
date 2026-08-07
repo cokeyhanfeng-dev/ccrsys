@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -54,6 +55,9 @@ public class RuleController {
     @Resource
     private ConfigChangeLogService configChangeLogService;
 
+    @Resource
+    private CcrCacheUtil cacheUtil;
+
     /** 路由试算:给定冻结规则集与业务维度,返回唯一路由 */
     @PostMapping("/route-preview")
     public R<RouteResult> routePreview(@RequestParam Long ruleSetId, @RequestBody RuleInput input) {
@@ -79,6 +83,10 @@ public class RuleController {
      */
     @GetMapping("/version/current")
     public R<CcrLprVersion> currentVersion() {
+        Object cached = cacheUtil.get(CcrCacheUtil.KEY_LPR_EFFECTIVE);
+        if (cached instanceof CcrLprVersion lpr) {
+            return R.ok(lpr);
+        }
         CcrLprVersion lpr = lprVersionMapper.selectOne(new LambdaQueryWrapper<CcrLprVersion>()
                 .eq(CcrLprVersion::getStatus, "EFFECTIVE")
                 .le(CcrLprVersion::getEffectiveFrom, LocalDateTime.now())
@@ -89,6 +97,7 @@ public class RuleController {
         if (lpr == null) {
             throw new ServiceException(ErrorCode.LPR_NOT_EFFECTIVE.getCode(), "当前无生效的LPR版本");
         }
+        cacheUtil.set(CcrCacheUtil.KEY_LPR_EFFECTIVE, lpr);
         return R.ok(lpr);
     }
 
@@ -179,6 +188,8 @@ public class RuleController {
         ruleSetMapper.updateById(ruleSet);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
                 ConfigChangeLogService.ACTION_PUBLISH, oldJson, JSONUtil.toJsonStr(ruleSet), null);
+        // 配置发布信号(§3.6):规则集无域缓存 key,仅递增全局版本号供前端/下游感知配置变更
+        cacheUtil.increment(CcrCacheUtil.GLOBAL_VER_KEY);
         return R.ok();
     }
 
@@ -221,6 +232,8 @@ public class RuleController {
         ruleSetMapper.updateById(ruleSet);
         configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
                 ConfigChangeLogService.ACTION_DISABLE, oldJson, JSONUtil.toJsonStr(ruleSet), null);
+        // 配置发布信号(§3.6):停用同样递增全局版本号,感知配置变更
+        cacheUtil.increment(CcrCacheUtil.GLOBAL_VER_KEY);
         return R.ok();
     }
 }

@@ -1,0 +1,12 @@
+# 部署侧外部配置(详设 §3.7):docker compose 将本 config/ 目录挂载到 /app/config,
+# 启动时以更高优先级覆盖 jar 内同名 profile 文件,改连接参数无需重新打包。
+# 容器内通过服务名 mysql 访问数据库(compose 服务名);本地开发用 jar 内 localhost 版本。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://mysql:3306/ccr_rate?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root123
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5

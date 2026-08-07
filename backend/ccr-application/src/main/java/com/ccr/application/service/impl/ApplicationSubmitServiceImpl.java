@@ -34,6 +34,7 @@ import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.ApplicationSubmitService;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.SnapshotGateway;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.common.outbox.OutboxEventType;
@@ -116,6 +117,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private CcrRateRuleSetMapper ruleSetMapper;
     @Resource
     private OutboxService outboxService;
+    @Resource
+    private CcrCacheUtil cacheUtil;
 
     // ==================== 路由预览(§13.1) ====================
 
@@ -1101,8 +1104,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return pkg == null ? null : pkg.getMainGuaranteeType();
     }
 
-    /** 当前生效 LPR 版本(与 GET /ccr/rule/version/current 同口径) */
+    /** 当前生效 LPR 版本(与 GET /ccr/rule/version/current 同口径;缓存 §3.6 key ccr:cfg:lpr:effective,发布时失效) */
     private CcrLprVersion currentLpr() {
+        Object cached = cacheUtil.get(CcrCacheUtil.KEY_LPR_EFFECTIVE);
+        if (cached instanceof CcrLprVersion v) {
+            return v;
+        }
         CcrLprVersion lpr = lprVersionMapper.selectOne(new LambdaQueryWrapper<CcrLprVersion>()
                 .eq(CcrLprVersion::getStatus, "EFFECTIVE")
                 .le(CcrLprVersion::getEffectiveFrom, LocalDateTime.now())
@@ -1113,6 +1120,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         if (lpr == null) {
             throw new ServiceException(ErrorCode.LPR_NOT_EFFECTIVE.getCode(), "当前无生效的LPR版本,无法提交");
         }
+        cacheUtil.set(CcrCacheUtil.KEY_LPR_EFFECTIVE, lpr);
         return lpr;
     }
 

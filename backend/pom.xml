@@ -42,6 +42,7 @@
         <sa-token.version>1.38.0</sa-token.version>
         <warm-flow.version>1.7.4</warm-flow.version>
         <poi.version>5.2.5</poi.version>
+        <redisson.version>3.31.0</redisson.version>
     </properties>
 
     <dependencyManagement>
@@ -126,6 +127,12 @@
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+            <!-- Redis 缓存(§3.6;spring-boot-starter-data-redis 版本由 Spring Boot BOM 管理) -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

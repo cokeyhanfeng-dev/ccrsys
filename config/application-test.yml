@@ -1,0 +1,10 @@
+# 部署侧 test 环境外部配置示例(详设 §3.7):按环境填写后随 config/ 挂载覆盖 jar 内配置。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/ccr_rate_test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root123
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2

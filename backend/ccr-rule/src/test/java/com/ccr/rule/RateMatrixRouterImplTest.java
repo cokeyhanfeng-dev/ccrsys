@@ -1,5 +1,6 @@
 package com.ccr.rule;
 
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrLprVersion;
@@ -43,6 +44,9 @@ class RateMatrixRouterImplTest {
 
     @Mock
     private CcrProductRateLimitMapper productRateLimitMapper;
+
+    @Mock
+    private CcrCacheUtil cacheUtil;
 
     @InjectMocks
     private RateMatrixRouterImpl router;

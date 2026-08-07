@@ -1,0 +1,11 @@
+# 测试环境配置(本地/CI 测试库;部署侧 config/ 同名文件可覆盖,详设 §3.7)
+# 连接池:test 小池
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/ccr_rate_test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root123
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2

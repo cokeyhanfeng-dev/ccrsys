@@ -2,6 +2,7 @@ package com.ccr.rule.engine.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrProductRateLimit;
@@ -40,6 +41,9 @@ public class RuleEngineImpl implements RuleEngine {
 
     @Resource
     private CcrProductRateLimitMapper productRateLimitMapper;
+
+    @Resource
+    private CcrCacheUtil cacheUtil;
 
     @Override
     public RouteResult calcRoute(Long ruleSetId, RuleInput input) {
@@ -122,15 +126,24 @@ public class RuleEngineImpl implements RuleEngine {
         // PRD 口径硬边界:对公贷款 3.0%、个人经营贷 3.8%(新增不设绝对下限,走本产品硬边界表)
         boolean isLoan = businessType.startsWith("LOAN");
         String limitBusinessType = isLoan ? "LOAN" : "DEPOSIT";
-        CcrProductRateLimit limit = productRateLimitMapper.selectOne(
-                new LambdaQueryWrapper<CcrProductRateLimit>()
-                        .eq(CcrProductRateLimit::getStatus, "EFFECTIVE")
-                        .eq(CcrProductRateLimit::getBusinessType, limitBusinessType)
-                        .eq(CcrProductRateLimit::getProductCode, productCode)
-                        .le(CcrProductRateLimit::getEffectiveFrom, LocalDateTime.now())
-                        .and(w -> w.isNull(CcrProductRateLimit::getEffectiveTo)
-                                .or().gt(CcrProductRateLimit::getEffectiveTo, LocalDateTime.now()))
-                        .last("limit 1"));
+        // 产品硬边界缓存(§3.6 key ccr:cfg:rate-limit:{业务类}:{产品};产品边界发布时失效)
+        String boundaryKey = "ccr:cfg:rate-limit:" + limitBusinessType + ":" + productCode;
+        Object cached = cacheUtil.get(boundaryKey);
+        CcrProductRateLimit limit = cached instanceof CcrProductRateLimit l ? l : null;
+        if (limit == null) {
+            limit = productRateLimitMapper.selectOne(
+                    new LambdaQueryWrapper<CcrProductRateLimit>()
+                            .eq(CcrProductRateLimit::getStatus, "EFFECTIVE")
+                            .eq(CcrProductRateLimit::getBusinessType, limitBusinessType)
+                            .eq(CcrProductRateLimit::getProductCode, productCode)
+                            .le(CcrProductRateLimit::getEffectiveFrom, LocalDateTime.now())
+                            .and(w -> w.isNull(CcrProductRateLimit::getEffectiveTo)
+                                    .or().gt(CcrProductRateLimit::getEffectiveTo, LocalDateTime.now()))
+                            .last("limit 1"));
+            if (limit != null) {
+                cacheUtil.set(boundaryKey, limit);
+            }
+        }
         if (limit == null || rate == null) {
             return null;
         }

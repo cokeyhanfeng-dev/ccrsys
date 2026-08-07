@@ -1,0 +1,11 @@
+# 生产环境配置(jar 内为占位模板:host/密码均为占位符;真实连接参数由部署侧 config/application-prod.yml 覆盖,不进代码库/镜像,详设 §3.7)
+# 连接池:prod 大池
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://prod-db-host:3306/ccr_rate?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ccr_prod
+    password: <REPLACE_ME>
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
