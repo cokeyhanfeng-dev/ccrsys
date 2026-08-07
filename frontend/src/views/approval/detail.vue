@@ -222,39 +222,10 @@
       <div v-else class="empty" style="padding:8px">无担保明细</div>
     </div>
 
-    <!-- 9. 当前与拟达成贡献度(双概念并排) -->
+    <!-- 9. 当前与拟达成贡献度(双概念并排,D1 组件化) -->
     <div class="card">
       <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
-      <div class="contrib-dual">
-        <div class="contrib-dual__col">
-          <div class="contrib-dual__title">当前贡献度 <span class="badge badge--info">数仓</span></div>
-          <table class="table" v-if="contribution.length">
-            <thead><tr><th>指标</th><th>名称</th><th>数值</th></tr></thead>
-            <tbody>
-              <tr v-for="(c, i) in contribution" :key="i">
-                <td>{{ c.metricCode }}</td><td>{{ c.metricName || '—' }}</td>
-                <td class="num">{{ c.metricValue ?? '—' }}{{ c.valueType || '' }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else class="empty">暂无数据</div>
-        </div>
-        <div class="contrib-dual__col">
-          <div class="contrib-dual__title">拟达成贡献度 <span class="badge badge--warning">承诺基线</span></div>
-          <table class="table" v-if="commitments.length">
-            <thead><tr><th>指标</th><th>基线 → 目标</th><th>单位</th><th>范围</th></tr></thead>
-            <tbody>
-              <tr v-for="(c, i) in commitments" :key="i">
-                <td>{{ c.metricCode }}</td>
-                <td class="num">{{ c.baselineValue ?? '—' }} → {{ c.targetValue ?? '—' }}</td>
-                <td>{{ c.unit || '—' }}</td>
-                <td>{{ c.memberCustomerNo ? `成员 ${c.memberCustomerNo}` : (c.metricScope || '整体') }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else class="empty">暂无数据</div>
-        </div>
-      </div>
+      <ContributionPanel :contribution="contribution" :commitments="commitments" />
     </div>
 
     <!-- 10. 历史履约(tracking:该客户承诺最新评估) -->
@@ -375,6 +346,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
 import { useUserStore } from '@/store/user'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -584,8 +556,6 @@ onMounted(load)
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .table { border-radius: var(--radius); overflow: hidden; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
-.contrib-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.contrib-dual__title { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
 .stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 4px; }

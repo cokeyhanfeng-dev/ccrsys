@@ -504,18 +504,7 @@
       </div>
 
       <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
-      <table class="table" v-if="contributionCurrent.length" style="margin-bottom:16px">
-        <thead><tr><th>指标</th><th>当前值(万元)</th><th>口径</th><th>范围</th></tr></thead>
-        <tbody>
-          <tr v-for="m in contributionCurrent" :key="m.metricCode">
-            <td>{{ m.metricName || m.metricCode }}</td>
-            <td class="num">{{ m.metricValue ?? '暂无数据' }}</td>
-            <td>{{ m.valueType || '—' }}</td>
-            <td><span class="badge badge--neutral">{{ m.metricScope || '—' }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty" v-else style="margin-bottom:16px">暂无当前贡献度数据(选择客户后由数仓带出)</div>
+      <ContributionPanel :contribution="contributionCurrent" :show-commitments="false" />
 
       <div class="sub-title">拟达成承诺</div>
       <table class="table" v-if="commitments.length">
@@ -707,7 +696,8 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import RelatedPersonsEditor, { serializeRelations, parseRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -1201,6 +1191,11 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
+  const missingRel = validateRelations(relations.value)
+  if (missingRel.length) {
+    ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
+    return
+  }
   if (!(await ensureDraft()) || !draft.id) return
   try {
     checkResult.value = await submitCheck(draft.id)

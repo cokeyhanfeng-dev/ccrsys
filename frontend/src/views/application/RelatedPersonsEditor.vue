@@ -10,14 +10,27 @@
     </div>
     <table class="table" v-if="rows.length">
       <thead>
-        <tr><th>姓名 <span class="req">*</span></th><th>证件号</th><th>关系类型</th><th>客户号(自动匹配)</th><th>操作</th></tr>
+        <tr>
+          <th>姓名 <span class="req">*</span></th>
+          <th>证件类型</th>
+          <th>证件号 <span class="req">*</span></th>
+          <th>关系类型</th>
+          <th>客户号(自动匹配)</th>
+          <th>操作</th>
+        </tr>
       </thead>
       <tbody>
         <tr v-for="(r, i) in rows" :key="i">
           <td>
             <input class="form-input" v-model="r.name" placeholder="输入姓名后自动匹配" @blur="matchCustomer(r)" />
           </td>
-          <td><input class="form-input" v-model="r.certNo" /></td>
+          <td>
+            <select class="form-select" v-model="r.certType" style="min-width:120px">
+              <option value="USCC">统一社会信用代码(对公)</option>
+              <option value="ID_CARD">居民身份证(对私)</option>
+            </select>
+          </td>
+          <td><input class="form-input" v-model="r.certNo" placeholder="必填" @blur="onCertBlur(r, i)" /></td>
           <td>
             <select class="form-select" v-model="r.relationType">
               <option value="SPOUSE">配偶</option>
@@ -41,6 +54,8 @@
 /** 关联人员行(后端无独立接收字段,序列化后随申请备注附带) */
 export interface RelatedPersonRow {
   name: string
+  /** 证件类型:USCC 统一社会信用代码(对公) / ID_CARD 居民身份证(对私) */
+  certType: string
   certNo: string
   relationType: string
   customerNo: string
@@ -51,19 +66,48 @@ const RELATION_TEXT: Record<string, string> = {
   RELATED_COMPANY: '关联企业', OTHER: '其他'
 }
 
-/** 序列化为申请备注附带结构:【关联人员】姓名/证件号/关系/客户号;... */
+const CERT_TYPE_TEXT: Record<string, string> = {
+  USCC: '统一社会信用代码(对公)', ID_CARD: '居民身份证(对私)'
+}
+
+/**
+ * 序列化为申请备注附带结构:【关联人员】姓名/证件类型:证件号/关系/客户号;...
+ * 证件号缺省沿用旧格式「姓名/-/关系/客户号」,旧草稿与后端字符串存储均兼容,无需后端改动。
+ */
 export function serializeRelations(rows: RelatedPersonRow[]): string {
   const valid = (rows || []).filter((r) => r.name && r.name.trim())
   if (!valid.length) return ''
   const text = valid
-    .map((r) => `${r.name.trim()}/${r.certNo || '-'}/${RELATION_TEXT[r.relationType] || r.relationType}/${r.customerNo || '-'}`)
+    .map((r) => {
+      const cert = r.certNo?.trim()
+      const certSeg = cert ? `${r.certType || 'ID_CARD'}:${cert}` : '-'
+      return `${r.name.trim()}/${certSeg}/${RELATION_TEXT[r.relationType] || r.relationType}/${r.customerNo || '-'}`
+    })
     .join(';')
   return `\n【关联人员】${text}`
+}
+
+/** 提交前校验(D5):已填写姓名的关联人必须补全证件号;返回缺失名单(空数组=通过) */
+export function validateRelations(rows: RelatedPersonRow[]): string[] {
+  return (rows || [])
+    .filter((r) => r.name && r.name.trim() && !r.certNo?.trim())
+    .map((r) => r.name.trim())
 }
 
 const RELATION_CODE: Record<string, string> = {
   配偶: 'SPOUSE', 直系亲属: 'DIRECT_RELATIVE', 担保人: 'GUARANTOR',
   关联企业: 'RELATED_COMPANY', 其他: 'OTHER'
+}
+
+/** 解析证件段:「类型:号码」或旧格式纯号码;无前缀默认 ID_CARD */
+function splitCert(seg: string): { certType: string; certNo: string } {
+  if (!seg || seg === '-') return { certType: 'ID_CARD', certNo: '' }
+  const ci = seg.indexOf(':')
+  if (ci > 0) {
+    const prefix = seg.slice(0, ci)
+    if (CERT_TYPE_TEXT[prefix]) return { certType: prefix, certNo: seg.slice(ci + 1) }
+  }
+  return { certType: 'ID_CARD', certNo: seg }
 }
 
 /** 从申请备注解析【关联人员】块(草稿/重提回显),返回 [关联人员行, 去除块后的备注] */
@@ -76,10 +120,12 @@ export function parseRelations(remark?: string): [RelatedPersonRow[], string] {
     .map((seg) => seg.trim())
     .filter(Boolean)
     .map((seg) => {
-      const [name = '', certNo = '-', rel = '其他', customerNo = '-'] = seg.split('/')
+      const [name = '', cert = '-', rel = '其他', customerNo = '-'] = seg.split('/')
+      const { certType, certNo } = splitCert(cert)
       return {
         name,
-        certNo: certNo === '-' ? '' : certNo,
+        certType,
+        certNo,
         relationType: RELATION_CODE[rel] || 'OTHER',
         customerNo: customerNo === '-' ? '' : customerNo
       }
@@ -96,7 +142,18 @@ import { searchCustomers } from '@/api/application'
 const rows = defineModel<RelatedPersonRow[]>({ required: true })
 
 function addRow() {
-  rows.value.push({ name: '', certNo: '', relationType: 'SPOUSE', customerNo: '' })
+  rows.value.push({ name: '', certType: 'ID_CARD', certNo: '', relationType: 'SPOUSE', customerNo: '' })
+}
+
+// 证件号失焦本地判重(/relation/check 后端未就绪,先用列表内判重占位;对公 USCC 与对私证件号各自比较)
+function onCertBlur(r: RelatedPersonRow, index: number) {
+  const cert = r.certNo?.trim()
+  const name = r.name?.trim()
+  if (!cert || !name) return
+  const dup = rows.value.find((x, j) => j !== index && x.name?.trim() && x.certNo?.trim() === cert)
+  if (dup) {
+    ElMessage.warning(`关联人「${dup.name}」证件号与当前行重复,请核对(同一证件号不应出现在两条记录)`)
+  }
 }
 
 // 行内自动匹配客户号:姓名精确匹配数仓客户
