@@ -1,5 +1,6 @@
 package com.ccr.vote.controller;
 
+import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -40,7 +41,11 @@ public class VoteController {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 行长待决策:表决通过(COMMITTEE_PASS/PRESIDENT_DECISION)待行长决策的分项(仅行长可见) */
+    @Resource
+    private NodeAssigneeResolver nodeAssigneeResolver;
+
+    /** 行长待决策:表决通过(COMMITTEE_PASS/PRESIDENT_DECISION)待行长决策的分项(仅行长可见);
+     *  PRESIDENT 节点配置有效指派时,仅解析出的处理人可见(admin 审计视角不过滤) */
     @GetMapping("/president/todo")
     public R<List<Map<String, Object>>> presidentTodo() {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_PRESIDENT, CurrentLoginUser.ROLE_ADMIN);
@@ -48,13 +53,27 @@ public class VoteController {
                 SELECT pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.pricing_customer_no customerNo, pi.requested_rate requestedRate,
                        pi.current_approval_rate approvalRate, pi.status status,
+                       a.applicant_org_id applicantOrgId,
                        COALESCE(vr.approve_count,0) approveCount, COALESCE(vr.reject_count,0) rejectCount
                 FROM ccr_pricing_item pi
+                JOIN ccr_application a ON a.id = pi.application_id
                 LEFT JOIN ccr_vote_result vr ON vr.pricing_item_id = pi.id
                 WHERE pi.status IN ('COMMITTEE_PASS','PRESIDENT_DECISION') AND pi.del_flag = '0'
                 ORDER BY pi.create_time DESC
                 """;
-        return R.ok(jdbcTemplate.queryForList(sql));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+        if (CurrentLoginUser.ROLE_ADMIN.equals(currentLoginUser.currentRoleCode())) {
+            rows.forEach(row -> row.remove("applicantOrgId"));
+            return R.ok(rows);
+        }
+        Long userId = currentLoginUser.requireLoginId();
+        rows.removeIf(row -> {
+            Object orgId = row.remove("applicantOrgId");
+            List<Long> assignees = nodeAssigneeResolver.resolveUserIds("PRESIDENT",
+                    orgId == null ? null : ((Number) orgId).longValue());
+            return !assignees.isEmpty() && !assignees.contains(userId);
+        });
+        return R.ok(rows);
     }
 
     /** 委员待办:本人待表决的批次分项(匿名编号;只查本人 assignment,不泄露他人进度) */
@@ -113,6 +132,18 @@ public class VoteController {
             throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "计票结果仅行长/审计可见");
         }
         return R.ok(voteService.getVoteResult(pricingItemId));
+    }
+
+    /** 行长查看批次委员匿名意见(§12.7,仅行长/审计;按分项返回匿名码+票型+意见,不含真实身份) */
+    @GetMapping("/vote-rounds/{roundId}/opinions")
+    public R<List<Map<String, Object>>> roundOpinions(@PathVariable Long roundId) {
+        try {
+            currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_PRESIDENT,
+                    CurrentLoginUser.ROLE_ADMIN, CurrentLoginUser.ROLE_AUDITOR);
+        } catch (ServiceException e) {
+            throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "委员意见仅行长/审计可见");
+        }
+        return R.ok(voteService.listRoundOpinions(roundId));
     }
 
     /** 行长决策(同意利率/一票否决);Idempotency-Key 头可选(唯一约束兜底) */

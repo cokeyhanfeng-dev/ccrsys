@@ -12,6 +12,7 @@ import com.ccr.snapshot.domain.CcrSnapshotBundle;
 import com.ccr.snapshot.domain.CcrSnapshotQualityResult;
 import com.ccr.snapshot.domain.CcrSnapshotRecord;
 import com.ccr.snapshot.domain.CcrSnapshotRelation;
+import com.ccr.snapshot.dto.SnapshotBundleContent;
 import com.ccr.snapshot.mapper.CcrSnapshotBundleMapper;
 import com.ccr.snapshot.mapper.CcrSnapshotQualityResultMapper;
 import com.ccr.snapshot.mapper.CcrSnapshotRecordMapper;
@@ -69,9 +70,13 @@ public class SnapshotServiceImpl implements SnapshotService {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 数据时效容忍天数:来源 data_dt 距当前超过该天数判 WARN(§10.5 数据时效) */
-    @Value("${ccr.snapshot.data-stale-days:7}")
+    /** 数据时效容忍天数:来源 data_dt 距当前超过该天数判 BLOCK(§9.4 默认 3 个自然日,阻断提交) */
+    @Value("${ccr.snapshot.data-stale-days:3}")
     private int dataStaleDays;
+
+    /** 贡献度勾稽容差(§9.2 D13:TOTAL行与明细行加总差额 ≤ 容差 WARN,> 容差 BLOCK) */
+    @Value("${ccr.snapshot.reconcile-tolerance:0.01}")
+    private java.math.BigDecimal reconcileTolerance;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -184,7 +189,7 @@ public class SnapshotServiceImpl implements SnapshotService {
             block += duplicated.size();
         }
 
-        // 规则5:数据时效——来源 data_dt 距当前超过配置天数判 WARN(§10.5)
+        // 规则5:数据时效——来源 data_dt 距当前超过配置天数判 BLOCK(§9.4:超时阻断提交)
         LocalDate staleBefore = LocalDate.now().minusDays(dataStaleDays);
         List<CcrSnapshotRecord> stale = records.stream()
                 .filter(r -> r.getSourceDataDt() != null && r.getSourceDataDt().isBefore(staleBefore))
@@ -194,11 +199,11 @@ public class SnapshotServiceImpl implements SnapshotService {
                     "data_dt 不早于 " + staleBefore, "通过", null);
         } else {
             for (CcrSnapshotRecord r : stale) {
-                addQuality(bundle, "DATA_TIMELINESS", r.getSubjectType(), r.getSubjectId(), "WARN",
+                addQuality(bundle, "DATA_TIMELINESS", r.getSubjectType(), r.getSubjectId(), "BLOCK",
                         "data_dt 不早于 " + staleBefore, String.valueOf(r.getSourceDataDt()),
-                        "来源数据日期超过容忍天数 " + dataStaleDays + " 天");
+                        "数据源数据日期过期,请联系数据中心刷新(容忍 " + dataStaleDays + " 个自然日)");
             }
-            warn += stale.size();
+            block += stale.size();
         }
 
         // 规则6:贡献度统计区间一致性(§10.3 stat_start/stat_end/calc_version,空跑容忍)
@@ -206,6 +211,11 @@ public class SnapshotServiceImpl implements SnapshotService {
 
         // 规则7:集团成员有效性——GROUP_TO_MEMBER 成员快照缺失或失效判 WARN(§10.5,空跑通过)
         warn += checkGroupMemberValid(bundle, records);
+
+        // 规则8:贡献度勾稽(§9.2 D13)——TOTAL 行与明细行加总比对,差额>容差判 BLOCK
+        int[] reconcile = checkContributionReconcile(bundle, records);
+        block += reconcile[0];
+        warn += reconcile[1];
 
         return block > 0 ? "BLOCK" : (warn > 0 ? "WARN" : "PASS");
     }
@@ -271,6 +281,83 @@ public class SnapshotServiceImpl implements SnapshotService {
             }
         }
         return freeze(bundle.getId());
+    }
+
+    // ---------- 快照查询出口(§11.7) ----------
+
+    @Override
+    public SnapshotBundleContent bundleContent(Long bundleId) {
+        CcrSnapshotBundle bundle = bundleMapper.selectById(bundleId);
+        if (bundle == null) {
+            throw new ServiceException(404, "快照包不存在");
+        }
+        List<CcrSnapshotRecord> records = recordMapper.selectList(
+                new LambdaQueryWrapper<CcrSnapshotRecord>()
+                        .eq(CcrSnapshotRecord::getBundleId, bundleId)
+                        .orderByAsc(CcrSnapshotRecord::getId));
+        List<CcrSnapshotRelation> relations = relationMapper.selectList(
+                new LambdaQueryWrapper<CcrSnapshotRelation>()
+                        .eq(CcrSnapshotRelation::getBundleId, bundleId)
+                        .orderByAsc(CcrSnapshotRelation::getSequenceNo)
+                        .orderByAsc(CcrSnapshotRelation::getId));
+
+        SnapshotBundleContent content = new SnapshotBundleContent();
+        content.setBundle(bundle);
+        content.setRecords(records);
+        content.setRelationTree(buildRelationTree(records, relations));
+        return content;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CcrSnapshotQualityResult confirmQualityResult(Long id, Long operatorId) {
+        CcrSnapshotQualityResult result = qualityMapper.selectById(id);
+        if (result == null) {
+            throw new ServiceException(404, "质量校验结果不存在");
+        }
+        result.setConfirmStatus("CONFIRMED");
+        result.setConfirmBy(operatorId);
+        result.setConfirmTime(LocalDateTime.now());
+        qualityMapper.updateById(result);
+        return result;
+    }
+
+    /** 关系树:根=不作为任何关系子节点的记录;沿 parent→child 递归,环路防御 */
+    private List<SnapshotBundleContent.RelationNode> buildRelationTree(List<CcrSnapshotRecord> records,
+                                                                       List<CcrSnapshotRelation> relations) {
+        Map<Long, List<CcrSnapshotRelation>> byParent = relations.stream()
+                .collect(Collectors.groupingBy(CcrSnapshotRelation::getParentRecordId,
+                        LinkedHashMap::new, Collectors.toList()));
+        Set<Long> childIds = relations.stream()
+                .map(CcrSnapshotRelation::getChildRecordId)
+                .collect(Collectors.toSet());
+        List<SnapshotBundleContent.RelationNode> roots = new ArrayList<>();
+        for (CcrSnapshotRecord record : records) {
+            if (!childIds.contains(record.getId())) {
+                roots.add(buildNode(record.getId(), null, null, byParent, new ArrayList<>()));
+            }
+        }
+        return roots;
+    }
+
+    private SnapshotBundleContent.RelationNode buildNode(Long recordId, String relationType, Integer sequenceNo,
+                                                         Map<Long, List<CcrSnapshotRelation>> byParent,
+                                                         List<Long> path) {
+        SnapshotBundleContent.RelationNode node = new SnapshotBundleContent.RelationNode();
+        node.setRecordId(recordId);
+        node.setRelationType(relationType);
+        node.setSequenceNo(sequenceNo);
+        node.setChildren(new ArrayList<>());
+        if (path.contains(recordId)) {
+            return node; // 环路防御:异常数据不构成死循环
+        }
+        path.add(recordId);
+        for (CcrSnapshotRelation rel : byParent.getOrDefault(recordId, List.of())) {
+            node.getChildren().add(buildNode(rel.getChildRecordId(), rel.getRelationType(),
+                    rel.getSequenceNo(), byParent, path));
+        }
+        path.remove(path.size() - 1);
+        return node;
     }
 
     // ---------- 私有 ----------
@@ -356,6 +443,95 @@ public class SnapshotServiceImpl implements SnapshotService {
         }
         return warn;
     }
+
+    /**
+     * 贡献度勾稽(§9.2 D13):按客户取最新批次 dw_contribution_metric,
+     * TOTAL 行(CONTRIBUTION_AMOUNT 口径)与明细行加总比对——差额=0 PASS;≤容差 WARN;>容差 BLOCK 并写明差额
+     * 表/列未就绪或无数据时规则空跑 PASS
+     *
+     * @return [block数, warn数]
+     */
+    private int[] checkContributionReconcile(CcrSnapshotBundle bundle, List<CcrSnapshotRecord> records) {
+        String expected = "TOTAL行=明细行加总(容差 " + reconcileTolerance + ")";
+        List<String> customerIds = records.stream()
+                .filter(r -> "dw_contribution_metric".equals(r.getDatasetCode()))
+                .map(CcrSnapshotRecord::getSubjectId)
+                .distinct().sorted().toList();
+        if (customerIds.isEmpty()) {
+            addQuality(bundle, "CONTRIBUTION_RECONCILE", null, null, "PASS",
+                    expected, "无贡献度快照记录,空跑通过", null);
+            return new int[]{0, 0};
+        }
+        int block = 0;
+        int warn = 0;
+        boolean anyChecked = false;
+        try {
+            for (String custNo : customerIds) {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                        SELECT metric_code, metric_value FROM dw_contribution_metric
+                        WHERE cust_no = ?
+                          AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric WHERE cust_no = ?)
+                        """, custNo, custNo);
+                java.math.BigDecimal total = null;
+                java.math.BigDecimal detailSum = java.math.BigDecimal.ZERO;
+                boolean hasDetail = false;
+                for (Map<String, Object> row : rows) {
+                    java.math.BigDecimal value = toBigDecimal(row.get("metric_value"));
+                    if (value == null) {
+                        continue;
+                    }
+                    if ("TOTAL".equals(String.valueOf(row.get("metric_code")))) {
+                        total = value;
+                    } else {
+                        detailSum = detailSum.add(value);
+                        hasDetail = true;
+                    }
+                }
+                if (total == null || !hasDetail) {
+                    continue; // 无 TOTAL 行或无明细行:无数据空跑
+                }
+                anyChecked = true;
+                java.math.BigDecimal diff = total.subtract(detailSum).abs();
+                if (diff.compareTo(java.math.BigDecimal.ZERO) == 0) {
+                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "PASS",
+                            expected, "差额 0", null);
+                } else if (diff.compareTo(reconcileTolerance) <= 0) {
+                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "WARN",
+                            expected, "差额 " + diff,
+                            "贡献度勾稽差额在容差内(TOTAL=" + total + ",明细合计=" + detailSum + ")");
+                    warn++;
+                } else {
+                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "BLOCK",
+                            expected, "差额 " + diff,
+                            "贡献度勾稽不符:TOTAL=" + total + ",明细合计=" + detailSum
+                                    + ",差额 " + diff + " 超过容差 " + reconcileTolerance + "(§9.2 D13)");
+                    block++;
+                }
+            }
+            if (!anyChecked) {
+                addQuality(bundle, "CONTRIBUTION_RECONCILE", null, null, "PASS",
+                        expected, "无贡献度数据,空跑通过", null);
+            }
+        } catch (DataAccessException e) {
+            // 数仓表/列未就绪:规则空跑通过
+            addQuality(bundle, "CONTRIBUTION_RECONCILE", null, null, "PASS",
+                    expected, "数据源未就绪,空跑通过", null);
+            return new int[]{0, 0};
+        }
+        return new int[]{block, warn};
+    }
+
+    private static java.math.BigDecimal toBigDecimal(Object v) {
+        if (v == null || v.toString().isBlank()) {
+            return null;
+        }
+        try {
+            return new java.math.BigDecimal(v.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
 
     /**
      * 集团成员有效性:GROUP_TO_MEMBER 关系的成员快照缺失或失效(record_status/valid_to,§10.2)判 WARN

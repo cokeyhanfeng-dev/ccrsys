@@ -2,6 +2,8 @@ package com.ccr.approval.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -18,6 +20,7 @@ import com.ccr.approval.mapper.CcrRateAdjustmentMapper;
 import com.ccr.approval.mapper.DwLoanNoteReadMapper;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
+import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
@@ -36,11 +39,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 普通节点审批实现(§7.2 贷款 / §7.3 存款)
@@ -77,6 +82,8 @@ public class ApprovalServiceImpl implements ApprovalService {
     private DwLoanNoteReadMapper loanNoteSnapshotMapper;
     @Resource
     private WarmFlowService warmFlowService;
+    @Resource
+    private NodeAssigneeResolver nodeAssigneeResolver;
 
     @Override
     public List<CcrPricingItem> listTodo() {
@@ -92,7 +99,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (nodeCode == null || RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
             return List.of();
         }
-        return pricingItemMapper.selectList(wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode));
+        List<CcrPricingItem> items = pricingItemMapper.selectList(
+                wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode));
+        return filterByNodeAssignee(items, nodeCode, user.getId());
     }
 
     @Override
@@ -103,6 +112,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         guardIdempotency(idempotencyKey);
         CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
         CcrApplication application = getApplication(item.getApplicationId());
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作
+        guardNodeAssignee(nodeCode, application, operator);
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
         // 存款双轨消除:普通审批链对 DEPOSIT 分项只允许支行行长节点动作
@@ -166,8 +177,11 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (adjusted) {
             saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
         }
+        // §14.7 流转留痕:动作前 ROUTING,动作后 终审→APPROVED_LEVEL / 上送→ROUTING / 上送小组→VOTING
         insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
-                comment, beforeRate, effectiveRate, idempotencyKey));
+                comment, beforeRate, effectiveRate, idempotencyKey,
+                PricingItemStatus.ROUTING.getCode(),
+                toGroup ? PricingItemStatus.VOTING.getCode() : targetStatus));
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
         warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "APPROVE",
                 operatorName(operator), comment);
@@ -187,9 +201,15 @@ public class ApprovalServiceImpl implements ApprovalService {
     @Transactional(rollbackFor = Exception.class)
     public void reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey) {
         SysUserRead operator = checkOperatorAndNode(nodeCode);
+        // §7.3 普通节点否决原因必填
+        if (StrUtil.isBlank(comment)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "否决必须填写原因(§7.3)");
+        }
         guardIdempotency(idempotencyKey);
         CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
         CcrApplication application = getApplication(item.getApplicationId());
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作
+        guardNodeAssignee(nodeCode, application, operator);
         if ("DEPOSIT".equals(application.getBusinessType()) && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手");
         }
@@ -198,13 +218,34 @@ public class ApprovalServiceImpl implements ApprovalService {
                 null, null, versionNo, comment);
 
         insertAction(buildAction(item.getId(), "REJECT", nodeCode, operator.getId(),
-                comment, item.getCurrentApprovalRate(), item.getCurrentApprovalRate(), idempotencyKey));
+                comment, item.getCurrentApprovalRate(), item.getCurrentApprovalRate(), idempotencyKey,
+                PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
         warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "REJECT",
                 operatorName(operator), comment);
         // 否决终态:聚合主申请状态
         itemFinalizationService.afterItemTerminal(item.getId(), null);
         log.info("分项 {} 节点 {} 否决, 操作人 {}", pricingItemId, nodeCode, operator.getId());
+    }
+
+    // ---------- 已办(§11.4) ----------
+
+    @Override
+    public List<Map<String, Object>> listDone() {
+        Long operatorId = currentLoginUser.requireLoginId();
+        return jdbcTemplate.queryForList("""
+                SELECT aa.pricing_item_id pricingItemId, aa.action_type actionType, aa.node_code nodeCode,
+                       aa.action_comment actionComment, aa.before_rate beforeRate, aa.after_rate afterRate,
+                       aa.from_status fromStatus, aa.to_status toStatus, aa.operation_time operationTime,
+                       pi.pricing_item_no pricingItemNo, pi.pricing_customer_no customerNo,
+                       pi.current_approval_rate currentApprovalRate, pi.status itemStatus,
+                       a.id applicationId, a.application_no applicationNo, a.business_type businessType
+                FROM ccr_approval_action aa
+                JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
+                WHERE aa.operator_id = ? AND aa.del_flag = '0'
+                ORDER BY aa.operation_time DESC
+                """, operatorId);
     }
 
     // ---------- 历史审批(§13.2/§14.4) ----------
@@ -260,7 +301,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                         + " planned_account_flag plannedAccountFlag"
                         + " FROM ccr_pricing_item_deposit_rel WHERE application_id = ? AND del_flag = '0'"
                         + " ORDER BY pricing_item_id, id", applicationId));
-        result.put("notes", selectArchiveNotes(contracts));
+        result.put("notes", selectArchiveNotes(contracts, application.get("snapshot_bundle_id")));
 
         // 快照包信息 + 质量校验结果(PASS/WARN/BLOCK 汇总)
         Object bundleId = application.get("snapshot_bundle_id");
@@ -304,15 +345,65 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     // ---------- 私有 ----------
 
-    /** 档案借据区块:按合同 loan_contract_no 取数仓最新 data_dt 批次的有效借据(只读,口径同 ccr-resolution 第二级核验) */
-    private List<DwLoanNoteSnapshot> selectArchiveNotes(List<Map<String, Object>> contracts) {
+    /**
+     * 档案借据区块(D11/§9.5):优先读申请冻结快照包内 subject_type=NOTE 的记录
+     * (按分项合同 loan_contract_no 过滤 core_json.contract_no);无快照包时降级回数仓最新批次
+     */
+    private List<DwLoanNoteSnapshot> selectArchiveNotes(List<Map<String, Object>> contracts, Object bundleId) {
+        List<String> contractNos = contracts.stream()
+                .map(c -> c.get("loanContractNo"))
+                .filter(Objects::nonNull).map(Object::toString)
+                .filter(StrUtil::isNotBlank).distinct().toList();
+        if (contractNos.isEmpty()) {
+            return List.of();
+        }
+        if (bundleId != null) {
+            List<DwLoanNoteSnapshot> fromSnapshot = selectSnapshotNotes(bundleId, contractNos);
+            if (!fromSnapshot.isEmpty()) {
+                return fromSnapshot;
+            }
+        }
+        // 降级:数仓最新 data_dt 批次
         List<DwLoanNoteSnapshot> notes = new ArrayList<>();
-        for (Map<String, Object> contract : contracts) {
-            Object contractNo = contract.get("loanContractNo");
-            if (contractNo == null || StrUtil.isBlank(contractNo.toString())) {
+        for (String contractNo : contractNos) {
+            notes.addAll(selectLatestActiveNotes(contractNo));
+        }
+        return notes;
+    }
+
+    /** 快照包内 NOTE 记录(core_json 为提交时冻结的借据行,只读解析) */
+    private List<DwLoanNoteSnapshot> selectSnapshotNotes(Object bundleId, List<String> contractNos) {
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                "SELECT core_json coreJson FROM ccr_snapshot_record"
+                        + " WHERE bundle_id = ? AND subject_type = 'NOTE' AND del_flag = '0'",
+                bundleId);
+        List<DwLoanNoteSnapshot> notes = new ArrayList<>();
+        for (Map<String, Object> record : records) {
+            Object coreJson = record.get("coreJson");
+            if (coreJson == null) {
                 continue;
             }
-            notes.addAll(selectLatestActiveNotes(contractNo.toString()));
+            JSONObject core = JSONUtil.parseObj(coreJson.toString());
+            String contractNo = core.getStr("contract_no");
+            if (StrUtil.isBlank(contractNo) || !contractNos.contains(contractNo)) {
+                continue;
+            }
+            DwLoanNoteSnapshot note = new DwLoanNoteSnapshot();
+            note.setDataDt(core.get("data_dt", LocalDate.class));
+            note.setLoanNoteNo(core.getStr("loan_note_no"));
+            note.setContractNo(contractNo);
+            note.setTrancheNo(core.getStr("tranche_no"));
+            note.setBorrowerCustomerNo(core.getStr("borrower_customer_no"));
+            note.setLoanAmount(core.get("loan_amount", BigDecimal.class));
+            note.setLoanBalance(core.get("loan_balance", BigDecimal.class));
+            note.setCurrency(core.getStr("currency"));
+            note.setExecutionRate(core.get("execution_rate", BigDecimal.class));
+            note.setRateType(core.getStr("rate_type"));
+            note.setLprTerm(core.getStr("lpr_term"));
+            note.setStartDate(core.get("start_date", LocalDate.class));
+            note.setMaturityDate(core.get("maturity_date", LocalDate.class));
+            note.setNoteStatus(core.getStr("note_status"));
+            notes.add(note);
         }
         return notes;
     }
@@ -338,6 +429,42 @@ public class ApprovalServiceImpl implements ApprovalService {
     private String operatorName(SysUserRead operator) {
         return StrUtil.isNotBlank(operator.getNickName())
                 ? operator.getNickName() : String.valueOf(operator.getId());
+    }
+
+    /**
+     * 节点审批人配置过滤(§5.5.1):节点配置了有效指派时,仅解析出的处理人可见;
+     * 解析为空(未配置)保持现有角色匹配,向后兼容
+     */
+    private List<CcrPricingItem> filterByNodeAssignee(List<CcrPricingItem> items, String nodeCode, Long userId) {
+        if (items.isEmpty()) {
+            return items;
+        }
+        List<Long> appIds = items.stream().map(CcrPricingItem::getApplicationId)
+                .filter(Objects::nonNull).distinct().toList();
+        // 申请id → 申请人机构(applicantOrgId 可能为空,不用 Collectors.toMap)
+        Map<Long, Long> appOrg = new LinkedHashMap<>();
+        for (CcrApplication app : applicationMapper.selectBatchIds(appIds)) {
+            appOrg.put(app.getId(), app.getApplicantOrgId());
+        }
+        List<CcrPricingItem> filtered = new ArrayList<>();
+        for (CcrPricingItem item : items) {
+            List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
+                    appOrg.get(item.getApplicationId()));
+            if (!assignees.isEmpty() && !assignees.contains(userId)) {
+                continue;
+            }
+            filtered.add(item);
+        }
+        return filtered;
+    }
+
+    /** 节点审批人配置校验(§5.5.1):配置了有效指派时,仅解析出的处理人可通过/否决 */
+    private void guardNodeAssignee(String nodeCode, CcrApplication application, SysUserRead operator) {
+        List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode, application.getApplicantOrgId());
+        if (!assignees.isEmpty() && !assignees.contains(operator.getId())) {
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                    "节点[" + nodeCode + "]已配置指定审批人,当前登录人不在指派范围内");
+        }
     }
 
     /** 身份与节点校验:小组/行长节点不走普通审批通道;登录人须具备节点角色 */
@@ -476,7 +603,8 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     private CcrApprovalAction buildAction(Long pricingItemId, String actionType, String nodeCode,
                                           Long operatorId, String comment, BigDecimal beforeRate,
-                                          BigDecimal afterRate, String idempotencyKey) {
+                                          BigDecimal afterRate, String idempotencyKey,
+                                          String fromStatus, String toStatus) {
         CcrApprovalAction action = new CcrApprovalAction();
         action.setPricingItemId(pricingItemId);
         action.setTaskId(IdUtil.fastSimpleUUID());
@@ -486,6 +614,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         action.setActionComment(StrUtil.nullToEmpty(comment));
         action.setBeforeRate(beforeRate);
         action.setAfterRate(afterRate);
+        action.setFromStatus(fromStatus);
+        action.setToStatus(toStatus);
         action.setOperationChannel("PC");
         action.setOperationTime(LocalDateTime.now());
         action.setIdempotencyKey(idempotencyKey);

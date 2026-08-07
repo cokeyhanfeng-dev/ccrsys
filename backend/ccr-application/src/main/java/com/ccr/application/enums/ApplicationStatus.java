@@ -5,7 +5,7 @@ import lombok.Getter;
 /**
  * 主申请状态(PRD V2 §7.6)
  * DRAFT→SUBMITTED→ROUTING→(权限内APPROVED_LEVEL→FINAL | 上会VOTING→COMMITTEE_PASS→PRESIDENT_DECISION→FINAL/VETOED)
- * + RETURNED→DRAFT(退回重提)
+ * 终态(FINAL/REJECTED/VETOED/RETURNED/CLOSED)不可回退;退回重提只创建新申请,原申请置 RETURNED 保留终态(§14.1)
  */
 @Getter
 public enum ApplicationStatus {

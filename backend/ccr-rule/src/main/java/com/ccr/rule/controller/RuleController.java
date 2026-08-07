@@ -2,6 +2,7 @@ package com.ccr.rule.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
@@ -14,6 +15,7 @@ import com.ccr.rule.dto.RuleInput;
 import com.ccr.rule.engine.RuleEngine;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrRateRuleSetMapper;
+import com.ccr.rule.service.ConfigChangeLogService;
 import com.ccr.rule.service.RateMatrixRouter;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,8 +31,9 @@ import java.util.List;
 
 /**
  * 利率规则引擎接口(§8.3 路由预览 / 发布前校验)
- * 规则集版本生命周期(§8.4):草稿(DRAFT)→送审(REVIEW)→复核发布(EFFECTIVE)→停用(INVALID);
- * 发布强制双人复核(reviewBy≠createBy);已生效记录禁止原位修改,只能新建版本
+ * 规则集版本生命周期(§8.4/§8A.2):草稿(DRAFT)→送审(REVIEW)→复核发布(EFFECTIVE)→停用(INVALID);
+ * 复核驳回(REVIEW→DRAFT,必填驳回意见);发布强制双人复核(reviewBy≠createBy);
+ * 已生效记录禁止原位修改,只能新建版本;全部变更写 ccr_config_change_log 审计(§8A.2)
  */
 @RestController
 @RequestMapping("/ccr/rule")
@@ -47,6 +50,9 @@ public class RuleController {
 
     @Resource
     private CcrLprVersionMapper lprVersionMapper;
+
+    @Resource
+    private ConfigChangeLogService configChangeLogService;
 
     /** 路由试算:给定冻结规则集与业务维度,返回唯一路由 */
     @PostMapping("/route-preview")
@@ -106,6 +112,8 @@ public class RuleController {
         ruleSet.setReviewBy(null);
         ruleSet.setPublishTime(null);
         ruleSetMapper.insert(ruleSet);
+        configChangeLogService.record(ConfigChangeLogService.TYPE_RULE_SET, ruleSet.getId(), ruleSet.getVersionNo(),
+                ConfigChangeLogService.ACTION_CREATE, null, ruleSet, null);
         return R.ok(ruleSet.getId());
     }
 
@@ -120,8 +128,11 @@ public class RuleController {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
                     "仅草稿状态可送审(当前:" + ruleSet.getStatus() + ")");
         }
+        String oldJson = JSONUtil.toJsonStr(ruleSet);
         ruleSet.setStatus("REVIEW");
         ruleSetMapper.updateById(ruleSet);
+        configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
+                ConfigChangeLogService.ACTION_SUBMIT, oldJson, JSONUtil.toJsonStr(ruleSet), null);
         return R.ok();
     }
 
@@ -149,10 +160,15 @@ public class RuleController {
                 .eq(CcrRateRuleSet::getStatus, "EFFECTIVE")
                 .ne(CcrRateRuleSet::getId, id));
         for (CcrRateRuleSet old : oldEffective) {
+            String oldJson = JSONUtil.toJsonStr(old);
             old.setStatus("INVALID");
             old.setEffectiveTo(ruleSet.getEffectiveFrom() == null ? LocalDateTime.now() : ruleSet.getEffectiveFrom());
             ruleSetMapper.updateById(old);
+            configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, old.getId(), old.getVersionNo(),
+                    ConfigChangeLogService.ACTION_DISABLE, oldJson, JSONUtil.toJsonStr(old),
+                    "新版本" + ruleSet.getSetCode() + "发布,旧生效版本自动停用");
         }
+        String oldJson = JSONUtil.toJsonStr(ruleSet);
         ruleSet.setStatus("EFFECTIVE");
         ruleSet.setPublishBy(currentUser);
         ruleSet.setReviewBy(currentUser);
@@ -161,6 +177,30 @@ public class RuleController {
             ruleSet.setEffectiveFrom(LocalDateTime.now());
         }
         ruleSetMapper.updateById(ruleSet);
+        configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
+                ConfigChangeLogService.ACTION_PUBLISH, oldJson, JSONUtil.toJsonStr(ruleSet), null);
+        return R.ok();
+    }
+
+    /** 复核驳回:REVIEW → DRAFT(必填驳回意见,§8A.2) */
+    @PostMapping("/set/{id}/reject")
+    public R<Void> rejectSet(@PathVariable Long id, @RequestParam String opinion) {
+        CcrRateRuleSet ruleSet = ruleSetMapper.selectById(id);
+        if (ruleSet == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "规则集不存在");
+        }
+        if (!"REVIEW".equals(ruleSet.getStatus())) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "仅待复核状态可驳回(当前:" + ruleSet.getStatus() + ")");
+        }
+        if (StrUtil.isBlank(opinion)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "驳回意见必填");
+        }
+        String oldJson = JSONUtil.toJsonStr(ruleSet);
+        ruleSet.setStatus("DRAFT");
+        ruleSetMapper.updateById(ruleSet);
+        configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
+                ConfigChangeLogService.ACTION_REJECT, oldJson, JSONUtil.toJsonStr(ruleSet), opinion);
         return R.ok();
     }
 
@@ -175,9 +215,12 @@ public class RuleController {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
                     "仅已生效状态可停用(当前:" + ruleSet.getStatus() + ")");
         }
+        String oldJson = JSONUtil.toJsonStr(ruleSet);
         ruleSet.setStatus("INVALID");
         ruleSet.setEffectiveTo(LocalDateTime.now());
         ruleSetMapper.updateById(ruleSet);
+        configChangeLogService.recordJson(ConfigChangeLogService.TYPE_RULE_SET, id, ruleSet.getVersionNo(),
+                ConfigChangeLogService.ACTION_DISABLE, oldJson, JSONUtil.toJsonStr(ruleSet), null);
         return R.ok();
     }
 }

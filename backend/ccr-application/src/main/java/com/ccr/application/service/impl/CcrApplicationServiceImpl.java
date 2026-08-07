@@ -35,6 +35,8 @@ import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.CcrApplicationService;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.read.SysUserRead;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -75,6 +77,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
     @Resource
     private DataWarehouseService dataWarehouseService;
+
+    @Resource
+    private AppLoginUser appLoginUser;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -280,8 +285,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             rel.setPricingItemId(pi.getId());
             rel.setPlannedAccountFlag(planned ? "Y" : "N");
             if (StrUtil.isNotBlank(d.getDepositAccountNo())) {
+                // 手工补录真实账号:密文+哈希落库,哈希用于与数仓账户关联
                 rel.setDepositAccountNoCipher("CIPHER_" + d.getDepositAccountNo());
                 rel.setDepositAccountHash(DigestUtil.sha256Hex(d.getDepositAccountNo()));
+            } else if (StrUtil.isNotBlank(d.getDepositAccountHash())) {
+                // 直接选择数仓账户:以数仓查询哈希绑定(数仓侧账号密文存储,无法回填明文)
+                rel.setDepositAccountHash(d.getDepositAccountHash());
             }
             depositRelMapper.insert(rel);
         }
@@ -477,32 +486,56 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
     }
 
-    /** 删除申请全部旧子表数据(承诺/成员/分项及合同关系/账户关系/担保组合/担保措施) */
+    /**
+     * 删除申请旧子表数据(承诺/成员/分项及合同关系/账户关系/担保组合/担保措施)
+     * inherit_flag='Y' 的沿用分项不在前端编辑载荷中,其分项/载体关系/担保/绑定承诺必须保留(D18b)
+     */
     private void deleteChildren(Long applicationId) {
-        commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
-                .eq(CcrApplicationCommitment::getApplicationId, applicationId));
+        List<CcrPricingItem> existingItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, applicationId));
+        List<Long> inheritedIds = existingItems.stream()
+                .filter(i -> "Y".equals(i.getInheritFlag()))
+                .map(CcrPricingItem::getId).toList();
+        List<Long> removableIds = existingItems.stream()
+                .filter(i -> !"Y".equals(i.getInheritFlag()))
+                .map(CcrPricingItem::getId).toList();
+
         applicationMemberMapper.delete(new LambdaQueryWrapper<CcrApplicationMember>()
                 .eq(CcrApplicationMember::getApplicationId, applicationId));
-        contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
-                .eq(CcrPricingItemContractRel::getApplicationId, applicationId));
-        depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
-                .eq(CcrPricingItemDepositRel::getApplicationId, applicationId));
-        List<Long> itemIds = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
-                        .eq(CcrPricingItem::getApplicationId, applicationId))
-                .stream().map(CcrPricingItem::getId).toList();
-        if (!itemIds.isEmpty()) {
+        if (inheritedIds.isEmpty()) {
+            commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
+                    .eq(CcrApplicationCommitment::getApplicationId, applicationId));
+            contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
+                    .eq(CcrPricingItemContractRel::getApplicationId, applicationId));
+            depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
+                    .eq(CcrPricingItemDepositRel::getApplicationId, applicationId));
+        } else {
+            // 承诺:保留绑定沿用分项的记录(申请级承诺 pricing_item_id 为空,随载荷重建)
+            commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
+                    .eq(CcrApplicationCommitment::getApplicationId, applicationId)
+                    .and(w -> w.isNull(CcrApplicationCommitment::getPricingItemId)
+                            .or().notIn(CcrApplicationCommitment::getPricingItemId, inheritedIds)));
+            contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
+                    .eq(CcrPricingItemContractRel::getApplicationId, applicationId)
+                    .notIn(CcrPricingItemContractRel::getPricingItemId, inheritedIds));
+            depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
+                    .eq(CcrPricingItemDepositRel::getApplicationId, applicationId)
+                    .notIn(CcrPricingItemDepositRel::getPricingItemId, inheritedIds));
+        }
+        if (!removableIds.isEmpty()) {
             List<Long> packageIds = guaranteePackageMapper.selectList(new LambdaQueryWrapper<CcrGuaranteePackage>()
-                            .in(CcrGuaranteePackage::getPricingItemId, itemIds))
+                            .in(CcrGuaranteePackage::getPricingItemId, removableIds))
                     .stream().map(CcrGuaranteePackage::getId).toList();
             if (!packageIds.isEmpty()) {
                 guaranteeMeasureMapper.delete(new LambdaQueryWrapper<CcrGuaranteeMeasure>()
                         .in(CcrGuaranteeMeasure::getPackageId, packageIds));
             }
             guaranteePackageMapper.delete(new LambdaQueryWrapper<CcrGuaranteePackage>()
-                    .in(CcrGuaranteePackage::getPricingItemId, itemIds));
+                    .in(CcrGuaranteePackage::getPricingItemId, removableIds));
         }
         pricingItemMapper.delete(new LambdaQueryWrapper<CcrPricingItem>()
-                .eq(CcrPricingItem::getApplicationId, applicationId));
+                .eq(CcrPricingItem::getApplicationId, applicationId)
+                .ne(CcrPricingItem::getInheritFlag, "Y"));
     }
 
     @Override
@@ -577,12 +610,25 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     }
 
     @Override
-    public List<CcrApplication> listApplications(Long orgId, String status, Long applicantId) {
-        return applicationMapper.selectList(new LambdaQueryWrapper<CcrApplication>()
+    public List<CcrApplication> listApplications(String status) {
+        // 数据权限(§5.4):申请人/机构过滤取服务端登录人,不信任前端传参
+        SysUserRead user = appLoginUser.requireCurrentUser();
+        LambdaQueryWrapper<CcrApplication> wrapper = new LambdaQueryWrapper<CcrApplication>()
                 .eq(CcrApplication::getDelFlag, "0")
-                .eq(orgId != null, CcrApplication::getOrgId, orgId)
                 .eq(status != null && !status.isBlank(), CcrApplication::getStatus, status)
-                .eq(applicantId != null, CcrApplication::getApplicantUserId, applicantId)
-                .orderByDesc(CcrApplication::getCreateTime));
+                .orderByDesc(CcrApplication::getCreateTime);
+        String role = user.getRoleCode();
+        if (AppLoginUser.ROLE_PRESIDENT.equals(role) || AppLoginUser.ROLE_AUDITOR.equals(role)
+                || AppLoginUser.ROLE_ADMIN.equals(role)) {
+            // 行长/审计/管理员:全量
+        } else if (AppLoginUser.ROLE_BRANCH_MANAGER.equals(role) || AppLoginUser.ROLE_DEPT_GM.equals(role)
+                || AppLoginUser.ROLE_VICE_PRESIDENT.equals(role)) {
+            // 支行行长/部门总经理/副行长:按本人机构过滤
+            wrapper.eq(CcrApplication::getOrgId, user.getOrgId());
+        } else {
+            // 客户经理及其他角色:仅本人申请
+            wrapper.eq(CcrApplication::getApplicantUserId, user.getId());
+        }
+        return applicationMapper.selectList(wrapper);
     }
 }

@@ -52,4 +52,14 @@ public interface SnapshotService {
      * 提交链路:创建包+添加记录+校验+冻结(提交事务入口,§7.1 步骤11)
      */
     CcrSnapshotBundle submitSnapshot(Long applicationId, List<CcrSnapshotRecord> records);
+
+    /**
+     * 快照包内容(§11.7):包头 + 全部记录 + 关系树(审批/导出/决议核验一律读快照,D11/B15)
+     */
+    com.ccr.snapshot.dto.SnapshotBundleContent bundleContent(Long bundleId);
+
+    /**
+     * 质量预警人工确认(§9.6 差异确认):写入 confirm_status/confirm_by/confirm_time
+     */
+    CcrSnapshotQualityResult confirmQualityResult(Long id, Long operatorId);
 }

@@ -1,6 +1,9 @@
 package com.ccr.application;
 
 import cn.hutool.crypto.digest.DigestUtil;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
 import com.ccr.application.domain.CcrApplicationMember;
@@ -23,6 +26,8 @@ import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.impl.CcrApplicationServiceImpl;
 import com.ccr.common.exception.ServiceException;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -36,10 +41,13 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,9 +75,19 @@ class CcrApplicationServiceImplTest {
     private CcrApplicationCommitmentMapper commitmentMapper;
     @Mock
     private DataWarehouseService dataWarehouseService;
+    @Mock
+    private com.ccr.application.support.AppLoginUser currentLoginUser;
 
     @InjectMocks
     private CcrApplicationServiceImpl service;
+
+    /** 纯 Mockito 单测无 MyBatis 启动过程,需手工初始化实体 TableInfo(Lambda 包装器列解析依赖) */
+    @BeforeAll
+    static void initTableInfo() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, CcrApplication.class);
+        TableInfoHelper.initTableInfo(assistant, CcrPricingItem.class);
+    }
 
     private void stubInsertIds() {
         lenient().when(applicationMapper.insert(any(CcrApplication.class))).thenAnswer(inv -> {
@@ -383,5 +401,94 @@ class CcrApplicationServiceImplTest {
         verify(guaranteeMeasureMapper).delete(any());
         verify(guaranteePackageMapper).delete(any());
         verify(pricingItemMapper).delete(any());
+    }
+
+    // ---------- 任务2:saveDraft 保留 inherit_flag='Y' 的沿用分项(D18b) ----------
+
+    @Test
+    void saveDraftPreservesInheritedItems() {
+        CcrApplication exist = new CcrApplication();
+        exist.setId(100L);
+        exist.setStatus("DRAFT");
+        exist.setVersionNo(1);
+        exist.setBusinessType("LOAN");
+        exist.setCustomerScope("CORPORATE_SINGLE");
+        exist.setCustomerNo("CORP001");
+        when(applicationMapper.selectById(100L)).thenReturn(exist);
+        when(applicationMapper.updateById(any(CcrApplication.class))).thenReturn(1);
+        // 重提带来的沿用分项:不在前端编辑载荷中,保存草稿不得删除
+        CcrPricingItem inherited = new CcrPricingItem();
+        inherited.setId(900L);
+        inherited.setApplicationId(100L);
+        inherited.setInheritFlag("Y");
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(inherited));
+
+        CcrApplication request = new CcrApplication();
+        request.setVersionNo(1);
+
+        service.saveDraft(100L, request);
+
+        // 删除分项的条件必须排除 inherit_flag='Y'
+        ArgumentCaptor<LambdaQueryWrapper<CcrPricingItem>> deleteCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(pricingItemMapper).delete(deleteCaptor.capture());
+        assertTrue(deleteCaptor.getValue().getSqlSegment().contains("inherit_flag"),
+                "删除分项必须排除沿用分项:" + deleteCaptor.getValue().getSqlSegment());
+        assertTrue(deleteCaptor.getValue().getParamNameValuePairs().containsValue("Y"));
+        // 沿用分项为唯一旧分项:无待删分项,不触碰担保组合/措施,也不新增分项
+        verify(guaranteePackageMapper, never()).selectList(any());
+        verify(guaranteePackageMapper, never()).delete(any());
+        verify(pricingItemMapper, never()).insert(any(CcrPricingItem.class));
+    }
+
+    // ---------- 任务4:列表数据权限(§5.4,申请人/机构取服务端登录人) ----------
+
+    private com.ccr.application.read.SysUserRead loginUser(Long id, String role, Long orgId) {
+        com.ccr.application.read.SysUserRead user = new com.ccr.application.read.SysUserRead();
+        user.setId(id);
+        user.setRoleCode(role);
+        user.setOrgId(orgId);
+        return user;
+    }
+
+    @Test
+    void listApplicationsCustomerManagerSeesOnlyOwn() {
+        when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(7L, "customer_manager", 1001L));
+
+        service.listApplications(null);
+
+        ArgumentCaptor<LambdaQueryWrapper<CcrApplication>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(applicationMapper).selectList(captor.capture());
+        assertTrue(captor.getValue().getSqlSegment().contains("applicant_user_id"));
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(7L));
+    }
+
+    @Test
+    void listApplicationsBranchManagerFiltersByOwnOrg() {
+        when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(8L, "branch_manager", 1001L));
+
+        service.listApplications("ROUTING");
+
+        ArgumentCaptor<LambdaQueryWrapper<CcrApplication>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(applicationMapper).selectList(captor.capture());
+        assertTrue(captor.getValue().getSqlSegment().contains("org_id"));
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(1001L));
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ROUTING"));
+        assertFalse(captor.getValue().getSqlSegment().contains("applicant_user_id"));
+    }
+
+    @Test
+    void listApplicationsPresidentSeesAll() {
+        when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(9L, "president", 1L));
+
+        service.listApplications(null);
+
+        ArgumentCaptor<LambdaQueryWrapper<CcrApplication>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(applicationMapper).selectList(captor.capture());
+        assertFalse(captor.getValue().getSqlSegment().contains("applicant_user_id"));
+        assertFalse(captor.getValue().getSqlSegment().contains("org_id"));
     }
 }

@@ -4,7 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.vote.read.SysUserRead;
-import com.ccr.vote.read.SysUserReadMapper;
+import com.ccr.vote.mapper.SysUserReadMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +25,7 @@ public class CurrentLoginUser {
     public static final String ROLE_COMMITTEE = "committee_member";
     public static final String ROLE_PRESIDENT = "president";
     public static final String ROLE_ADMIN = "admin";
+    public static final String ROLE_AUDITOR = "auditor";
 
     /** 审批节点 → 系统角色编码 */
     public static final Map<String, String> NODE_ROLE = Map.of(
@@ -68,8 +69,7 @@ public class CurrentLoginUser {
     }
 
     /** 校验登录人角色在允许集合内,不符抛 FORBIDDEN */
-    public void requireAnyRole(String... roles) {
-        String role = currentRoleCode();
+    public void requireAnyRole(String... roles) {        String role = currentRoleCode();
         for (String r : roles) {
             if (r.equals(role)) {
                 return;

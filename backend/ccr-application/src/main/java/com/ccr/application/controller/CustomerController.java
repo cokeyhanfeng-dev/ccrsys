@@ -91,6 +91,21 @@ public class CustomerController {
         return R.ok(result);
     }
 
+    /** 存款账号反查(输入真实账号,SHA-256 哈希后查数仓最新批次;命中返回账户信息,未命中返回 null) */
+    @GetMapping("/{customerNo}/deposit-account-lookup")
+    public R<Map<String, Object>> depositAccountLookup(@PathVariable String customerNo, @RequestParam String accountNo) {
+        if (cn.hutool.core.util.StrUtil.isBlank(accountNo)) {
+            throw new ServiceException(400, "存款账号必填");
+        }
+        String hash = cn.hutool.crypto.digest.DigestUtil.sha256Hex(accountNo.trim());
+        Map<String, Object> row = dataWarehouseService.findDepositAccountByHash(hash);
+        // 未命中或账号不属于该客户,均按未命中处理(不泄露他户账户信息)
+        if (row == null || !customerNo.equals(String.valueOf(row.get("customer_no")))) {
+            return R.ok(null);
+        }
+        return R.ok(GroupQueryController.camel(row));
+    }
+
     /** 客户业务视图(§13.1:账户/授信/合同/合同下借据/担保/贡献度概况,最新批次) */
     @GetMapping("/{customerNo}/business-view")
     public R<Map<String, Object>> businessView(@PathVariable String customerNo) {

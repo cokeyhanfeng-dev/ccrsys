@@ -4,6 +4,7 @@ import com.ccr.vote.domain.CcrVoteAssignment;
 import com.ccr.vote.domain.CcrVoteResult;
 import com.ccr.vote.domain.CcrVoteRound;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -55,4 +56,18 @@ public interface VoteService {
      * @return 新建替补 assignment
      */
     CcrVoteAssignment substitute(Long roundId, Long fromUserId, Long toUserId, String reason);
+
+    /**
+     * 表决超时强制计票(§7.5.5):VOTING 批次超过配置时长(ccr.vote.round-timeout-hours,默认 72h)
+     * 按已投票数计票,赞成≥requiredCount 通过否则不通过;结果落库与正常计票一致(含 PRESIDENT_DECISION 流转)
+     *
+     * @return 本次强制计票的分项数
+     */
+    int scanTimeoutRounds();
+
+    /**
+     * 批次委员匿名意见(§12.7,仅行长/审计可查):按分项返回 [{anonymNo, voteChoice, voteComment, submitTime}],
+     * 不含真实身份(匿名码经票据哈希与批次名单映射,不反解用户)
+     */
+    List<Map<String, Object>> listRoundOpinions(Long roundId);
 }

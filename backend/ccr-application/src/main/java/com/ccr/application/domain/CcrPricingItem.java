@@ -76,6 +76,15 @@ public class CcrPricingItem extends BaseEntity {
     /** 当前节点编码 */
     private String currentNodeCode;
 
+    /** 审批链首节点编码(提交路由后冻结,§8.6;贷款/存款恒为 BRANCH_MANAGER) */
+    private String startNodeCode;
+
+    /** 终审节点边界利率(矩阵∩产品硬边界交集,提交路由后冻结,§8.6) */
+    private BigDecimal boundaryRate;
+
+    /** 命中的权限矩阵行编号(提交路由后冻结,审计溯源,§8.6) */
+    private String matchedMatrixNo;
+
     /** 最终否决或一票否决原因 */
     private String finalReason;
 

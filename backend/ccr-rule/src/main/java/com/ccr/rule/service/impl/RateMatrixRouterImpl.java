@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrLprVersion;
+import com.ccr.rule.domain.CcrProductRateLimit;
 import com.ccr.rule.domain.CcrRateMatrix;
 import com.ccr.rule.dto.MatrixRouteInput;
 import com.ccr.rule.dto.RouteResult;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
+import com.ccr.rule.mapper.CcrProductRateLimitMapper;
 import com.ccr.rule.mapper.CcrRateMatrixMapper;
 import com.ccr.rule.service.RateMatrixRouter;
 import jakarta.annotation.Resource;
@@ -52,6 +54,9 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     @Resource
     private CcrLprVersionMapper lprVersionMapper;
 
+    @Resource
+    private CcrProductRateLimitMapper productRateLimitMapper;
+
     @Override
     public RouteResult calcRoute(MatrixRouteInput input) {
         if (input == null || StrUtil.isBlank(input.getBusinessBigType())) {
@@ -90,16 +95,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
 
         boolean isLoan = input.getBusinessBigType().startsWith("LOAN");
         BigDecimal rate = input.getRequestedRate();
+        // 产品硬边界(§8.2 D3):贷款=全行下限,存款=全行上限;终审边界=矩阵边界与硬边界取交集
+        BigDecimal hardBoundary = loadProductHardBoundary(input, asOf, isLoan);
 
         // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于阈值才需小组批
         if (!isLoan) {
             CcrRateMatrix row = matched.get(0);
             BigDecimal upper = calcBoundary(row, input, null);
             if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
-                return buildResult(matched, row, FIRST_NODE, upper, null,
+                return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
                         "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
             }
-            return buildResult(matched, row, GROUP_NODE, upper, null,
+            return buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
                     upper == null ? "存款/保证金一律直接上会小组(D16b)"
                             : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)");
         }
@@ -114,20 +121,21 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal boundary = calcBoundary(row, input, lprMap);
             if (boundary == null) {
                 // 无边界 = 权限内即终审(D3)
-                return buildResult(matched, row, row.getStartNodeCode(), null, lpr, "该岗位权限内即终审(D3)");
+                return buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
+                        "该岗位权限内即终审(D3)");
             }
             if (rate != null && rate.compareTo(boundary) >= 0) {
                 String msg = FIRST_NODE.equals(row.getStartNodeCode())
                         ? "申请利率" + rate + "% ≥ 支行行长终审边界(部门总经理线)" + boundary + "%,支行行长终审"
                         : "申请利率" + rate + "% ≥ 岗位下限" + boundary + "%," + row.getStartNodeCode() + "终审";
-                return buildResult(matched, row, row.getStartNodeCode(), boundary, lpr, msg);
+                return buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg);
             }
         }
         // 无岗位可终审 → 上会小组(≥4票)
         return matched.stream()
                 .filter(r -> GROUP_NODE.equals(r.getStartNodeCode()))
                 .findFirst()
-                .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), lpr,
+                .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), hardBoundary, lpr,
                         "利率低于全部岗位下限,提交小组表决(≥4票)"))
                 .orElseThrow(() -> new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(), "未配置上会兜底行"));
     }
@@ -238,18 +246,58 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     }
 
     /**
+     * 查询产品硬边界(§8.2):按 product_code + 业务类型(LOAN/DEPOSIT)取生效窗口内最新一版。
+     * 入参未指定产品或该产品未配置硬边界时返回 null(不收紧矩阵边界)。
+     */
+    private BigDecimal loadProductHardBoundary(MatrixRouteInput input, LocalDateTime asOf, boolean isLoan) {
+        if (StrUtil.isBlank(input.getProductCode())) {
+            return null;
+        }
+        CcrProductRateLimit limit = productRateLimitMapper.selectOne(new LambdaQueryWrapper<CcrProductRateLimit>()
+                .eq(CcrProductRateLimit::getStatus, "EFFECTIVE")
+                .eq(CcrProductRateLimit::getProductCode, input.getProductCode())
+                .eq(CcrProductRateLimit::getBusinessType, isLoan ? "LOAN" : "DEPOSIT")
+                .le(CcrProductRateLimit::getEffectiveFrom, asOf)
+                .and(w -> w.isNull(CcrProductRateLimit::getEffectiveTo)
+                        .or().gt(CcrProductRateLimit::getEffectiveTo, asOf))
+                .orderByDesc(CcrProductRateLimit::getEffectiveFrom)
+                .last("limit 1"));
+        return limit == null ? null : limit.getHardBoundaryRate();
+    }
+
+    /**
+     * 终审节点有效边界(§8.2 D3):矩阵边界与产品硬边界取交集。
+     * 贷款=下限语义取 max(矩阵下限,产品下限);存款/保证金=上限语义取 min(矩阵上限,产品上限);
+     * 一侧缺失时取另一侧,均缺失返回 null。
+     */
+    private BigDecimal intersectBoundary(BigDecimal matrixBoundary, BigDecimal hardBoundary, boolean isLoan) {
+        if (matrixBoundary == null) {
+            return hardBoundary;
+        }
+        if (hardBoundary == null) {
+            return matrixBoundary;
+        }
+        return isLoan ? matrixBoundary.max(hardBoundary) : matrixBoundary.min(hardBoundary);
+    }
+
+    /**
      * 组装路由结果:首节点恒为支行行长(必经),终审岗位为命中行岗位;
      * 链路保留首节点至终审岗位之间的中间层级(部门总经理行调价后可达终审)。
      */
     private RouteResult buildResult(List<CcrRateMatrix> matched, CcrRateMatrix terminalRow, String finalNode,
-                                    BigDecimal boundary, CcrLprVersion lpr, String msg) {
+                                    BigDecimal boundary, BigDecimal hardBoundary, CcrLprVersion lpr, String msg) {
+        boolean isLoan = terminalRow.getBusinessBigType().startsWith("LOAN");
         RouteResult result = new RouteResult();
         result.setStartNodeCode(FIRST_NODE);
         result.setFinalNodeCode(finalNode);
         result.setRouteChain(buildChain(matched, finalNode));
-        result.setRateDirection(terminalRow.getBusinessBigType().startsWith("LOAN") ? "LOWER_BETTER" : "HIGHER_BETTER");
+        result.setRateDirection(isLoan ? "LOWER_BETTER" : "HIGHER_BETTER");
         result.setMatchedRuleCode(terminalRow.getMatrixNo());
         result.setMatchedRuleName(terminalRow.getRemark());
+        // 终审命中行编号(小组兜底行同样记录,审计溯源 §8.6)
+        result.setMatchedMatrixNo(terminalRow.getMatrixNo());
+        // 终审节点有效边界:矩阵边界 ∩ 产品硬边界(D3)
+        result.setBoundaryRate(intersectBoundary(boundary, hardBoundary, isLoan));
         if (lpr != null) {
             result.setLprVersionId(lpr.getId());
             result.setLprVersionCode(lpr.getVersionCode());

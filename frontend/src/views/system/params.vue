@@ -3,8 +3,8 @@
     <div class="section-head">
       <div class="section-title">参数管理</div>
       <div class="section-tip">
-        LPR / 权限矩阵 / 利率规则集版本管理(草稿→送审→复核发布→停用,发布强制双人复核:发布人≠创建人)。
-        LPR 与权限矩阵接口仅系统管理员可访问(后端 /system/** 校验),其他角色操作将提示无权限。
+        LPR / 权限矩阵 / 产品边界 / 利率规则集版本管理(草稿→送审→复核发布→停用,发布强制双人复核:发布人≠创建人)。
+        /system/** 接口仅系统管理员可访问(复核发布放行配置复核人),其他角色操作将提示无权限。
       </div>
     </div>
 
@@ -106,6 +106,49 @@
       </table>
     </div>
 
+    <!-- ========== 产品边界(§12.13 ③) ========== -->
+    <div v-if="activeTab === 'product'" class="card">
+      <div class="card__head">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span>产品业务硬边界(全行业务硬边界,任何节点调价/矩阵边界不得突破,§8.2/§8A.5)</span>
+          <select class="form-select" v-model="productStatus" style="width:140px" @change="loadProductLimit">
+            <option value="">全部状态</option>
+            <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+          </select>
+        </div>
+        <button class="btn btn--primary" @click="openProductCreate">＋ 新增产品边界草稿</button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>产品编码</th><th>产品名称</th><th>业务类型</th><th>硬边界利率</th><th>利率方向</th>
+            <th>生效时间</th><th>失效时间</th><th>状态</th><th>发布人</th><th>发布时间</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in productList" :key="p.id">
+            <td>{{ p.productCode }}</td>
+            <td>{{ p.productName || '—' }}</td>
+            <td>{{ p.businessType === 'LOAN' ? '贷款' : '存款' }}</td>
+            <td class="num">{{ p.hardBoundaryRate }}%</td>
+            <td>{{ p.rateDirection === 'HIGHER_BETTER' ? '越高越优惠(存款)' : '越低越优惠(贷款)' }}</td>
+            <td>{{ fmtTime(p.effectiveFrom) }}</td>
+            <td>{{ fmtTime(p.effectiveTo) }}</td>
+            <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
+            <td>{{ p.publishBy ?? '—' }}</td>
+            <td>{{ fmtTime(p.publishTime) }}</td>
+            <td>
+              <button v-if="p.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('product', p.id)">送审</button>
+              <button v-if="p.status === 'REVIEW'" class="btn btn--text" @click="doPublish('product', p.id)">复核发布</button>
+              <button v-if="p.status === 'REVIEW'" class="btn btn--text" @click="openReject(p.id)">驳回</button>
+              <button v-if="p.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('product', p.id)">停用</button>
+            </td>
+          </tr>
+          <tr v-if="!productList.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- ========== 规则集 ========== -->
     <div v-if="activeTab === 'ruleset'" class="card">
       <div class="card__head">
@@ -136,6 +179,42 @@
             </td>
           </tr>
           <tr v-if="!ruleSets.length"><td colspan="9" class="empty-cell">暂无数据</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ========== 变更日志(§8A.2) ========== -->
+    <div v-if="activeTab === 'changelog'" class="card">
+      <div class="card__head">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span>配置变更日志(LPR/矩阵/规则集/产品边界全量留痕)</span>
+          <select class="form-select" v-model="logQuery.configType" style="width:150px" @change="loadChangeLogs">
+            <option value="">全部配置域</option>
+            <option v-for="t in configTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+          </select>
+          <input class="form-input" v-model="logQuery.configId" type="number" placeholder="配置记录ID" style="width:130px" @keyup.enter="loadChangeLogs" />
+          <button class="btn btn--secondary" @click="loadChangeLogs">查询</button>
+        </div>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>操作时间</th><th>配置域</th><th>记录ID</th><th>版本号</th><th>动作</th>
+            <th>操作人</th><th>意见</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in changeLogs" :key="c.id">
+            <td>{{ fmtTime(c.operateTime || '') }}</td>
+            <td>{{ configTypeText(c.configType) }}</td>
+            <td class="num">{{ c.configId }}</td>
+            <td class="num">{{ c.versionNo ?? '—' }}</td>
+            <td><span :class="actionBadge(c.action)">{{ actionText(c.action) }}</span></td>
+            <td>{{ c.operatorId ?? '—' }}</td>
+            <td>{{ c.opinion || '—' }}</td>
+            <td><button class="btn btn--text" @click="openLogDetail(c)">查看快照</button></td>
+          </tr>
+          <tr v-if="!changeLogs.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
     </div>
@@ -234,15 +313,18 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">一年期 LPR(%) <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.lpr1y" type="number" step="0.01" />
+            <input class="form-input" v-model="lprDialog.form.lpr1y" type="number" step="0.05" min="0.5" max="8" />
           </div>
           <div class="form-field">
             <label class="form-field__label">五年期以上 LPR(%) <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.lpr5y" type="number" step="0.01" />
+            <input class="form-input" v-model="lprDialog.form.lpr5y" type="number" step="0.05" min="0.5" max="8" />
           </div>
           <div class="form-field">
             <label class="form-field__label">生效时间 <span class="req">*</span></label>
             <input class="form-input" v-model="lprDialog.form.effectiveFrom" type="datetime-local" />
+          </div>
+          <div class="section-tip">
+            校验规则:LPR 取值 0.5%–8% 且为 0.05 的整数倍(报价规则);生效时间不得早于发布日;同一生效日仅允许一版(草稿/待复核/生效均占用)。
           </div>
         </div>
         <div class="modal__actions">
@@ -389,6 +471,86 @@
         </div>
       </div>
     </div>
+
+    <!-- 新增产品边界草稿弹窗 -->
+    <div class="modal" v-if="productDialog.show">
+      <div class="modal__card">
+        <div class="modal__title">新增产品硬边界草稿</div>
+        <div class="modal__body">
+          <div class="form-field">
+            <label class="form-field__label">产品编码 <span class="req">*</span></label>
+            <input class="form-input" v-model="productDialog.form.productCode" placeholder="如 LOAN-FLOW-001" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">产品名称</label>
+            <input class="form-input" v-model="productDialog.form.productName" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">业务类型 <span class="req">*</span></label>
+            <select class="form-select" v-model="productDialog.form.businessType">
+              <option value="LOAN">贷款(全行不可低于硬边界)</option>
+              <option value="DEPOSIT">存款(全行不可高于硬边界)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">硬边界利率(%) <span class="req">*</span></label>
+            <input class="form-input" v-model="productDialog.form.hardBoundaryRate" type="number" step="0.01" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">生效时间 <span class="req">*</span></label>
+            <input class="form-input" v-model="productDialog.form.effectiveFrom" type="datetime-local" />
+          </div>
+          <div class="section-tip">利率方向按业务类型自动确定:贷款=越低越优惠、存款=越高越优惠。</div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="productDialog.show = false">取消</button>
+          <button class="btn btn--primary" @click="saveProduct">保存草稿</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 产品边界复核驳回弹窗(意见必填) -->
+    <div class="modal" v-if="rejectDialog.show">
+      <div class="modal__card">
+        <div class="modal__title">复核驳回(退回草稿)</div>
+        <div class="modal__body">
+          <div class="form-field">
+            <label class="form-field__label">驳回意见 <span class="req">*</span></label>
+            <textarea class="form-input" v-model="rejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
+          </div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="rejectDialog.show = false">取消</button>
+          <button class="btn btn--primary" @click="doReject">确认驳回</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 变更日志快照弹窗(新旧值 JSON) -->
+    <div class="modal" v-if="logDetail.show">
+      <div class="modal__card modal__card--wide">
+        <div class="modal__title">
+          变更快照:{{ configTypeText(logDetail.row?.configType || '') }} #{{ logDetail.row?.configId }}
+          ({{ actionText(logDetail.row?.action || '') }})
+        </div>
+        <div class="modal__body">
+          <div class="json-compare">
+            <div>
+              <div class="json-compare__title">变更前</div>
+              <pre class="json-view">{{ prettyJson(logDetail.row?.oldJson) }}</pre>
+            </div>
+            <div>
+              <div class="json-compare__title">变更后</div>
+              <pre class="json-view">{{ prettyJson(logDetail.row?.newJson) }}</pre>
+            </div>
+          </div>
+          <div v-if="logDetail.row?.opinion" class="section-tip" style="margin-top:8px">意见:{{ logDetail.row.opinion }}</div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="logDetail.show = false">关闭</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -399,13 +561,19 @@ import {
   listLpr, createLpr, submitLpr, publishLpr, disableLpr,
   listMatrix, createMatrix, submitMatrix, publishMatrix, disableMatrix,
   listRuleSets, createRuleSet, submitRuleSet, publishRuleSet, disableRuleSet,
-  matrixRoute
+  listProductLimit, createProductLimit, submitProductLimit, publishProductLimit,
+  disableProductLimit, rejectProductLimit,
+  listChangeLogs,
+  matrixRoute,
+  type ConfigChangeLog
 } from '@/api/system'
 
 const tabs = [
   { key: 'lpr', label: 'LPR 维护' },
   { key: 'matrix', label: '权限矩阵' },
+  { key: 'product', label: '产品边界' },
   { key: 'ruleset', label: '规则集' },
+  { key: 'changelog', label: '变更日志' },
   { key: 'trial', label: '路由试算' }
 ]
 const activeTab = ref('lpr')
@@ -420,8 +588,11 @@ const statusOptions = [
 const lprList = ref<any[]>([])
 const matrixList = ref<any[]>([])
 const ruleSets = ref<any[]>([])
+const productList = ref<any[]>([])
+const changeLogs = ref<ConfigChangeLog[]>([])
 const lprStatus = ref('')
 const matrixStatus = ref('')
+const productStatus = ref('')
 
 function statusText(s: string) {
   return statusOptions.find((o) => o.value === s)?.label || s || '—'
@@ -460,6 +631,45 @@ function boundaryText(m: any) {
   return '权限内'
 }
 
+// ---------- 变更日志展示辅助 ----------
+const configTypeOptions = [
+  { value: 'LPR', label: 'LPR' },
+  { value: 'MATRIX', label: '权限矩阵' },
+  { value: 'RULE_SET', label: '利率规则集' },
+  { value: 'PRODUCT_LIMIT', label: '产品边界' }
+]
+function configTypeText(t: string) {
+  return configTypeOptions.find((o) => o.value === t)?.label || t || '—'
+}
+const actionOptions = [
+  { value: 'CREATE', label: '新增草稿' },
+  { value: 'SUBMIT', label: '送审' },
+  { value: 'PUBLISH', label: '复核发布' },
+  { value: 'DISABLE', label: '停用' },
+  { value: 'REJECT', label: '复核驳回' }
+]
+function actionText(a: string) {
+  return actionOptions.find((o) => o.value === a)?.label || a || '—'
+}
+function actionBadge(a: string) {
+  const map: Record<string, string> = {
+    CREATE: 'badge badge--info',
+    SUBMIT: 'badge badge--warning',
+    PUBLISH: 'badge badge--success',
+    DISABLE: 'badge badge--neutral',
+    REJECT: 'badge badge--danger'
+  }
+  return map[a] || 'badge badge--neutral'
+}
+function prettyJson(json?: string) {
+  if (!json) return '—'
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2)
+  } catch {
+    return json
+  }
+}
+
 async function loadLpr() {
   try {
     lprList.value = await listLpr(lprStatus.value || undefined)
@@ -481,13 +691,34 @@ async function loadRuleSets() {
     ruleSets.value = []
   }
 }
+async function loadProductLimit() {
+  try {
+    productList.value = await listProductLimit(productStatus.value || undefined)
+  } catch {
+    productList.value = []
+  }
+}
+const logQuery = reactive({ configType: '', configId: '' as number | '' })
+async function loadChangeLogs() {
+  try {
+    changeLogs.value = await listChangeLogs(logQuery.configType || undefined, logQuery.configId || undefined)
+  } catch {
+    changeLogs.value = []
+  }
+}
+const logDetail = reactive({ show: false, row: null as ConfigChangeLog | null })
+function openLogDetail(row: ConfigChangeLog) {
+  logDetail.row = row
+  logDetail.show = true
+}
 
 // ---------- 生命周期操作(送审/复核发布/停用) ----------
-type Kind = 'lpr' | 'matrix' | 'ruleset'
+type Kind = 'lpr' | 'matrix' | 'ruleset' | 'product'
 const apiOf = (kind: Kind) => ({
   lpr: { submit: submitLpr, publish: publishLpr, disable: disableLpr, reload: loadLpr },
   matrix: { submit: submitMatrix, publish: publishMatrix, disable: disableMatrix, reload: loadMatrix },
-  ruleset: { submit: submitRuleSet, publish: publishRuleSet, disable: disableRuleSet, reload: loadRuleSets }
+  ruleset: { submit: submitRuleSet, publish: publishRuleSet, disable: disableRuleSet, reload: loadRuleSets },
+  product: { submit: submitProductLimit, publish: publishProductLimit, disable: disableProductLimit, reload: loadProductLimit }
 }[kind])
 
 async function doSubmit(kind: Kind, id: number) {
@@ -512,14 +743,80 @@ async function doDisable(kind: Kind, id: number) {
   apiOf(kind).reload()
 }
 
+// ---------- 产品边界复核驳回(意见必填,§8A.2) ----------
+const rejectDialog = reactive({ show: false, id: 0, opinion: '' })
+function openReject(id: number) {
+  rejectDialog.id = id
+  rejectDialog.opinion = ''
+  rejectDialog.show = true
+}
+async function doReject() {
+  if (!rejectDialog.opinion.trim()) {
+    ElMessage.warning('驳回意见必填')
+    return
+  }
+  await rejectProductLimit(rejectDialog.id, rejectDialog.opinion.trim())
+  rejectDialog.show = false
+  ElMessage.success('已驳回,退回草稿')
+  loadProductLimit()
+}
+
 // ---------- 新增草稿 ----------
 const lprDialog = reactive({ show: false, form: {} as any })
 function openLprCreate() {
   lprDialog.form = { versionCode: '', lpr1y: null, lpr5y: null, effectiveFrom: '' }
   lprDialog.show = true
 }
+
+/** LPR 单值前端校验(与后端 §8A.3 口径一致):0.5%–8% 且为 0.05 的整数倍 */
+function validLprValue(name: string, v: any): boolean {
+  const n = Number(v)
+  if (v === null || v === '' || Number.isNaN(n)) {
+    ElMessage.warning(`${name}必填`)
+    return false
+  }
+  if (n < 0.5 || n > 8) {
+    ElMessage.warning(`${name}取值须为0.5%–8%(当前:${n}%)`)
+    return false
+  }
+  if (Math.round(n * 100) % 5 !== 0) {
+    ElMessage.warning(`${name}须为0.05的整数倍(LPR报价规则,当前:${n}%)`)
+    return false
+  }
+  return true
+}
+
 async function saveLpr() {
-  await createLpr({ ...lprDialog.form })
+  const f = lprDialog.form
+  if (!f.versionCode) {
+    ElMessage.warning('版本号必填')
+    return
+  }
+  if (!validLprValue('一年期LPR', f.lpr1y) || !validLprValue('五年期以上LPR', f.lpr5y)) return
+  if (!f.effectiveFrom) {
+    ElMessage.warning('生效时间必填')
+    return
+  }
+  const effectiveDate = String(f.effectiveFrom).slice(0, 10)
+  const today = new Date().toISOString().slice(0, 10)
+  if (effectiveDate < today) {
+    ElMessage.warning(`生效时间${effectiveDate}不得早于发布日${today}`)
+    return
+  }
+  // 同一生效日仅一版提示(草稿/待复核/生效均占用;后端保存时强校验)
+  try {
+    const occupied = (await listLpr()).filter((l) =>
+      ['DRAFT', 'REVIEW', 'EFFECTIVE'].includes(l.status)
+      && l.effectiveFrom && String(l.effectiveFrom).slice(0, 10) === effectiveDate
+    )
+    if (occupied.length) {
+      ElMessage.warning(`同一生效日仅允许一版:${effectiveDate}已被版本${occupied[0].versionCode}占用`)
+      return
+    }
+  } catch {
+    // 预检失败不阻断,交由后端强校验
+  }
+  await createLpr({ ...f })
   lprDialog.show = false
   ElMessage.success('草稿已保存')
   loadLpr()
@@ -562,6 +859,29 @@ async function saveSet() {
   setDialog.show = false
   ElMessage.success('草稿已保存')
   loadRuleSets()
+}
+
+// ---------- 产品边界新增草稿 ----------
+const productDialog = reactive({ show: false, form: {} as any })
+function openProductCreate() {
+  productDialog.form = { productCode: '', productName: '', businessType: 'LOAN', hardBoundaryRate: null, effectiveFrom: '' }
+  productDialog.show = true
+}
+async function saveProduct() {
+  const f = productDialog.form
+  if (!f.productCode || !f.businessType || f.hardBoundaryRate === null || f.hardBoundaryRate === '' || !f.effectiveFrom) {
+    ElMessage.warning('产品编码/业务类型/硬边界利率/生效时间必填')
+    return
+  }
+  if (Number(f.hardBoundaryRate) <= 0) {
+    ElMessage.warning('硬边界利率必须大于0')
+    return
+  }
+  await createProductLimit({ ...f, hardBoundaryRate: Number(f.hardBoundaryRate) })
+  productDialog.show = false
+  ElMessage.success('草稿已保存')
+  productStatus.value = 'DRAFT'
+  loadProductLimit()
 }
 
 // ---------- 路由试算 ----------
@@ -609,6 +929,8 @@ onMounted(() => {
   loadLpr()
   loadMatrix()
   loadRuleSets()
+  loadProductLimit()
+  loadChangeLogs()
 })
 </script>
 
@@ -616,7 +938,7 @@ onMounted(() => {
 .section-head { margin-bottom: 16px; }
 .section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
-.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
 .card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
 .table { border-radius: var(--radius); overflow: hidden; }
@@ -630,4 +952,8 @@ onMounted(() => {
 .chain { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .chain__node { background: var(--color-primary-light, #eff6ff); color: var(--color-primary); border-radius: 4px; padding: 2px 8px; font-size: 13px; }
 .chain__arrow { color: var(--color-text-light); }
+.modal__card--wide { width: 860px; max-width: 94vw; }
+.json-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.json-compare__title { font-weight: 600; margin-bottom: 6px; }
+.json-view { background: var(--color-bg, #f8fafc); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px; font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 </style>

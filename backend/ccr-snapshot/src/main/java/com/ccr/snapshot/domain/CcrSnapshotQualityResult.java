@@ -44,4 +44,13 @@ public class CcrSnapshotQualityResult extends BaseEntity {
 
     /** 校验时间 */
     private LocalDateTime checkedTime;
+
+    /** 人工确认状态(§9.6 差异确认):UNCONFIRMED/CONFIRMED */
+    private String confirmStatus;
+
+    /** 人工确认人(ccr_sys_user 主键) */
+    private Long confirmBy;
+
+    /** 人工确认时间 */
+    private LocalDateTime confirmTime;
 }

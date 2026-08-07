@@ -3,17 +3,22 @@ package com.ccr.vote.service.impl;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
+import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
+import com.ccr.vote.domain.CcrApprovalActionTrail;
 import com.ccr.vote.domain.CcrBallot;
 import com.ccr.vote.domain.CcrPresidentDecision;
 import com.ccr.vote.domain.CcrVoteAssignment;
 import com.ccr.vote.domain.CcrVoteResult;
 import com.ccr.vote.domain.CcrVoteRound;
 import com.ccr.vote.domain.CcrVoteRoundItem;
+import com.ccr.vote.mapper.CcrApprovalActionTrailMapper;
 import com.ccr.vote.mapper.CcrBallotMapper;
 import com.ccr.vote.mapper.CcrPresidentDecisionMapper;
 import com.ccr.vote.mapper.CcrVoteAssignmentMapper;
@@ -21,21 +26,24 @@ import com.ccr.vote.mapper.CcrVoteResultMapper;
 import com.ccr.vote.mapper.CcrVoteRoundItemMapper;
 import com.ccr.vote.mapper.CcrVoteRoundMapper;
 import com.ccr.vote.read.SysUserRead;
-import com.ccr.vote.read.SysUserReadMapper;
+import com.ccr.vote.mapper.SysUserReadMapper;
 import com.ccr.vote.service.ItemFinalizationService;
 import com.ccr.vote.service.VoteService;
 import com.ccr.vote.support.CurrentLoginUser;
 import com.ccr.workflow.service.WarmFlowService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -78,6 +86,16 @@ public class VoteServiceImpl implements VoteService {
     private ItemFinalizationService itemFinalizationService;
     @Resource
     private WarmFlowService warmFlowService;
+    @Resource
+    private CcrApprovalActionTrailMapper approvalActionTrailMapper;
+    @Resource
+    private CcrApplicationMapper applicationMapper;
+    @Resource
+    private NodeAssigneeResolver nodeAssigneeResolver;
+
+    /** 表决批次超时时长(§7.5.5,默认 72h,配置 ccr.vote.round-timeout-hours) */
+    @Value("${ccr.vote.round-timeout-hours:72}")
+    private long roundTimeoutHours = 72;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -108,7 +126,35 @@ public class VoteServiceImpl implements VoteService {
         if (pending.isEmpty()) {
             return null;
         }
-        // 冻结 6 人名单:系统角色为小组成员的启用用户取 6 人,不足 6 人抛配置错误
+        // 冻结 6 人名单(§5.5.1):节点配置了有效指派时按解析结果取 6 人;未配置按角色兜底
+        List<SysUserRead> members = resolveRoundMembers(applicationId);
+        return doCreateRound(applicationId,
+                pending.stream().map(CcrPricingItem::getId).collect(Collectors.toList()), members);
+    }
+
+    /**
+     * 表决委员名单:SIX_PEOPLE_GROUP 节点配置了有效指派时,按解析结果(启用用户,取前 6 人,
+     * 不足 6 人抛配置错误)冻结;未配置保持原角色兜底(启用小组成员取 6 人)
+     */
+    private List<SysUserRead> resolveRoundMembers(Long applicationId) {
+        List<Long> assigneeIds = nodeAssigneeResolver.resolveUserIds("SIX_PEOPLE_GROUP",
+                applicantOrgId(applicationId));
+        if (!assigneeIds.isEmpty()) {
+            Map<Long, SysUserRead> byId = new LinkedHashMap<>();
+            for (SysUserRead user : sysUserReadMapper.selectBatchIds(assigneeIds)) {
+                byId.put(user.getId(), user);
+            }
+            List<SysUserRead> members = assigneeIds.stream().map(byId::get).filter(Objects::nonNull)
+                    .filter(u -> "ENABLE".equals(u.getStatus()))
+                    .limit(DEFAULT_VOTER_COUNT).collect(Collectors.toList());
+            if (members.size() < DEFAULT_VOTER_COUNT) {
+                throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
+                        "表决委员指派不足:节点指派解析出启用用户 " + members.size()
+                                + " 人,需 " + DEFAULT_VOTER_COUNT + " 人");
+            }
+            return members;
+        }
+        // 角色兜底:系统角色为小组成员的启用用户取 6 人,不足 6 人抛配置错误
         List<SysUserRead> members = sysUserReadMapper.selectList(new LambdaQueryWrapper<SysUserRead>()
                 .eq(SysUserRead::getRoleCode, CurrentLoginUser.ROLE_COMMITTEE)
                 .eq(SysUserRead::getStatus, "ENABLE")
@@ -118,8 +164,13 @@ public class VoteServiceImpl implements VoteService {
             throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
                     "表决委员配置不足:小组成员启用用户 " + members.size() + " 人,需 " + DEFAULT_VOTER_COUNT + " 人");
         }
-        return doCreateRound(applicationId,
-                pending.stream().map(CcrPricingItem::getId).collect(Collectors.toList()), members);
+        return members;
+    }
+
+    /** 申请人机构(ccr_application.applicant_org_id);申请不存在返回 null(DEPT 层不命中) */
+    private Long applicantOrgId(Long applicationId) {
+        CcrApplication application = applicationMapper.selectById(applicationId);
+        return application == null ? null : application.getApplicantOrgId();
     }
 
     @Override
@@ -234,6 +285,13 @@ public class VoteServiceImpl implements VoteService {
                 && !PricingItemStatus.PRESIDENT_DECISION.getCode().equals(item.getStatus())) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "只接收六人表决通过的分项(§7.5)");
         }
+        // 节点审批人配置限制(§5.5.1):PRESIDENT 节点配置有效指派时,仅解析出的处理人可决策
+        List<Long> presidentAssignees = nodeAssigneeResolver.resolveUserIds("PRESIDENT",
+                applicantOrgId(item.getApplicationId()));
+        if (!presidentAssignees.isEmpty() && !presidentAssignees.contains(presidentUserId)) {
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                    "PRESIDENT节点已配置指定决策人,当前登录人不在指派范围内");
+        }
 
         CcrPresidentDecision pd = new CcrPresidentDecision();
         pd.setPricingItemId(pricingItemId);
@@ -251,16 +309,22 @@ public class VoteServiceImpl implements VoteService {
 
         if ("APPROVE".equals(decision)) {
             // 行长同意→FINAL 执行,回填最终利率
+            String fromStatus = item.getStatus();
             item.setStatus(PricingItemStatus.FINAL.getCode());
             if (item.getFinalRate() == null) {
                 item.setFinalRate(item.getCurrentApprovalRate());
             }
             updateItemWithLock(item);
+            insertTrail(pricingItemId, "PRESIDENT_APPROVE", "PRESIDENT", presidentUserId, opinion,
+                    fromStatus, PricingItemStatus.FINAL.getCode());
             itemFinalizationService.afterItemTerminal(pricingItemId, "PRESIDENT_APPROVED");
         } else {
+            String fromStatus = item.getStatus();
             item.setStatus(PricingItemStatus.VETOED.getCode());
             item.setFinalReason(opinion);
             updateItemWithLock(item);
+            insertTrail(pricingItemId, "VETO", "PRESIDENT", presidentUserId, opinion,
+                    fromStatus, PricingItemStatus.VETOED.getCode());
             itemFinalizationService.afterItemTerminal(pricingItemId, null);
         }
         // Warm-Flow 业务轨迹:行长决策(操作人传登录人id字符串;失败仅记日志,不阻断主流程)
@@ -325,6 +389,83 @@ public class VoteServiceImpl implements VoteService {
         assignmentMapper.insert(substitute);
         log.info("批次 {} 委员 {} 被 {} 替补,原因: {}", roundId, fromUserId, toUserId, reason);
         return substitute;
+    }
+
+    // ---------- 超时计票与匿名意见 ----------
+
+    /**
+     * 表决超时强制计票(§7.5.5):VOTING 批次超过 ccr.vote.round-timeout-hours(默认 72h)
+     * 按已投票数计票——赞成≥requiredCount 通过,否则不通过;结果落库与正常计票一致
+     * (含 PRESIDENT_DECISION 流转与批次关闭)
+     *
+     * @return 本次强制计票的分项数
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int scanTimeoutRounds() {
+        LocalDateTime deadline = LocalDateTime.now().minusHours(roundTimeoutHours);
+        List<CcrVoteRound> expired = voteRoundMapper.selectList(new LambdaQueryWrapper<CcrVoteRound>()
+                .eq(CcrVoteRound::getStatus, "VOTING")
+                .lt(CcrVoteRound::getRoundStartTime, deadline));
+        int count = 0;
+        for (CcrVoteRound round : expired) {
+            List<CcrVoteRoundItem> items = roundItemMapper.selectList(
+                    new LambdaQueryWrapper<CcrVoteRoundItem>()
+                            .eq(CcrVoteRoundItem::getRoundId, round.getId()));
+            for (CcrVoteRoundItem item : items) {
+                Long existed = voteResultMapper.selectCount(new LambdaQueryWrapper<CcrVoteResult>()
+                        .eq(CcrVoteResult::getPricingItemId, item.getPricingItemId()));
+                if (existed != null && existed > 0) {
+                    continue;
+                }
+                countItem(round, item.getPricingItemId(), true);
+                count++;
+            }
+        }
+        if (count > 0) {
+            log.info("表决超时扫描完成,强制计票分项 {} 个", count);
+        }
+        return count;
+    }
+
+    /**
+     * 行长查看批次委员匿名意见(§12.7):按分项返回委员匿名码(A-F)+票型+意见,不含真实身份。
+     * 匿名码经票据哈希与批次 assignment 名单映射(替补沿用原席位匿名码),不反解用户。
+     */
+    @Override
+    public List<Map<String, Object>> listRoundOpinions(Long roundId) {
+        CcrVoteRound round = voteRoundMapper.selectById(roundId);
+        if (round == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "表决批次不存在");
+        }
+        List<CcrVoteAssignment> assignments = assignmentMapper.selectList(
+                new LambdaQueryWrapper<CcrVoteAssignment>()
+                        .eq(CcrVoteAssignment::getRoundId, roundId));
+        Map<String, String> hashToAnonym = assignments.stream().collect(Collectors.toMap(
+                a -> voterHash(a.getVoterUserId()), CcrVoteAssignment::getVoterAnonymNo, (x, y) -> x));
+        List<CcrBallot> ballots = ballotMapper.selectList(new LambdaQueryWrapper<CcrBallot>()
+                .eq(CcrBallot::getRoundId, roundId)
+                .orderByAsc(CcrBallot::getPricingItemId)
+                .orderByAsc(CcrBallot::getSubmitTime));
+        Map<Long, List<CcrBallot>> byItem = ballots.stream().collect(Collectors.groupingBy(
+                CcrBallot::getPricingItemId, LinkedHashMap::new, Collectors.toList()));
+        List<Map<String, Object>> result = new ArrayList<>();
+        byItem.forEach((pricingItemId, itemBallots) -> {
+            List<Map<String, Object>> opinions = new ArrayList<>();
+            for (CcrBallot ballot : itemBallots) {
+                Map<String, Object> opinion = new LinkedHashMap<>();
+                opinion.put("anonymNo", hashToAnonym.get(ballot.getVoterUserHash()));
+                opinion.put("voteChoice", ballot.getVoteChoice());
+                opinion.put("voteComment", ballot.getVoteComment());
+                opinion.put("submitTime", ballot.getSubmitTime());
+                opinions.add(opinion);
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("pricingItemId", pricingItemId);
+            row.put("opinions", opinions);
+            result.add(row);
+        });
+        return result;
     }
 
     // ---------- 私有 ----------
@@ -403,11 +544,25 @@ public class VoteServiceImpl implements VoteService {
 
     /** 分项粒度计票:该项收齐全部委员票后一次性生成结果;通过→PRESIDENT_DECISION,未过→REJECTED */
     private void countItemIfReady(CcrVoteRound round, Long pricingItemId) {
+        countItem(round, pricingItemId, false);
+    }
+
+    /**
+     * 分项计票(§7.5):partial=false 需收齐全部委员票(正常路径);
+     * partial=true 为超时强制计票(§7.5.5),按已投票数计,赞成≥requiredCount 通过否则不通过。
+     * 计票结果同事务写 ccr_approval_action 留痕(from VOTING,to PRESIDENT_DECISION/REJECTED)
+     */
+    private void countItem(CcrVoteRound round, Long pricingItemId, boolean partial) {
         Long submitted = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
                 .eq(CcrBallot::getRoundId, round.getId())
                 .eq(CcrBallot::getPricingItemId, pricingItemId));
-        if (submitted == null || submitted < round.getVoterCount()) {
+        int submittedCount = submitted == null ? 0 : submitted.intValue();
+        if (!partial && submittedCount < round.getVoterCount()) {
             return;
+        }
+        if (partial && submittedCount == 0) {
+            // 超时且无任何投票:仍按 0 赞成计票(不通过),保证批次可关闭
+            log.warn("分项 {} 批次 {} 超时且无任何投票,按不通过计票", pricingItemId, round.getId());
         }
         // 并发/重入防护:分项已有计票结果不再重复计票(uk_vote_result_pricing 兜底)
         Long counted = voteResultMapper.selectCount(new LambdaQueryWrapper<CcrVoteResult>()
@@ -426,9 +581,9 @@ public class VoteServiceImpl implements VoteService {
         result.setRoundId(round.getId());
         result.setPricingItemId(pricingItemId);
         result.setRequiredCount(round.getRequiredCount());
-        result.setSubmittedCount(round.getVoterCount());
+        result.setSubmittedCount(partial ? submittedCount : round.getVoterCount());
         result.setApproveCount(approveCount);
-        result.setRejectCount(round.getVoterCount() - approveCount);
+        result.setRejectCount(result.getSubmittedCount() - approveCount);
         result.setResult(pass ? "PASS" : "FAIL");
         result.setCountTime(LocalDateTime.now());
         try {
@@ -440,15 +595,21 @@ public class VoteServiceImpl implements VoteService {
         // 通过→行长决策(补齐 PRESIDENT_DECISION 状态使用);未通过→否决(终态,不恢复草稿 §B14)
         CcrPricingItem item = pricingItemMapper.selectById(pricingItemId);
         if (item != null) {
+            String countNote = (partial ? "超时计票:" : "计票:") + "赞成 " + result.getApproveCount()
+                    + "/" + result.getSubmittedCount();
             if (pass) {
                 item.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
                 updateItemWithLock(item);
             } else {
                 item.setStatus(PricingItemStatus.REJECTED.getCode());
-                item.setFinalReason("六人小组表决未通过(赞成 " + approveCount + "/" + round.getVoterCount() + ")");
+                item.setFinalReason("六人小组表决未通过(" + countNote + ")");
                 updateItemWithLock(item);
                 itemFinalizationService.afterItemTerminal(pricingItemId, null);
             }
+            // §14.7 流转留痕:计票动作(系统动作,operator_id 记 0)
+            insertTrail(pricingItemId, pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
+                    0L, countNote + ",结果 " + result.getResult(),
+                    PricingItemStatus.VOTING.getCode(), item.getStatus());
         }
         log.info("分项 {} 计票完成: 赞成{} 否决{}, 结果 {}", pricingItemId,
                 result.getApproveCount(), result.getRejectCount(), result.getResult());
@@ -457,10 +618,27 @@ public class VoteServiceImpl implements VoteService {
         warmFlowService.recordBusinessTrail(
                 item == null ? String.valueOf(pricingItemId) : item.getPricingItemNo(),
                 "SIX_PEOPLE_GROUP", pass ? "COUNT_PASS" : "COUNT_REJECT", "SYSTEM",
-                "计票:赞成 " + result.getApproveCount() + "/" + round.getVoterCount()
+                "计票:赞成 " + result.getApproveCount() + "/" + result.getSubmittedCount()
                         + ",结果 " + result.getResult());
 
         closeRoundIfAllCounted(round);
+    }
+
+    /** ccr_approval_action 流转留痕(§14.7):仅插入,失败不阻断主流程 */
+    private void insertTrail(Long pricingItemId, String actionType, String nodeCode, Long operatorId,
+                             String comment, String fromStatus, String toStatus) {
+        CcrApprovalActionTrail trail = new CcrApprovalActionTrail();
+        trail.setPricingItemId(pricingItemId);
+        trail.setTaskId(cn.hutool.core.util.IdUtil.fastSimpleUUID());
+        trail.setActionType(actionType);
+        trail.setNodeCode(nodeCode);
+        trail.setOperatorId(operatorId);
+        trail.setActionComment(comment);
+        trail.setFromStatus(fromStatus);
+        trail.setToStatus(toStatus);
+        trail.setOperationChannel("PC");
+        trail.setOperationTime(LocalDateTime.now());
+        approvalActionTrailMapper.insert(trail);
     }
 
     /**

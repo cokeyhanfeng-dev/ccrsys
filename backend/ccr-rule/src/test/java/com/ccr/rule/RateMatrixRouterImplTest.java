@@ -3,10 +3,12 @@ package com.ccr.rule;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrLprVersion;
+import com.ccr.rule.domain.CcrProductRateLimit;
 import com.ccr.rule.domain.CcrRateMatrix;
 import com.ccr.rule.dto.MatrixRouteInput;
 import com.ccr.rule.dto.RouteResult;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
+import com.ccr.rule.mapper.CcrProductRateLimitMapper;
 import com.ccr.rule.mapper.CcrRateMatrixMapper;
 import com.ccr.rule.service.impl.RateMatrixRouterImpl;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,9 @@ class RateMatrixRouterImplTest {
 
     @Mock
     private CcrLprVersionMapper lprVersionMapper;
+
+    @Mock
+    private CcrProductRateLimitMapper productRateLimitMapper;
 
     @InjectMocks
     private RateMatrixRouterImpl router;
@@ -452,5 +457,81 @@ class RateMatrixRouterImplTest {
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
         assertEquals(99L, result.getLprVersionId());
         assertEquals("LPR_V0", result.getLprVersionCode());
+    }
+
+    // ---------- §8.2 D3 边界交集(矩阵边界 ∩ 产品硬边界) ----------
+
+    private void stubProductLimit(String productCode, String businessType, String hardRate) {
+        CcrProductRateLimit limit = new CcrProductRateLimit();
+        limit.setProductCode(productCode);
+        limit.setBusinessType(businessType);
+        limit.setHardBoundaryRate(new BigDecimal(hardRate));
+        when(productRateLimitMapper.selectOne(any())).thenReturn(limit);
+    }
+
+    @Test
+    void 贷款_产品硬边界高于矩阵边界_交集收紧为产品下限() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 矩阵BM终审边界=LPR+40BP=3.4;产品硬边界3.45 → 交集取max=3.45
+        stubProductLimit("PUB_LOAN_01", "LOAN", "3.45");
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("BRANCH_MANAGER", result.getFinalNodeCode());
+        assertEquals(new BigDecimal("3.45"), result.getBoundaryRate());
+        assertEquals("M-LT-NSOE-1Y-BM", result.getMatchedMatrixNo());
+    }
+
+    @Test
+    void 贷款_产品硬边界低于矩阵边界_交集取矩阵边界() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 矩阵边界3.4 > 产品硬边界3.0 → 交集取max=3.4(矩阵边界不被放松)
+        stubProductLimit("PUB_LOAN_01", "LOAN", "3.0");
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals(new BigDecimal("3.40"), result.getBoundaryRate());
+    }
+
+    @Test
+    void 存款_产品硬边界低于矩阵上限_交集收紧为产品上限() {
+        when(matrixMapper.selectList(any())).thenReturn(List.of(depositRow("M-DEP-TIME-3M", null, "3M", "0.85")));
+        // 矩阵期限上限0.85;产品硬边界0.80 → 交集取min=0.80
+        stubProductLimit("TIME_DEPOSIT", "DEPOSIT", "0.80");
+        MatrixRouteInput in = new MatrixRouteInput();
+        in.setBusinessBigType("DEPOSIT");
+        in.setNewOrExisting("NEW");
+        in.setProductCode("TIME_DEPOSIT");
+        in.setTermValue(3);
+        in.setTermUnit("MONTH");
+        in.setRequestedRate(new BigDecimal("0.9"));
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertEquals(new BigDecimal("0.80"), result.getBoundaryRate());
+    }
+
+    @Test
+    void 小组兜底行_matchedMatrixNo与boundaryRate均填充() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        // 小组兜底行边界=LPR-20BP=2.8;产品硬边界2.9 → 交集取max=2.9
+        stubProductLimit("PUB_LOAN_01", "LOAN", "2.9");
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "2.85");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertEquals("M-LT_5000-SOE-1Y-GROUP", result.getMatchedMatrixNo());
+        assertEquals(0, new BigDecimal("2.9").compareTo(result.getBoundaryRate()));
+    }
+
+    @Test
+    void 无产品编码_不查产品边界_矩阵边界原样返回() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4"));
+        assertEquals(new BigDecimal("3.40"), result.getBoundaryRate());
+        assertEquals("M-LT-NSOE-1Y-BM", result.getMatchedMatrixNo());
     }
 }

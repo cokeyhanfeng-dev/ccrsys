@@ -1,5 +1,6 @@
 package com.ccr.snapshot.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -7,6 +8,7 @@ import com.ccr.snapshot.domain.CcrSnapshotBundle;
 import com.ccr.snapshot.domain.CcrSnapshotQualityResult;
 import com.ccr.snapshot.domain.CcrSnapshotRecord;
 import com.ccr.snapshot.domain.CcrSnapshotRelation;
+import com.ccr.snapshot.dto.SnapshotBundleContent;
 import com.ccr.snapshot.dto.SubmitRequest;
 import com.ccr.snapshot.service.SnapshotService;
 import jakarta.annotation.Resource;
@@ -68,6 +70,18 @@ public class SnapshotController {
     @GetMapping("/{bundleId}/quality-results")
     public R<Map<String, List<CcrSnapshotQualityResult>>> qualityResults(@PathVariable Long bundleId) {
         return R.ok(snapshotService.qualityResults(bundleId));
+    }
+
+    /** 快照包内容(§11.7:包头+全部记录+关系树;审批/导出/决议核验一律读快照) */
+    @GetMapping("/{bundleId}")
+    public R<SnapshotBundleContent> content(@PathVariable Long bundleId) {
+        return R.ok(snapshotService.bundleContent(bundleId));
+    }
+
+    /** 质量预警人工确认(§9.6 差异确认;确认人取 Sa-Token 登录人,不接受传参) */
+    @PostMapping("/quality/{id}/confirm")
+    public R<CcrSnapshotQualityResult> confirmQuality(@PathVariable Long id) {
+        return R.ok(snapshotService.confirmQualityResult(id, StpUtil.getLoginIdAsLong()));
     }
 
     /** 冻结并绑定申请 */

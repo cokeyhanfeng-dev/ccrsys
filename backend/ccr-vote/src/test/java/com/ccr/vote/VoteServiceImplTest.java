@@ -1,5 +1,6 @@
 package com.ccr.vote;
 
+import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -8,6 +9,7 @@ import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
+import com.ccr.vote.domain.CcrApprovalActionTrail;
 import com.ccr.vote.domain.CcrBallot;
 import com.ccr.vote.domain.CcrPresidentDecision;
 import com.ccr.vote.domain.CcrVoteAssignment;
@@ -21,7 +23,7 @@ import com.ccr.vote.mapper.CcrVoteResultMapper;
 import com.ccr.vote.mapper.CcrVoteRoundItemMapper;
 import com.ccr.vote.mapper.CcrVoteRoundMapper;
 import com.ccr.vote.read.SysUserRead;
-import com.ccr.vote.read.SysUserReadMapper;
+import com.ccr.vote.mapper.SysUserReadMapper;
 import com.ccr.vote.service.ItemFinalizationService;
 import com.ccr.vote.service.impl.VoteServiceImpl;
 import com.ccr.vote.support.CurrentLoginUser;
@@ -35,9 +37,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -78,6 +83,12 @@ class VoteServiceImplTest {
     private ItemFinalizationService itemFinalizationService;
     @Mock
     private com.ccr.workflow.service.WarmFlowService warmFlowService;
+    @Mock
+    private com.ccr.vote.mapper.CcrApprovalActionTrailMapper approvalActionTrailMapper;
+    @Mock
+    private com.ccr.application.mapper.CcrApplicationMapper applicationMapper;
+    @Mock
+    private com.ccr.common.core.assignee.NodeAssigneeResolver nodeAssigneeResolver;
 
     @InjectMocks
     private VoteServiceImpl voteService;
@@ -120,6 +131,10 @@ class VoteServiceImplTest {
         pricingItem.setStatus(PricingItemStatus.VOTING.getCode());
         pricingItem.setCurrentApprovalRate(new BigDecimal("3.500000"));
         pricingItem.setVersionNo(1);
+
+        // 缺省无节点指派配置(解析为空=不限制,保持角色兜底)
+        org.mockito.Mockito.lenient().when(nodeAssigneeResolver.resolveUserIds(any(), any()))
+                .thenReturn(List.of());
     }
 
     private SysUserRead committeeUser(Long id) {
@@ -457,5 +472,198 @@ class VoteServiceImplTest {
         verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
                 PricingItemStatus.VOTING.getCode().equals(i.getStatus())));
         assertEquals(Integer.valueOf(6), created.getVoterCount());
+    }
+
+    // ---------- 节点审批人配置(§5.5.1) ----------
+
+    @Test
+    void createGroupRound_assigneeConfigured_freezesResolvedMembers() {
+        // SIX_PEOPLE_GROUP 节点配置了有效指派 → 按解析结果冻结名单,不走角色兜底
+        pricingItem.setStatus(PricingItemStatus.ROUTING.getCode());
+        pricingItem.setCurrentNodeCode("SIX_PEOPLE_GROUP");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
+        when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        List<Long> assigneeIds = List.of(2001L, 2002L, 2003L, 2004L, 2005L, 2006L);
+        when(nodeAssigneeResolver.resolveUserIds(org.mockito.ArgumentMatchers.eq("SIX_PEOPLE_GROUP"), any()))
+                .thenReturn(assigneeIds);
+        when(sysUserReadMapper.selectBatchIds(assigneeIds)).thenReturn(List.of(
+                committeeUser(2001L), committeeUser(2002L), committeeUser(2003L),
+                committeeUser(2004L), committeeUser(2005L), committeeUser(2006L)));
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+
+        CcrVoteRound created = voteService.createGroupRound(30L);
+
+        verify(voteRoundMapper).insert(any(CcrVoteRound.class));
+        verify(assignmentMapper, times(6)).insert(any(CcrVoteAssignment.class));
+        assertEquals(Integer.valueOf(6), created.getVoterCount());
+    }
+
+    @Test
+    void createGroupRound_reject_whenAssigneesInsufficient() {
+        // 节点指派解析出启用用户不足 6 人 → 配置错误
+        pricingItem.setStatus(PricingItemStatus.ROUTING.getCode());
+        pricingItem.setCurrentNodeCode("SIX_PEOPLE_GROUP");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
+        when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        List<Long> assigneeIds = List.of(2001L, 2002L);
+        when(nodeAssigneeResolver.resolveUserIds(org.mockito.ArgumentMatchers.eq("SIX_PEOPLE_GROUP"), any()))
+                .thenReturn(assigneeIds);
+        when(sysUserReadMapper.selectBatchIds(assigneeIds))
+                .thenReturn(List.of(committeeUser(2001L), committeeUser(2002L)));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> voteService.createGroupRound(30L));
+        assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), e.getCode());
+        verify(voteRoundMapper, never()).insert(any(CcrVoteRound.class));
+    }
+
+    @Test
+    void presidentDecision_reject_whenNotInNodeAssignees() {
+        // PRESIDENT 节点配置了指定决策人,当前登录人不在指派范围 → 拒绝
+        pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
+        when(currentLoginUser.requireLoginId()).thenReturn(3001L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(nodeAssigneeResolver.resolveUserIds(org.mockito.ArgumentMatchers.eq("PRESIDENT"), any()))
+                .thenReturn(List.of(3999L));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> voteService.presidentDecision(10L, "APPROVE", null));
+        assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
+        verify(presidentDecisionMapper, never()).insert(any(CcrPresidentDecision.class));
+    }
+
+    // ---------- 超时强制计票(§7.5.5) ----------
+
+    @Test
+    void scanTimeoutRounds_partialPass_goesPresidentDecision_andTrails() {
+        round.setRoundStartTime(LocalDateTime.now().minusHours(100));
+        CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
+        ri1.setRoundId(100L);
+        ri1.setPricingItemId(10L);
+        when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of(round));
+        when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
+        when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        // 超时强制计票:已投 5 票,赞成 4 票 ≥ 4 → 通过
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(5L, 4L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+        CcrVoteResult counted = new CcrVoteResult();
+        counted.setResult("PASS");
+        when(voteResultMapper.selectList(any(Wrapper.class))).thenReturn(List.of(counted));
+
+        int countedItems = voteService.scanTimeoutRounds();
+
+        assertEquals(1, countedItems);
+        // 按已投票数计票(5 票而非 6 票)
+        verify(voteResultMapper).insert(argThat((CcrVoteResult r) ->
+                Integer.valueOf(5).equals(r.getSubmittedCount())
+                        && Integer.valueOf(4).equals(r.getApproveCount())
+                        && "PASS".equals(r.getResult())));
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
+                PricingItemStatus.PRESIDENT_DECISION.getCode().equals(i.getStatus())));
+        // §14.7 计票留痕:from VOTING → to PRESIDENT_DECISION
+        verify(approvalActionTrailMapper).insert(argThat((CcrApprovalActionTrail t) ->
+                "COUNT_PASS".equals(t.getActionType())
+                        && PricingItemStatus.VOTING.getCode().equals(t.getFromStatus())
+                        && PricingItemStatus.PRESIDENT_DECISION.getCode().equals(t.getToStatus())));
+        // 批次关闭(PASSED)
+        verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "PASSED".equals(r.getStatus())));
+    }
+
+    @Test
+    void scanTimeoutRounds_partialFail_goesRejected_andAggregates() {
+        round.setRoundStartTime(LocalDateTime.now().minusHours(100));
+        CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
+        ri1.setRoundId(100L);
+        ri1.setPricingItemId(10L);
+        when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of(round));
+        when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
+        when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        // 已投 3 票,赞成 2 票 < 4 → 不通过
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(3L, 2L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+        CcrVoteResult counted = new CcrVoteResult();
+        counted.setResult("FAIL");
+        when(voteResultMapper.selectList(any(Wrapper.class))).thenReturn(List.of(counted));
+
+        voteService.scanTimeoutRounds();
+
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
+                PricingItemStatus.REJECTED.getCode().equals(i.getStatus())));
+        verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(approvalActionTrailMapper).insert(argThat((CcrApprovalActionTrail t) ->
+                "COUNT_REJECT".equals(t.getActionType())
+                        && PricingItemStatus.REJECTED.getCode().equals(t.getToStatus())));
+        verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "FAILED".equals(r.getStatus())));
+    }
+
+    @Test
+    void scanTimeoutRounds_notExpired_skips() {
+        round.setRoundStartTime(LocalDateTime.now().minusHours(1));
+        // 批次未超时 → 查询结果为空
+        when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        assertEquals(0, voteService.scanTimeoutRounds());
+        verify(voteResultMapper, never()).insert(any(CcrVoteResult.class));
+    }
+
+    // ---------- 行长匿名意见(§12.7) ----------
+
+    @Test
+    void listRoundOpinions_mapsAnonymNo_withoutRealIdentity() {
+        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(assignmentMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment));
+        CcrBallot ballot = new CcrBallot();
+        ballot.setRoundId(100L);
+        ballot.setPricingItemId(10L);
+        ballot.setVoterUserHash(DigestUtil.sha256Hex("2001"));
+        ballot.setVoteChoice("APPROVE");
+        ballot.setVoteComment("同意,风险可控");
+        ballot.setSubmitTime(LocalDateTime.now());
+        when(ballotMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ballot));
+
+        List<Map<String, Object>> result = voteService.listRoundOpinions(100L);
+
+        assertEquals(1, result.size());
+        assertEquals(10L, result.get(0).get("pricingItemId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> opinions = (List<Map<String, Object>>) result.get(0).get("opinions");
+        assertEquals(1, opinions.size());
+        // 匿名码映射自批次名单,不携带真实身份
+        assertEquals("A", opinions.get(0).get("anonymNo"));
+        assertEquals("APPROVE", opinions.get(0).get("voteChoice"));
+        assertEquals("同意,风险可控", opinions.get(0).get("voteComment"));
+        assertFalse(opinions.get(0).containsKey("voterUserId"));
+    }
+
+    @Test
+    void listRoundOpinions_reject_whenRoundMissing() {
+        when(voteRoundMapper.selectById(100L)).thenReturn(null);
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> voteService.listRoundOpinions(100L));
+        assertEquals(ErrorCode.NOT_FOUND.getCode(), e.getCode());
+    }
+
+    // ---------- 行长决策留痕(§14.7) ----------
+
+    @Test
+    void presidentDecision_approve_writesTrailFromToStatus() {
+        pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
+        when(currentLoginUser.requireLoginId()).thenReturn(1003L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+
+        voteService.presidentDecision(10L, "APPROVE", "同意执行");
+
+        verify(approvalActionTrailMapper).insert(argThat((CcrApprovalActionTrail t) ->
+                "PRESIDENT_APPROVE".equals(t.getActionType())
+                        && PricingItemStatus.PRESIDENT_DECISION.getCode().equals(t.getFromStatus())
+                        && PricingItemStatus.FINAL.getCode().equals(t.getToStatus())
+                        && Long.valueOf(1003L).equals(t.getOperatorId())));
     }
 }

@@ -29,7 +29,7 @@ public interface CcrApplicationService {
     ApplicationDetailResponse getApplicationDetail(Long id);
 
     /**
-     * 申请列表(本人申请,按机构/状态过滤)
+     * 申请列表(数据权限§5.4:申请人/机构过滤由服务端按登录人角色决定,仅接受状态过滤)
      */
-    java.util.List<CcrApplication> listApplications(Long orgId, String status, Long applicantId);
+    java.util.List<CcrApplication> listApplications(String status);
 }

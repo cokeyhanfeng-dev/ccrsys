@@ -3,11 +3,16 @@ package com.ccr.admin.system.controller;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
+import com.ccr.admin.system.domain.CcrSysUserPost;
+import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
+import com.ccr.admin.system.mapper.CcrSysUserPostMapper;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,10 +24,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * 用户管理(基础系统功能)
+ * 用户管理(基础系统功能,详设 §11.12)
  */
 @RestController
 @RequestMapping("/system/users")
@@ -31,14 +42,28 @@ public class SysUserController {
     @Resource
     private CcrSysUserMapper userMapper;
 
-    /** 用户列表(按用户名/角色过滤) */
+    @Resource
+    private CcrSysUserPostMapper userPostMapper;
+
+    @Resource
+    private CcrSysDeptMapper deptMapper;
+
+    /** 用户列表(筛选:机构/角色/状态/关键字,§11.12) */
     @GetMapping
     public R<List<CcrSysUser>> list(@RequestParam(required = false) String username,
-                                    @RequestParam(required = false) String roleCode) {
+                                    @RequestParam(required = false) String roleCode,
+                                    @RequestParam(required = false) Long orgId,
+                                    @RequestParam(required = false) String status,
+                                    @RequestParam(required = false) String keyword) {
         List<CcrSysUser> list = userMapper.selectList(new LambdaQueryWrapper<CcrSysUser>()
                 .eq(CcrSysUser::getDelFlag, "0")
                 .like(StrUtil.isNotBlank(username), CcrSysUser::getUsername, username)
                 .eq(StrUtil.isNotBlank(roleCode), CcrSysUser::getRoleCode, roleCode)
+                .eq(orgId != null, CcrSysUser::getOrgId, orgId)
+                .eq(StrUtil.isNotBlank(status), CcrSysUser::getStatus, status)
+                .and(StrUtil.isNotBlank(keyword), w -> w
+                        .like(CcrSysUser::getUsername, keyword)
+                        .or().like(CcrSysUser::getNickName, keyword))
                 .orderByAsc(CcrSysUser::getCreateTime));
         // 脱敏密码
         list.forEach(u -> u.setPassword(null));
@@ -108,6 +133,88 @@ public class SysUserController {
         exist.setDelFlag("1");
         exist.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(exist);
+        return R.ok();
+    }
+
+    /** 用户机构-岗位绑定列表(§11.12,含默认机构) */
+    @GetMapping("/{id}/binding")
+    public R<List<Map<String, Object>>> bindings(@PathVariable Long id) {
+        CcrSysUser exist = userMapper.selectById(id);
+        if (exist == null || "1".equals(exist.getDelFlag())) {
+            throw new ServiceException(404, "用户不存在");
+        }
+        List<CcrSysUserPost> posts = userPostMapper.selectList(new LambdaQueryWrapper<CcrSysUserPost>()
+                .eq(CcrSysUserPost::getUserId, id)
+                .eq(CcrSysUserPost::getDelFlag, "0")
+                .orderByDesc(CcrSysUserPost::getIsDefault)
+                .orderByAsc(CcrSysUserPost::getCreateTime));
+        Map<Long, CcrSysDept> deptMap = posts.isEmpty() ? Map.of()
+                : deptMapper.selectList(new LambdaQueryWrapper<CcrSysDept>()
+                        .in(CcrSysDept::getId, posts.stream().map(CcrSysUserPost::getOrgId).toList()))
+                .stream().collect(Collectors.toMap(CcrSysDept::getId, Function.identity()));
+        List<Map<String, Object>> result = posts.stream().map(p -> {
+            Map<String, Object> row = new LinkedHashMap<String, Object>();
+            row.put("id", p.getId());
+            row.put("userId", p.getUserId());
+            row.put("orgId", p.getOrgId());
+            row.put("postCode", p.getPostCode());
+            row.put("isDefault", p.getIsDefault());
+            CcrSysDept dept = deptMap.get(p.getOrgId());
+            row.put("orgName", dept == null ? null : dept.getDeptName());
+            row.put("orgCode", dept == null ? null : dept.getOrgCode());
+            return row;
+        }).toList();
+        return R.ok(result);
+    }
+
+    /**
+     * 维护用户机构-岗位绑定(§11.12):多行整体替换;
+     * 停用机构不可绑定;默认机构/岗位唯一;user+org+post 不重复
+     */
+    @PutMapping("/{id}/binding")
+    @Transactional(rollbackFor = Exception.class)
+    public R<Void> saveBindings(@PathVariable Long id, @RequestBody List<CcrSysUserPost> bindings) {
+        CcrSysUser exist = userMapper.selectById(id);
+        if (exist == null || "1".equals(exist.getDelFlag())) {
+            throw new ServiceException(404, "用户不存在");
+        }
+        if (bindings == null || bindings.isEmpty()) {
+            throw new ServiceException(400, "至少保留一条机构-岗位绑定");
+        }
+        long defaults = bindings.stream().filter(b -> "1".equals(b.getIsDefault())).count();
+        if (defaults != 1) {
+            throw new ServiceException(400, "默认机构/岗位必须且仅能有一条");
+        }
+        Set<String> combo = new HashSet<>();
+        for (CcrSysUserPost b : bindings) {
+            if (b.getOrgId() == null || StrUtil.isBlank(b.getPostCode())) {
+                throw new ServiceException(400, "绑定行机构与岗位必填");
+            }
+            if (!combo.add(b.getOrgId() + ":" + b.getPostCode())) {
+                throw new ServiceException(400, "存在重复的机构-岗位绑定:" + b.getOrgId() + "/" + b.getPostCode());
+            }
+            CcrSysDept dept = deptMapper.selectById(b.getOrgId());
+            if (dept == null || "1".equals(dept.getDelFlag())) {
+                throw new ServiceException(400, "绑定机构不存在:" + b.getOrgId());
+            }
+            if (!"ENABLE".equals(dept.getStatus())) {
+                throw new ServiceException(400, "机构已停用,不可绑定:" + dept.getDeptName());
+            }
+        }
+        // 整体替换(物理删除旧绑定后重建)
+        userPostMapper.delete(new LambdaQueryWrapper<CcrSysUserPost>().eq(CcrSysUserPost::getUserId, id));
+        LocalDateTime now = LocalDateTime.now();
+        for (CcrSysUserPost b : bindings) {
+            CcrSysUserPost row = new CcrSysUserPost();
+            row.setTenantId("000000");
+            row.setUserId(id);
+            row.setOrgId(b.getOrgId());
+            row.setPostCode(b.getPostCode());
+            row.setIsDefault("1".equals(b.getIsDefault()) ? "1" : "0");
+            row.setDelFlag("0");
+            row.setCreateTime(now);
+            userPostMapper.insert(row);
+        }
         return R.ok();
     }
 }

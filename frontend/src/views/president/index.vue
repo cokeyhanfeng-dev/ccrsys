@@ -49,6 +49,30 @@
             <div v-else class="empty">暂无计票结果</div>
           </div>
 
+          <!-- 六人小组表决意见(匿名,§12.7,默认收起) -->
+          <div class="detail-block">
+            <el-collapse>
+              <el-collapse-item title="六人小组表决意见(匿名)" name="opinions">
+                <table class="table" v-if="detail.opinions.length">
+                  <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(o, i) in detail.opinions" :key="i">
+                      <td>{{ o.anonymNo || '—' }}</td>
+                      <td>
+                        <span class="badge" :class="o.voteChoice === 'APPROVE' ? 'badge--success' : 'badge--danger'">
+                          {{ o.voteChoice === 'APPROVE' ? '同意' : o.voteChoice === 'REJECT' ? '否决' : (o.voteChoice || '—') }}
+                        </span>
+                      </td>
+                      <td>{{ o.voteComment || '—' }}</td>
+                      <td>{{ o.submitTime ? String(o.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="empty">暂无委员意见数据</div>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+
           <!-- 贡献度 / 资料校验 -->
           <div class="detail-block">
             <div class="detail-block__title">审批参考</div>
@@ -113,12 +137,13 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listPresidentTodo, getVoteResult, submitPresidentDecision } from '@/api/vote'
 import { getApprovalDetail } from '@/api/approval'
+import { listRoundOpinions } from '@/api/approval2'
 
 const cards = ref<any[]>([])
 const submitting = ref(false)
 const detail = ref<any>({
   show: false, loaded: false, id: null, customer: '', rate: '', opinion: '',
-  voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: ''
+  voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '', opinions: []
 })
 
 const NODE_LABELS: Record<string, string> = {
@@ -149,7 +174,7 @@ async function load() {
 async function openDetail(c: any) {
   detail.value = {
     show: true, loaded: false, id: c.id, customer: c.customer, rate: c.approvalRate !== '-' ? c.approvalRate : c.rate,
-    opinion: '', voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: ''
+    opinion: '', voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '', opinions: []
   }
   try {
     const [d, vr] = await Promise.all([
@@ -167,6 +192,16 @@ async function openDetail(c: any) {
     detail.value.flowTrace = d.flowTrace || []
     detail.value.remark = d.application?.[0]?.applicationRemark || ''
     detail.value.voteResult = vr
+    // 委员匿名意见(§12.7):按计票结果 roundId 查询,过滤本分项
+    if (vr?.roundId) {
+      try {
+        const rounds = await listRoundOpinions(vr.roundId)
+        const row = (rounds || []).find((r: any) => Number(r.pricingItemId) === Number(c.id))
+        detail.value.opinions = row?.opinions || []
+      } catch {
+        detail.value.opinions = []
+      }
+    }
     detail.value.loaded = true
   } catch {
     ElMessage.error('决策详情加载失败')

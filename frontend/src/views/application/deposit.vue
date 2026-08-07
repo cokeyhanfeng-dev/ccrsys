@@ -6,6 +6,11 @@
       <div class="section-tip">存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(越高越优惠,HIGHER_BETTER)。</div>
     </div>
 
+    <!-- 规则来源提示(§12.4⑦) -->
+    <div class="rule-notice">
+      规则来源:本页审批路径、权限矩阵与产品利率上限依据《关于调整经营性贷款利率审批流程的议案》配置;规则调整经规则版本发布生效后自动适用于新申请。
+    </div>
+
     <!-- 关联重提/草稿提示 -->
     <div v-if="draft.id" class="form-card draft-banner">
       <span class="badge badge--info">草稿</span>
@@ -105,6 +110,11 @@
       </div>
     </div>
 
+    <!-- 1b. 关联人员(§12.4④,随申请备注结构附带提交) -->
+    <div class="form-card">
+      <RelatedPersonsEditor v-model="relations" />
+    </div>
+
     <!-- 2. 存款分项(结构化 depositItems,不再拼 remark) -->
     <div class="form-card">
       <div class="form-card__title">
@@ -112,7 +122,7 @@
         <span class="badge badge--warning">存款越高越优惠(HIGHER_BETTER)</span>
       </div>
       <div class="section-tip" style="margin-bottom:12px">
-        每条分项按“产品/期限/金额/申请利率/账号”结构化提交;选择数仓存款账户自动带出产品与当前执行利率,也可录入拟开户方案。数仓账号为密文存储,选择存量账户时请补录真实账号(可选,后端加密落库)。
+        每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。
       </div>
       <table class="table" v-if="items.length">
         <thead>
@@ -140,13 +150,13 @@
             </td>
             <td>
               <template v-if="d.accountMode === 'EXISTING'">
-                <select class="form-select" v-model="d.accountRef" @change="onAccountSelect(d)">
-                  <option value="">不关联数仓账户</option>
-                  <option v-for="(a, ai) in depositAccounts" :key="ai" :value="String(ai)">
-                    {{ productName(a.productCode) }} · 余额 {{ a.accountBalance ?? '-' }} 万 · {{ a.executionRate }}%
-                  </option>
-                </select>
-                <input class="form-input" v-model="d.depositAccountNo" placeholder="存款账号(可选)" style="margin-top:4px" />
+                <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
+                <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
+                  数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 当前利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
+                </div>
+                <div v-else-if="d.lookupDone" class="section-tip" style="color:var(--color-warning);margin-top:4px">
+                  数仓未找到该账户,请手工完善产品/期限/原利率
+                </div>
               </template>
               <span v-else class="badge badge--neutral">拟开户</span>
             </td>
@@ -171,7 +181,14 @@
               </select>
             </td>
             <td><input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.requestedRate" placeholder="高于当前执行利率" /></td>
+            <td>
+              <input class="form-input form-input--amount" v-model="d.requestedRate" placeholder="高于当前执行利率" />
+              <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
+              <div v-if="limitOf(d.productCode)" class="limit-hint" :class="{ 'limit-hint--exceed': exceedOf(d) }">
+                标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
+                <template v-if="bpOf(d) != null"> · 较上限 {{ bpOf(d)! > 0 ? '+' : '' }}{{ bpOf(d) }} BP</template>
+              </div>
+            </td>
             <td><button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button></td>
           </tr>
         </tbody>
@@ -246,7 +263,7 @@ import { useUserStore } from '@/store/user'
 import {
   searchCustomers as apiSearchCustomers,
   getCustomerDetail,
-  getCustomerBusinessView,
+  lookupDepositAccount,
   createApplication,
   saveApplication,
   getApplicationDetail,
@@ -261,6 +278,8 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
+import RelatedPersonsEditor, { serializeRelations, parseRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
+import { listProductLimits } from '@/api/approval2'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -280,8 +299,14 @@ function productName(code: string) {
 
 interface DepositItemRow {
   accountMode: 'EXISTING' | 'PLANNED'
-  accountRef: string // depositAccounts 下标,空=不关联
-  depositAccountNo: string
+  depositAccountNo: string // 存量模式输入真实账号,自动反查数仓
+  depositAccountHash: string // 反查命中的数仓账户查询哈希
+  accountBalance: string | number | null
+  openDate: string
+  maturityDate: string
+  accountStatus: string
+  lookupDone: boolean
+  lookupFound: boolean
   productCode: string
   termValue: string
   termUnit: string
@@ -292,7 +317,9 @@ interface DepositItemRow {
 }
 function newItem(): DepositItemRow {
   return {
-    accountMode: 'EXISTING', accountRef: '', depositAccountNo: '',
+    accountMode: 'EXISTING', depositAccountNo: '', depositAccountHash: '',
+    accountBalance: null, openDate: '', maturityDate: '', accountStatus: '',
+    lookupDone: false, lookupFound: false,
     productCode: '', termValue: '', termUnit: 'MONTH',
     amount: '', currency: 'CNY', originalRate: '', requestedRate: ''
   }
@@ -312,7 +339,26 @@ const form = reactive({
   applicationRemark: ''
 })
 const items = ref<DepositItemRow[]>([newItem()])
-const depositAccounts = ref<any[]>([])
+// 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
+const relations = ref<RelatedPersonRow[]>([])
+// 产品标准上限(生效中的存款硬边界;非 admin 可能 403,失败则隐藏)
+const productLimits = ref<any[]>([])
+
+function limitOf(productCode: string) {
+  if (!productCode) return null
+  return productLimits.value.find((l) => l.productCode === productCode && l.businessType === 'DEPOSIT') || null
+}
+// 较上限 BP:1% = 100BP,存款越高越优惠,超过上限为正向风险提示
+function bpOf(d: DepositItemRow): number | null {
+  const limit = limitOf(d.productCode)
+  const rate = Number(d.requestedRate)
+  if (!limit || !d.requestedRate || Number.isNaN(rate)) return null
+  return Math.round((rate - Number(limit.hardBoundaryRate)) * 100)
+}
+function exceedOf(d: DepositItemRow): boolean {
+  const bp = bpOf(d)
+  return bp != null && bp > 0
+}
 
 const applyOrgText = computed(() => userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据')
 
@@ -362,13 +408,6 @@ async function loadCustomerDetail() {
   } catch {
     // 拦截器已提示
   }
-  // 存款账户(业务视图,最新批次)
-  try {
-    const view = await getCustomerBusinessView(form.customerNo)
-    depositAccounts.value = view.depositAccounts || []
-  } catch {
-    depositAccounts.value = []
-  }
 }
 
 // ---------- 存款分项 ----------
@@ -376,22 +415,48 @@ function addItem() {
   items.value.push(newItem())
 }
 function onAccountModeChange(d: DepositItemRow) {
-  d.accountRef = ''
   d.depositAccountNo = ''
+  d.depositAccountHash = ''
+  d.accountBalance = null
+  d.openDate = ''
+  d.maturityDate = ''
+  d.accountStatus = ''
+  d.lookupDone = false
+  d.lookupFound = false
   d.originalRate = ''
 }
-function onAccountSelect(d: DepositItemRow) {
-  if (d.accountRef === '') {
-    d.originalRate = ''
+
+/** 输入账号后自动反查数仓(哈希匹配),命中带出产品/期限/币种/余额/当前利率,未命中不阻断 */
+async function onAccountLookup(d: DepositItemRow) {
+  if (isBlank(d.depositAccountNo) || isBlank(form.customerNo)) {
+    d.lookupDone = false
+    d.lookupFound = false
+    d.depositAccountHash = ''
     return
   }
-  const a = depositAccounts.value[Number(d.accountRef)]
-  if (a) {
-    d.productCode = a.productCode || d.productCode
-    d.termValue = a.termValue != null ? String(a.termValue) : d.termValue
-    d.termUnit = a.termUnit || d.termUnit
-    d.currency = a.currency || d.currency
-    d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
+  try {
+    const a: any = await lookupDepositAccount(form.customerNo, d.depositAccountNo.trim())
+    d.lookupDone = true
+    if (a) {
+      d.lookupFound = true
+      d.depositAccountHash = a.depositAccountHash || ''
+      d.accountBalance = a.accountBalance ?? null
+      d.openDate = a.openDate || ''
+      d.maturityDate = a.maturityDate || ''
+      d.accountStatus = a.accountStatus || ''
+      d.productCode = a.productCode || d.productCode
+      d.termValue = a.termValue != null ? String(a.termValue) : d.termValue
+      d.termUnit = a.termUnit || d.termUnit
+      d.currency = a.currency || d.currency
+      d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
+    } else {
+      d.lookupFound = false
+      d.depositAccountHash = ''
+      d.accountBalance = null
+    }
+  } catch {
+    d.lookupDone = true
+    d.lookupFound = false
   }
 }
 
@@ -405,6 +470,7 @@ function validateForDraft(): string | null {
   if (!items.value.length) return '请至少录入一条存款分项'
   for (let i = 0; i < items.value.length; i++) {
     const d = items.value[i]
+    if (d.accountMode === 'EXISTING' && isBlank(d.depositAccountNo)) return `第 ${i + 1} 条存款分项为存量调价,请录入存款账号`
     if (isBlank(d.productCode)) return `第 ${i + 1} 条存款分项未选择产品`
     if (isBlank(d.termValue)) return `第 ${i + 1} 条存款分项未录入期限`
     if (isBlank(d.amount)) return `第 ${i + 1} 条存款分项未录入金额`
@@ -430,12 +496,14 @@ function buildPayload(): ApplicationPayload {
       requestedRate: d.requestedRate,
       originalRate: isBlank(d.originalRate) ? undefined : d.originalRate,
       depositAccountNo: d.accountMode === 'EXISTING' && !isBlank(d.depositAccountNo) ? d.depositAccountNo : undefined,
+      depositAccountHash: d.accountMode === 'EXISTING' && !isBlank(d.depositAccountHash) ? d.depositAccountHash : undefined,
       plannedAccountFlag: d.accountMode === 'PLANNED' ? 'Y' : 'N'
     })),
     applicantUserId: userStore.userInfo?.userId,
     applicantOrgId: userStore.userInfo?.orgId,
     orgId: userStore.userInfo?.orgId,
-    applicationRemark: form.applicationRemark || undefined
+    // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
+    applicationRemark: ((form.applicationRemark || '') + serializeRelations(relations.value)).trim() || undefined
   }
 }
 
@@ -513,6 +581,12 @@ async function onConfirmSubmit() {
 
 // ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
 onMounted(async () => {
+  // 产品标准上限(生效中;非 admin 可能 403,失败则隐藏)
+  try {
+    productLimits.value = await listProductLimits('EFFECTIVE')
+  } catch {
+    productLimits.value = []
+  }
   const src = route.query.reapply
   if (!src) return
   try {
@@ -532,7 +606,10 @@ async function loadDraftIntoForm(id: number) {
   const app = d.application
   form.customerScope = app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
-  form.applicationRemark = app.applicationRemark || ''
+  // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
+  const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
+  relations.value = rels
+  form.applicationRemark = cleanedRemark
   if (app.customerNo) {
     await loadCustomerDetail()
   }
@@ -541,6 +618,10 @@ async function loadDraftIntoForm(id: number) {
     const rel = (d.depositRelations || []).find((r) => r.pricingItemId === p.id)
     const row = newItem()
     row.accountMode = rel?.plannedAccountFlag === 'Y' ? 'PLANNED' : 'EXISTING'
+    // 已有数仓账户绑定(哈希)时还原绑定标记;真实账号无法从密文还原,需重新输入账号反查
+    if (row.accountMode === 'EXISTING' && rel?.depositAccountHash) {
+      row.depositAccountHash = rel.depositAccountHash
+    }
     row.productCode = p.productCode || ''
     row.termValue = p.termValue != null ? String(p.termValue) : ''
     row.termUnit = p.termUnit || 'MONTH'
@@ -577,6 +658,15 @@ async function loadDraftIntoForm(id: number) {
 .req { color: var(--color-danger); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
+/* 规则来源提示(§12.4⑦) */
+.rule-notice {
+  background: var(--color-primary-light); color: var(--color-primary);
+  border: 1px solid var(--color-primary); border-radius: var(--radius);
+  padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+}
+/* 产品标准上限提示(§12.4) */
+.limit-hint { font-size: 12px; color: var(--color-text-sub); margin-top: 4px; }
+.limit-hint--exceed { color: var(--color-danger); font-weight: 600; }
 .route-node {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   background: var(--color-primary-light); color: var(--color-primary);

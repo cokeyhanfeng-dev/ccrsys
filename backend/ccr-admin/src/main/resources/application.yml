@@ -60,7 +60,13 @@ logging:
 # 业务参数(代码内均有默认值,以下仅注释说明;需调整时取消注释)
 # ccr:
 #   snapshot:
-#     data-stale-days: 7               # 快照来源数据容忍滞后天数(默认7天, SnapshotServiceImpl)
+#     data-stale-days: 3               # 快照来源数据容忍滞后天数(默认3天,超期BLOCK阻断提交, SnapshotServiceImpl)
+#     reconcile-tolerance: 0.01        # 贡献度勾稽容差(TOTAL vs 明细加总,超容差BLOCK)
+#   vote:
+#     round-timeout-hours: 72          # 表决批次超时(小时),超时按已投票数计票
+#     timeout-scan-cron: 0 0 * * * ?   # 表决超时扫描(默认每小时)
+#   resolution:
+#     effective-days: 180              # 决议有效期(默认生效日起180天)
 #   commitment:
 #     jobs:
 #       daily-cron: 0 0 2 * * ?        # 承诺每日跟踪 Job(默认每天 02:00)
@@ -70,3 +76,7 @@ logging:
 #   message:
 #     retry-cron: 0 */2 * * * ?        # 消息重发 Job(默认每2分钟)
 #     max-retry: 3                     # 消息最大重试次数(默认3次,超过置为 FAILED)
+#   outbox:
+#     scan-cron: 0/30 * * * * *        # Outbox 事件扫描(默认每30秒)
+#     batch-size: 50                   # 单次扫描处理批量(默认50)
+#     max-retry: 5                     # 事件最大重试次数(默认5,指数退避 1m/5m/15m/1h/4h/12h,超过置 FAILED 并告警)

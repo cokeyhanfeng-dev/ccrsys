@@ -34,9 +34,14 @@ public interface ApprovalService {
                  Integer versionNo, String idempotencyKey);
 
     /**
-     * 普通节点否决
+     * 普通节点否决(§7.3 否决原因必填)
      */
     void reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey);
+
+    /**
+     * 已办列表(§11.4):当前登录人办理过的任务(审批动作轨迹,含计票/行长决策留痕)
+     */
+    List<Map<String, Object>> listDone();
 
     /**
      * 历史审批分页(§13.2/§14.4):客户经理看本人申请、审批人看本人审批过、行长/审计看全部

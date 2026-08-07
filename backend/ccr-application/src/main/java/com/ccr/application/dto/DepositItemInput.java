@@ -37,6 +37,9 @@ public class DepositItemInput {
     /** 存款账号(拟开户可空,落库密文+查询哈希) */
     private String depositAccountNo;
 
+    /** 数仓账户查询哈希(存量调价选择数仓账户时携带,直接绑定数仓账户) */
+    private String depositAccountHash;
+
     /** 是否拟开户方案 Y/N */
     private String plannedAccountFlag;
 }

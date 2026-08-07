@@ -3,8 +3,11 @@ package com.ccr.admin.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
+import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
+import com.ccr.admin.system.support.DataScopeHelper;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -26,6 +29,12 @@ public class AuthController {
     @Resource
     private CcrSysUserMapper sysUserMapper;
 
+    @Resource
+    private CcrSysDeptMapper sysDeptMapper;
+
+    @Resource
+    private DataScopeHelper dataScopeHelper;
+
     @PostMapping("/login")
     public R<Map<String, Object>> login(@RequestBody Map<String, String> body) {
         String username = body.getOrDefault("username", "");
@@ -42,8 +51,18 @@ public class AuthController {
             throw new ServiceException(401, "用户已停用");
         }
         StpUtil.login(user.getId());
-        // 写入当前用户机构上下文(公共字段自动填充用)
+        // 写入当前用户机构上下文(公共字段自动填充用)与数据权限范围(§5.4)
+        CcrSysDept dept = user.getOrgId() == null ? null : sysDeptMapper.selectById(user.getOrgId());
+        String orgCode = dept == null ? null : dept.getOrgCode();
+        DataScopeHelper.DataScope dataScope = dataScopeHelper.compute(user);
         StpUtil.getSession().set("orgId", user.getOrgId());
+        if (orgCode != null) {
+            StpUtil.getSession().set("orgCode", orgCode);
+        }
+        StpUtil.getSession().set("dataScopeLevel", dataScope.getLevel());
+        if (dataScope.getOrgCodePrefix() != null) {
+            StpUtil.getSession().set("dataScopeOrgCodePrefix", dataScope.getOrgCodePrefix());
+        }
         String token = StpUtil.getTokenValue();
 
         Map<String, Object> userInfo = new LinkedHashMap<>();
@@ -52,6 +71,8 @@ public class AuthController {
         userInfo.put("nickName", user.getNickName());
         userInfo.put("roles", new String[]{user.getRoleCode()});
         userInfo.put("orgId", user.getOrgId());
+        userInfo.put("orgCode", orgCode);
+        userInfo.put("dataScope", dataScope.getLevel());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("token", token);

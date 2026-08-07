@@ -19,8 +19,17 @@ public class CcrSysDept {
 
     private String tenantId;
 
-    /** 机构编码 */
+    /** 机构编码(历史字母编码,展示/外部对接用) */
     private String deptCode;
+
+    /** 机构编码(层级前缀数字码,唯一,禁改):1000总行/1001xx部门/1002xx支行/支行码+两位为网点 */
+    private String orgCode;
+
+    /** 祖先链(机构id逗号分隔),如 0,1000,1002 */
+    private String ancestors;
+
+    /** 支行编码:BRANCH=自身orgCode;NETWORK=所属支行orgCode;DEPT/HEAD为空 */
+    private String branchCode;
 
     /** 机构名称 */
     private String deptName;
@@ -28,7 +37,7 @@ public class CcrSysDept {
     /** 父机构id */
     private Long parentId;
 
-    /** HEAD总行/BRANCH分行/DEPT部门/SUB_BRANCH支行 */
+    /** HEAD总行/DEPT部门/BRANCH支行/NETWORK网点/GROUP集团管理机构 */
     private String orgType;
 
     /** 负责人 */

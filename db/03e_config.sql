@@ -329,6 +329,32 @@ CREATE TABLE IF NOT EXISTS `ccr_display_schema` (
   UNIQUE KEY `uk_display_schema` (`schema_code`,`dataset_id`,`field_code`)
 ) ENGINE=InnoDB COMMENT='ccr_display_schema 参考数据展示配置(字段顺序/分组/只读)';
 
+-- ---------- 配置变更审计日志 ----------
+CREATE TABLE IF NOT EXISTS `ccr_config_change_log` (
+  `id`                  BIGINT       NOT NULL,
+  `tenant_id`           VARCHAR(20)  NOT NULL DEFAULT '000000',
+  `business_no`         VARCHAR(64)  NOT NULL,
+  `org_id`              BIGINT       NOT NULL,
+  `status`              VARCHAR(32)  NOT NULL DEFAULT 'ACTIVE',
+  `version_no`          INT          NOT NULL DEFAULT 1 COMMENT '配置记录版本号',
+  `create_dept`         BIGINT       NULL,
+  `create_by`           BIGINT       NOT NULL,
+  `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by`           BIGINT       NULL,
+  `update_time`         DATETIME     NULL,
+  `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
+  `config_type`         VARCHAR(32)  NOT NULL COMMENT '配置域:LPR/MATRIX/RULE_SET/PRODUCT_LIMIT',
+  `config_id`           BIGINT       NOT NULL COMMENT '配置记录主键',
+  `action`              VARCHAR(16)  NOT NULL COMMENT 'CREATE/SUBMIT/PUBLISH/DISABLE/REJECT',
+  `old_json`            JSON         NULL COMMENT '变更前快照(JSON)',
+  `new_json`            JSON         NULL COMMENT '变更后快照(JSON)',
+  `opinion`             VARCHAR(1000) NULL COMMENT '复核/驳回意见(驳回必填)',
+  `operator_id`         BIGINT       NOT NULL COMMENT '操作人',
+  `operate_time`        DATETIME     NOT NULL COMMENT '操作时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_cfg_log` (`config_type`,`config_id`,`operate_time`)
+) ENGINE=InnoDB COMMENT='ccr_config_change_log 配置变更审计日志(§8A.2)';
+
 -- ---------- Outbox 可靠事件 ----------
 CREATE TABLE IF NOT EXISTS `ccr_outbox_event` (
   `id`                  BIGINT       NOT NULL,

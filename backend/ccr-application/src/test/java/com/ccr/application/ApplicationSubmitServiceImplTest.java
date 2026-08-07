@@ -1,8 +1,12 @@
 package com.ccr.application;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrApplicationRelation;
+import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.domain.CcrPricingItemContractRel;
 import com.ccr.application.dto.SnapshotBundleResult;
@@ -27,6 +31,8 @@ import com.ccr.rule.engine.RuleEngine;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrRateRuleSetMapper;
 import com.ccr.rule.service.RateMatrixRouter;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -46,7 +52,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -90,9 +98,19 @@ class ApplicationSubmitServiceImplTest {
     private CcrLprVersionMapper lprVersionMapper;
     @Mock
     private CcrRateRuleSetMapper ruleSetMapper;
+    @Mock
+    private com.ccr.common.outbox.OutboxService outboxService;
 
     @InjectMocks
     private ApplicationSubmitServiceImpl service;
+
+    /** 纯 Mockito 单测无 MyBatis 启动过程,需手工初始化实体 TableInfo(Lambda 包装器列解析依赖) */
+    @BeforeAll
+    static void initTableInfo() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, CcrApplication.class);
+        TableInfoHelper.initTableInfo(assistant, CcrPricingItem.class);
+    }
 
     // ---------- 测试数据构造 ----------
 
@@ -276,6 +294,8 @@ class ApplicationSubmitServiceImplTest {
         route.setFinalNodeCode("SIX_PEOPLE_GROUP");
         route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
         route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
         route.setLprVersionId(9601L);
         when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
 
@@ -286,13 +306,23 @@ class ApplicationSubmitServiceImplTest {
         verify(snapshotGateway).validate(7001L);
         verify(snapshotGateway).freeze(7001L);
 
-        // 分项:ROUTING + 首节点 BRANCH_MANAGER + 终审岗位
+        // 分项:ROUTING + 首节点 BRANCH_MANAGER + 终审岗位 + 冻结边界/矩阵行号(§8.6)
         ArgumentCaptor<CcrPricingItem> itemCaptor = ArgumentCaptor.forClass(CcrPricingItem.class);
         verify(pricingItemMapper, atLeastOnce()).updateById(itemCaptor.capture());
         CcrPricingItem updated = itemCaptor.getAllValues().stream()
                 .filter(i -> "ROUTING".equals(i.getStatus())).findFirst().orElseThrow();
+        assertEquals("BRANCH_MANAGER", updated.getStartNodeCode());
         assertEquals("BRANCH_MANAGER", updated.getCurrentNodeCode());
         assertEquals("SIX_PEOPLE_GROUP", updated.getRouteCode());
+        assertEquals(new BigDecimal("3.20"), updated.getBoundaryRate());
+        assertEquals("MX-001", updated.getMatchedMatrixNo());
+
+        // 中间态:主申请先置 SUBMITTED(§7.2 步骤6),再置 ROUTING
+        ArgumentCaptor<LambdaUpdateWrapper<CcrApplication>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(applicationMapper).update(isNull(), wrapperCaptor.capture());
+        assertTrue(wrapperCaptor.getValue().getSqlSet().contains("status"));
+        assertTrue(wrapperCaptor.getValue().getParamNameValuePairs().containsValue("SUBMITTED"));
 
         // 主单:ROUTING + 冻结 LPR 版本 + 快照包 + 提交时间
         ArgumentCaptor<CcrApplication> appCaptor = ArgumentCaptor.forClass(CcrApplication.class);
@@ -307,6 +337,13 @@ class ApplicationSubmitServiceImplTest {
         assertTrue(response.getSubmitted());
         assertEquals(1, response.getItems().size());
         assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"), response.getItems().get(0).getRouteChain());
+
+        // Outbox(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义) + 申请人/支行行长 NOTIFY
+        verify(outboxService).publish(eq("FLOW_START"), eq("PI-11"),
+                argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval")
+                        && p.contains("PI-11")));
+        verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:APPLICANT"), anyString());
+        verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"), anyString());
     }
 
     // ---------- 幂等:重复提交返回既有结果 ----------
@@ -381,6 +418,64 @@ class ApplicationSubmitServiceImplTest {
         assertEquals("REAPPLY", relCaptor.getValue().getRelationType());
         assertEquals("Y", relCaptor.getValue().getInheritFlag());
         assertEquals(11L, relCaptor.getValue().getSourcePricingItemId());
+    }
+
+    // ---------- 任务1:REJECTED(全否)可关联重提 + 原申请置 RETURNED(终态保留) ----------
+
+    @Test
+    void reapplyAllowsRejectedSourceAndMarksSourceReturned() {
+        CcrApplication source = groupApp();
+        source.setStatus("REJECTED");
+        when(applicationMapper.selectById(1L)).thenReturn(source);
+        lenient().when(applicationMapper.insert(any(CcrApplication.class))).thenAnswer(inv -> {
+            inv.getArgument(0, CcrApplication.class).setId(2L);
+            return 1;
+        });
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        CcrPricingItem rejected = loanItem(12L, "MEMBER_A");
+        rejected.setStatus("REJECTED");
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(rejected));
+        lenient().when(contractRelMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(depositRelMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(guaranteePackageMapper.selectById(any())).thenReturn(null);
+        lenient().when(commitmentMapper.selectList(any())).thenReturn(List.of());
+
+        CcrApplication target = service.reapply(1L);
+
+        assertEquals("DRAFT", target.getStatus());
+        assertEquals(1L, target.getSourceApplicationId());
+        // 原申请同事务置 RETURNED(终态保留,不回 DRAFT)
+        assertEquals("RETURNED", source.getStatus());
+        verify(applicationMapper).updateById(source);
+    }
+
+    // ---------- 任务7:非信用类分项必须有担保组合且措施非空(§9.3-5) ----------
+
+    @Test
+    void submitBlocksNonCreditItemWithoutGuaranteeMeasures() {
+        CcrApplication app = new CcrApplication();
+        app.setId(1L);
+        app.setApplicationNo("CCR20260806ABCD");
+        app.setBusinessType("LOAN");
+        app.setCustomerScope("CORPORATE_SINGLE");
+        app.setCustomerNo("CORP001");
+        app.setStatus("DRAFT");
+        app.setVersionNo(1);
+        CcrPricingItem item = loanItem(11L, null);
+        item.setPricingCustomerNo("CORP001");
+        item.setGuaranteePackageId(900L);
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        CcrGuaranteePackage pkg = new CcrGuaranteePackage();
+        pkg.setId(900L);
+        pkg.setMainGuaranteeType("MORTGAGE");
+        when(guaranteePackageMapper.selectById(900L)).thenReturn(pkg);
+        when(guaranteeMeasureMapper.selectCount(any())).thenReturn(0L);
+
+        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("担保措施"));
     }
 
     // ---------- 重提状态守卫 ----------

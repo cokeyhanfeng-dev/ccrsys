@@ -51,13 +51,10 @@ public class CcrApplicationController {
         return R.ok(applicationService.getApplicationDetail(id));
     }
 
-    /** 申请列表(本人申请,按机构/状态过滤) */
+    /** 申请列表(§5.4 数据权限:申请人/机构按服务端登录人过滤,前端仅可传状态) */
     @GetMapping
-    public R<java.util.List<CcrApplication>> list(
-            @RequestParam(required = false) Long orgId,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) Long applicantId) {
-        return R.ok(applicationService.listApplications(orgId, status, applicantId));
+    public R<java.util.List<CcrApplication>> list(@RequestParam(required = false) String status) {
+        return R.ok(applicationService.listApplications(status));
     }
 
     /** 路由预览(§13.1:逐分项 routeChain/终审岗位/边界/方向/采用 LPR 版本) */

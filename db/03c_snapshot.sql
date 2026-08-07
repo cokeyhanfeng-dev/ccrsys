@@ -110,6 +110,9 @@ CREATE TABLE IF NOT EXISTS `ccr_snapshot_quality_result` (
   `actual_value`        VARCHAR(500) NULL COMMENT '实际值',
   `message`             VARCHAR(1000) NULL COMMENT '结果说明',
   `checked_time`        DATETIME     NOT NULL COMMENT '校验时间',
+  `confirm_status`      VARCHAR(16)  NULL COMMENT '人工确认状态(§9.6差异确认):UNCONFIRMED/CONFIRMED',
+  `confirm_by`          BIGINT       NULL COMMENT '人工确认人(ccr_sys_user主键)',
+  `confirm_time`        DATETIME     NULL COMMENT '人工确认时间',
   PRIMARY KEY (`id`),
   KEY `idx_quality_bundle` (`bundle_id`),
   KEY `idx_quality_app` (`application_id`,`rule_level`)

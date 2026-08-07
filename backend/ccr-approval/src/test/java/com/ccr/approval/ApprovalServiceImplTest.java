@@ -75,6 +75,8 @@ class ApprovalServiceImplTest {
     private JdbcTemplate jdbcTemplate;
     @Mock
     private com.ccr.workflow.service.WarmFlowService warmFlowService;
+    @Mock
+    private com.ccr.common.core.assignee.NodeAssigneeResolver nodeAssigneeResolver;
 
     @InjectMocks
     private ApprovalServiceImpl approvalService;
@@ -104,6 +106,12 @@ class ApprovalServiceImplTest {
         application = new CcrApplication();
         application.setId(30L);
         application.setBusinessType("LOAN");
+
+        // 缺省无节点指派配置(解析为空=不限制,保持角色匹配);selectBatchIds 用于待办指派过滤
+        org.mockito.Mockito.lenient().when(nodeAssigneeResolver.resolveUserIds(any(), any()))
+                .thenReturn(List.of());
+        org.mockito.Mockito.lenient().when(applicationMapper.selectBatchIds(any()))
+                .thenReturn(List.of(application));
     }
 
     private SysUserRead user(String roleCode) {
@@ -339,9 +347,23 @@ class ApprovalServiceImplTest {
 
         approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
 
-        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
+                && PricingItemStatus.ROUTING.getCode().equals(a.getFromStatus())
+                && PricingItemStatus.REJECTED.getCode().equals(a.getToStatus())));
         verify(itemFinalizationService).afterItemTerminal(10L, null);
         verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
+    void reject_blankComment_rejected() {
+        // §7.3 普通节点否决原因必填
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> approvalService.reject(10L, "BRANCH_MANAGER", "  ", 3, null));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
+        verify(approvalActionMapper, never()).insert(any(CcrApprovalAction.class));
     }
 
     // ---------- 待办按登录人角色过滤 ----------
@@ -383,5 +405,31 @@ class ApprovalServiceImplTest {
         // 小组待办在表决模块,普通审批待办为空
         assertTrue(approvalService.listTodo().isEmpty());
         verify(pricingItemMapper, never()).selectList(any(Wrapper.class));
+    }
+
+    // ---------- 节点审批人配置(§5.5.1) ----------
+
+    @Test
+    void approve_reject_whenNotInNodeAssignees() {
+        // 节点配置了指定审批人,当前登录人不在指派范围 → 拒绝(指派校验先于权限边界查询)
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null)).thenReturn(List.of(2999L));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
+        assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
+    }
+
+    @Test
+    void listTodo_assigneeConfigured_onlyAssigneeSees() {
+        // 节点配置了指定审批人,解析结果不含当前登录人 → 待办不可见
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(currentLoginUser.nodeOfRole(CurrentLoginUser.ROLE_BRANCH_MANAGER)).thenReturn("BRANCH_MANAGER");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null)).thenReturn(List.of(2999L));
+
+        assertTrue(approvalService.listTodo().isEmpty());
     }
 }

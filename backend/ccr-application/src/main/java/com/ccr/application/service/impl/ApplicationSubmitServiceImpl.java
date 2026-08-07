@@ -36,6 +36,8 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
+import com.ccr.common.outbox.OutboxEventType;
+import com.ccr.common.outbox.OutboxService;
 import com.ccr.rule.domain.CcrLprVersion;
 import com.ccr.rule.domain.CcrRateRuleSet;
 import com.ccr.rule.dto.MatrixRouteInput;
@@ -45,6 +47,7 @@ import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrRateRuleSetMapper;
 import com.ccr.rule.service.RateMatrixRouter;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -71,14 +74,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 分项终态(一合同一有效分项检查中不阻断) */
     private static final Set<String> ITEM_TERMINAL_STATUS = Set.of("FINAL", "REJECTED", "VETOED", "CLOSED", "SUPERSEDED");
 
-    /** 允许关联重提的原申请状态(§7.6:否决后保持终态,重提创建新申请) */
-    private static final Set<String> REAPPLY_SOURCE_STATUS = Set.of("FINAL", "VETOED", "RETURNED", "CLOSED");
+    /** 允许关联重提的原申请状态(§7.6:否决后保持终态,重提创建新申请;REJECTED 为 D18b 最典型入口) */
+    private static final Set<String> REAPPLY_SOURCE_STATUS = Set.of("FINAL", "REJECTED", "VETOED", "RETURNED", "CLOSED");
 
     /** 已批准分项状态(沿用原决议,不重新审批) */
     private static final Set<String> APPROVED_ITEM_STATUS = Set.of("FINAL", "APPROVED_LEVEL");
 
-    /** 数据时效容忍天数(与快照质量规则口径一致) */
-    private static final int DATA_STALE_DAYS = 7;
+    /** 数据时效容忍天数(§9.4 默认 3 个自然日,超过 BLOCK 阻断提交;与快照质量规则同一配置) */
+    @Value("${ccr.snapshot.data-stale-days:3}")
+    private int dataStaleDays;
 
     @Resource
     private CcrApplicationMapper applicationMapper;
@@ -110,6 +114,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private CcrLprVersionMapper lprVersionMapper;
     @Resource
     private CcrRateRuleSetMapper ruleSetMapper;
+    @Resource
+    private OutboxService outboxService;
 
     // ==================== 路由预览(§13.1) ====================
 
@@ -233,7 +239,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return response;
     }
 
-    /** 质量预校验:主体数据缺失 BLOCK,贡献度缺失/数据过旧 WARN */
+    /** 质量预校验:主体数据缺失/数据过旧 BLOCK,贡献度缺失 WARN */
     private List<SubmitCheckResponse.QualityPrecheckItem> qualityPrecheck(CcrApplication app, Map<String, String> latest) {
         List<SubmitCheckResponse.QualityPrecheckItem> items = new ArrayList<>();
         boolean groupScope = "GROUP".equals(app.getCustomerScope());
@@ -271,13 +277,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 items.add(precheckItem("CONTRIBUTION_EXISTS", "WARN", app.getCustomerNo(), "客户贡献度数据缺失"));
             }
         }
-        // 数据时效:最新批次距当前超过容忍天数 WARN
-        LocalDate staleBefore = LocalDate.now().minusDays(DATA_STALE_DAYS);
+        // 数据时效:最新批次距当前超过容忍天数 BLOCK 阻断提交(§9.4)
+        LocalDate staleBefore = LocalDate.now().minusDays(dataStaleDays);
         for (Map.Entry<String, String> e : latest.entrySet()) {
             LocalDate dt = LocalDate.parse(e.getValue().substring(0, 10));
             if (dt.isBefore(staleBefore)) {
-                items.add(precheckItem("DATA_TIMELINESS", "WARN", e.getKey(),
-                        "数据集最新批次 " + dt + " 超过容忍天数 " + DATA_STALE_DAYS + " 天"));
+                items.add(precheckItem("DATA_TIMELINESS", "BLOCK", e.getKey(),
+                        "数据源数据日期过期,请联系数据中心刷新(数据集最新批次 " + dt
+                                + ",容忍 " + dataStaleDays + " 个自然日)"));
             }
         }
         if (items.isEmpty()) {
@@ -321,6 +328,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (CcrPricingItem item : items) {
             ruleEngine.checkHardBoundary(businessBigType(app), item.getProductCode(), item.getRequestedRate());
         }
+        // 主申请先置 SUBMITTED(§7.2 步骤6 中间态:校验通过、快照采集/路由前),路由完成后置 ROUTING
+        applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                .eq(CcrApplication::getId, id)
+                .set(CcrApplication::getStatus, ApplicationStatus.SUBMITTED.getCode()));
         // g) 冻结 LPR 版本/规则集版本/路由生效日期(§8.4)
         CcrLprVersion lpr = currentLpr();
         CcrRateRuleSet ruleSet = currentRuleSet();
@@ -337,14 +348,17 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         SnapshotBundleResult bundle = snapshotGateway.freeze(bundleId);
 
-        // h) 逐分项算路由:置 ROUTING + 首节点 BRANCH_MANAGER + 终审岗位
+        // h) 逐分项算路由:置 ROUTING + 首节点 BRANCH_MANAGER + 终审岗位 + 冻结边界/矩阵行号(§8.6)
         Map<String, Map<String, Object>> corpCache = new HashMap<>();
         List<SubmitResponse.ItemRoute> itemRoutes = new ArrayList<>();
         for (CcrPricingItem item : items) {
             RouteResult route = rateMatrixRouter.calcRoute(buildRouteInput(app, item, groupCreditTotal, corpCache));
             item.setStatus(PricingItemStatus.ROUTING.getCode());
+            item.setStartNodeCode(route.getStartNodeCode());
             item.setCurrentNodeCode(route.getStartNodeCode());
             item.setRouteCode(route.getFinalNodeCode());
+            item.setBoundaryRate(route.getBoundaryRate());
+            item.setMatchedMatrixNo(route.getMatchedMatrixNo());
             pricingItemMapper.updateById(item);
             itemRoutes.add(toItemRoute(item, route.getRouteChain()));
         }
@@ -359,9 +373,54 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         fresh.setSnapshotBundleId(bundle.getBundleId());
         applicationMapper.updateById(fresh);
 
+        // j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):逐分项 FLOW_START + 提交通知 NOTIFY,异步消费
+        publishSubmitEvents(fresh, items);
+
         SubmitResponse response = buildSubmitResponse(fresh, items, true);
         response.setItems(itemRoutes);
         return response;
+    }
+
+    /**
+     * j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义),
+     * 以及提交通知 NOTIFY(申请人 + 首节点支行行长);事件写入失败随提交事务整体回滚,不出现半成品
+     */
+    private void publishSubmitEvents(CcrApplication app, List<CcrPricingItem> items) {
+        String createBy = app.getApplicantUserId() == null ? "0" : app.getApplicantUserId().toString();
+        for (CcrPricingItem item : items) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("applicationId", app.getId());
+            payload.put("applicationNo", app.getApplicationNo());
+            payload.put("pricingItemId", item.getId());
+            payload.put("pricingItemNo", item.getPricingItemNo());
+            payload.put("nodeCode", item.getStartNodeCode());
+            payload.put("routeCode", item.getRouteCode());
+            // 流程定义版本:利率审批标准流程(Warm-Flow 轨迹载体)
+            payload.put("flowCode", "rate_approval");
+            payload.put("createBy", createBy);
+            outboxService.publish(OutboxEventType.FLOW_START, item.getPricingItemNo(), JSONUtil.toJsonStr(payload));
+        }
+        // 提交通知:申请人 + 首节点审批人(支行行长);messageKey 幂等防重
+        String itemNos = items.stream().map(CcrPricingItem::getPricingItemNo).reduce((a, b) -> a + "," + b).orElse("");
+        Map<String, Object> applicantNotify = new LinkedHashMap<>();
+        applicantNotify.put("recipientType", "USER");
+        applicantNotify.put("recipientId", createBy);
+        applicantNotify.put("channel", "SYSTEM");
+        applicantNotify.put("messageKey", "SUBMIT_NOTIFY:APP:" + app.getId() + ":APPLICANT");
+        applicantNotify.put("content", "您提交的定价申请 " + app.getApplicationNo() + " 已进入审批(分项:"
+                + itemNos + "),首节点:支行行长");
+        outboxService.publish(OutboxEventType.NOTIFY, "SUBMIT:APP:" + app.getId() + ":APPLICANT",
+                JSONUtil.toJsonStr(applicantNotify));
+
+        Map<String, Object> branchNotify = new LinkedHashMap<>();
+        branchNotify.put("recipientType", "ROLE");
+        branchNotify.put("recipientId", "branch_manager");
+        branchNotify.put("channel", "SYSTEM");
+        branchNotify.put("messageKey", "SUBMIT_NOTIFY:APP:" + app.getId() + ":BRANCH_MANAGER");
+        branchNotify.put("content", "定价申请 " + app.getApplicationNo() + " 已提交,待支行行长审批(分项:"
+                + itemNos + ")");
+        outboxService.publish(OutboxEventType.NOTIFY, "SUBMIT:APP:" + app.getId() + ":BRANCH_MANAGER",
+                JSONUtil.toJsonStr(branchNotify));
     }
 
     /** b) 完整性:分项非空、客户/集团字段齐、分项必填字段齐、载体关系齐 */
@@ -407,6 +466,26 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                             "分项[" + item.getPricingItemNo() + "]缺少存款账户关系");
                 }
             }
+            checkGuaranteeCompleteness(item);
+        }
+    }
+
+    /** 担保完整性(§9.3-5):非信用类(guaranteeType≠CREDIT)分项必须有担保组合且担保措施非空 */
+    private void checkGuaranteeCompleteness(CcrPricingItem item) {
+        if (!"LOAN_CONTRACT".equals(item.getPricingCarrierType())) {
+            return; // 存款分项无担保概念
+        }
+        CcrGuaranteePackage pkg = item.getGuaranteePackageId() == null ? null
+                : guaranteePackageMapper.selectById(item.getGuaranteePackageId());
+        String guaranteeType = pkg == null ? null : pkg.getMainGuaranteeType();
+        if (StrUtil.isBlank(guaranteeType) || "CREDIT".equals(guaranteeType)) {
+            return; // 未冻结担保组合按信用类对待
+        }
+        Long measureCount = guaranteeMeasureMapper.selectCount(new LambdaQueryWrapper<CcrGuaranteeMeasure>()
+                .eq(CcrGuaranteeMeasure::getPackageId, pkg.getId()));
+        if (measureCount == null || measureCount == 0) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "分项[" + item.getPricingItemNo() + "]非信用类担保(" + guaranteeType + ")必须登记担保措施");
         }
     }
 
@@ -856,6 +935,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             copy.setMetricScope(c.getMetricScope());
             copy.setMemberCustomerNo(c.getMemberCustomerNo());
             commitmentMapper.insert(copy);
+        }
+
+        // 原申请置 RETURNED(终态保留,不回 DRAFT,§14.1);同事务保证重提成功才落状态
+        if (!ApplicationStatus.RETURNED.getCode().equals(source.getStatus())) {
+            source.setStatus(ApplicationStatus.RETURNED.getCode());
+            applicationMapper.updateById(source);
         }
         return target;
     }

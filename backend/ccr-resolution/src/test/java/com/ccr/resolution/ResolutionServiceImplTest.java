@@ -224,12 +224,77 @@ class ResolutionServiceImplTest {
     void bindContract_success_whenAllFieldsConsistent() {
         stubResolutionAndExec("CONTRACT_PENDING");
         stubPricingItem();
+        // 绑定成功同事务自动触发 executeCheck:无数仓借据 → WARN 通过,置 EXECUTED
+        when(loanNoteSnapshotMapper.selectOne(any(Wrapper.class))).thenReturn(null);
 
         CcrResolutionExecution result = resolutionService.bindContract(1L, matchingBindDTO());
 
-        assertEquals("CONTRACT_BOUND", result.getExecutionStatus());
+        assertEquals("EXECUTED", result.getExecutionStatus());
+        assertEquals("WARN", result.getReconcileResult());
         assertEquals("LC2026001", result.getLoanContractNo());
         verify(executionMapper).updateById(any(CcrResolutionExecution.class));
+    }
+
+    @Test
+    void bindContract_success_whenContractAmountAndTermGreater() {
+        stubResolutionAndExec("CONTRACT_PENDING");
+        stubPricingItem();
+        when(loanNoteSnapshotMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        // §7.7 修正口径:合同金额≥决议金额、期限≥决议期限
+        ContractBindDTO dto = matchingBindDTO();
+        dto.setContractAmount(new BigDecimal("1200"));
+        dto.setTermValue(24);
+
+        CcrResolutionExecution result = resolutionService.bindContract(1L, dto);
+
+        assertEquals("EXECUTED", result.getExecutionStatus());
+    }
+
+    @Test
+    void bindContract_reject_whenContractAmountBelowResolution() {
+        stubResolutionAndExec("CONTRACT_PENDING");
+        stubPricingItem();
+        ContractBindDTO dto = matchingBindDTO();
+        dto.setContractAmount(new BigDecimal("900"));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> resolutionService.bindContract(1L, dto));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("合同金额小于决议金额"));
+        verify(executionMapper, never()).updateById(any(CcrResolutionExecution.class));
+    }
+
+    @Test
+    void bindContract_reject_whenTermBelowResolution() {
+        stubResolutionAndExec("CONTRACT_PENDING");
+        stubPricingItem();
+        ContractBindDTO dto = matchingBindDTO();
+        dto.setTermValue(6);
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> resolutionService.bindContract(1L, dto));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("合同期限小于决议期限"));
+        verify(executionMapper, never()).updateById(any(CcrResolutionExecution.class));
+    }
+
+    @Test
+    void bindContract_reject_whenContractBoundToOtherOpenResolution() {
+        stubResolutionAndExec("CONTRACT_PENDING");
+        stubPricingItem();
+        // 同一 loan_contract_no 已被另一未关闭执行记录占用
+        CcrResolutionExecution other = new CcrResolutionExecution();
+        other.setId(200L);
+        other.setResolutionId(2L);
+        other.setLoanContractNo("LC2026001");
+        other.setExecutionStatus("EXECUTED");
+        when(executionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(other));
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> resolutionService.bindContract(1L, matchingBindDTO()));
+        assertEquals(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("已绑定未关闭决议"));
+        verify(executionMapper, never()).updateById(any(CcrResolutionExecution.class));
     }
 
     @Test
@@ -300,13 +365,15 @@ class ResolutionServiceImplTest {
         stubResolutionAndExec("RECONCILE_EXCEPTION");
         item.setOriginalRate(new BigDecimal("4.100000"));
         stubPricingItem();
+        when(loanNoteSnapshotMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         ContractBindDTO dto = matchingBindDTO();
         dto.setSupplementAgreementNo("SA2026001");
 
         CcrResolutionExecution result = resolutionService.bindContract(1L, dto);
 
         assertEquals("SA2026001", result.getSupplementAgreementNo());
-        assertEquals("CONTRACT_BOUND", result.getExecutionStatus());
+        // 重填后同事务自动核验:无数仓借据 → WARN 通过,置 EXECUTED
+        assertEquals("EXECUTED", result.getExecutionStatus());
         verify(executionMapper).updateById(any(CcrResolutionExecution.class));
     }
 }

@@ -43,6 +43,12 @@ public class CcrApprovalAction extends BaseEntity {
     /** 动作后利率 */
     private BigDecimal afterRate;
 
+    /** 动作前分项状态(§14.7 流转留痕) */
+    private String fromStatus;
+
+    /** 动作后分项状态(§14.7 流转留痕) */
+    private String toStatus;
+
     /** PC / MOBILE */
     private String operationChannel;
 

@@ -176,7 +176,7 @@ public class CommitmentJobs {
                 orgCustomers.get(plan.getOrgId()).add(key);
             }
         }
-        // 按机构生成汇总通知(发送对象:该机构支行行长)
+        // 按机构生成汇总通知(§13.4 发送对象:该机构支行行长 + 部门总经理 dept_gm)
         for (Map.Entry<Long, List<String>> entry : orgCustomers.entrySet()) {
             Long orgId = entry.getKey();
             StringBuilder content = new StringBuilder("承诺月度汇总(").append(monthStart).append("):");
@@ -202,6 +202,20 @@ public class CommitmentJobs {
                 NotificationMessage message = new NotificationMessage();
                 message.setRuleVersionId(0L);
                 message.setRecipientType("BRANCH_MANAGER");
+                message.setRecipientId(userId);
+                message.setChannel("SYSTEM");
+                message.setContent(content.toString());
+                notificationService.sendNotification(message);
+            }
+            // §13.4 推送至支行行长与部门:补部门总经理(dept_gm)角色接收人
+            List<String> deptGmIds = recipientResolvers.stream()
+                    .filter(r -> r.supports("DEPT_GM")).findFirst()
+                    .map(r -> r.resolve("DEPT_GM", null, context))
+                    .orElse(List.of());
+            for (String userId : deptGmIds) {
+                NotificationMessage message = new NotificationMessage();
+                message.setRuleVersionId(0L);
+                message.setRecipientType("DEPT_GM");
                 message.setRecipientId(userId);
                 message.setChannel("SYSTEM");
                 message.setContent(content.toString());

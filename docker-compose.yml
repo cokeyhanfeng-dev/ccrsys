@@ -10,6 +10,9 @@ services:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: ccr_rate
       TZ: Asia/Shanghai
+      # 修复 initdb 中文种子乱码:mysql 客户端按 locale 决定字符集,默认 POSIX 会退化为 latin1
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_general_ci
@@ -17,7 +20,7 @@ services:
       - "13306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 首次启动自动执行全部 DDL(字母序:01->05)
+      # 首次启动自动执行全部 DDL(字母序:01->10)
       - ./db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]

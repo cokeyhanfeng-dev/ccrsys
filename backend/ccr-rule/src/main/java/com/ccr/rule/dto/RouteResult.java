@@ -30,6 +30,12 @@ public class RouteResult {
     /** 命中规则名称 */
     private String matchedRuleName;
 
+    /** 终审节点权限边界利率(矩阵边界与产品硬边界取交集后,D3/§8.2;提交时冻结到分项) */
+    private java.math.BigDecimal boundaryRate;
+
+    /** 命中的权限矩阵行编号(审计溯源,§8.6) */
+    private String matchedMatrixNo;
+
     /** 本次路由采用的 LPR 版本主键(冻结溯源用,§8.4) */
     private Long lprVersionId;
 

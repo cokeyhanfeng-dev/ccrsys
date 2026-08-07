@@ -2,9 +2,8 @@ import { get } from './request'
 
 // 贡献度跟踪(承诺)接口封装(W3-C)
 
-/** 承诺计划列表(按角色数据权限;operatorId 必填,roleCode 决定数据范围) */
-export const listCommitmentPlans = (operatorId: number, roleCode?: string) =>
-  get<any[]>('/ccr/commitments/plans', roleCode ? { operatorId, roleCode } : { operatorId })
+/** 承诺计划列表(无参:数据范围由服务端按登录人角色确定,§5.4,前端不传 operatorId/roleCode) */
+export const listCommitmentPlans = () => get<any[]>('/ccr/commitments/plans')
 
 /** 跟踪策略列表 */
 export const listTrackingPolicies = (metricCode?: string) =>

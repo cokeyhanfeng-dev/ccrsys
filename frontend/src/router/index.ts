@@ -76,6 +76,20 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '申请档案' }
       },
       {
+        // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,全角色可见
+        path: 'datacenter',
+        name: 'DataCenter',
+        component: () => import('@/views/datacenter/index.vue'),
+        meta: { title: '数据中心', icon: 'DataAnalysis' }
+      },
+      {
+        // 审计管理(§12.14):实际投票人反查/导出记录/配置版本查询,仅审计人员与 admin
+        path: 'audit',
+        name: 'Audit',
+        component: () => import('@/views/audit/index.vue'),
+        meta: { title: '审计管理', icon: 'View', roles: ['auditor', 'admin'] }
+      },
+      {
         path: 'system/user',
         name: 'SysUser',
         component: () => import('@/views/system/user.vue'),
@@ -94,10 +108,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '流程配置', roles: ['admin'] }
       },
       {
+        // 机构管理(§5.1.1/§11.12):机构树 CRUD + 启停用,仅 admin
+        path: 'system/dept',
+        name: 'SysDept',
+        component: () => import('@/views/system/dept.vue'),
+        meta: { title: '机构管理', roles: ['admin'] }
+      },
+      {
         path: 'system/params',
         name: 'SysParams',
         component: () => import('@/views/system/params.vue'),
-        meta: { title: '参数管理', roles: ['admin', 'param_admin', 'config_reviewer'] }
+        // param_admin 角色已取消(详设):维护并入 admin,复核由 config_reviewer 承担
+        meta: { title: '参数管理', roles: ['admin', 'config_reviewer'] }
       }
     ]
   },

@@ -6,6 +6,11 @@
       <div class="section-tip">分步录入客户、业务/合同、担保组合、利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
     </div>
 
+    <!-- 规则来源提示(§12.4⑦) -->
+    <div class="rule-notice">
+      规则来源:本页审批路径、权限矩阵与利率边界依据《关于调整经营性贷款利率审批流程的议案》配置;规则调整经规则版本发布生效后自动适用于新申请。
+    </div>
+
     <!-- 步骤条(§14.1) -->
     <div class="stepper wizard-stepper">
       <div
@@ -201,6 +206,9 @@
           <input class="form-input" :value="applyOrgText" disabled />
         </div>
       </div>
+
+      <!-- 关联人员(§12.4④,随申请备注结构附带提交) -->
+      <RelatedPersonsEditor v-model="relations" style="margin-top:16px" />
 
       <div class="wizard-actions">
         <span></span>
@@ -699,6 +707,7 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
+import RelatedPersonsEditor, { serializeRelations, parseRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -807,6 +816,8 @@ const memberContracts = ref<Record<string, any[]>>({})
 // 承诺与附件
 const commitments = ref<CommitmentRow[]>([])
 const attachments = ref<Array<{ name: string; size: number; dataBase64: string }>>([])
+// 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
+const relations = ref<RelatedPersonRow[]>([])
 
 // 草稿与提交闭环状态
 const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
@@ -1142,7 +1153,8 @@ function buildPayload(): ApplicationPayload {
     applicantUserId: userStore.userInfo?.userId,
     applicantOrgId: userStore.userInfo?.orgId,
     orgId: userStore.userInfo?.orgId,
-    applicationRemark: form.applicationRemark || undefined
+    // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
+    applicationRemark: ((form.applicationRemark || '') + serializeRelations(relations.value)).trim() || undefined
   }
 }
 
@@ -1240,7 +1252,10 @@ async function loadDraftIntoForm(id: number) {
   form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
   form.groupNo = app.groupNo || ''
-  form.applicationRemark = app.applicationRemark || ''
+  // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
+  const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
+  relations.value = rels
+  form.applicationRemark = cleanedRemark
 
   if (app.customerScope === 'GROUP' && app.groupNo) {
     await queryGroup()
@@ -1361,6 +1376,13 @@ async function loadDraftIntoForm(id: number) {
 
 /* 草稿横幅 */
 .draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
+
+/* 规则来源提示(§12.4⑦) */
+.rule-notice {
+  background: var(--color-primary-light); color: var(--color-primary);
+  border: 1px solid var(--color-primary); border-radius: var(--radius);
+  padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+}
 
 /* 集团概要 */
 .group-summary {

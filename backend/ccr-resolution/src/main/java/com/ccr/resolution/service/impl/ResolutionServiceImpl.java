@@ -1,5 +1,6 @@
 package com.ccr.resolution.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -24,6 +25,7 @@ import com.ccr.resolution.mapper.DwLoanNoteSnapshotMapper;
 import com.ccr.resolution.service.ResolutionService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +68,8 @@ public class ResolutionServiceImpl implements ResolutionService {
     private DwLoanNoteSnapshotMapper loanNoteSnapshotMapper;
     @Resource
     private CcrNotificationLogWriteMapper notificationLogMapper;
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -162,6 +166,16 @@ public class ResolutionServiceImpl implements ResolutionService {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                     "合同回填校验不通过:" + String.join(";", errors));
         }
+        // 同一 loan_contract_no 只能绑定一个未关闭决议(执行记录未 CLOSED 即占用)
+        List<CcrResolutionExecution> occupied = executionMapper.selectList(
+                new LambdaQueryWrapper<CcrResolutionExecution>()
+                        .eq(CcrResolutionExecution::getLoanContractNo, bindDTO.getLoanContractNo())
+                        .ne(CcrResolutionExecution::getId, exec.getId())
+                        .ne(CcrResolutionExecution::getExecutionStatus, "CLOSED"));
+        if (!occupied.isEmpty()) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "合同号[" + bindDTO.getLoanContractNo() + "]已绑定未关闭决议,禁止重复绑定");
+        }
 
         exec.setLoanContractNo(bindDTO.getLoanContractNo());
         exec.setSupplementAgreementNo(bindDTO.getSupplementAgreementNo());
@@ -169,7 +183,8 @@ public class ResolutionServiceImpl implements ResolutionService {
         exec.setBindTime(LocalDateTime.now());
         exec.setExecutionStatus("CONTRACT_BOUND");
         executionMapper.updateById(exec);
-        return exec;
+        // 绑定成功同事务自动触发两级核验(§7.7),核验结果直接反映在返回记录上
+        return executeCheck(resolutionId);
     }
 
     @Override
@@ -239,6 +254,108 @@ public class ResolutionServiceImpl implements ResolutionService {
         return exec;
     }
 
+    // ---------- 决议查询(§13.2,角色数据权限) ----------
+
+    @Override
+    public List<Map<String, Object>> listResolutions() {
+        Long loginId = StpUtil.getLoginIdAsLong();
+        String roleCode = currentRoleCode(loginId);
+        String sql = """
+                SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId,
+                       r.pricing_carrier_type carrierType, r.pricing_carrier_business_key carrierBusinessKey,
+                       r.final_rate finalRate, r.effective_from effectiveFrom, r.effective_to effectiveTo,
+                       r.decision_source decisionSource, r.status, r.issue_time issueTime,
+                       pi.pricing_item_no pricingItemNo, pi.pricing_customer_no customerNo,
+                       a.id applicationId, a.application_no applicationNo, a.business_type businessType
+                FROM ccr_resolution r
+                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
+                WHERE r.del_flag = '0'
+                """;
+        if (isFullViewRole(roleCode)) {
+            return jdbcTemplate.queryForList(sql + " ORDER BY r.issue_time DESC");
+        }
+        if ("customer_manager".equals(roleCode)) {
+            // 客户经理:本人申请
+            return jdbcTemplate.queryForList(
+                    sql + " AND a.applicant_user_id = ? ORDER BY r.issue_time DESC", loginId);
+        }
+        // 其余审批角色:本人审批/表决/决策过的申请
+        return jdbcTemplate.queryForList(
+                sql + " AND a.id IN (" + participatedApplicationSql(loginId) + ") ORDER BY r.issue_time DESC");
+    }
+
+    @Override
+    public Map<String, Object> resolutionDetail(Long resolutionId) {
+        Long loginId = StpUtil.getLoginIdAsLong();
+        String roleCode = currentRoleCode(loginId);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT r.*, pi.application_id appId, a.applicant_user_id applicantUserId"
+                        + " FROM ccr_resolution r JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " JOIN ccr_application a ON a.id = pi.application_id"
+                        + " WHERE r.id = ? AND r.del_flag = '0'", resolutionId);
+        if (rows.isEmpty()) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "决议不存在");
+        }
+        Map<String, Object> resolution = rows.get(0);
+        // 数据权限:全量角色放行;客户经理仅本人申请;其余审批角色须本人参与过
+        if (!isFullViewRole(roleCode)) {
+            Object applicant = resolution.get("applicantUserId");
+            Long participated = "customer_manager".equals(roleCode) ? null
+                    : jdbcTemplate.queryForObject("SELECT COUNT(*) FROM ("
+                            + participatedApplicationSql(loginId) + ") t WHERE t.application_id = "
+                            + ((Number) resolution.get("appId")).longValue(), Long.class);
+            boolean allowed = "customer_manager".equals(roleCode)
+                    ? applicant != null && loginId.equals(((Number) applicant).longValue())
+                    : participated != null && participated > 0;
+            if (!allowed) {
+                throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "无权查看该决议");
+            }
+        }
+        resolution.remove("appId");
+        resolution.remove("applicantUserId");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("resolution", resolution);
+        // 执行记录(含核验结果)
+        result.put("executions", jdbcTemplate.queryForList(
+                "SELECT id, contract_business_key contractBusinessKey, loan_contract_no loanContractNo,"
+                        + " supplement_agreement_no supplementAgreementNo, execution_rate executionRate,"
+                        + " bind_time bindTime, execution_status executionStatus, source_batch_id sourceBatchId,"
+                        + " reconcile_result reconcileResult, reconcile_time reconcileTime"
+                        + " FROM ccr_resolution_execution WHERE resolution_id = ? AND del_flag = '0'",
+                resolutionId));
+        return result;
+    }
+
+    /** 全量数据权限角色:行长/管理员/审计 */
+    private boolean isFullViewRole(String roleCode) {
+        return "president".equals(roleCode) || "admin".equals(roleCode) || "auditor".equals(roleCode);
+    }
+
+    /** 登录人角色编码(用户表为准,不接受传参) */
+    private String currentRoleCode(Long loginId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT role_code roleCode FROM ccr_sys_user WHERE id = ? AND del_flag = '0'", loginId);
+        if (rows.isEmpty()) {
+            throw new ServiceException(ErrorCode.UNAUTHORIZED.getCode(), "登录用户不存在");
+        }
+        Object roleCode = rows.get(0).get("roleCode");
+        return roleCode == null ? null : roleCode.toString();
+    }
+
+    /** 审批人"本人参与过"的申请 id 集合:审批轨迹 ∪ 本人票据(哈希) ∪ 行长决策 */
+    private String participatedApplicationSql(Long userId) {
+        return "SELECT pi.application_id FROM ccr_approval_action aa"
+                + " JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id"
+                + " WHERE aa.del_flag = '0' AND aa.operator_id = " + userId
+                + " UNION SELECT pi.application_id FROM ccr_ballot b"
+                + " JOIN ccr_pricing_item pi ON pi.id = b.pricing_item_id"
+                + " WHERE b.del_flag = '0' AND b.voter_user_hash = SHA2('" + userId + "', 256)"
+                + " UNION SELECT pi.application_id FROM ccr_president_decision pd"
+                + " JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
+                + " WHERE pd.del_flag = '0' AND pd.president_user_id = " + userId;
+    }
+
     // ---------- 私有 ----------
 
     /** §7.7 回填一致性逐字段比对,返回不一致项说明(空表示全部通过) */
@@ -253,13 +370,18 @@ public class ResolutionServiceImpl implements ResolutionService {
                 || !bindDTO.getProductCode().equals(item.getProductCode())) {
             errors.add("产品不一致(分项产品=" + item.getProductCode() + ",合同产品=" + bindDTO.getProductCode() + ")");
         }
+        // 金额/期限:合同金额≥决议金额、期限≥决议期限(§7.7 修正口径)
         if (bindDTO.getContractAmount() == null || item.getPricingAmount() == null
-                || bindDTO.getContractAmount().compareTo(item.getPricingAmount()) != 0) {
-            errors.add("金额不一致(分项金额=" + item.getPricingAmount() + ",合同金额=" + bindDTO.getContractAmount() + ")");
+                || bindDTO.getContractAmount().compareTo(item.getPricingAmount()) < 0) {
+            errors.add("合同金额小于决议金额(决议金额=" + item.getPricingAmount()
+                    + ",合同金额=" + bindDTO.getContractAmount() + ")");
         }
-        if (!Objects.equals(bindDTO.getTermValue(), item.getTermValue())
-                || !Objects.equals(bindDTO.getTermUnit(), item.getTermUnit())) {
-            errors.add("期限不一致(分项期限=" + item.getTermValue() + item.getTermUnit()
+        if (!Objects.equals(bindDTO.getTermUnit(), item.getTermUnit())) {
+            errors.add("期限单位不一致(分项期限=" + item.getTermValue() + item.getTermUnit()
+                    + ",合同期限=" + bindDTO.getTermValue() + bindDTO.getTermUnit() + ")");
+        } else if (bindDTO.getTermValue() == null || item.getTermValue() == null
+                || bindDTO.getTermValue() < item.getTermValue()) {
+            errors.add("合同期限小于决议期限(决议期限=" + item.getTermValue() + item.getTermUnit()
                     + ",合同期限=" + bindDTO.getTermValue() + bindDTO.getTermUnit() + ")");
         }
         // 担保主类型:分项冻结担保组合的主类型

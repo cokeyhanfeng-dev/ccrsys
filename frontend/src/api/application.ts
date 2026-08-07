@@ -54,6 +54,7 @@ export interface DepositItemInput {
   requestedRate: number | string
   originalRate?: number | string
   depositAccountNo?: string
+  depositAccountHash?: string
   plannedAccountFlag?: string
 }
 
@@ -269,6 +270,11 @@ export function getCustomerBusinessView(customerNo: string) {
 /** 集团 + 集团授信概况 */
 export function getGroup(groupNo: string) {
   return get<any>(`/ccr/groups/${groupNo}`)
+}
+
+/** 存款账号反查数仓(后端哈希匹配,命中返回账户信息,未命中返回 null) */
+export function lookupDepositAccount(customerNo: string, accountNo: string) {
+  return get<any>(`/ccr/customers/${customerNo}/deposit-account-lookup`, { accountNo })
 }
 
 /** 集团有效成员及额度 */

@@ -4,7 +4,10 @@ import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.HistoryArchiveExporter;
 import com.ccr.vote.read.SysUserRead;
 import com.ccr.vote.support.CurrentLoginUser;
+import cn.hutool.core.util.IdUtil;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +31,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ccr/approval/history")
+@Slf4j
 public class HistoryExportController {
 
     @Resource
@@ -61,11 +65,31 @@ public class HistoryExportController {
                 + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + ".xlsx";
         String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
 
+        // 导出留痕(§11.10):写 ccr_export_record,失败仅记日志不阻断导出
+        recordExport(applicationId, filename, operator);
+
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(bytes);
+    }
+
+    /** 导出留痕(§11.10):ccr_export_record;表不存在(未执行 03f)时仅记日志,不影响导出 */
+    private void recordExport(Long applicationId, String fileName, SysUserRead operator) {
+        try {
+            long id = IdUtil.getSnowflakeNextId();
+            jdbcTemplate.update("""
+                            INSERT INTO ccr_export_record
+                            (id, export_no, application_id, export_type, file_name,
+                             operator_id, operator_name, org_id, export_time)
+                            VALUES (?,?,?,?,?,?,?,?,?)
+                            """,
+                    id, "EXP" + id, applicationId, "ARCHIVE_XLSX", fileName,
+                    operator.getId(), operator.getNickName(), operator.getOrgId(), LocalDateTime.now());
+        } catch (DataAccessException e) {
+            log.warn("导出记录写入失败(不影响导出): {}", e.getMessage());
+        }
     }
 
     /** 机构名称(ccr_sys_dept);查不到回退机构id */
