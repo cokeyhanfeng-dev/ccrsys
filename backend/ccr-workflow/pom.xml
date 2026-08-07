@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ccr</groupId>
+        <artifactId>ccr-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>ccr-workflow</artifactId>
+    <description>工作流模块:Warm-Flow 封装(§4.2)</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-rule</artifactId>
+        </dependency>
+        <!-- Warm-Flow 工作流引擎(Spring Boot 3 + MyBatis-Plus) -->
+        <dependency>
+            <groupId>org.dromara.warm</groupId>
+            <artifactId>warm-flow-mybatis-plus-sb3-starter</artifactId>
+        </dependency>
+    </dependencies>
+</project>

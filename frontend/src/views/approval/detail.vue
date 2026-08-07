@@ -1,0 +1,450 @@
+<template>
+  <div v-if="loaded">
+    <div class="section-head">
+      <div class="section-title">审批详情</div>
+      <div class="section-tip">基础信息只读,普通审批人仅可编辑审批利率与审批意见。</div>
+    </div>
+
+    <!-- 1. 流程路由 -->
+    <div class="card">
+      <div class="card__head"><span>流程路由</span><span class="badge badge--info">{{ businessTypeText }}</span></div>
+      <el-steps v-if="routeChain.length" :active="currentNodeIndex" align-center finish-status="success">
+        <el-step v-for="node in routeChain" :key="node" :title="nodeLabel(node)" />
+      </el-steps>
+      <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 2. 资料校验 -->
+    <div class="card">
+      <div class="card__head">
+        <span>资料校验</span>
+        <span v-if="qualityOverall" class="badge" :class="qualityBadge">{{ qualityText }}</span>
+      </div>
+      <template v-if="qualityOverall">
+        <table class="table" v-if="qualityResults.length">
+          <thead><tr><th>规则</th><th>级别</th><th>对象</th><th>说明</th><th>校验时间</th></tr></thead>
+          <tbody>
+            <tr v-for="(q, i) in qualityResults" :key="i">
+              <td>{{ q.ruleCode }}</td>
+              <td>
+                <span class="badge" :class="q.ruleLevel === 'BLOCK' ? 'badge--danger' : q.ruleLevel === 'WARN' ? 'badge--warning' : 'badge--success'">
+                  {{ q.ruleLevel === 'BLOCK' ? '阻断' : q.ruleLevel === 'WARN' ? '预警' : '通过' }}
+                </span>
+              </td>
+              <td>{{ q.subjectType || '—' }} {{ q.subjectId || '' }}</td>
+              <td>{{ q.message || '—' }}</td>
+              <td>{{ q.checkedTime || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty">校验通过,无异常明细</div>
+      </template>
+      <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 3. 醒目利率决策区 -->
+    <div class="card card--decision">
+      <div class="card__head">
+        <span>利率决策区</span>
+        <span class="badge" :class="actionable ? 'badge--processing' : 'badge--neutral'">{{ actionable ? '待我审批' : statusText }}</span>
+      </div>
+      <div class="decision-row">
+        <div class="decision-item"><span class="dg-label">客户</span><b>{{ customerName }}</b></div>
+        <div class="decision-item"><span class="dg-label">申请利率</span><b class="rate">{{ fmtRate(pi.requested_rate) }}</b></div>
+        <div class="decision-item">
+          <span class="dg-label">当前审批利率</span>
+          <b class="rate rate--approval">{{ fmtRate(pi.current_approval_rate ?? pi.requested_rate) }}</b>
+        </div>
+        <div class="decision-item">
+          <span class="dg-label">申请金额</span>
+          <b>{{ pi.pricing_amount ?? '—' }} 万元</b>
+          <div class="stat-card__sub">{{ isLoan ? '贷款利率越低越优惠' : '存款利率越高越优惠' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 申请内容 -->
+    <div class="card">
+      <div class="card__head"><span>申请内容</span></div>
+      <div class="detail-grid">
+        <div><span class="dg-label">申请号</span>{{ application.applicationNo || '—' }}</div>
+        <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
+        <div><span class="dg-label">客户号</span>{{ application.customerNo || pi.pricing_customer_no || '—' }}</div>
+        <div><span class="dg-label">定价分项</span>{{ pi.pricing_item_no || '—' }}</div>
+        <div><span class="dg-label">分项状态</span>{{ statusText }}</div>
+        <div><span class="dg-label">产品编码</span>{{ pi.product_code || '—' }}</div>
+        <div><span class="dg-label">原执行利率</span>{{ pi.original_rate != null ? fmtRate(pi.original_rate) : '新增业务' }}</div>
+        <div><span class="dg-label">期限</span>{{ pi.term_value ? `${pi.term_value}${termUnitText}` : '—' }}</div>
+        <div><span class="dg-label">当前节点</span>{{ pi.current_node_code ? nodeLabel(pi.current_node_code) : '—' }}</div>
+      </div>
+      <div class="remark-text" style="margin-top:12px" v-if="application.applicationRemark">{{ application.applicationRemark }}</div>
+    </div>
+
+    <!-- 5. 客户基本信息 -->
+    <div class="card">
+      <div class="card__head"><span>客户基本信息</span><span class="badge badge--info">数仓</span></div>
+      <div class="detail-grid" v-if="hasCustomer">
+        <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
+        <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customer.entpCharic }}</div>
+        <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
+        <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
+        <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+        <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
+        <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customer.customerClass }}</div>
+      </div>
+      <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 6. 集团信息(仅集团场景) -->
+    <div class="card" v-if="isGroup">
+      <div class="card__head"><span>集团信息</span><span class="badge badge--info">集团客户</span></div>
+      <div class="detail-grid">
+        <div><span class="dg-label">集团号</span>{{ application.groupNo }}</div>
+        <div><span class="dg-label">成员数</span>{{ groupMembers.length }} 户</div>
+        <div><span class="dg-label">合计申请金额</span>{{ groupTotalAmount }} 万元</div>
+        <div><span class="dg-label">集团贡献度</span>暂无数据</div>
+      </div>
+      <el-collapse v-if="groupMembers.length" style="margin-top:12px">
+        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="`成员 ${m.memberCustomerNo}(${m.memberRole || '成员'})`" :name="i">
+          <div class="detail-grid">
+            <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
+            <div><span class="dg-label">成员角色</span>{{ m.memberRole || '—' }}</div>
+            <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
+          </div>
+          <table class="table" style="margin-top:8px" v-if="memberCommitments(m.memberCustomerNo).length">
+            <thead><tr><th>承诺指标</th><th>基线</th><th>目标</th><th>单位</th></tr></thead>
+            <tbody>
+              <tr v-for="(c, j) in memberCommitments(m.memberCustomerNo)" :key="j">
+                <td>{{ c.metricCode }}</td>
+                <td class="num">{{ c.baselineValue ?? '—' }}</td>
+                <td class="num">{{ c.targetValue ?? '—' }}</td>
+                <td>{{ c.unit || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty" style="padding:8px">该成员暂无承诺指标</div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- 7. 授信/账户与本行融资 -->
+    <div class="card">
+      <div class="card__head"><span>授信/账户与本行融资</span><span class="badge badge--info">数仓</span></div>
+      <table class="table" v-if="financing.length">
+        <thead><tr><th>合同号</th><th>贷款余额(万元)</th><th>原利率</th><th>担保类型</th></tr></thead>
+        <tbody>
+          <tr v-for="f in financing" :key="f.contractNo">
+            <td>{{ f.contractNo }}</td><td class="num">{{ f.loanBalance ?? '—' }}</td>
+            <td class="num">{{ fmtRate(f.contractRate) }}</td><td>{{ f.guaranteeType || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 8. 贷款合同/存款账户与担保 -->
+    <div class="card">
+      <div class="card__head"><span>{{ isLoan ? '贷款合同与担保' : '存款账户' }}</span></div>
+      <div class="detail-grid">
+        <div><span class="dg-label">定价载体</span>{{ pi.pricing_carrier_type === 'LOAN_CONTRACT' ? '贷款合同' : pi.pricing_carrier_type === 'DEPOSIT_ACCOUNT' ? '存款账户' : (pi.pricing_carrier_type || '—') }}</div>
+        <div><span class="dg-label">载体来源</span>{{ pi.credit_tranche_ref || '—' }}</div>
+        <div><span class="dg-label">合同下借据</span>暂无数据</div>
+      </div>
+      <table class="table" style="margin-top:12px" v-if="guarantees.length">
+        <thead><tr><th>担保方式</th><th>措施编号</th><th>措施类型</th><th>担保金额(万元)</th></tr></thead>
+        <tbody>
+          <tr v-for="(g, i) in guarantees" :key="i">
+            <td>{{ g.guaranteeType || '—' }}</td><td>{{ g.measureNo || '—' }}</td>
+            <td>{{ g.measureType || '—' }}</td><td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty" style="padding:8px">无担保明细</div>
+    </div>
+
+    <!-- 9. 当前与拟达成贡献度(双概念并排) -->
+    <div class="card">
+      <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
+      <div class="contrib-dual">
+        <div class="contrib-dual__col">
+          <div class="contrib-dual__title">当前贡献度 <span class="badge badge--info">数仓</span></div>
+          <table class="table" v-if="contribution.length">
+            <thead><tr><th>指标</th><th>名称</th><th>数值</th></tr></thead>
+            <tbody>
+              <tr v-for="(c, i) in contribution" :key="i">
+                <td>{{ c.metricCode }}</td><td>{{ c.metricName || '—' }}</td>
+                <td class="num">{{ c.metricValue ?? '—' }}{{ c.valueType || '' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty">暂无数据</div>
+        </div>
+        <div class="contrib-dual__col">
+          <div class="contrib-dual__title">拟达成贡献度 <span class="badge badge--warning">承诺基线</span></div>
+          <table class="table" v-if="commitments.length">
+            <thead><tr><th>指标</th><th>基线 → 目标</th><th>单位</th><th>范围</th></tr></thead>
+            <tbody>
+              <tr v-for="(c, i) in commitments" :key="i">
+                <td>{{ c.metricCode }}</td>
+                <td class="num">{{ c.baselineValue ?? '—' }} → {{ c.targetValue ?? '—' }}</td>
+                <td>{{ c.unit || '—' }}</td>
+                <td>{{ c.memberCustomerNo ? `成员 ${c.memberCustomerNo}` : (c.metricScope || '整体') }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty">暂无数据</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. 历史履约 / 机构达成(后端明细暂缺) -->
+    <div class="card">
+      <div class="card__head"><span>历史履约与机构达成</span></div>
+      <div class="detail-grid">
+        <div><span class="dg-label">历史履约</span>暂无数据</div>
+        <div><span class="dg-label">机构达成</span>暂无数据</div>
+      </div>
+    </div>
+
+    <!-- 11. 流程轨迹 -->
+    <div class="card">
+      <div class="card__head"><span>流程轨迹</span></div>
+      <el-timeline v-if="flowTrace.length">
+        <el-timeline-item v-for="(t, i) in flowTrace" :key="i" :timestamp="t.operationTime || ''" placement="top">
+          <div>
+            <span class="badge" :class="t.actionType === 'REJECT' ? 'badge--rejected' : 'badge--approved'">
+              {{ t.actionType === 'APPROVE' ? '通过' : t.actionType === 'REJECT' ? '否决' : t.actionType }}
+            </span>
+            <span class="dg-label" style="margin-left:8px">{{ nodeLabel(t.nodeCode) }}</span>
+            <span v-if="t.beforeRate != null && t.afterRate != null && t.beforeRate !== t.afterRate" style="margin-left:8px">
+              利率 {{ fmtRate(t.beforeRate) }} → {{ fmtRate(t.afterRate) }}
+            </span>
+          </div>
+          <div class="stat-card__sub" v-if="t.actionComment">{{ t.actionComment }}</div>
+        </el-timeline-item>
+      </el-timeline>
+      <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 12. 审批操作(仅当前节点待办可操作) -->
+    <div class="card" v-if="actionable">
+      <div class="card__head"><span>审批操作</span><span class="badge badge--processing">当前节点:{{ nodeLabel(pi.current_node_code) }}</span></div>
+      <div class="op-form">
+        <div class="op-form__row">
+          <label class="op-form__label">审批利率(%)</label>
+          <el-input-number v-model="opRate" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" />
+          <div class="stat-card__sub">
+            {{ isLoan
+              ? '贷款:审批利率不低于本节点下限方可权限内终审,低于下限将保留利率自动上送下一节点;调价不得突破本节点权限边界。'
+              : '存款:审批利率不高于本节点上限方可权限内终审,超出将保留利率上送小组表决;调价不得突破本节点权限边界。' }}
+          </div>
+        </div>
+        <div class="op-form__row">
+          <label class="op-form__label">审批意见</label>
+          <el-input v-model="opComment" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="请输入审批意见(否决时建议说明原因)" />
+        </div>
+        <div style="display:flex;gap:12px">
+          <button class="btn btn--primary" :disabled="submitting" @click="doApprove">{{ rateAdjusted ? '调价并通过' : '通过' }}</button>
+          <button class="btn btn--danger" :disabled="submitting" @click="doReject">否决</button>
+          <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" v-else-if="pi.status === 'ROUTING'">
+      <div class="empty">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
+    </div>
+  </div>
+  <div v-else class="empty">加载中...</div>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
+import { useUserStore } from '@/store/user'
+
+const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+
+const loaded = ref(false)
+const submitting = ref(false)
+const pricingItemId = computed(() => route.params.id as string)
+
+const pi = ref<any>({})
+const application = ref<any>({})
+const customer = ref<any>({})
+const financing = ref<any[]>([])
+const contribution = ref<any[]>([])
+const commitments = ref<any[]>([])
+const guarantees = ref<any[]>([])
+const groupMembers = ref<any[]>([])
+const routeChain = ref<string[]>([])
+const qualityResults = ref<any[]>([])
+const qualityOverall = ref('')
+const flowTrace = ref<any[]>([])
+
+const opRate = ref<number | undefined>(undefined)
+const opComment = ref('')
+
+const NODE_LABELS: Record<string, string> = {
+  BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
+  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组表决', PRESIDENT: '行长决策'
+}
+const ROLE_NODE: Record<string, string> = {
+  branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT'
+}
+const STATUS_TEXT: Record<string, string> = {
+  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '路由中', APPROVED_LEVEL: '权限内已批',
+  VOTING: '小组表决', COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议',
+  FINAL: '终态', VETOED: '一票否决', REJECTED: '已否决', RETURNED: '已退回', CLOSED: '已关闭'
+}
+
+function nodeLabel(code?: string) {
+  return code ? (NODE_LABELS[code] || code) : '—'
+}
+
+const isLoan = computed(() => application.value.businessType !== 'DEPOSIT')
+const businessTypeText = computed(() => application.value.businessType === 'DEPOSIT' ? '存款' : '贷款')
+const isGroup = computed(() => !!application.value.groupNo)
+const hasCustomer = computed(() => !!customer.value.customerName)
+const customerName = computed(() => customer.value.customerName || pi.value.pricing_customer_no || '—')
+const statusText = computed(() => STATUS_TEXT[pi.value.status] || pi.value.status || '—')
+
+// 当前节点在路由链中的位置(高亮)
+const currentNodeIndex = computed(() => {
+  const idx = routeChain.value.indexOf(pi.value.current_node_code)
+  return idx < 0 ? 0 : idx
+})
+
+// 仅当分项在审批中且当前节点与登录人角色节点一致时可操作
+const actionable = computed(() => {
+  if (pi.value.status !== 'ROUTING') return false
+  const role = userStore.userInfo?.roles?.[0] || ''
+  return pi.value.current_node_code && ROLE_NODE[role] === pi.value.current_node_code
+})
+
+const rateAdjusted = computed(() => {
+  const base = pi.value.current_approval_rate ?? pi.value.requested_rate
+  return opRate.value != null && base != null && Number(opRate.value) !== Number(base)
+})
+
+const qualityBadge = computed(() =>
+  qualityOverall.value === 'BLOCK' ? 'badge--danger' : qualityOverall.value === 'WARN' ? 'badge--warning' : 'badge--success')
+const qualityText = computed(() =>
+  qualityOverall.value === 'BLOCK' ? '阻断' : qualityOverall.value === 'WARN' ? '预警' : '通过')
+
+const groupTotalAmount = computed(() =>
+  groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
+
+const termUnitText = computed(() => {
+  const map: Record<string, string> = { D: '天', M: '个月', Y: '年', DAY: '天', MONTH: '个月', YEAR: '年' }
+  return map[pi.value.term_unit] || pi.value.term_unit || ''
+})
+
+function fmtRate(v: any) {
+  return v == null || v === '' ? '—' : `${v}%`
+}
+
+function memberCommitments(memberNo: string) {
+  return commitments.value.filter((c) => c.memberCustomerNo === memberNo)
+}
+
+async function load() {
+  try {
+    const data = await getApprovalDetail(pricingItemId.value)
+    pi.value = data.pricingItem || {}
+    application.value = data.application?.[0] || {}
+    customer.value = data.customer?.[0] || {}
+    financing.value = data.financing || []
+    contribution.value = data.contribution || []
+    commitments.value = data.commitments || []
+    guarantees.value = data.guarantees || []
+    groupMembers.value = data.groupMembers || []
+    routeChain.value = data.routeChain || []
+    qualityResults.value = data.qualityResults || []
+    qualityOverall.value = data.qualityOverall || ''
+    flowTrace.value = data.flowTrace || []
+    const base = pi.value.current_approval_rate ?? pi.value.requested_rate
+    opRate.value = base != null ? Number(base) : undefined
+    loaded.value = true
+  } catch {
+    ElMessage.error('审批详情加载失败')
+  }
+}
+
+function goBack() {
+  router.push('/approval')
+}
+
+async function doApprove() {
+  if (opRate.value == null) {
+    ElMessage.warning('请填写审批利率')
+    return
+  }
+  submitting.value = true
+  try {
+    await approveTask({
+      pricingItemId: Number(pricingItemId.value),
+      nodeCode: pi.value.current_node_code,
+      adjustRate: rateAdjusted.value ? opRate.value : null,
+      comment: opComment.value || undefined,
+      versionNo: Number(pi.value.version_no)
+    }, newIdempotencyKey())
+    ElMessage.success(rateAdjusted.value ? '已调价并通过' : '已通过')
+    goBack()
+  } catch {
+    load() // 版本冲突/已处理等:刷新最新状态
+  } finally {
+    submitting.value = false
+  }
+}
+
+function doReject() {
+  ElMessageBox.confirm('确认否决该定价分项?否决后为终态。', '否决', { type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消' })
+    .then(async () => {
+      submitting.value = true
+      try {
+        await rejectTask({
+          pricingItemId: Number(pricingItemId.value),
+          nodeCode: pi.value.current_node_code,
+          comment: opComment.value || undefined,
+          versionNo: Number(pi.value.version_no)
+        }, newIdempotencyKey())
+        ElMessage.warning('已否决')
+        goBack()
+      } catch {
+        load()
+      } finally {
+        submitting.value = false
+      }
+    })
+    .catch(() => undefined)
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+.section-head { margin-bottom: 16px; }
+.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
+.section-tip { font-size: 13px; color: var(--color-text-sub); }
+.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
+.card__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
+.card--decision { border-color: var(--color-primary); }
+.decision-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.decision-item { font-size: 14px; }
+.decision-item .rate { font-size: 22px; color: var(--color-primary); }
+.decision-item .rate--approval { color: var(--color-warning); }
+.dg-label { color: var(--color-text-sub); margin-right: 6px; }
+.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
+.table { border-radius: var(--radius); overflow: hidden; }
+.remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
+.contrib-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.contrib-dual__title { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.op-form__row { margin-bottom: 12px; }
+.op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
+.stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 4px; }
+.empty { text-align: center; padding: 16px; color: var(--color-text-light); }
+</style>

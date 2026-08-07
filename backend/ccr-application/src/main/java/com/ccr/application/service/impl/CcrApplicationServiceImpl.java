@@ -1,0 +1,588 @@
+package com.ccr.application.service.impl;
+
+import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
+import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import com.ccr.application.domain.CcrApplication;
+import com.ccr.application.domain.CcrApplicationCommitment;
+import com.ccr.application.domain.CcrApplicationMember;
+import com.ccr.application.domain.CcrGuaranteeMeasure;
+import com.ccr.application.domain.CcrGuaranteePackage;
+import com.ccr.application.domain.CcrPricingItem;
+import com.ccr.application.domain.CcrPricingItemContractRel;
+import com.ccr.application.domain.CcrPricingItemDepositRel;
+import com.ccr.application.dto.ApplicationDetailResponse;
+import com.ccr.application.dto.CommitmentInput;
+import com.ccr.application.dto.DepositItemInput;
+import com.ccr.application.dto.MemberInput;
+import com.ccr.application.enums.ApplicationStatus;
+import com.ccr.application.enums.PricingItemStatus;
+import com.ccr.application.mapper.CcrApplicationCommitmentMapper;
+import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.mapper.CcrApplicationMemberMapper;
+import com.ccr.application.mapper.CcrGuaranteeMeasureMapper;
+import com.ccr.application.mapper.CcrGuaranteePackageMapper;
+import com.ccr.application.mapper.CcrPricingItemContractRelMapper;
+import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
+import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.application.service.CcrApplicationService;
+import com.ccr.application.service.DataWarehouseService;
+import com.ccr.common.enums.ErrorCode;
+import com.ccr.common.exception.ServiceException;
+import jakarta.annotation.Resource;
+import org.springframework.dao.DataAccessException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 申请域服务实现
+ * 草稿阶段(§12.1 DRAFT)可编辑;创建按 businessType 分流生成贷款/存款定价分项
+ */
+@Service
+public class CcrApplicationServiceImpl implements CcrApplicationService {
+
+    @Resource
+    private CcrApplicationMapper applicationMapper;
+
+    @Resource
+    private CcrApplicationMemberMapper applicationMemberMapper;
+
+    @Resource
+    private CcrPricingItemMapper pricingItemMapper;
+
+    @Resource
+    private CcrPricingItemContractRelMapper contractRelMapper;
+
+    @Resource
+    private CcrPricingItemDepositRelMapper depositRelMapper;
+
+    @Resource
+    private CcrGuaranteePackageMapper guaranteePackageMapper;
+
+    @Resource
+    private CcrGuaranteeMeasureMapper guaranteeMeasureMapper;
+
+    @Resource
+    private CcrApplicationCommitmentMapper commitmentMapper;
+
+    @Resource
+    private DataWarehouseService dataWarehouseService;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CcrApplication createDraft(CcrApplication request) {
+        // customerScope 守卫:非 GROUP 传 members 拒绝,GROUP 缺 groupNo 拒绝
+        String businessType = request.getBusinessType();
+        if (!"LOAN".equals(businessType) && !"DEPOSIT".equals(businessType)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "业务类型必填且仅支持 LOAN/DEPOSIT");
+        }
+        String customerScope = request.getCustomerScope();
+        boolean groupScope = "GROUP".equals(customerScope);
+        if (!groupScope && !"INDIVIDUAL".equals(customerScope) && !"CORPORATE_SINGLE".equals(customerScope)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "客户范围必填且仅支持 INDIVIDUAL/CORPORATE_SINGLE/GROUP");
+        }
+        if (groupScope && StrUtil.isBlank(request.getGroupNo())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景集团客户编号(groupNo)必填");
+        }
+        if (!groupScope && request.getMembers() != null && !request.getMembers().isEmpty()) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "非集团场景不允许传涉及成员(members)");
+        }
+
+        CcrApplication entity = new CcrApplication();
+        copyForCreate(entity, request);
+        // 生成申请号:CCR + yyyyMMdd + 4位随机
+        entity.setApplicationNo("CCR" + cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyyMMdd")
+                + IdUtil.fastSimpleUUID().substring(0, 4).toUpperCase());
+        entity.setStatus(ApplicationStatus.DRAFT.getCode());
+        // 数据日期基线(§7.1 步骤9:提交时与最新成功批次比对)
+        entity.setDataBaselineJson(buildBaselineJson(businessType, customerScope));
+        applicationMapper.insert(entity);
+
+        // 集团场景:写入涉及成员(逐成员真实金额/币种/角色,成员额度从数仓回填)
+        saveMembers(entity, request.getMembers(), groupScope);
+
+        // 创建定价分项:贷款按担保切分,存款按结构化存款字段
+        List<CcrPricingItem> createdItems = createItemsByBusinessType(entity, request, businessType, groupScope);
+
+        // 拟达成贡献度承诺(供审批通过后生成正式承诺计划读取)
+        saveCommitments(entity.getId(), request.getCommitments(), createdItems);
+        return entity;
+    }
+
+    /** 成员/分项/承诺子表写入(createDraft 与 saveDraft 共用) */
+    private void saveMembers(CcrApplication entity, List<MemberInput> members, boolean groupScope) {
+        if (members == null) {
+            return;
+        }
+        Map<String, Object> groupCredit = groupScope ? loadGroupCredit(entity.getGroupNo()) : null;
+        for (MemberInput m : members) {
+            if (m == null || StrUtil.isBlank(m.getMemberCustomerNo())) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "涉及成员客户号必填");
+            }
+            if (m.getRequestAmount() == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "成员[" + m.getMemberCustomerNo() + "]本次申请金额必填");
+            }
+            CcrApplicationMember member = new CcrApplicationMember();
+            member.setApplicationId(entity.getId());
+            member.setMemberCustomerNo(m.getMemberCustomerNo());
+            member.setRequestAmount(m.getRequestAmount());
+            member.setCurrency(StrUtil.blankToDefault(m.getCurrency(), "CNY"));
+            member.setMemberRole(resolveMemberRole(entity.getGroupNo(), m));
+            // 成员额度从 dw_member_credit_limit_snapshot 回填
+            if (groupCredit != null) {
+                Map<String, Object> limit = loadMemberLimit(
+                        String.valueOf(groupCredit.get("group_credit_no")), m.getMemberCustomerNo());
+                if (limit != null) {
+                    member.setMemberLimitRef(String.valueOf(limit.get("member_limit_no")));
+                    member.setMemberLimitAmount(toBigDecimal(limit.get("allocated_amount")));
+                }
+            }
+            applicationMemberMapper.insert(member);
+        }
+    }
+
+    /** 按业务类型分流创建定价分项(贷款按担保切分,存款按结构化存款字段) */
+    private List<CcrPricingItem> createItemsByBusinessType(CcrApplication entity, CcrApplication request,
+                                                           String businessType, boolean groupScope) {
+        if ("LOAN".equals(businessType)) {
+            return createLoanItems(entity, request, groupScope);
+        }
+        if ("DEPOSIT".equals(businessType)) {
+            return createDepositItems(entity, request, groupScope);
+        }
+        return new ArrayList<>();
+    }
+
+    // ---------- createDraft 私有 ----------
+
+    /** 贷款分项:按担保切分(每条 guarantee 一个分项),产品码/期限/币种从请求取值 */
+    private List<CcrPricingItem> createLoanItems(CcrApplication entity, CcrApplication request, boolean groupScope) {
+        List<CcrPricingItem> created = new ArrayList<>();
+        if (request.getGuarantees() == null) {
+            return created;
+        }
+        int index = 0;
+        for (Map<String, Object> g : request.getGuarantees()) {
+            index++;
+            if (g == null) {
+                continue;
+            }
+            BigDecimal requestedRate = toBigDecimal(g.get("requestedRate"));
+            String productCode = strVal(g.get("productCode"));
+            Integer termValue = toInteger(g.get("termValue"));
+            String termUnit = strVal(g.get("termUnit"));
+            if (requestedRate == null || StrUtil.isBlank(productCode) || termValue == null || StrUtil.isBlank(termUnit)) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条担保分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
+            }
+            BigDecimal pricingAmount = toBigDecimal(g.get("amount"));
+            if (pricingAmount == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条担保分项金额(amount)必填");
+            }
+            String memberCustomerNo = strVal(g.get("memberCustomerNo"));
+            CcrPricingItem pi = newPricingItem(entity, groupScope, memberCustomerNo);
+            pi.setPricingCarrierType("LOAN_CONTRACT");
+            pi.setProductCode(productCode);
+            pi.setTermValue(termValue);
+            pi.setTermUnit(termUnit);
+            pi.setPricingAmount(pricingAmount);
+            pi.setCurrency(StrUtil.blankToDefault(strVal(g.get("currency")), "CNY"));
+            pi.setOriginalRate(toBigDecimal(g.get("originalRate")));
+            pi.setRequestedRate(requestedRate);
+            pi.setCurrentApprovalRate(requestedRate);
+            pi.setRateDirection("LOWER_BETTER");
+            pi.setCreditTrancheRef(strVal(g.get("creditTrancheRef")));
+            pricingItemMapper.insert(pi);
+            created.add(pi);
+
+            // 分项与贷款合同关系(现有合同号或拟签合同标识)
+            String contractBusinessKey = StrUtil.blankToDefault(strVal(g.get("contractBusinessKey")), strVal(g.get("contractNo")));
+            if (StrUtil.isNotBlank(contractBusinessKey)) {
+                CcrPricingItemContractRel rel = new CcrPricingItemContractRel();
+                rel.setApplicationId(entity.getId());
+                rel.setPricingItemId(pi.getId());
+                rel.setContractBusinessKey(contractBusinessKey);
+                rel.setPlannedContractFlag(StrUtil.blankToDefault(strVal(g.get("plannedContractFlag")), "N"));
+                if (!"Y".equals(rel.getPlannedContractFlag())) {
+                    rel.setLoanContractNo(contractBusinessKey);
+                }
+                contractRelMapper.insert(rel);
+            }
+
+            // 担保组合(一分项一组合,pricing_item_id 唯一)+ 担保措施
+            String guaranteeType = strVal(g.get("guaranteeType"));
+            if (StrUtil.isNotBlank(guaranteeType)) {
+                CcrGuaranteePackage pkg = new CcrGuaranteePackage();
+                pkg.setPackageNo("GP-" + IdUtil.fastSimpleUUID().substring(0, 8).toUpperCase());
+                pkg.setPricingItemId(pi.getId());
+                pkg.setPackageVersion(1);
+                pkg.setMainGuaranteeType(guaranteeType);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ext = g.get("extJson") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+                pkg.setExtJson(ext);
+                guaranteePackageMapper.insert(pkg);
+                pi.setGuaranteePackageId(pkg.getId());
+                pricingItemMapper.updateById(pi);
+                saveGuaranteeMeasures(pkg.getId(), g.get("measures"));
+            }
+        }
+        return created;
+    }
+
+    /** 存款分项:从结构化存款字段生成(修复"存款申请 0 分项",不再依赖 guarantees 列表) */
+    private List<CcrPricingItem> createDepositItems(CcrApplication entity, CcrApplication request, boolean groupScope) {
+        List<CcrPricingItem> created = new ArrayList<>();
+        if (request.getDepositItems() == null) {
+            return created;
+        }
+        int index = 0;
+        for (DepositItemInput d : request.getDepositItems()) {
+            index++;
+            if (d == null) {
+                continue;
+            }
+            if (d.getRequestedRate() == null || StrUtil.isBlank(d.getProductCode())
+                    || d.getTermValue() == null || StrUtil.isBlank(d.getTermUnit())) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条存款分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
+            }
+            boolean planned = "Y".equals(d.getPlannedAccountFlag()) || StrUtil.isBlank(d.getDepositAccountNo());
+            if (d.getAmount() == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条存款分项金额(amount)必填");
+            }
+            CcrPricingItem pi = newPricingItem(entity, groupScope, d.getMemberCustomerNo());
+            pi.setPricingCarrierType("DEPOSIT_ACCOUNT");
+            pi.setProductCode(d.getProductCode());
+            pi.setTermValue(d.getTermValue());
+            pi.setTermUnit(d.getTermUnit());
+            pi.setPricingAmount(d.getAmount());
+            pi.setCurrency(StrUtil.blankToDefault(d.getCurrency(), "CNY"));
+            pi.setOriginalRate(d.getOriginalRate());
+            pi.setRequestedRate(d.getRequestedRate());
+            pi.setCurrentApprovalRate(d.getRequestedRate());
+            pi.setRateDirection("HIGHER_BETTER");
+            pricingItemMapper.insert(pi);
+            created.add(pi);
+
+            // 分项与存款账户关系(拟开户账号可空)
+            CcrPricingItemDepositRel rel = new CcrPricingItemDepositRel();
+            rel.setApplicationId(entity.getId());
+            rel.setPricingItemId(pi.getId());
+            rel.setPlannedAccountFlag(planned ? "Y" : "N");
+            if (StrUtil.isNotBlank(d.getDepositAccountNo())) {
+                rel.setDepositAccountNoCipher("CIPHER_" + d.getDepositAccountNo());
+                rel.setDepositAccountHash(DigestUtil.sha256Hex(d.getDepositAccountNo()));
+            }
+            depositRelMapper.insert(rel);
+        }
+        return created;
+    }
+
+    /** 分项公共字段;集团场景必须取真实成员客户号(禁止字面量占位) */
+    private CcrPricingItem newPricingItem(CcrApplication entity, boolean groupScope, String memberCustomerNo) {
+        if (groupScope && StrUtil.isBlank(memberCustomerNo)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景定价分项必须指定成员客户号(memberCustomerNo)");
+        }
+        if (!groupScope && StrUtil.isBlank(entity.getCustomerNo())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景创建分项前必须填写客户号(customerNo)");
+        }
+        CcrPricingItem pi = new CcrPricingItem();
+        pi.setApplicationId(entity.getId());
+        pi.setPricingItemNo("PI-" + IdUtil.fastSimpleUUID().substring(0, 8).toUpperCase());
+        pi.setPricingCustomerNo(groupScope ? memberCustomerNo : entity.getCustomerNo());
+        pi.setMemberCustomerNo(groupScope ? memberCustomerNo : null);
+        pi.setStatus(PricingItemStatus.DRAFT.getCode());
+        pi.setInheritFlag("N");
+        return pi;
+    }
+
+    private void saveGuaranteeMeasures(Long packageId, Object measures) {
+        if (!(measures instanceof List<?> list)) {
+            return;
+        }
+        int seq = 0;
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) {
+                continue;
+            }
+            seq++;
+            CcrGuaranteeMeasure measure = new CcrGuaranteeMeasure();
+            measure.setPackageId(packageId);
+            measure.setMeasureNo("GM-" + IdUtil.fastSimpleUUID().substring(0, 8).toUpperCase());
+            measure.setMeasureType(StrUtil.blankToDefault(strVal(m.get("measureType")), "CREDIT"));
+            measure.setGuarantorCustomerNo(strVal(m.get("guarantorCustomerNo")));
+            measure.setCollateralNo(strVal(m.get("collateralNo")));
+            BigDecimal amount = toBigDecimal(m.get("guaranteeAmount"));
+            measure.setGuaranteeAmount(amount == null ? BigDecimal.ZERO : amount);
+            measure.setCurrency(StrUtil.blankToDefault(strVal(m.get("currency")), "CNY"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> ext = m.get("extJson") instanceof Map<?, ?> e ? (Map<String, Object>) e : null;
+            measure.setExtJson(ext);
+            guaranteeMeasureMapper.insert(measure);
+        }
+    }
+
+    /** 承诺落库;pricingItemNo 在本次新建分项中解析为分项主键 */
+    private void saveCommitments(Long applicationId, List<CommitmentInput> commitments, List<CcrPricingItem> createdItems) {
+        if (commitments == null) {
+            return;
+        }
+        Map<String, Long> itemNoToId = new HashMap<>();
+        for (CcrPricingItem pi : createdItems) {
+            itemNoToId.put(pi.getPricingItemNo(), pi.getId());
+        }
+        for (CommitmentInput c : commitments) {
+            if (c == null || StrUtil.isBlank(c.getMetricCode()) || StrUtil.isBlank(c.getTargetType())
+                    || c.getTargetValue() == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "承诺缺少必填项(metricCode/targetType/targetValue)");
+            }
+            CcrApplicationCommitment commitment = new CcrApplicationCommitment();
+            commitment.setApplicationId(applicationId);
+            commitment.setPricingItemId(StrUtil.isBlank(c.getPricingItemNo()) ? null : itemNoToId.get(c.getPricingItemNo()));
+            commitment.setMetricCode(c.getMetricCode());
+            commitment.setTargetType(c.getTargetType());
+            commitment.setBaselineValue(c.getBaselineValue());
+            commitment.setTargetValue(c.getTargetValue());
+            commitment.setUnit(StrUtil.blankToDefault(c.getUnit(), "WAN_YUAN"));
+            commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));
+            commitment.setMemberCustomerNo(c.getMemberCustomerNo());
+            commitmentMapper.insert(commitment);
+        }
+    }
+
+    /** 数据日期基线(数仓不可用时容忍,提交校验按无基线处理) */
+    private String buildBaselineJson(String businessType, String customerScope) {
+        try {
+            return JSONUtil.toJsonStr(dataWarehouseService.latestDataDates(
+                    DataWarehouseService.relevantDatasets(businessType, customerScope)));
+        } catch (DataAccessException e) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> loadGroupCredit(String groupNo) {
+        try {
+            return dataWarehouseService.findGroupCredit(groupNo);
+        } catch (DataAccessException e) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> loadMemberLimit(String groupCreditNo, String memberCustomerNo) {
+        try {
+            return dataWarehouseService.findMemberLimit(groupCreditNo, memberCustomerNo);
+        } catch (DataAccessException e) {
+            return null;
+        }
+    }
+
+    /** 成员角色:请求优先,缺省按数仓成员快照回填 */
+    private String resolveMemberRole(String groupNo, MemberInput m) {
+        if (StrUtil.isNotBlank(m.getMemberRole())) {
+            return m.getMemberRole();
+        }
+        try {
+            Map<String, Object> row = dataWarehouseService.findGroupMember(groupNo, m.getMemberCustomerNo());
+            if (row != null && row.get("member_role") != null) {
+                return String.valueOf(row.get("member_role"));
+            }
+        } catch (DataAccessException ignored) {
+            // 数仓不可用时不回填角色
+        }
+        return null;
+    }
+
+    static BigDecimal toBigDecimal(Object v) {
+        if (v == null || v.toString().isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(v.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    static Integer toInteger(Object v) {
+        if (v == null || v.toString().isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(v.toString()).intValue();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    static String strVal(Object v) {
+        return v == null ? null : StrUtil.blankToDefault(v.toString(), null);
+    }
+
+    // ---------- 保存/查询 ----------
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CcrApplication saveDraft(Long id, CcrApplication request) {
+        CcrApplication exist = applicationMapper.selectById(id);
+        if (exist == null) {
+            throw new ServiceException(404, "申请不存在");
+        }
+        if (!ApplicationStatus.DRAFT.getCode().equals(exist.getStatus())) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "仅草稿状态可编辑");
+        }
+        // 乐观锁:请求必须携带读取时的版本号,冲突抛 DATA_VERSION_CONFLICT
+        if (request.getVersionNo() == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "保存草稿必须携带数据版本号(versionNo)");
+        }
+        if (!request.getVersionNo().equals(exist.getVersionNo())) {
+            throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(),
+                    "数据已被他人修改,请刷新后重试(版本 " + request.getVersionNo() + "→" + exist.getVersionNo() + ")");
+        }
+        copyForUpdate(exist, request);
+        int updated = applicationMapper.updateById(exist);
+        if (updated == 0) {
+            throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(), "数据已被他人修改,请刷新后重试");
+        }
+        // 子表(成员/定价分项及关联/承诺)按请求体全量重建,保证提交内容为最新
+        rebuildChildren(exist, request);
+        return exist;
+    }
+
+    /** 按请求体全量重建子表:先删除旧子表数据,再复用创建逻辑重新插入(pricing_item_no 重新生成) */
+    private void rebuildChildren(CcrApplication entity, CcrApplication request) {
+        deleteChildren(entity.getId());
+        boolean groupScope = "GROUP".equals(entity.getCustomerScope());
+        // 成员守卫与 createDraft 一致:非集团不允许 members,集团必须有 groupNo
+        if (!groupScope && request.getMembers() != null && !request.getMembers().isEmpty()) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "非集团场景不允许传涉及成员(members)");
+        }
+        if (groupScope && StrUtil.isBlank(entity.getGroupNo())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景集团客户编号(groupNo)必填");
+        }
+        saveMembers(entity, request.getMembers(), groupScope);
+        List<CcrPricingItem> createdItems = createItemsByBusinessType(
+                entity, request, entity.getBusinessType(), groupScope);
+        saveCommitments(entity.getId(), request.getCommitments(), createdItems);
+    }
+
+    /** 删除申请全部旧子表数据(承诺/成员/分项及合同关系/账户关系/担保组合/担保措施) */
+    private void deleteChildren(Long applicationId) {
+        commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
+                .eq(CcrApplicationCommitment::getApplicationId, applicationId));
+        applicationMemberMapper.delete(new LambdaQueryWrapper<CcrApplicationMember>()
+                .eq(CcrApplicationMember::getApplicationId, applicationId));
+        contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
+                .eq(CcrPricingItemContractRel::getApplicationId, applicationId));
+        depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
+                .eq(CcrPricingItemDepositRel::getApplicationId, applicationId));
+        List<Long> itemIds = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getApplicationId, applicationId))
+                .stream().map(CcrPricingItem::getId).toList();
+        if (!itemIds.isEmpty()) {
+            List<Long> packageIds = guaranteePackageMapper.selectList(new LambdaQueryWrapper<CcrGuaranteePackage>()
+                            .in(CcrGuaranteePackage::getPricingItemId, itemIds))
+                    .stream().map(CcrGuaranteePackage::getId).toList();
+            if (!packageIds.isEmpty()) {
+                guaranteeMeasureMapper.delete(new LambdaQueryWrapper<CcrGuaranteeMeasure>()
+                        .in(CcrGuaranteeMeasure::getPackageId, packageIds));
+            }
+            guaranteePackageMapper.delete(new LambdaQueryWrapper<CcrGuaranteePackage>()
+                    .in(CcrGuaranteePackage::getPricingItemId, itemIds));
+        }
+        pricingItemMapper.delete(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, applicationId));
+    }
+
+    @Override
+    public CcrApplication getApplication(Long id) {
+        CcrApplication exist = applicationMapper.selectById(id);
+        if (exist == null) {
+            throw new ServiceException(404, "申请不存在");
+        }
+        return exist;
+    }
+
+    @Override
+    public ApplicationDetailResponse getApplicationDetail(Long id) {
+        ApplicationDetailResponse detail = new ApplicationDetailResponse();
+        detail.setApplication(getApplication(id));
+        detail.setMembers(applicationMemberMapper.selectList(new LambdaQueryWrapper<CcrApplicationMember>()
+                .eq(CcrApplicationMember::getApplicationId, id)
+                .orderByAsc(CcrApplicationMember::getId)));
+        List<CcrPricingItem> items = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, id)
+                .orderByAsc(CcrPricingItem::getId));
+        detail.setPricingItems(items);
+        detail.setContractRelations(contractRelMapper.selectList(new LambdaQueryWrapper<CcrPricingItemContractRel>()
+                .eq(CcrPricingItemContractRel::getApplicationId, id)
+                .orderByAsc(CcrPricingItemContractRel::getId)));
+        detail.setDepositRelations(depositRelMapper.selectList(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
+                .eq(CcrPricingItemDepositRel::getApplicationId, id)
+                .orderByAsc(CcrPricingItemDepositRel::getId)));
+        List<Long> itemIds = items.stream().map(CcrPricingItem::getId).toList();
+        List<ApplicationDetailResponse.GuaranteePackageDetail> packages = new ArrayList<>();
+        if (!itemIds.isEmpty()) {
+            List<CcrGuaranteePackage> pkgs = guaranteePackageMapper.selectList(new LambdaQueryWrapper<CcrGuaranteePackage>()
+                    .in(CcrGuaranteePackage::getPricingItemId, itemIds)
+                    .orderByAsc(CcrGuaranteePackage::getId));
+            for (CcrGuaranteePackage pkg : pkgs) {
+                ApplicationDetailResponse.GuaranteePackageDetail pd = new ApplicationDetailResponse.GuaranteePackageDetail();
+                pd.setGuaranteePackage(pkg);
+                pd.setMeasures(guaranteeMeasureMapper.selectList(new LambdaQueryWrapper<CcrGuaranteeMeasure>()
+                        .eq(CcrGuaranteeMeasure::getPackageId, pkg.getId())
+                        .orderByAsc(CcrGuaranteeMeasure::getId)));
+                packages.add(pd);
+            }
+        }
+        detail.setGuaranteePackages(packages);
+        detail.setCommitments(commitmentMapper.selectList(new LambdaQueryWrapper<CcrApplicationCommitment>()
+                .eq(CcrApplicationCommitment::getApplicationId, id)
+                .orderByAsc(CcrApplicationCommitment::getId)));
+        return detail;
+    }
+
+    private void copyForCreate(CcrApplication target, CcrApplication src) {
+        target.setBusinessType(src.getBusinessType());
+        target.setCustomerScope(src.getCustomerScope());
+        target.setCustomerNo(src.getCustomerNo());
+        target.setGroupNo(src.getGroupNo());
+        target.setApplicantUserId(src.getApplicantUserId());
+        target.setApplicantOrgId(src.getApplicantOrgId());
+        target.setSourceApplicationId(src.getSourceApplicationId());
+        target.setBusinessNo(IdUtil.getSnowflakeNextIdStr());
+        target.setOrgId(src.getOrgId());
+        target.setApplicationRemark(src.getApplicationRemark());
+    }
+
+    private void copyForUpdate(CcrApplication target, CcrApplication src) {
+        if (StrUtil.isNotBlank(src.getBusinessType())) target.setBusinessType(src.getBusinessType());
+        if (StrUtil.isNotBlank(src.getCustomerScope())) target.setCustomerScope(src.getCustomerScope());
+        if (StrUtil.isNotBlank(src.getCustomerNo())) target.setCustomerNo(src.getCustomerNo());
+        if (StrUtil.isNotBlank(src.getGroupNo())) target.setGroupNo(src.getGroupNo());
+        if (src.getApplicantUserId() != null) target.setApplicantUserId(src.getApplicantUserId());
+        if (src.getApplicantOrgId() != null) target.setApplicantOrgId(src.getApplicantOrgId());
+        if (StrUtil.isNotBlank(src.getApplicationRemark())) target.setApplicationRemark(src.getApplicationRemark());
+    }
+
+    @Override
+    public List<CcrApplication> listApplications(Long orgId, String status, Long applicantId) {
+        return applicationMapper.selectList(new LambdaQueryWrapper<CcrApplication>()
+                .eq(CcrApplication::getDelFlag, "0")
+                .eq(orgId != null, CcrApplication::getOrgId, orgId)
+                .eq(status != null && !status.isBlank(), CcrApplication::getStatus, status)
+                .eq(applicantId != null, CcrApplication::getApplicantUserId, applicantId)
+                .orderByDesc(CcrApplication::getCreateTime));
+    }
+}

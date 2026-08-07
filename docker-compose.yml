@@ -1,0 +1,53 @@
+# 客户贡献度与利率决策系统 · 一键开发环境
+# 组成: MySQL 8(自动执行 DDL)/ 后端(Spring Boot 3)/ 前端(Nginx+Vue3)
+# 使用: docker compose up -d --build
+# 访问: 前端 http://localhost:3000  后端健康检查 http://localhost:8080/health
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ccr-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: ccr_rate
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动执行全部 DDL(字母序:01->05)
+      - ./db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build: ./backend
+    container_name: ccr-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      # 容器内通过服务名访问 MySQL
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ccr_rate?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root123
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    container_name: ccr-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  mysql-data:

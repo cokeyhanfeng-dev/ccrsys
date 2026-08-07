@@ -1,0 +1,36 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { post } from '@/api/request'
+
+export interface UserInfo {
+  userId: number
+  userName: string
+  nickName: string
+  roles: string[]
+  orgId: number
+}
+
+// 用户状态:token 与登录信息(userInfo 持久化,刷新后路由守卫/数据权限仍可用)
+export const useUserStore = defineStore('user', () => {
+  const token = ref<string>(localStorage.getItem('ccr_token') || '')
+  const userInfo = ref<UserInfo | null>(
+    JSON.parse(localStorage.getItem('ccr_user_info') || 'null')
+  )
+
+  async function login(username: string, password: string) {
+    const data = await post<{ token: string; userInfo: UserInfo }>('/auth/login', { username, password })
+    token.value = data.token
+    userInfo.value = data.userInfo
+    localStorage.setItem('ccr_token', data.token)
+    localStorage.setItem('ccr_user_info', JSON.stringify(data.userInfo))
+  }
+
+  function logout() {
+    token.value = ''
+    userInfo.value = null
+    localStorage.removeItem('ccr_token')
+    localStorage.removeItem('ccr_user_info')
+  }
+
+  return { token, userInfo, login, logout }
+})

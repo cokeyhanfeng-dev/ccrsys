@@ -1,0 +1,15 @@
+# 开发环境配置(Docker compose 内连接 MySQL 服务名 mysql)
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/ccr_rate?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root123
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+
+# 演示数据开关:开发期使用 mock 外部数据,true 时外部数据集接口返回本地种子数据
+ccr:
+  external:
+    mock-enabled: true

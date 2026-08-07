@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ccr</groupId>
+        <artifactId>ccr-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>ccr-vote</artifactId>
+    <description>ccr-vote 领域模块</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-application</artifactId>
+        </dependency>
+        <!-- 分项终态串联:决议生成 -->
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-resolution</artifactId>
+        </dependency>
+        <!-- 分项终态串联:承诺计划 -->
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-commitment</artifactId>
+        </dependency>
+        <!-- 失败通知落库(PENDING,消息模块按表契约消费) -->
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-message</artifactId>
+        </dependency>
+        <!-- Warm-Flow 业务审批轨迹记录(§4.2) -->
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-workflow</artifactId>
+        </dependency>
+    </dependencies>
+</project>

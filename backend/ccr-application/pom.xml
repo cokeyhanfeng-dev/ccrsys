@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ccr</groupId>
+        <artifactId>ccr-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>ccr-application</artifactId>
+    <description>ccr-application 领域模块</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-common</artifactId>
+        </dependency>
+        <!-- 权限矩阵路由/硬边界/LPR 版本(Wave1 契约:注入 RateMatrixRouter/RuleEngine) -->
+        <dependency>
+            <groupId>com.ccr</groupId>
+            <artifactId>ccr-rule</artifactId>
+        </dependency>
+        <!-- Apache POI(他行融资 Excel 导入) -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,88 @@
+package com.ccr.common.exception;
+
+import com.ccr.common.core.domain.R;
+import com.ccr.common.enums.ErrorCode;
+import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
+import cn.dev33.satoken.exception.NotRoleException;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+
+/**
+ * 全局异常处理(§13.4 统一返回和错误码)
+ */
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    /** 业务异常 */
+    @ExceptionHandler(ServiceException.class)
+    public R<Void> handleServiceException(ServiceException e, HttpServletRequest request) {
+        log.warn("业务异常 path={}, code={}, msg={}", request.getRequestURI(), e.getCode(), e.getMessage());
+        return R.fail(e.getCode(), e.getMessage());
+    }
+
+    /** Sa-Token 未登录 */
+    @ExceptionHandler(NotLoginException.class)
+    public R<Void> handleNotLogin(NotLoginException e, HttpServletRequest request) {
+        log.warn("未登录访问 path={}", request.getRequestURI());
+        return R.fail(ErrorCode.UNAUTHORIZED.getCode(), ErrorCode.UNAUTHORIZED.getMsg());
+    }
+
+    /** Sa-Token 权限码不足 */
+    @ExceptionHandler(NotPermissionException.class)
+    public R<Void> handleNotPermission(NotPermissionException e, HttpServletRequest request) {
+        log.warn("权限不足 path={}, permission={}", request.getRequestURI(), e.getPermission());
+        return R.fail(ErrorCode.FORBIDDEN.getCode(), ErrorCode.FORBIDDEN.getMsg());
+    }
+
+    /** Sa-Token 角色不足 */
+    @ExceptionHandler(NotRoleException.class)
+    public R<Void> handleNotRole(NotRoleException e, HttpServletRequest request) {
+        log.warn("角色不足 path={}, role={}", request.getRequestURI(), e.getRole());
+        return R.fail(ErrorCode.FORBIDDEN.getCode(), ErrorCode.FORBIDDEN.getMsg());
+    }
+
+    /** 数据库唯一键冲突(重复提交/并发写入) */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public R<Void> handleDuplicateKey(DuplicateKeyException e, HttpServletRequest request) {
+        log.warn("唯一键冲突 path={}, msg={}", request.getRequestURI(), e.getMessage());
+        return R.fail(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), ErrorCode.IDEMPOTENCY_REPEAT.getMsg());
+    }
+
+    /** 参数校验异常(@Valid) */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public R<Void> handleValidException(MethodArgumentNotValidException e) {
+        FieldError fe = e.getBindingResult().getFieldError();
+        String msg = fe == null ? "参数校验失败" : fe.getDefaultMessage();
+        return R.fail(400, msg);
+    }
+
+    /** 表单绑定异常 */
+    @ExceptionHandler(BindException.class)
+    public R<Void> handleBindException(BindException e) {
+        FieldError fe = e.getBindingResult().getFieldError();
+        String msg = fe == null ? "参数绑定失败" : fe.getDefaultMessage();
+        return R.fail(400, msg);
+    }
+
+    /** 未找到处理器 */
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public R<Void> handleNoHandler(NoHandlerFoundException e) {
+        return R.fail(404, "接口不存在");
+    }
+
+    /** 兜底异常 */
+    @ExceptionHandler(Exception.class)
+    public R<Void> handleException(Exception e, HttpServletRequest request) {
+        log.error("系统异常 path={}", request.getRequestURI(), e);
+        return R.fail(500, "系统繁忙,请稍后重试");
+    }
+}

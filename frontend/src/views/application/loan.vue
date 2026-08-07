@@ -1,0 +1,1381 @@
+<template>
+  <div>
+    <div class="section-head">
+      <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
+      <div class="section-title">贷款利率申请</div>
+      <div class="section-tip">分步录入客户、业务/合同、担保组合、利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
+    </div>
+
+    <!-- 步骤条(§14.1) -->
+    <div class="stepper wizard-stepper">
+      <div
+        v-for="(s, i) in steps" :key="s"
+        class="stepper__step"
+        :class="{ 'stepper__step--active': i === step, 'stepper__step--done': i < step }"
+        @click="step = i"
+      >
+        <span class="stepper__dot">{{ i + 1 }}</span>
+        <div>{{ s }}</div>
+      </div>
+    </div>
+
+    <!-- 关联重提提示 -->
+    <div v-if="draft.id" class="form-card draft-banner">
+      <span class="badge badge--info">草稿</span>
+      申请号 {{ draft.applicationNo }}(版本 v{{ draft.versionNo }})
+      <template v-if="inheritCount > 0">· {{ inheritCount }} 条已批准分项沿用原决议,不在本页重复编辑</template>
+      <span class="section-tip">· 草稿保存仅更新主单信息,分项/成员/承诺以创建时内容为准</span>
+    </div>
+
+    <!-- 第一步:客户信息(个人/企业单户/集团三选) -->
+    <div v-show="step === 0" class="form-card">
+      <div class="form-card__title">客户信息</div>
+      <div class="section-tip" style="margin-bottom:12px">客户基本信息由数仓统一提供(caps_corp/indv_cust_basic_info),带出后只读展示;集团客户输入集团号查询数仓集团快照。</div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-field__label">客户主体 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.customerScope" @change="onCustomerScopeChange">
+            <option value="CORPORATE">企业单户</option>
+            <option value="INDIVIDUAL">个人</option>
+            <option value="GROUP">集团客户</option>
+          </select>
+        </div>
+
+        <!-- 单户:客户姓名模糊查询带出 -->
+        <template v-if="form.customerScope !== 'GROUP'">
+          <div class="form-field" style="grid-column: span 2">
+            <label class="form-field__label">客户名称 <span class="req">*</span></label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" v-model="form.customerName" placeholder="输入客户名称模糊查询" @keyup.enter="searchCustomers" />
+              <button class="btn btn--secondary" @click="searchCustomers">查询</button>
+            </div>
+            <div class="customer-cands" v-if="customerCands.length">
+              <div v-for="c in customerCands" :key="c.customerNo" class="customer-cand" @click="selectCustomer(c)">
+                {{ c.customerName }} · {{ c.customerNo }} · {{ c.custType === 'CORP' ? '对公' : '个人' }}
+              </div>
+            </div>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">客户号</label>
+            <input class="form-input" v-model="form.customerNo" disabled placeholder="查询带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">客户性质</label>
+            <select class="form-select" v-model="form.customerNature">
+              <option value="EXISTING">存量客户(有历史贷款余额)</option>
+              <option value="NEW">新增客户(无历史贷款余额)</option>
+            </select>
+          </div>
+        </template>
+      </div>
+
+      <!-- 集团客户区块:集团号查询 → 集团授信总额(只读) + 有效成员列表 -->
+      <template v-if="form.customerScope === 'GROUP'">
+        <div class="form-grid">
+          <div class="form-field" style="grid-column: span 2">
+            <label class="form-field__label">集团客户编号 <span class="req">*</span></label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" v-model="form.groupNo" placeholder="输入集团客户编号,如 GROUP001" @keyup.enter="queryGroup" />
+              <button class="btn btn--secondary" @click="queryGroup">查询</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="groupInfo" class="group-summary">
+          <div class="group-summary__item"><span>集团名称</span><b>{{ groupInfo.groupName || '暂无数据' }}</b></div>
+          <div class="group-summary__item"><span>集团状态</span><b>{{ groupInfo.groupStatus === 'NORMAL' ? '正常' : (groupInfo.groupStatus || '暂无数据') }}</b></div>
+          <div class="group-summary__item"><span>授信总额(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
+          <div class="group-summary__item"><span>已分配额度(万元)</span><b>{{ groupAllocatedTotal ?? '暂无数据' }}</b></div>
+          <div class="group-summary__item"><span>可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
+          <div class="group-summary__item"><span>授信到期日</span><b>{{ groupCredit?.creditEnd || '暂无数据' }}</b></div>
+        </div>
+        <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
+          <label class="form-field__label">涉及成员(勾选并逐成员录入本次申请金额) <span class="req">*</span></label>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>选择</th><th>成员客户号</th><th>成员名称</th><th>角色</th>
+                <th>分配额度(万元)</th><th>可用额度(万元)</th>
+                <th>本次申请金额(万元) <span class="req">*</span></th><th>币种</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in groupMembers" :key="m.memberCustomerNo">
+                <td><input type="checkbox" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m)" /></td>
+                <td>{{ m.memberCustomerNo }}</td>
+                <td>{{ m.memberName || '暂无数据' }}</td>
+                <td><span class="badge badge--neutral">{{ m.memberRole === 'CORE' ? '核心' : '一般' }}</span></td>
+                <td class="num">{{ m.creditLimit?.allocatedAmount ?? '暂无数据' }}</td>
+                <td class="num">{{ m.creditLimit?.availableAmount ?? '暂无数据' }}</td>
+                <td>
+                  <input
+                    class="form-input form-input--amount"
+                    :disabled="!isMemberChecked(m.memberCustomerNo)"
+                    :value="memberInput(m.memberCustomerNo)?.requestAmount"
+                    @input="setMemberField(m.memberCustomerNo, 'requestAmount', ($event.target as HTMLInputElement).value)"
+                  />
+                </td>
+                <td>
+                  <select
+                    class="form-select"
+                    :disabled="!isMemberChecked(m.memberCustomerNo)"
+                    :value="memberInput(m.memberCustomerNo)?.currency || 'CNY'"
+                    @change="setMemberField(m.memberCustomerNo, 'currency', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else-if="groupQueried" class="empty">该集团暂无有效成员数据</div>
+      </template>
+
+      <!-- 单户基本信息(数仓带出,只读) -->
+      <div class="form-grid" v-if="form.customerScope !== 'GROUP'" style="margin-top:4px">
+        <template v-if="form.customerScope !== 'INDIVIDUAL'">
+          <div class="form-field">
+            <label class="form-field__label">企业性质</label>
+            <select class="form-select" v-model="form.customerType">
+              <option value="NON_SOE">非国企</option>
+              <option value="SOE">国企</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">统一社会信用代码</label>
+            <input class="form-input" v-model="form.ucrCode" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">五级分类</label>
+            <input class="form-input" v-model="form.fiveLevelClass" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">内部信用等级</label>
+            <input class="form-input" v-model="form.creditLevel" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">所属行业</label>
+            <input class="form-input" v-model="form.industry" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">注册资本(万元)</label>
+            <input class="form-input form-input--amount" v-model="form.registeredCapital" disabled placeholder="数仓带出" />
+          </div>
+        </template>
+        <template v-else>
+          <div class="form-field">
+            <label class="form-field__label">证件类型</label>
+            <input class="form-input" v-model="form.idType" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">证件号码</label>
+            <input class="form-input" v-model="form.idNo" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">职业</label>
+            <input class="form-input" v-model="form.occupation" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">年收入(万元)</label>
+            <input class="form-input form-input--amount" v-model="form.annualIncome" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">婚姻状况</label>
+            <input class="form-input" v-model="form.maritalStatus" disabled placeholder="数仓带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">联系电话</label>
+            <input class="form-input" v-model="form.phone" disabled placeholder="数仓带出" />
+          </div>
+        </template>
+        <div class="form-field">
+          <label class="form-field__label">开户机构</label>
+          <input class="form-input" v-model="form.openOrg" disabled placeholder="数仓带出" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">开户日期</label>
+          <input class="form-input" v-model="form.openDate" disabled placeholder="数仓带出" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">申请机构</label>
+          <input class="form-input" :value="applyOrgText" disabled />
+        </div>
+      </div>
+
+      <div class="wizard-actions">
+        <span></span>
+        <button class="btn btn--primary" @click="step = 1">下一步:业务/合同</button>
+      </div>
+    </div>
+
+    <!-- 第二步:业务/合同(融资情况:本行融资+他行融资) -->
+    <div v-show="step === 1" class="form-card">
+      <div class="form-card__title">业务/合同</div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-field__label">贷款品种 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.loanType">
+            <option value="CORP_LOAN">对公经营性贷款</option>
+            <option value="PERSONAL_LOAN">个人经营性贷款</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">业务类型 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.businessType">
+            <option value="EXISTING">存量调息(选择现有贷款合同)</option>
+            <option value="NEW">新增授信(拟签合同)</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">金额档 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.amountTier">
+            <option value="GE_5000">5000万以上(含)贷款</option>
+            <option value="LT_5000">5000万以下贷款</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 本行融资(数仓带出,合同选择来源) -->
+      <template v-if="form.customerScope !== 'GROUP'">
+        <div class="sub-title">本行融资 <span class="badge badge--info">数仓取数</span></div>
+        <table class="table" v-if="ownFinancing.length">
+          <thead>
+            <tr><th>合同号</th><th>贷款余额(万元)</th><th>执行利率</th><th>担保类型</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="f in ownFinancing" :key="f.contractNo">
+              <td>{{ f.contractNo }}</td>
+              <td class="num">{{ f.loanBalance ?? '暂无数据' }}</td>
+              <td class="num">{{ f.contractRate != null ? f.contractRate + '%' : '暂无数据' }}</td>
+              <td>{{ f.guaranteeType || '暂无数据' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>暂无本行融资数据(请先选择客户)</div>
+      </template>
+      <template v-else>
+        <div class="sub-title">成员合同 <span class="badge badge--info">数仓取数</span></div>
+        <table class="table" v-if="groupContractRows.length">
+          <thead>
+            <tr><th>成员</th><th>合同号</th><th>合同余额(万元)</th><th>执行利率</th><th>到期日</th><th>合同下借据数</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(r, i) in groupContractRows" :key="i">
+              <td>{{ r.memberName }}</td>
+              <td>{{ r.contractNo }}</td>
+              <td class="num">{{ r.contractBalance ?? '暂无数据' }}</td>
+              <td class="num">{{ r.executionRate != null ? r.executionRate + '%' : '暂无数据' }}</td>
+              <td>{{ r.maturityDate || '暂无数据' }}</td>
+              <td class="num">{{ r.noteCount }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>勾选涉及成员后自动带出成员名下贷款合同</div>
+      </template>
+
+      <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
+      <div class="sub-title" style="margin-top:20px">他行融资概要</div>
+      <table class="table" v-if="otherSummary">
+        <thead>
+          <tr>
+            <th>授信机构数</th><th>他行授信总额(万元)</th><th>已用额度合计(万元)</th>
+            <th>逾期账户数</th><th>不良贷款余额(万元)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">{{ otherSummary.lenderCount ?? '暂无数据' }}</td>
+            <td class="num">{{ otherSummary.creditAmountTotal ?? '暂无数据' }}</td>
+            <td class="num">{{ otherSummary.usedAmountTotal ?? '暂无数据' }}</td>
+            <td class="num">{{ otherSummary.overdueAccountCount ?? '暂无数据' }}</td>
+            <td class="num">{{ otherSummary.nplBalance ?? '暂无数据' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>暂无他行融资概要数据</div>
+
+      <div class="sub-title" style="margin-top:20px">他行融资明细</div>
+      <table class="table" v-if="otherLoans.length">
+        <thead>
+          <tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率</th><th>来源</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(d, i) in otherLoans" :key="i">
+            <td><input class="form-input" v-model="d.lenderName" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.creditAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.usedAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.annualRate" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><span class="badge badge--neutral">{{ d.inputMode === 'EXCEL' ? 'Excel导入' : d.inputMode === 'MANUAL' ? '人工' : '数仓' }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>暂无他行融资明细(可人工补录或在材料附件步骤 Excel 导入)</div>
+      <button class="btn btn--secondary" style="margin-top:12px" @click="addOtherLoan">＋ 添加他行融资</button>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 0">上一步</button>
+        <button class="btn btn--primary" @click="step = 2">下一步:担保组合</button>
+      </div>
+    </div>
+
+    <!-- 第三步:担保组合(按成员×合同切分,逐担保方式) -->
+    <div v-show="step === 2" class="form-card">
+      <div class="form-card__title">
+        担保组合
+        <span class="badge badge--info">逐担保方式独立路由/表决</span>
+      </div>
+      <div class="section-tip" style="margin-bottom:12px">
+        <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
+        <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
+        集团场景按“成员 × 合同”生成分项。
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th v-if="form.customerScope === 'GROUP'">涉及成员 <span class="req">*</span></th>
+            <th>贷款合同 <span class="req">*</span></th>
+            <th>担保方式 <span class="req">*</span></th>
+            <th>担保措施</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="(g, idx) in form.guarantees" :key="idx">
+            <tr>
+              <td v-if="form.customerScope === 'GROUP'">
+                <select class="form-select" v-model="g.memberCustomerNo" @change="g.contractBusinessKey = ''">
+                  <option value="" disabled>选择成员</option>
+                  <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
+                    {{ m.memberName || m.memberCustomerNo }}
+                  </option>
+                </select>
+              </td>
+              <td>
+                <template v-if="form.businessType === 'EXISTING'">
+                  <select class="form-select" v-model="g.contractBusinessKey" @change="onContractSelect(g)">
+                    <option value="" disabled>选择合同</option>
+                    <option v-for="c in contractOptions(g)" :key="c.contractNo" :value="c.contractNo">
+                      {{ c.contractNo }}(余额 {{ c.contractBalance ?? c.loanBalance ?? '-' }} 万)
+                    </option>
+                  </select>
+                </template>
+                <template v-else>
+                  <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(可空)" />
+                  <span class="badge badge--neutral" style="margin-top:4px">拟签合同</span>
+                </template>
+              </td>
+              <td>
+                <select class="form-select" v-model="g.guaranteeType">
+                  <option v-for="t in guaranteeTypes" :key="t" :value="t">{{ t }}</option>
+                </select>
+              </td>
+              <td>
+                <span v-if="g.guaranteeType === '抵押'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
+                <span v-else-if="g.guaranteeType === '保证'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
+                <span v-else class="badge badge--neutral">无需措施</span>
+              </td>
+              <td><button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button></td>
+            </tr>
+            <!-- 抵押物明细 -->
+            <tr v-if="g.guaranteeType === '抵押'" class="guarantee-detail">
+              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
+                <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
+                <table class="table table--nested" v-if="g.mortgages.length">
+                  <thead><tr><th>抵押物类型</th><th>名称</th><th>坐落位置</th><th>评估价值(万元)</th><th>权属人</th><th>抵押率</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="(m, mi) in g.mortgages" :key="mi">
+                      <td><select class="form-select" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select></td>
+                      <td><input class="form-input" v-model="m.name" /></td>
+                      <td><input class="form-input" v-model="m.addr" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.value" /></td>
+                      <td><input class="form-input" v-model="m.owner" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.ratio" /></td>
+                      <td><button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            <!-- 保证人明细 -->
+            <tr v-if="g.guaranteeType === '保证'" class="guarantee-detail">
+              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
+                <div class="detail-title">保证人(关联本分项) <button class="btn btn--text" @click="addGuaranteeGuarantor(g)">＋ 添加保证人</button></div>
+                <table class="table table--nested" v-if="g.guarantors.length">
+                  <thead><tr><th>保证人名称</th><th>证件号码</th><th>担保金额(万元)</th><th>担保余额(万元)</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="(gt, gi) in g.guarantors" :key="gi">
+                      <td><input class="form-input" v-model="gt.name" /></td>
+                      <td><input class="form-input" v-model="gt.certNo" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.amount" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.balance" /></td>
+                      <td><button class="btn btn--text" @click="g.guarantors.splice(gi, 1)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保方式</button>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 1">上一步</button>
+        <button class="btn btn--primary" @click="step = 3">下一步:利率定价</button>
+      </div>
+    </div>
+
+    <!-- 第四步:利率定价(执行利率集中在定价分项,贷款越低越优惠) -->
+    <div v-show="step === 3" class="form-card">
+      <div class="form-card__title">
+        利率定价
+        <span class="badge badge--warning">贷款越低越优惠(LOWER_BETTER)</span>
+      </div>
+      <div class="section-tip" style="margin-bottom:12px">执行利率集中在定价分项模块录入;申请利率不得低于产品硬边界,突破将被提交校验阻断。</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th v-if="form.customerScope === 'GROUP'">成员</th>
+            <th>合同</th><th>担保方式</th>
+            <th>产品 <span class="req">*</span></th>
+            <th>期限 <span class="req">*</span></th>
+            <th>授信金额(万元) <span class="req">*</span></th>
+            <th>币种</th>
+            <th v-if="form.businessType === 'EXISTING'">原利率(%)</th>
+            <th>申请利率(%) <span class="req">*</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(g, idx) in form.guarantees" :key="idx">
+            <td>{{ idx + 1 }}</td>
+            <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
+            <td>{{ g.contractBusinessKey || '拟签合同' }}</td>
+            <td>{{ g.guaranteeType }}</td>
+            <td>
+              <select class="form-select" v-model="g.productCode">
+                <option value="" disabled>选择产品</option>
+                <option v-for="p in loanProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
+              </select>
+            </td>
+            <td>
+              <div style="display:flex;gap:4px">
+                <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="width:80px" />
+                <select class="form-select" v-model="g.termUnit" style="width:80px">
+                  <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
+                </select>
+              </div>
+            </td>
+            <td><input class="form-input form-input--amount" v-model="g.amount" /></td>
+            <td>
+              <select class="form-select" v-model="g.currency">
+                <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </td>
+            <td v-if="form.businessType === 'EXISTING'"><input class="form-input form-input--amount" v-model="g.originalRate" disabled placeholder="合同带出" /></td>
+            <td><input class="form-input form-input--amount" v-model="g.requestedRate" placeholder="如 3.40" /></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 2">上一步</button>
+        <button class="btn btn--primary" @click="step = 4">下一步:贡献承诺</button>
+      </div>
+    </div>
+
+    <!-- 第五步:贡献承诺(拟达成贡献度,随申请提交 commitments) -->
+    <div v-show="step === 4" class="form-card">
+      <div class="form-card__title">
+        贡献承诺
+        <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
+      </div>
+      <div class="section-tip" style="margin-bottom:12px">
+        下拉选择承诺指标,参照数仓当前贡献度录入基线与拟达成目标;承诺随申请提交(commitments),审批通过后生成正式承诺计划跟踪。
+      </div>
+
+      <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
+      <table class="table" v-if="contributionCurrent.length" style="margin-bottom:16px">
+        <thead><tr><th>指标</th><th>当前值(万元)</th><th>口径</th><th>范围</th></tr></thead>
+        <tbody>
+          <tr v-for="m in contributionCurrent" :key="m.metricCode">
+            <td>{{ m.metricName || m.metricCode }}</td>
+            <td class="num">{{ m.metricValue ?? '暂无数据' }}</td>
+            <td>{{ m.valueType || '—' }}</td>
+            <td><span class="badge badge--neutral">{{ m.metricScope || '—' }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else style="margin-bottom:16px">暂无当前贡献度数据(选择客户后由数仓带出)</div>
+
+      <div class="sub-title">拟达成承诺</div>
+      <table class="table" v-if="commitments.length">
+        <thead>
+          <tr>
+            <th>承诺指标 <span class="req">*</span></th>
+            <th>当前贡献度</th>
+            <th>目标类型 <span class="req">*</span></th>
+            <th>基线值</th><th>拟达成目标 <span class="req">*</span></th>
+            <th>单位</th><th>适用范围</th>
+            <th v-if="form.customerScope === 'GROUP'">成员</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(c, i) in commitments" :key="i">
+            <td>
+              <select class="form-select" v-model="c.metricCode">
+                <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
+              </select>
+            </td>
+            <td class="num">{{ currentOf(c.metricCode) }}</td>
+            <td>
+              <select class="form-select" v-model="c.targetType">
+                <option value="AVG_BALANCE">日均余额</option>
+                <option value="INCOME">收入</option>
+                <option value="CONTRIBUTION_AMOUNT">贡献额</option>
+              </select>
+            </td>
+            <td><input class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" /></td>
+            <td><input class="form-input form-input--amount" v-model="c.targetValue" /></td>
+            <td>
+              <select class="form-select" v-model="c.unit">
+                <option value="WAN_YUAN">万元</option>
+                <option value="COUNT">户/笔</option>
+              </select>
+            </td>
+            <td>
+              <select class="form-select" v-model="c.metricScope">
+                <option value="PUBLIC">对公</option>
+                <option value="PRIVATE_SELF">本人对私</option>
+                <option value="RELATED">关联人</option>
+                <option value="GROUP">集团</option>
+                <option value="GROUP_MEMBER">集团成员</option>
+              </select>
+            </td>
+            <td v-if="form.customerScope === 'GROUP'">
+              <select class="form-select" v-model="c.memberCustomerNo">
+                <option value="">集团整体</option>
+                <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
+                  {{ m.memberName || m.memberCustomerNo }}
+                </option>
+              </select>
+            </td>
+            <td><button class="btn btn--text" @click="commitments.splice(i, 1)">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>暂未录入承诺,可点击下方按钮添加</div>
+      <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 3">上一步</button>
+        <button class="btn btn--primary" @click="step = 5">下一步:材料附件</button>
+      </div>
+    </div>
+
+    <!-- 第六步:材料附件(他行融资 Excel 导入 + 其他附件前端暂存) -->
+    <div v-show="step === 5" class="form-card">
+      <div class="form-card__title">材料附件</div>
+
+      <div class="sub-title">他行融资明细 Excel 导入</div>
+      <div class="section-tip" style="margin-bottom:8px">约定列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%;导入结果回显在“业务/合同”步骤的他行融资明细。</div>
+      <button class="btn btn--primary" @click="triggerImport">📄 Excel 导入</button>
+      <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
+
+      <div class="sub-title" style="margin-top:24px">其他申请附件</div>
+      <div class="section-tip" style="margin-bottom:8px">后端暂无通用附件上传接口,附件在前端暂存(base64),不随申请单上传、不阻断提交流程;上传接口就绪后自动接入。</div>
+      <button class="btn btn--secondary" @click="attachmentInput?.click()">＋ 添加附件</button>
+      <input ref="attachmentInput" type="file" multiple style="display:none" @change="onAttachmentFiles" />
+      <table class="table" v-if="attachments.length" style="margin-top:12px">
+        <thead><tr><th>文件名</th><th>大小</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="(a, i) in attachments" :key="i">
+            <td>{{ a.name }}</td>
+            <td class="num">{{ (a.size / 1024).toFixed(1) }} KB</td>
+            <td><span class="badge badge--warning">前端暂存</span></td>
+            <td><button class="btn btn--text" @click="attachments.splice(i, 1)">移除</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty" v-else>暂无附件</div>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 4">上一步</button>
+        <button class="btn btn--primary" @click="step = 6">下一步:提交预览</button>
+      </div>
+    </div>
+
+    <!-- 第七步:提交预览(路由预览 + 提交校验确认 + 正式提交) -->
+    <div v-show="step === 6" class="form-card">
+      <div class="form-card__title">提交预览</div>
+      <div class="section-tip" style="margin-bottom:12px">提交前先生成/保存草稿,再逐分项预览审批路由;正式提交需通过数据批次差异与质量预校验确认(§7.1 步骤9-11)。</div>
+      <div class="form-field">
+        <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
+        <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
+      </div>
+
+      <!-- 路由预览结果(真实接口逐分项) -->
+      <template v-if="routeResult">
+        <div class="sub-title">
+          审批路由预览
+          <span class="badge badge--info">LPR 版本:{{ routeResult.lprVersionCode || '暂无数据' }}</span>
+          <span v-if="routeResult.groupCreditTotal != null" class="badge badge--neutral">集团授信总额 {{ routeResult.groupCreditTotal }} 万</span>
+        </div>
+        <table class="table" v-if="routeResult.items?.length">
+          <thead>
+            <tr><th>分项编号</th><th v-if="form.customerScope === 'GROUP'">成员</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="it in routeResult.items" :key="it.pricingItemId">
+              <td>{{ it.pricingItemNo }}</td>
+              <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(it.memberCustomerNo || '') }}</td>
+              <td>{{ it.productCode || '—' }}</td>
+              <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
+              <td>{{ directionName(it.rateDirection) }}</td>
+              <td>
+                <template v-if="it.errorCode">
+                  <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
+                </template>
+                <template v-else-if="it.routeChain?.length">
+                  <span v-for="(n, ni) in it.routeChain" :key="ni">
+                    <span class="route-node">{{ nodeName(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
+                  </span>
+                </template>
+                <span v-else>暂无数据</span>
+              </td>
+              <td>{{ nodeName(it.finalNodeCode) }}</td>
+              <td>
+                <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
+                <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
+                <span v-else class="badge badge--neutral">暂无数据</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>暂无定价分项,无法预览路由</div>
+      </template>
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 5">上一步</button>
+        <div style="display:flex;gap:12px">
+          <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
+          <button class="btn btn--secondary" :disabled="saving" @click="onRoutePreview">路由预览</button>
+          <button class="btn btn--primary" :disabled="saving" @click="onSubmit">提交申请</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提交前校验确认弹窗 -->
+    <SubmitCheckDialog v-model="checkDialogVisible" :check="checkResult" :submitting="submitting" @confirm="onConfirmSubmit" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUserStore } from '@/store/user'
+import {
+  searchCustomers as apiSearchCustomers,
+  getCustomerDetail,
+  getGroup,
+  getGroupMembers,
+  getMemberCreditView,
+  createApplication,
+  saveApplication,
+  getApplicationDetail,
+  routePreview,
+  submitCheck,
+  submitApplication,
+  reapplyApplication,
+  importOtherLoans,
+  nodeName,
+  directionName,
+  type ApplicationPayload,
+  type GuaranteeMeasureInput,
+  type RoutePreview,
+  type SubmitCheck
+} from '@/api/application'
+import SubmitCheckDialog from './SubmitCheckDialog.vue'
+
+const userStore = useUserStore()
+const route = useRoute()
+
+// ---------- 步骤条(§14.1) ----------
+const steps = ['客户信息', '业务/合同', '担保组合', '利率定价', '贡献承诺', '材料附件', '提交预览']
+const step = ref(0)
+
+// ---------- 字典 ----------
+const guaranteeTypes = ['抵押', '质押', '信用', '保证']
+const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
+// 贷款产品(与规则/硬边界配置中的 product_code 对齐)
+const loanProducts = [
+  { code: 'LOAN_A', name: '流动资金贷款' },
+  { code: 'LOAN_P', name: '个人经营性贷款' },
+  { code: 'LOAN_GENERAL', name: '一般对公贷款' }
+]
+// 贡献度指标字典(§9;当前值由数仓带出,不做静态假定)
+const metricDict = [
+  { code: 'PUBLIC_DEPOSIT_AVG', name: '存款日均' },
+  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '项目贷日均' },
+  { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现规模' },
+  { code: 'PUBLIC_OFF_BALANCE_INCOME', name: '中间业务收入' },
+  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇业务总量' },
+  { code: 'PUBLIC_PAYROLL_CONTRIBUTION', name: '代发客户数' },
+  { code: 'PUBLIC_PAYROLL_AMOUNT', name: '代发金额' },
+  { code: 'PUBLIC_WEALTH_INCOME', name: '对公财富中收' },
+  { code: 'PRIVATE_DEPOSIT_AVG', name: '对私存款日均' },
+  { code: 'PRIVATE_LOAN_AVG', name: '对私贷款日均' },
+  { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' }
+]
+
+// ---------- 表单状态 ----------
+interface MortgageRow { type: string; name: string; addr: string; value: string; owner: string; ratio: string }
+interface GuarantorRow { name: string; certNo: string; amount: string; balance: string }
+interface GuaranteeRow {
+  memberCustomerNo: string
+  contractBusinessKey: string
+  guaranteeType: string
+  productCode: string
+  termValue: string
+  termUnit: string
+  amount: string
+  currency: string
+  originalRate: string
+  requestedRate: string
+  mortgages: MortgageRow[]
+  guarantors: GuarantorRow[]
+}
+interface CommitmentRow {
+  metricCode: string
+  targetType: string
+  baselineValue: string
+  targetValue: string
+  unit: string
+  metricScope: string
+  memberCustomerNo: string
+}
+
+function newGuarantee(): GuaranteeRow {
+  return {
+    memberCustomerNo: '', contractBusinessKey: '', guaranteeType: '抵押',
+    productCode: '', termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
+    originalRate: '', requestedRate: '', mortgages: [], guarantors: []
+  }
+}
+
+const form = reactive({
+  customerScope: 'CORPORATE', // CORPORATE/INDIVIDUAL/GROUP(提交时映射 CORPORATE_SINGLE)
+  customerName: '',
+  customerNo: '',
+  loanType: 'CORP_LOAN',
+  businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
+  amountTier: 'LT_5000',
+  customerNature: 'EXISTING',
+  customerType: 'NON_SOE',
+  // 对公(数仓带出,只读)
+  ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '',
+  // 对私(数仓带出,只读)
+  idType: '', idNo: '', occupation: '', annualIncome: '', maritalStatus: '', phone: '',
+  // 通用
+  openOrg: '', openDate: '',
+  // 集团
+  groupNo: '',
+  applicationRemark: '',
+  guarantees: [newGuarantee()] as GuaranteeRow[]
+})
+
+const applyOrgText = computed(() => userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据')
+
+// 数仓带出数据
+const ownFinancing = ref<any[]>([])
+const otherSummary = ref<any | null>(null)
+const otherLoans = ref<any[]>([])
+const contributionCurrent = ref<any[]>([])
+
+// 集团数据
+const groupInfo = ref<any | null>(null)
+const groupCredit = ref<any | null>(null)
+const groupAllocatedTotal = ref<any>(null)
+const groupMembers = ref<any[]>([])
+const groupQueried = ref(false)
+const selectedMembers = ref<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>([])
+const memberContracts = ref<Record<string, any[]>>({})
+
+// 承诺与附件
+const commitments = ref<CommitmentRow[]>([])
+const attachments = ref<Array<{ name: string; size: number; dataBase64: string }>>([])
+
+// 草稿与提交闭环状态
+const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
+const inheritCount = ref(0)
+const saving = ref(false)
+const submitting = ref(false)
+const routeResult = ref<RoutePreview | null>(null)
+const checkResult = ref<SubmitCheck | null>(null)
+const checkDialogVisible = ref(false)
+
+// ---------- 客户查询带出(数仓) ----------
+const customerCands = ref<any[]>([])
+async function searchCustomers() {
+  if (!form.customerName || !form.customerName.trim()) return
+  try {
+    customerCands.value = await apiSearchCustomers(form.customerName.trim())
+    if (!customerCands.value.length) ElMessage.info('未查询到匹配客户')
+  } catch {
+    customerCands.value = []
+  }
+}
+
+async function selectCustomer(c: any) {
+  form.customerNo = c.customerNo
+  form.customerName = c.customerName
+  form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
+  customerCands.value = []
+  await loadCustomerDetail()
+}
+
+async function loadCustomerDetail() {
+  if (!form.customerNo) return
+  try {
+    const detail = await getCustomerDetail(form.customerNo)
+    const basic = detail.basic || {}
+    form.ucrCode = basic.certNo || ''
+    form.fiveLevelClass = basic.fiveLevelClass || ''
+    form.creditLevel = basic.creditLevel || ''
+    form.industry = basic.industry || ''
+    form.registeredCapital = basic.registeredCapital || ''
+    form.openOrg = basic.openOrgName || ''
+    form.openDate = basic.openDate || ''
+    form.idType = basic.certType || ''
+    form.idNo = basic.certNo || ''
+    form.occupation = basic.occupation || ''
+    form.annualIncome = basic.annualIncome || ''
+    form.maritalStatus = basic.maritalStatus || ''
+    form.phone = basic.phone || ''
+    form.customerNature = basic.customerClass === 'NEW' ? 'NEW' : 'EXISTING'
+    ownFinancing.value = detail.financing || []
+    contributionCurrent.value = detail.contribution || []
+    otherSummary.value = detail.creditSummary?.[0] || null
+    otherLoans.value = (detail.creditDetail || []).map((d: any) => ({ ...d, inputMode: 'DW' }))
+    ElMessage.success(`已带出客户 ${form.customerName || form.customerNo} 信息`)
+  } catch {
+    // 带出失败由拦截器提示,不影响已选客户
+  }
+}
+
+// ---------- 集团查询(真实数仓) ----------
+async function queryGroup() {
+  if (!form.groupNo || !form.groupNo.trim()) {
+    ElMessage.warning('请输入集团客户编号')
+    return
+  }
+  const no = form.groupNo.trim()
+  try {
+    const [g, members] = await Promise.all([getGroup(no), getGroupMembers(no)])
+    groupInfo.value = g.group || null
+    groupCredit.value = g.groupCredit || null
+    groupAllocatedTotal.value = g.allocatedTotal ?? null
+    groupMembers.value = members || []
+    groupQueried.value = true
+    // 已勾选但已不在有效成员列表中的成员剔除
+    selectedMembers.value = selectedMembers.value.filter((s) =>
+      groupMembers.value.some((m) => m.memberCustomerNo === s.memberCustomerNo)
+    )
+  } catch {
+    groupInfo.value = null
+    groupCredit.value = null
+    groupMembers.value = []
+    groupQueried.value = false
+  }
+}
+
+function isMemberChecked(no: string) {
+  return selectedMembers.value.some((m) => m.memberCustomerNo === no)
+}
+function memberInput(no: string) {
+  return selectedMembers.value.find((m) => m.memberCustomerNo === no)
+}
+function setMemberField(no: string, field: 'requestAmount' | 'currency', value: string) {
+  const m = memberInput(no)
+  if (m) m[field] = value
+}
+async function toggleMember(m: any) {
+  const idx = selectedMembers.value.findIndex((s) => s.memberCustomerNo === m.memberCustomerNo)
+  if (idx >= 0) {
+    selectedMembers.value.splice(idx, 1)
+    return
+  }
+  selectedMembers.value.push({
+    memberCustomerNo: m.memberCustomerNo,
+    memberName: m.memberName || m.memberCustomerNo,
+    requestAmount: '',
+    currency: 'CNY',
+    memberRole: m.memberRole || ''
+  })
+  // 带出成员名下贷款合同(供存量调息合同选择)
+  if (!memberContracts.value[m.memberCustomerNo]) {
+    try {
+      const view = await getMemberCreditView(m.memberCustomerNo)
+      memberContracts.value[m.memberCustomerNo] = view.contracts || []
+    } catch {
+      memberContracts.value[m.memberCustomerNo] = []
+    }
+  }
+}
+function memberNameOf(no: string) {
+  if (!no) return '—'
+  const m = selectedMembers.value.find((s) => s.memberCustomerNo === no)
+    || groupMembers.value.find((s) => s.memberCustomerNo === no)
+  return m ? (m.memberName || m.memberCustomerNo) : no
+}
+
+// 集团场景:全部已选成员的合同汇总(业务/合同步骤展示)
+const groupContractRows = computed(() => {
+  const rows: any[] = []
+  for (const m of selectedMembers.value) {
+    for (const c of memberContracts.value[m.memberCustomerNo] || []) {
+      rows.push({
+        memberName: m.memberName,
+        contractNo: c.contractNo,
+        contractBalance: c.contractBalance,
+        executionRate: c.executionRate,
+        maturityDate: c.maturityDate,
+        noteCount: (c.notes || []).length
+      })
+    }
+  }
+  return rows
+})
+
+// ---------- 担保组合 ----------
+function contractOptions(g: GuaranteeRow) {
+  if (form.customerScope === 'GROUP') {
+    return memberContracts.value[g.memberCustomerNo] || []
+  }
+  return ownFinancing.value
+}
+function onContractSelect(g: GuaranteeRow) {
+  const c = contractOptions(g).find((x: any) => x.contractNo === g.contractBusinessKey)
+  if (c) {
+    g.originalRate = c.executionRate ?? c.contractRate ?? ''
+    if (c.currency) g.currency = c.currency
+  }
+}
+function addGuarantee() {
+  form.guarantees.push(newGuarantee())
+}
+function removeGuarantee(idx: number) {
+  form.guarantees.splice(idx, 1)
+}
+function addGuaranteeMortgage(g: GuaranteeRow) {
+  g.mortgages.push({ type: '住宅', name: '', addr: '', value: '', owner: '', ratio: '' })
+}
+function addGuaranteeGuarantor(g: GuaranteeRow) {
+  g.guarantors.push({ name: '', certNo: '', amount: '', balance: '' })
+}
+function onCustomerScopeChange() {
+  if (form.customerScope !== 'GROUP') {
+    selectedMembers.value = []
+    groupInfo.value = null
+    groupMembers.value = []
+    groupQueried.value = false
+  }
+}
+
+// ---------- 贡献承诺 ----------
+function currentOf(code: string) {
+  const m = contributionCurrent.value.find((x) => x.metricCode === code)
+  return m?.metricValue ?? '暂无数据'
+}
+function addCommitment() {
+  commitments.value.push({
+    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'AVG_BALANCE',
+    baselineValue: '', targetValue: '', unit: 'WAN_YUAN',
+    metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: ''
+  })
+}
+
+// ---------- 他行融资 ----------
+function addOtherLoan() {
+  otherLoans.value.push({ lenderName: '', creditAmount: '', usedAmount: '', balanceAmount: '', annualRate: '', inputMode: 'MANUAL' })
+}
+
+// Excel 导入(材料附件步骤,结果回显业务/合同步骤)
+const fileInput = ref<HTMLInputElement | null>(null)
+function triggerImport() {
+  fileInput.value?.click()
+}
+async function onImportFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const rows = await importOtherLoans(file)
+    if (rows?.length) {
+      otherLoans.value.push(...rows)
+      ElMessage.success(`Excel 导入成功,解析 ${rows.length} 条,已并入他行融资明细`)
+    } else {
+      ElMessage.warning('Excel 未解析到有效数据')
+    }
+  } catch {
+    // 拦截器已提示
+  } finally {
+    input.value = ''
+  }
+}
+
+// 其他附件:前端暂存 base64(后端无通用上传接口)
+const attachmentInput = ref<HTMLInputElement | null>(null)
+function onAttachmentFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  for (const f of files) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      attachments.value.push({ name: f.name, size: f.size, dataBase64: result.split(',')[1] || '' })
+    }
+    reader.readAsDataURL(f)
+  }
+  input.value = ''
+}
+
+// ---------- 提交闭环:创建/保存草稿 → submit-check → 确认 → submit ----------
+function isBlank(v: any) {
+  return v === undefined || v === null || String(v).trim() === ''
+}
+
+function validateForDraft(): string | null {
+  const isGroup = form.customerScope === 'GROUP'
+  if (isGroup) {
+    if (isBlank(form.groupNo)) return '请填写集团客户编号'
+    if (!selectedMembers.value.length) return '集团场景请至少勾选一名涉及成员'
+    const noAmount = selectedMembers.value.find((m) => isBlank(m.requestAmount))
+    if (noAmount) return `成员 ${noAmount.memberName} 未录入本次申请金额`
+  } else if (isBlank(form.customerNo)) {
+    return '请先查询并选择客户'
+  }
+  if (!form.guarantees.length) return '请至少录入一条担保分项'
+  for (let i = 0; i < form.guarantees.length; i++) {
+    const g = form.guarantees[i]
+    if (isGroup && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择涉及成员`
+    if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
+    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(利率定价步骤)`
+    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率定价步骤)`
+    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率定价步骤)`
+    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(利率定价步骤)`
+  }
+  for (let i = 0; i < commitments.value.length; i++) {
+    const c = commitments.value[i]
+    if (isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入拟达成目标`
+  }
+  return null
+}
+
+function buildMeasures(g: GuaranteeRow): GuaranteeMeasureInput[] {
+  const list: GuaranteeMeasureInput[] = []
+  for (const m of g.mortgages) {
+    if (isBlank(m.name) && isBlank(m.value)) continue
+    list.push({
+      measureType: 'MORTGAGE',
+      guaranteeAmount: m.value || undefined,
+      currency: 'CNY',
+      extJson: { collateralType: m.type, name: m.name, address: m.addr, owner: m.owner, mortgageRatio: m.ratio }
+    })
+  }
+  for (const t of g.guarantors) {
+    if (isBlank(t.name)) continue
+    list.push({
+      measureType: 'GUARANTOR',
+      guaranteeAmount: t.amount || undefined,
+      currency: 'CNY',
+      extJson: { name: t.name, certNo: t.certNo, balance: t.balance }
+    })
+  }
+  return list
+}
+
+function buildPayload(): ApplicationPayload {
+  const isGroup = form.customerScope === 'GROUP'
+  const scopeMap: Record<string, ApplicationPayload['customerScope']> = {
+    CORPORATE: 'CORPORATE_SINGLE', INDIVIDUAL: 'INDIVIDUAL', GROUP: 'GROUP'
+  }
+  return {
+    businessType: 'LOAN',
+    customerScope: scopeMap[form.customerScope] || 'CORPORATE_SINGLE',
+    customerNo: isGroup ? null : form.customerNo,
+    groupNo: isGroup ? form.groupNo.trim() : null,
+    members: isGroup
+      ? selectedMembers.value.map((m) => ({
+          memberCustomerNo: m.memberCustomerNo,
+          requestAmount: m.requestAmount,
+          currency: m.currency || 'CNY',
+          memberRole: m.memberRole || undefined
+        }))
+      : null,
+    guarantees: form.guarantees.map((g) => ({
+      requestedRate: g.requestedRate,
+      productCode: g.productCode,
+      termValue: g.termValue,
+      termUnit: g.termUnit,
+      amount: g.amount,
+      currency: g.currency || 'CNY',
+      originalRate: isBlank(g.originalRate) ? undefined : g.originalRate,
+      memberCustomerNo: isGroup ? g.memberCustomerNo : undefined,
+      contractBusinessKey: isBlank(g.contractBusinessKey) ? undefined : g.contractBusinessKey,
+      plannedContractFlag: form.businessType === 'NEW' ? 'Y' : 'N',
+      guaranteeType: g.guaranteeType,
+      measures: buildMeasures(g)
+    })),
+    commitments: commitments.value.map((c) => ({
+      metricCode: c.metricCode,
+      targetType: c.targetType,
+      baselineValue: isBlank(c.baselineValue) ? undefined : c.baselineValue,
+      targetValue: c.targetValue,
+      unit: c.unit || 'WAN_YUAN',
+      metricScope: c.metricScope || 'PUBLIC',
+      memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo
+    })),
+    applicantUserId: userStore.userInfo?.userId,
+    applicantOrgId: userStore.userInfo?.orgId,
+    orgId: userStore.userInfo?.orgId,
+    applicationRemark: form.applicationRemark || undefined
+  }
+}
+
+/** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
+async function ensureDraft(): Promise<boolean> {
+  const err = validateForDraft()
+  if (err) {
+    ElMessage.error(err)
+    return false
+  }
+  saving.value = true
+  try {
+    const payload = buildPayload()
+    if (draft.id) {
+      const saved = await saveApplication(draft.id, { ...payload, versionNo: draft.versionNo ?? undefined })
+      draft.versionNo = saved.versionNo
+    } else {
+      const created = await createApplication(payload)
+      draft.id = created.id
+      draft.versionNo = created.versionNo
+      draft.applicationNo = created.applicationNo
+    }
+    return true
+  } catch {
+    return false
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onSaveDraft() {
+  if (await ensureDraft()) {
+    ElMessage.success(`草稿已保存,申请号 ${draft.applicationNo}(版本 v${draft.versionNo})`)
+  }
+}
+
+async function onRoutePreview() {
+  if (!(await ensureDraft()) || !draft.id) return
+  try {
+    routeResult.value = await routePreview(draft.id)
+  } catch {
+    routeResult.value = null
+  }
+}
+
+async function onSubmit() {
+  if (!(await ensureDraft()) || !draft.id) return
+  try {
+    checkResult.value = await submitCheck(draft.id)
+    checkDialogVisible.value = true
+  } catch {
+    checkResult.value = null
+  }
+}
+
+async function onConfirmSubmit() {
+  if (!draft.id) return
+  submitting.value = true
+  try {
+    const result = await submitApplication(draft.id)
+    checkDialogVisible.value = false
+    const firstNode = nodeName(result.items?.[0]?.currentNodeCode)
+    const finalNode = nodeName(result.items?.[0]?.routeCode)
+    ElMessageBox.alert(
+      `申请号:${result.applicationNo}\n当前节点:${firstNode}\n终审岗位:${finalNode}\n提交时间:${result.submitTime || '—'}`,
+      result.submitted === false ? '申请已提交(幂等返回)' : '提交成功',
+      { confirmButtonText: '知道了' }
+    )
+  } catch {
+    // 拦截器已提示
+  } finally {
+    submitting.value = false
+  }
+}
+
+// ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
+onMounted(async () => {
+  const src = route.query.reapply
+  if (!src) return
+  try {
+    const newDraft = await reapplyApplication(String(src))
+    draft.id = newDraft.id
+    draft.versionNo = newDraft.versionNo
+    draft.applicationNo = newDraft.applicationNo
+    await loadDraftIntoForm(newDraft.id)
+    ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)
+  } catch {
+    // 拦截器已提示
+  }
+})
+
+async function loadDraftIntoForm(id: number) {
+  const d = await getApplicationDetail(id)
+  const app = d.application
+  form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
+  form.customerNo = app.customerNo || ''
+  form.groupNo = app.groupNo || ''
+  form.applicationRemark = app.applicationRemark || ''
+
+  if (app.customerScope === 'GROUP' && app.groupNo) {
+    await queryGroup()
+    selectedMembers.value = (d.members || []).map((m) => ({
+      memberCustomerNo: m.memberCustomerNo,
+      memberName: groupMembers.value.find((g) => g.memberCustomerNo === m.memberCustomerNo)?.memberName || m.memberCustomerNo,
+      requestAmount: m.requestAmount != null ? String(m.requestAmount) : '',
+      currency: m.currency || 'CNY',
+      memberRole: m.memberRole || ''
+    }))
+    for (const m of selectedMembers.value) {
+      try {
+        const view = await getMemberCreditView(m.memberCustomerNo)
+        memberContracts.value[m.memberCustomerNo] = view.contracts || []
+      } catch {
+        memberContracts.value[m.memberCustomerNo] = []
+      }
+    }
+  } else if (app.customerNo) {
+    await loadCustomerDetail()
+  }
+
+  // 分项 → 担保组合/利率定价;已批准沿用原决议的占位分项不在本页编辑
+  const editable = (d.pricingItems || []).filter((p) => p.inheritFlag !== 'Y')
+  inheritCount.value = (d.pricingItems || []).length - editable.length
+  let hasPlanned = false
+  form.guarantees = editable.map((p) => {
+    const rel = (d.contractRelations || []).find((r) => r.pricingItemId === p.id)
+    const pkg = (d.guaranteePackages || []).find((gp) => gp.guaranteePackage?.pricingItemId === p.id)
+    if (rel?.plannedContractFlag === 'Y') hasPlanned = true
+    const g = newGuarantee()
+    g.memberCustomerNo = p.memberCustomerNo || ''
+    g.contractBusinessKey = rel?.contractBusinessKey || rel?.loanContractNo || ''
+    g.guaranteeType = pkg?.guaranteePackage?.mainGuaranteeType || '抵押'
+    g.productCode = p.productCode || ''
+    g.termValue = p.termValue != null ? String(p.termValue) : ''
+    g.termUnit = p.termUnit || 'MONTH'
+    g.amount = p.pricingAmount != null ? String(p.pricingAmount) : ''
+    g.currency = p.currency || 'CNY'
+    g.originalRate = p.originalRate != null ? String(p.originalRate) : ''
+    g.requestedRate = p.requestedRate != null ? String(p.requestedRate) : ''
+    for (const ms of pkg?.measures || []) {
+      if (ms.measureType === 'MORTGAGE') {
+        g.mortgages.push({
+          type: ms.extJson?.collateralType || '住宅',
+          name: ms.extJson?.name || '',
+          addr: ms.extJson?.address || '',
+          value: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
+          owner: ms.extJson?.owner || '',
+          ratio: ms.extJson?.mortgageRatio || ''
+        })
+      } else if (ms.measureType === 'GUARANTOR') {
+        g.guarantors.push({
+          name: ms.extJson?.name || '',
+          certNo: ms.extJson?.certNo || '',
+          amount: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
+          balance: ms.extJson?.balance || ''
+        })
+      }
+    }
+    return g
+  })
+  if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+  form.businessType = hasPlanned ? 'NEW' : 'EXISTING'
+
+  commitments.value = (d.commitments || []).map((c) => ({
+    metricCode: c.metricCode,
+    targetType: c.targetType,
+    baselineValue: c.baselineValue != null ? String(c.baselineValue) : '',
+    targetValue: c.targetValue != null ? String(c.targetValue) : '',
+    unit: c.unit || 'WAN_YUAN',
+    metricScope: c.metricScope || 'PUBLIC',
+    memberCustomerNo: c.memberCustomerNo || ''
+  }))
+}
+</script>
+
+<style scoped>
+.section-head { margin-bottom: 20px; }
+.eyebrow { font-size: 12px; color: var(--color-text-light); letter-spacing: 1px; margin-bottom: 4px; }
+.section-title { font-size: var(--fs-h1); font-weight: 700; margin-bottom: 6px; }
+.section-tip { font-size: 13px; color: var(--color-text-sub); }
+.form-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.table { border-radius: var(--radius); overflow: hidden; }
+.table--nested { margin-top: 8px; }
+.guarantee-detail > td.detail-cell { background: #fafbfc; padding: 12px 16px; }
+.customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--color-surface); }
+.customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
+.customer-cand:last-child { border-bottom: none; }
+.customer-cand:hover { background: var(--color-primary-light); }
+.detail-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); display: flex; align-items: center; justify-content: space-between; }
+.req { color: var(--color-danger); }
+.sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
+
+/* 向导步骤条(沿用 design-system .stepper) */
+.wizard-stepper {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.wizard-stepper .stepper__step { cursor: pointer; }
+.wizard-actions {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--color-border);
+}
+
+/* 草稿横幅 */
+.draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
+
+/* 集团概要 */
+.group-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  background: var(--color-primary-light); border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4); margin-bottom: 4px;
+}
+.group-summary__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
+.group-summary__item b { font-variant-numeric: tabular-nums; }
+
+/* 路由链路节点 */
+.route-node {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  background: var(--color-primary-light); color: var(--color-primary);
+  font-size: 12px; font-weight: 500;
+}
+</style>
