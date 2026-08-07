@@ -9,6 +9,7 @@ import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
 import com.ccr.admin.system.support.DataScopeHelper;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.datascope.DataScope;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,7 +55,7 @@ public class AuthController {
         // 写入当前用户机构上下文(公共字段自动填充用)与数据权限范围(§5.4)
         CcrSysDept dept = user.getOrgId() == null ? null : sysDeptMapper.selectById(user.getOrgId());
         String orgCode = dept == null ? null : dept.getOrgCode();
-        DataScopeHelper.DataScope dataScope = dataScopeHelper.compute(user);
+        DataScope dataScope = dataScopeHelper.compute(user);
         StpUtil.getSession().set("orgId", user.getOrgId());
         if (orgCode != null) {
             StpUtil.getSession().set("orgCode", orgCode);
