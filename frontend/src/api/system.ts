@@ -163,3 +163,16 @@ export const delegateAssignee = (id: number, data: { delegateTo: string; delegat
 // 解析预览:选节点+机构→实际处理人;未命中返回空数组,前端红字提示角色兜底
 export const resolveAssignees = (data: { nodeCode: string; orgId?: number | ''; asOfTime?: string }) =>
   post<any[]>('/system/flow/assignees/resolve', data)
+
+// ---------- 缓存项配置(§3.6;仅 admin;PUT 后立即生效不重启) ----------
+export interface CacheConfigItem {
+  itemKey: string
+  key?: string
+  keyPattern?: string
+  enabled: boolean
+  ttlSeconds?: number
+  source: string // YML=application.yml 静态默认 / DB=运行期覆盖值
+}
+export const listCacheConfigs = () => get<CacheConfigItem[]>('/system/cache-configs')
+export const updateCacheConfig = (itemKey: string, data: { enabled?: boolean; ttlSeconds?: number }) =>
+  put(`/system/cache-configs/${itemKey}`, data)

@@ -120,6 +120,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/system/params.vue'),
         // param_admin 角色已取消(详设):维护并入 admin,复核由 config_reviewer 承担
         meta: { title: '参数管理', roles: ['admin', 'config_reviewer'] }
+      },
+      {
+        // Redis 缓存项配置(详设 §3.6):每项 TTL/写入开关,DB 覆盖立即生效不重启
+        path: 'system/cache',
+        name: 'SysCache',
+        component: () => import('@/views/system/cache.vue'),
+        meta: { title: '缓存配置', roles: ['admin'] }
       }
     ]
   },

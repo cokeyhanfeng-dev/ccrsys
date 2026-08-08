@@ -130,10 +130,15 @@
         <div v-for="(m, i) in planMetrics" :key="i" class="metric-row">
           <div class="metric-row__head">
             <b>{{ m.metric_name || m.metric_code || '—' }}</b>
-            <span class="dg-label">目标 {{ m.target_value ?? '—' }} · 实际 {{ m.actual_value ?? '暂无数据' }}</span>
+            <span v-if="m.metric_code !== 'OTHER'" class="dg-label">目标 {{ m.target_value ?? '—' }} · 实际 {{ m.actual_value ?? '暂无数据' }}</span>
+            <span v-else class="dg-label">其它手工承诺(§6.4)</span>
             <span :class="resultBadge(m.result_status)">{{ resultText(m.result_status) }}</span>
           </div>
-          <el-progress
+          <!-- §6.4 "其它"承诺:无数值达成率/进度条,不参与机构达成率(D19);描述录入依赖后端 track_desc 接口 -->
+          <div v-if="m.metric_code === 'OTHER'" class="section-tip" style="margin-top:6px">
+            手工描述跟踪,无数值达成率、不参与机构达成率(D19);跟踪反馈录入依赖后端 track_desc 字段/接口(登记依赖未就绪)。
+          </div>
+          <el-progress v-else
             :percentage="progressPct(m.achievement_ratio)"
             :color="progressColor(m.achievement_ratio)"
             :format="() => (m.achievement_ratio != null ? `${m.achievement_ratio}%` : '暂无数据')"
