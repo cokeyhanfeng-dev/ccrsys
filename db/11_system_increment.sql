@@ -145,3 +145,18 @@ END$$
 DELIMITER ;
 CALL `ccr_add_apply_branch_code`();
 DROP PROCEDURE `ccr_add_apply_branch_code`;
+
+-- ---------- 节点权限边界种子(ccr_node_permission,联调补录 §8.2 岗位最低可批利率) ----------
+-- 背景:03e_config 仅建表无种子,空表导致 approve 权限判定短路(perm=null→视为可终审),
+-- 支行行长越权终审(rate=3.1 应上送小组却直接 APPROVED_LEVEL)。补与权限矩阵一致的岗位下界:
+--   BRANCH_MANAGER/DEPT_GENERAL_MANAGER = LPR1Y+40BP = 3.4(对公新增非国企<5000万 部门总经理线)
+--   VICE_PRESIDENT                      = LPR1Y+20BP = 3.2(分管行长线)
+-- 固定 id 实现 ON DUPLICATE KEY 幂等;effective_from 取早于首个批次
+INSERT INTO `ccr_node_permission`
+  (`id`,`tenant_id`,`business_no`,`org_id`,`status`,`version_no`,`del_flag`,
+   `node_code`,`role_code`,`business_type`,`boundary_min_rate`,`effective_from`,`create_by`) VALUES
+  (8001,'000000','NODE_PERM_LOAN_SEED',1000,'EFFECTIVE',1,'0','BRANCH_MANAGER','branch_manager','LOAN',3.400000,'2026-01-01 00:00:00',1004),
+  (8002,'000000','NODE_PERM_LOAN_SEED',1000,'EFFECTIVE',1,'0','DEPT_GENERAL_MANAGER','dept_gm','LOAN',3.400000,'2026-01-01 00:00:00',1004),
+  (8003,'000000','NODE_PERM_LOAN_SEED',1000,'EFFECTIVE',1,'0','VICE_PRESIDENT','vice_president','LOAN',3.200000,'2026-01-01 00:00:00',1004)
+ON DUPLICATE KEY UPDATE
+  boundary_min_rate=VALUES(boundary_min_rate), status=VALUES(status), effective_from=VALUES(effective_from);
