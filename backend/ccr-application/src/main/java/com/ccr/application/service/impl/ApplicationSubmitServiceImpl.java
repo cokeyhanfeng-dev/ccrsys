@@ -845,6 +845,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         target.setGroupNo(source.getGroupNo());
         target.setApplicantUserId(source.getApplicantUserId());
         target.setApplicantOrgId(source.getApplicantOrgId());
+        target.setApplyBranchCode(source.getApplyBranchCode());
         target.setOrgId(source.getOrgId());
         target.setApplicationRemark(source.getApplicationRemark());
         target.setSourceApplicationId(source.getId());

@@ -43,6 +43,9 @@ public class CcrApplication extends BaseEntity {
     /** 提交机构 */
     private Long applicantOrgId;
 
+    /** 所属支行编码(数据权限 DEPT 级前缀过滤基础,§5.4;创建时按申请人机构从 sys_org 解析) */
+    private String applyBranchCode;
+
     /** 关联重提的原申请 */
     private Long sourceApplicationId;
 

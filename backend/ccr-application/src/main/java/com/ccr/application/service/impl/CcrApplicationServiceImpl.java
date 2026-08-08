@@ -40,7 +40,9 @@ import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 申请域服务实现
  * 草稿阶段(§12.1 DRAFT)可编辑;创建按 businessType 分流生成贷款/存款定价分项
  */
+@Slf4j
 @Service
 public class CcrApplicationServiceImpl implements CcrApplicationService {
 
@@ -81,6 +84,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     @Resource
     private AppLoginUser appLoginUser;
 
+    @Resource
+    private JdbcTemplate jdbcTemplate;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CcrApplication createDraft(CcrApplication request) {
@@ -108,6 +114,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         SysUserRead loginUser = appLoginUser.requireCurrentUser();
         entity.setApplicantUserId(loginUser.getId());
         entity.setApplicantOrgId(loginUser.getOrgId());
+        // 按申请人机构解析所属支行编码(§5.4 数据权限 DEPT 级前缀过滤数据基础,不信任前端传参)
+        entity.setApplyBranchCode(resolveBranchCode(loginUser.getOrgId()));
         // 生成申请号:CCR + yyyyMMdd + 4位随机
         entity.setApplicationNo("CCR" + cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyyMMdd")
                 + IdUtil.fastSimpleUUID().substring(0, 4).toUpperCase());
@@ -125,6 +133,27 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         // 拟达成贡献度承诺(供审批通过后生成正式承诺计划读取)
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         return entity;
+    }
+
+    /**
+     * 按申请人机构解析所属支行编码(§5.4 数据权限 DEPT 级前缀过滤数据基础):
+     * ccr_sys_dept.id → org_code → sys_org.branch_code;支行/网点有 branch_code,
+     * 总行部门为 NULL(打标 NULL,前缀过滤对该类申请不命中);解析失败不阻断创建
+     */
+    private String resolveBranchCode(Long orgId) {
+        if (orgId == null) {
+            return null;
+        }
+        try {
+            List<String> codes = jdbcTemplate.queryForList(
+                    "SELECT so.branch_code FROM ccr_sys_dept d JOIN sys_org so ON so.org_code = d.org_code "
+                            + "WHERE d.id = ? AND d.del_flag = '0' AND so.del_flag = '0' AND so.branch_code IS NOT NULL",
+                    String.class, orgId);
+            return codes.isEmpty() ? null : codes.get(0);
+        } catch (DataAccessException e) {
+            log.warn("解析申请支行编码失败,orgId={}: {}", orgId, e.getMessage());
+            return null;
+        }
     }
 
     /** 成员/分项/承诺子表写入(createDraft 与 saveDraft 共用) */
