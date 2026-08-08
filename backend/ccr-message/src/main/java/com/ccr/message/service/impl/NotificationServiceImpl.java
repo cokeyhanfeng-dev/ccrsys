@@ -179,7 +179,7 @@ public class NotificationServiceImpl implements NotificationService {
     public int processPendingAndRetry() {
         List<CcrNotificationLog> pending = logMapper.selectList(new LambdaQueryWrapper<CcrNotificationLog>()
                 .and(w -> w.eq(CcrNotificationLog::getSendStatus, "PENDING")
-                        .or().and(w2 -> w2.in(CcrNotificationLog::getSendStatus, "FAILED", "RETRYING")
+                        .or(w2 -> w2.in(CcrNotificationLog::getSendStatus, "FAILED", "RETRYING")
                                 .lt(CcrNotificationLog::getRetryCount, maxRetry)))
                 .orderByAsc(CcrNotificationLog::getId)
                 .last("LIMIT " + BATCH_LIMIT));
