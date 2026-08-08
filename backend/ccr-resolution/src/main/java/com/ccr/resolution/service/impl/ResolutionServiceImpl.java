@@ -3,6 +3,7 @@ package com.ccr.resolution.service.impl;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ccr.application.domain.CcrApplication;
@@ -240,13 +241,16 @@ public class ResolutionServiceImpl implements ResolutionService {
             exec.setExecutionStatus("EXECUTED");
             exec.setDifferenceJson(noteDataMissing ? diff : null);
             // 显式置空历史差异,避免上次异常残留(null 字段 updateById 不更新)
+            // 注意:Wrapper 更新不应用实体 TypeHandler,Map 值走 toString→binary 字符集会被 MySQL JSON 列拒绝,
+            // 故 JSON 列参数在此手动序列化为 String(utf8)传入;null 传 null 保留"清除历史差异"语义
             executionMapper.update(null, new LambdaUpdateWrapper<CcrResolutionExecution>()
                     .eq(CcrResolutionExecution::getId, exec.getId())
                     .set(CcrResolutionExecution::getReconcileTime, exec.getReconcileTime())
                     .set(CcrResolutionExecution::getSourceBatchId, exec.getSourceBatchId())
                     .set(CcrResolutionExecution::getReconcileResult, exec.getReconcileResult())
                     .set(CcrResolutionExecution::getExecutionStatus, exec.getExecutionStatus())
-                    .set(CcrResolutionExecution::getDifferenceJson, exec.getDifferenceJson()));
+                    .set(CcrResolutionExecution::getDifferenceJson,
+                            exec.getDifferenceJson() == null ? null : JSONUtil.toJsonStr(exec.getDifferenceJson())));
         } else {
             return markReconcileException(exec, resolution, "决议执行核验不通过", diff);
         }

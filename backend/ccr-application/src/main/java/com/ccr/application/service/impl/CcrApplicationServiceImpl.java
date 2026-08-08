@@ -104,6 +104,10 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
         CcrApplication entity = new CcrApplication();
         copyForCreate(entity, request);
+        // 申请人/机构来自登录上下文(§5.4:不信任前端传参,防越权;applicant_user_id/org_id 均 NOT NULL)
+        SysUserRead loginUser = appLoginUser.requireCurrentUser();
+        entity.setApplicantUserId(loginUser.getId());
+        entity.setApplicantOrgId(loginUser.getOrgId());
         // 生成申请号:CCR + yyyyMMdd + 4位随机
         entity.setApplicationNo("CCR" + cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyyMMdd")
                 + IdUtil.fastSimpleUUID().substring(0, 4).toUpperCase());
@@ -350,15 +354,24 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         for (CcrPricingItem pi : createdItems) {
             itemNoToId.put(pi.getPricingItemNo(), pi.getId());
         }
+        // 承诺指标-分项关联兜底(契约缺口修复,§十三 13.2-6):单分项申请未指定 pricingItemNo 时关联唯一分项;
+        // 多分项未指定时保持 null(无法确定归属,承诺计划侧按申请兜底不适用,须由前端按分项编号提交)
+        Long soleItemId = createdItems.size() == 1 ? createdItems.get(0).getId() : null;
         for (CommitmentInput c : commitments) {
             if (c == null || StrUtil.isBlank(c.getMetricCode()) || StrUtil.isBlank(c.getTargetType())
                     || c.getTargetValue() == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "承诺缺少必填项(metricCode/targetType/targetValue)");
             }
+            Long resolvedItemId = null;
+            if (StrUtil.isNotBlank(c.getPricingItemNo())) {
+                resolvedItemId = itemNoToId.get(c.getPricingItemNo());
+            } else if (soleItemId != null) {
+                resolvedItemId = soleItemId;
+            }
             CcrApplicationCommitment commitment = new CcrApplicationCommitment();
             commitment.setApplicationId(applicationId);
-            commitment.setPricingItemId(StrUtil.isBlank(c.getPricingItemNo()) ? null : itemNoToId.get(c.getPricingItemNo()));
+            commitment.setPricingItemId(resolvedItemId);
             commitment.setMetricCode(c.getMetricCode());
             commitment.setTargetType(c.getTargetType());
             commitment.setBaselineValue(c.getBaselineValue());

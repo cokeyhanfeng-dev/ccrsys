@@ -90,6 +90,8 @@ class CcrApplicationServiceImplTest {
     }
 
     private void stubInsertIds() {
+        // createDraft 现在从登录上下文取申请人(§5.4);lenient 兼容仅 createDraft 用例使用
+        lenient().when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(7L, "customer_manager", 1001L));
         lenient().when(applicationMapper.insert(any(CcrApplication.class))).thenAnswer(inv -> {
             inv.getArgument(0, CcrApplication.class).setId(100L);
             return 1;
@@ -329,7 +331,7 @@ class CcrApplicationServiceImplTest {
         deposit.setDepositAccountNo("ACCT001");
         CommitmentInput commitment = new CommitmentInput();
         commitment.setMetricCode("DEPOSIT_BALANCE");
-        commitment.setTargetType("AVG_BALANCE");
+        commitment.setTargetType("TARGET_BALANCE");
         commitment.setTargetValue(new BigDecimal("500"));
         CcrApplication request = new CcrApplication();
         request.setVersionNo(3);

@@ -87,7 +87,7 @@ public class CustomerController {
                 FROM dw_credit_financing_summary WHERE cust_no = ? LIMIT 1""", customerNo));
         result.put("creditDetail", jdbcTemplate.queryForList("""
                 SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate
-                FROM dw_credit_financing_detail WHERE cust_no = ?""", customerNo));
+                FROM dw_credit_financing_detail WHERE customer_no = ?""", customerNo));
         return R.ok(result);
     }
 

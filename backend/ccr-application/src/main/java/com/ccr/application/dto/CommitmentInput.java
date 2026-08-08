@@ -16,7 +16,7 @@ public class CommitmentInput {
     /** 贡献度指标编码 */
     private String metricCode;
 
-    /** 目标类型:AVG_BALANCE/INCOME/CONTRIBUTION_AMOUNT */
+    /** 达成率算法类型(与承诺模块 §11.3 校验一致):INCREMENT/TARGET_BALANCE/CUMULATIVE */
     private String targetType;
 
     /** 基线值(万元) */

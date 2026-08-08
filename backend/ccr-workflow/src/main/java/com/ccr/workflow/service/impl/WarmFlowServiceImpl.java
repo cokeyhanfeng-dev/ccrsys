@@ -1,5 +1,6 @@
 package com.ccr.workflow.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.workflow.service.WarmFlowService;
@@ -212,6 +213,8 @@ public class WarmFlowServiceImpl implements WarmFlowService {
 
             boolean rejectish = isRejectAction(action);
             HisTask his = FlowEngine.newHisTask()
+                    // 手动业务轨迹无真实流程任务,生成雪花id满足 flow_his_task.task_id NOT NULL
+                    .setTaskId(IdUtil.getSnowflakeNextId())
                     .setDefinitionId(definition.getId())
                     .setFlowName(definition.getFlowName())
                     .setInstanceId(instance.getId())

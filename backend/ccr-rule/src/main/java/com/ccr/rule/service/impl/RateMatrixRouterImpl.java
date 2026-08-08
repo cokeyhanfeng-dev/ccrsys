@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
  *   所有贷款/存款申请必经支行行长首节点(B13);
  *   支行行长仅在 PRD 矩阵"权限内"单元格(非国企新增&lt;5000万、个人新增)有终审权,
  *   终审边界=该单元格部门总经理线(挂牌价口径),突破边界逐级上送 部门总经理→分管行领导→小组;
- *   存款/保证金无部门层级(D16b),支行行长过手后,利率高于期限上限才需小组表决。
+ *   存款/保证金无部门层级(D16b),支行行长过手后一律合批上会小组(与审批阶段"双轨消除"一致)。
  */
 @Service
 public class RateMatrixRouterImpl implements RateMatrixRouter {
@@ -96,17 +96,14 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         // 产品硬边界(§8.2 D3):贷款=全行下限,存款=全行上限;终审边界=矩阵边界与硬边界取交集
         BigDecimal hardBoundary = loadProductHardBoundary(input, asOf, isLoan);
 
-        // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于阈值才需小组批
+        // 存款/保证金:支行过手后一律合批上会(§3.3 D16b,与 ApprovalServiceImpl"双轨消除"一致);
+        // 期限上限(矩阵行 boundary)仅作信息展示,不再作为支行行长终审条件——审批阶段存款只允许支行行长过手
         if (!isLoan) {
             CcrRateMatrix row = matched.get(0);
             BigDecimal upper = calcBoundary(row, input, null);
-            if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
-                return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
-                        "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
-            }
             return buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
                     upper == null ? "存款/保证金一律直接上会小组(D16b)"
-                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)");
+                            : "存款/保证金支行过手后一律合批上会小组(期限上限" + upper + "%,D16b)");
         }
 
         // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底
@@ -144,9 +141,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
      * 按业务维度取生效矩阵行(§3.6 缓存 key ccr:cfg:matrix:effective):
      * 全量生效行整体缓存,按 businessBigType/newOrExisting/生效窗口内存过滤;矩阵发布时失效。
      */
-    @SuppressWarnings("unchecked")
     private List<CcrRateMatrix> effectiveRows(String businessBigType, String newOrExisting, LocalDateTime asOf) {
-        List<CcrRateMatrix> effective = (List<CcrRateMatrix>) cacheUtil.get(CcrCacheUtil.KEY_MATRIX_EFFECTIVE);
+        List<CcrRateMatrix> effective = readMatrixEffectiveCache();
         if (effective == null) {
             effective = matrixMapper.selectList(new LambdaQueryWrapper<CcrRateMatrix>()
                     .eq(CcrRateMatrix::getStatus, "EFFECTIVE"));
@@ -158,6 +154,17 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                 .filter(r -> r.getEffectiveFrom() == null || !r.getEffectiveFrom().isAfter(asOf))
                 .filter(r -> r.getEffectiveTo() == null || r.getEffectiveTo().isAfter(asOf))
                 .toList();
+    }
+
+    /** 读矩阵缓存:Redis JSON 反序列化会丢失实体类型(元素退化为 LinkedHashMap),
+     * 类型不符或为空一律按缓存失效处理,交由调用方直查库重建缓存 */
+    @SuppressWarnings("unchecked")
+    private List<CcrRateMatrix> readMatrixEffectiveCache() {
+        Object cached = cacheUtil.get(CcrCacheUtil.KEY_MATRIX_EFFECTIVE);
+        if (cached instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof CcrRateMatrix) {
+            return (List<CcrRateMatrix>) list;
+        }
+        return null;
     }
 
     private boolean match(CcrRateMatrix r, MatrixRouteInput in) {

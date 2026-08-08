@@ -540,9 +540,9 @@
             <td class="num">{{ currentOf(c.metricCode) }}</td>
             <td>
               <select class="form-select" v-model="c.targetType">
-                <option value="AVG_BALANCE">日均余额</option>
-                <option value="INCOME">收入</option>
-                <option value="CONTRIBUTION_AMOUNT">贡献额</option>
+                <option value="TARGET_BALANCE">目标余额</option>
+                <option value="INCREMENT">承诺新增</option>
+                <option value="CUMULATIVE">期间累计</option>
               </select>
             </td>
             <td><input class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" /></td>
@@ -1003,7 +1003,7 @@ function currentOf(code: string) {
 }
 function addCommitment() {
   commitments.value.push({
-    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'AVG_BALANCE',
+    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'TARGET_BALANCE',
     baselineValue: '', targetValue: '', unit: 'WAN_YUAN',
     metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: ''
   })
