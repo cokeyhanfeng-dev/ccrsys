@@ -146,8 +146,15 @@ public class ApprovalServiceImpl implements ApprovalService {
         String targetStatus = PricingItemStatus.ROUTING.getCode();
         BigDecimal finalRate = null;
         if (deposit) {
-            // 存款/保证金:支行行长过手后直接上会小组
-            toGroup = true;
+            // 存款/保证金:利率未超期限上限(冻结 boundary_rate,含等于)由支行行长终审;超上限才上会小组
+            BigDecimal upper = item.getBoundaryRate();
+            if (upper != null && effectiveRate != null && effectiveRate.compareTo(upper) <= 0) {
+                terminal = true;
+                targetStatus = PricingItemStatus.APPROVED_LEVEL.getCode();
+                finalRate = effectiveRate;
+            } else {
+                toGroup = true;
+            }
         } else if (inNodePermission(businessType, effectiveRate, perm)) {
             // 权限内 → 终审
             terminal = true;

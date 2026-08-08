@@ -22,7 +22,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** CcrCacheUtil 缓存项配置:disabled 不触碰 Redis、TTL 优先级 DB>yml>显式、前缀匹配、deleteByPrefix(§3.6) */
+/** CcrCacheUtil 缓存项配置:disabled 不触碰 Redis、TTL 定义值>显式、前缀匹配、deleteByPrefix(§3.6 v2) */
 @ExtendWith(MockitoExtension.class)
 class CcrCacheUtilTest {
 
@@ -44,6 +44,11 @@ class CcrCacheUtilTest {
         util = new CcrCacheUtil(redisTemplate, properties, holder);
     }
 
+    private static CacheItemDef def(String itemKey, String cacheKey, String keyPattern,
+                                    boolean enabled, Long ttl) {
+        return new CacheItemDef(itemKey, cacheKey, keyPattern, enabled, ttl, null, null, null, false);
+    }
+
     private void assertDurationNear(Duration actual, long expectedSeconds) {
         long s = actual.toSeconds();
         assertTrue(s >= expectedSeconds * 0.8 && s <= expectedSeconds * 1.2,
@@ -52,15 +57,15 @@ class CcrCacheUtilTest {
 
     @Test
     void disabledItemGetReturnsNullAndSetSkips() {
-        holder.replaceAll(Map.of("matrix-effective", new CacheItemOverride(false, null)));
+        holder.replaceAll(Map.of("matrix-effective", def("matrix-effective", "ccr:cfg:matrix:effective", null, false, null)));
         assertNull(util.get(CcrCacheUtil.KEY_MATRIX_EFFECTIVE));
         util.set(CcrCacheUtil.KEY_MATRIX_EFFECTIVE, "v", 300);
         verify(redisTemplate, never()).opsForValue();
     }
 
     @Test
-    void dbOverrideTtlWinsOverExplicit() {
-        holder.replaceAll(Map.of("matrix-effective", new CacheItemOverride(true, 600L)));
+    void dbDefTtlWinsOverExplicit() {
+        holder.replaceAll(Map.of("matrix-effective", def("matrix-effective", "ccr:cfg:matrix:effective", null, true, 600L)));
         util.set(CcrCacheUtil.KEY_MATRIX_EFFECTIVE, "v", 300);
         ArgumentCaptor<Duration> cap = ArgumentCaptor.forClass(Duration.class);
         verify(ops).set(eq("ccr:cfg:matrix:effective"), eq("v"), cap.capture());
@@ -68,20 +73,8 @@ class CcrCacheUtilTest {
     }
 
     @Test
-    void ymlItemTtlOverridesExplicit() {
-        CcrCacheProperties.CacheItemProperties yml = new CcrCacheProperties.CacheItemProperties();
-        yml.setEnabled(true);
-        yml.setTtlSeconds(300L);
-        properties.getItems().put("matrix-effective", yml);
-        util.set(CcrCacheUtil.KEY_MATRIX_EFFECTIVE, "v", 120);
-        ArgumentCaptor<Duration> cap = ArgumentCaptor.forClass(Duration.class);
-        verify(ops).set(eq("ccr:cfg:matrix:effective"), eq("v"), cap.capture());
-        assertDurationNear(cap.getValue(), 300);
-    }
-
-    @Test
     void explicitTtlUsedWhenNoItemConfig() {
-        // 无 DB 覆盖、无 yml item → 用显式 TTL 120s
+        // 无 DB 定义 → 用显式 TTL 120s
         util.set("ccr:cfg:other:key", "v", 120);
         ArgumentCaptor<Duration> cap = ArgumentCaptor.forClass(Duration.class);
         verify(ops).set(eq("ccr:cfg:other:key"), eq("v"), cap.capture());
@@ -98,7 +91,7 @@ class CcrCacheUtilTest {
 
     @Test
     void prefixItemMatchesRateLimitKey() {
-        holder.replaceAll(Map.of("rate-limit", new CacheItemOverride(true, 60L)));
+        holder.replaceAll(Map.of("rate-limit", def("rate-limit", null, "ccr:cfg:rate-limit:", true, 60L)));
         util.set("ccr:cfg:rate-limit:LOAN:PUB_LOAN_01", "limit", 300);
         ArgumentCaptor<Duration> cap = ArgumentCaptor.forClass(Duration.class);
         verify(ops).set(eq("ccr:cfg:rate-limit:LOAN:PUB_LOAN_01"), eq("limit"), cap.capture());
@@ -116,7 +109,7 @@ class CcrCacheUtilTest {
     @Test
     void globalVerKeyNotAffectedByItems() {
         // GLOBAL_VER_KEY 不命中任何 item,increment 行为不变
-        holder.replaceAll(Map.of("matrix-effective", new CacheItemOverride(false, null)));
+        holder.replaceAll(Map.of("matrix-effective", def("matrix-effective", "ccr:cfg:matrix:effective", null, false, null)));
         when(ops.increment("ccr:cfg:v")).thenReturn(1L);
         assertEquals(1L, util.increment(CcrCacheUtil.GLOBAL_VER_KEY));
     }

@@ -4,46 +4,56 @@ import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 
 /**
- * 缓存项静态定义(详设 §3.6)。code 用于 application.yml {@code ccr.cache.items} 键
- * 与 ccr_cache_config.item_key;key 精确匹配,keyPattern 前缀匹配(动态 key,如 ccr:cfg:rate-limit:LOAN:xxx)。
+ * 缓存项内置种子元数据(详设 §3.6 v2):仅用于启动 seedIfEmpty 生成内置 3 项定义,
+ * 以及文档/管理端内置项展示。运行期匹配已由 {@link CacheConfigHolder#matchDef} 按 DB 动态定义驱动。
  */
 public enum CacheItem {
 
     /** LPR 当前生效版本(精确 key) */
-    LPR_EFFECTIVE("lpr-effective", "ccr:cfg:lpr:effective", null),
+    LPR_EFFECTIVE("lpr-effective", "ccr:cfg:lpr:effective", null, "LPR 当前生效版本"),
 
     /** 利率矩阵全量生效行(精确 key) */
-    MATRIX_EFFECTIVE("matrix-effective", "ccr:cfg:matrix:effective", null),
+    MATRIX_EFFECTIVE("matrix-effective", "ccr:cfg:matrix:effective", null, "利率矩阵生效行"),
 
     /** 产品硬边界(前缀匹配动态 key:ccr:cfg:rate-limit:{业务类}:{产品}) */
-    RATE_LIMIT("rate-limit", null, "ccr:cfg:rate-limit:");
+    RATE_LIMIT("rate-limit", null, "ccr:cfg:rate-limit:", "产品硬边界限流");
 
     private final String code;
-    private final String key;
+    private final String cacheKey;
     private final String keyPattern;
+    private final String desc;
 
-    CacheItem(String code, String key, String keyPattern) {
+    CacheItem(String code, String cacheKey, String keyPattern, String desc) {
         this.code = code;
-        this.key = key;
+        this.cacheKey = cacheKey;
         this.keyPattern = keyPattern;
+        this.desc = desc;
     }
 
     public String getCode() {
         return code;
     }
 
-    public String getKey() {
-        return key;
+    public String getCacheKey() {
+        return cacheKey;
     }
 
     public String getKeyPattern() {
         return keyPattern;
     }
 
-    /** 精确匹配优先,再前缀匹配;未命中返回 null */
+    /** 内置项展示描述(seed 的 description 列) */
+    public String getDesc() {
+        return desc;
+    }
+
+    /**
+     * @deprecated 运行期匹配已改由 {@link CacheConfigHolder#matchDef} 按 DB 动态定义驱动,不再依赖静态枚举
+     */
+    @Deprecated
     public static CacheItem match(String cacheKey) {
         for (CacheItem i : values()) {
-            if (i.key != null && i.key.equals(cacheKey)) {
+            if (i.cacheKey != null && i.cacheKey.equals(cacheKey)) {
                 return i;
             }
         }
@@ -55,7 +65,10 @@ public enum CacheItem {
         return null;
     }
 
-    /** 按配置编码解析;未知编码抛 400 */
+    /**
+     * @deprecated 管理端校验已改为按 DB 定义存在性判断,不再依赖静态枚举
+     */
+    @Deprecated
     public static CacheItem fromCode(String code) {
         for (CacheItem i : values()) {
             if (i.code.equals(code)) {

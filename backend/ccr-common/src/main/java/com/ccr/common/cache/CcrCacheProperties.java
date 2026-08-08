@@ -30,10 +30,21 @@ public class CcrCacheProperties {
     /** 分布式锁默认过期秒 */
     private long lockExpireSeconds = 10;
 
-    /** 每项缓存静态默认(key 为 {@link CacheItem} code;enabled/ttlSeconds 均可为 null=未配置) */
+    /**
+     * 每项缓存静态默认(key 为内置缓存项 code)。
+     *
+     * @deprecated §3.6 v2 起缓存项定义以 DB ccr_cache_config 为唯一事实源,该字段不再参与运行期解析,
+     * 仅保留字段防止破坏 application.yml 既有 {@code ccr.cache.items} 解析。
+     */
+    @Deprecated
     private Map<String, CacheItemProperties> items = new HashMap<>();
 
-    /** 每项缓存静态默认值(enabled null=默认启用;ttlSeconds null=回退显式/全局默认) */
+    /**
+     * 每项缓存静态默认值。
+     *
+     * @deprecated 见 {@link #items}
+     */
+    @Deprecated
     @Data
     public static class CacheItemProperties {
         private Boolean enabled;

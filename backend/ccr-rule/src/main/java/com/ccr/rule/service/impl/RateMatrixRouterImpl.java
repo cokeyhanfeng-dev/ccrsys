@@ -96,14 +96,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         // 产品硬边界(§8.2 D3):贷款=全行下限,存款=全行上限;终审边界=矩阵边界与硬边界取交集
         BigDecimal hardBoundary = loadProductHardBoundary(input, asOf, isLoan);
 
-        // 存款/保证金:支行过手后一律合批上会(§3.3 D16b,与 ApprovalServiceImpl"双轨消除"一致);
-        // 期限上限(矩阵行 boundary)仅作信息展示,不再作为支行行长终审条件——审批阶段存款只允许支行行长过手
+        // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于上限才上会小组;
+        // 未超上限(含等于)由支行行长终审(用户拍板口径:超过挂牌价才提交上级)
         if (!isLoan) {
             CcrRateMatrix row = matched.get(0);
             BigDecimal upper = calcBoundary(row, input, null);
+            if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
+                return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
+                        "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
+            }
             return buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
                     upper == null ? "存款/保证金一律直接上会小组(D16b)"
-                            : "存款/保证金支行过手后一律合批上会小组(期限上限" + upper + "%,D16b)");
+                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)");
         }
 
         // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底

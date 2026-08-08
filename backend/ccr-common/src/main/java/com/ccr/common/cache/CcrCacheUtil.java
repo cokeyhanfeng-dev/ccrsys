@@ -13,8 +13,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * 缓存工具(详设 §3.6):统一前缀 {@code ccr:}、TTL 随机抖动、空值缓存、简单分布式锁、缓存项级配置。
  * <p>所有方法内部 catch Redis 异常降级——Redis 不可用时 {@code get} 返回 null(调用方直查库),
  * 写操作静默,业务不受影响;写路径不依赖缓存。
- * 每项缓存(见 {@link CacheItem})经 {@link CacheConfigHolder} 解析 DB 覆盖值:disabled 时
- * {@code get} 返回 null 直查库、{@code set} 跳过写入;TTL 优先级 DB覆盖 > yml items > 显式 > 全局默认。</p>
+ * 每项缓存经 {@link CacheConfigHolder#matchDef} 按 DB 动态定义解析:disabled 时
+ * {@code get} 返回 null 直查库、{@code set} 跳过写入;TTL 取缓存项定义值,未定义回退显式/全局默认。</p>
  */
 @Slf4j
 public class CcrCacheUtil {
@@ -161,28 +161,17 @@ public class CcrCacheUtil {
 
     // ---------- 缓存项级配置解析 ----------
 
-    /** 命中缓存项且被禁用 → false;未命中任何项视为启用(行为与改造前一致) */
+    /** 命中缓存项定义且被禁用 → false;未命中任何项视为启用(行为与改造前无配置一致) */
     private boolean itemEnabled(String key) {
-        CacheItem item = CacheItem.match(key);
-        if (item == null) return true;
-        CacheItemOverride override = cacheConfigHolder.getOverride(item.getCode());
-        if (override != null) return override.enabled();
-        CcrCacheProperties.CacheItemProperties yml = properties.getItems().get(item.getCode());
-        return yml == null || yml.getEnabled() == null || yml.getEnabled();
+        CacheItemDef def = cacheConfigHolder.matchDef(key);
+        return def == null || def.enabled();
     }
 
-    /** TTL 优先级:DB item 覆盖 > yml item > 显式/调用方 > 全局默认 */
+    /** TTL 优先级:缓存项定义 TTL > 显式/调用方 > 全局默认(未定义时回退显式) */
     private long resolveTtlSeconds(String key, long explicitTtl) {
-        CacheItem item = CacheItem.match(key);
-        if (item != null) {
-            CacheItemOverride override = cacheConfigHolder.getOverride(item.getCode());
-            if (override != null && override.ttlSeconds() != null && override.ttlSeconds() > 0) {
-                return override.ttlSeconds();
-            }
-            CcrCacheProperties.CacheItemProperties yml = properties.getItems().get(item.getCode());
-            if (yml != null && yml.getTtlSeconds() != null && yml.getTtlSeconds() > 0) {
-                return yml.getTtlSeconds();
-            }
+        CacheItemDef def = cacheConfigHolder.matchDef(key);
+        if (def != null && def.ttlSeconds() != null && def.ttlSeconds() > 0) {
+            return def.ttlSeconds();
         }
         return explicitTtl;
     }
