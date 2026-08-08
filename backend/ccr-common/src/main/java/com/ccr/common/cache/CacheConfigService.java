@@ -213,8 +213,11 @@ public class CacheConfigService {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "ttlSeconds 必须大于0");
         }
         boolean isSystem = "Y".equalsIgnoreCase(existing.getIsSystem());
-        boolean keyChanged = !Objects.equals(body.getCacheKey(), existing.getCacheKey())
-                || !Objects.equals(body.getKeyPattern(), existing.getKeyPattern());
+        // 仅当请求体显式提供 cacheKey/keyPattern 时才判定 key 是否被改动(内置项禁止改动)
+        boolean keyProvided = body.getCacheKey() != null || body.getKeyPattern() != null;
+        boolean keyChanged = keyProvided
+                && (!Objects.equals(body.getCacheKey(), existing.getCacheKey())
+                    || !Objects.equals(body.getKeyPattern(), existing.getKeyPattern()));
         if (isSystem && keyChanged) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "内置缓存项禁止修改 cacheKey/keyPattern");
         }

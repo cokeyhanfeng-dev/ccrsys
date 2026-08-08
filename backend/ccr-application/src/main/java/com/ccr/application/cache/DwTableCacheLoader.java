@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 数仓表数据加载器(§3.6 v2 配置化刷新):把指定 dw_*/caps_* 表的最新批次数据
+ * 数仓表数据加载器(§3.6 v2 配置化刷新):把指定 dw_ 表 / caps_ 表的最新批次数据
  * ({@code data_dt=(SELECT MAX(data_dt))})加载为 {@code List<Map>} 供缓存项刷新写入 Redis。
  * <p>loaderParam JSON: {@code {"table":"dw_loan_contract_snapshot","limit":5000}}
  * (limit 缺省/超界用默认 5000,防整表超大写入)。表名白名单校验防 SQL 注入。</p>

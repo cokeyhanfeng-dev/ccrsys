@@ -164,15 +164,41 @@ export const delegateAssignee = (id: number, data: { delegateTo: string; delegat
 export const resolveAssignees = (data: { nodeCode: string; orgId?: number | ''; asOfTime?: string }) =>
   post<any[]>('/system/flow/assignees/resolve', data)
 
-// ---------- 缓存项配置(§3.6;仅 admin;PUT 后立即生效不重启) ----------
+// ---------- 缓存项配置(§3.6 v2;仅 admin;DB 动态定义 + 配置化刷新,立即生效不重启) ----------
 export interface CacheConfigItem {
   itemKey: string
   key?: string
   keyPattern?: string
   enabled: boolean
   ttlSeconds?: number
-  source: string // YML=application.yml 静态默认 / DB=运行期覆盖值
+  description?: string
+  dataLoader?: string
+  loaderParam?: string
+  builtin: boolean // 内置项不可删/不可改 key
+  source: string // 恒为 DB(定义存于配置表)
 }
+
+export interface CacheConfigCreateData {
+  itemKey: string
+  cacheKey?: string
+  keyPattern?: string
+  enabled?: boolean
+  ttlSeconds?: number
+  description?: string
+  dataLoader?: string
+  loaderParam?: string
+}
+
+export interface CacheLoaderInfo {
+  code: string
+  name: string
+}
+
 export const listCacheConfigs = () => get<CacheConfigItem[]>('/system/cache-configs')
-export const updateCacheConfig = (itemKey: string, data: { enabled?: boolean; ttlSeconds?: number }) =>
+export const createCacheConfig = (data: CacheConfigCreateData) => post('/system/cache-configs', data)
+export const updateCacheConfig = (itemKey: string, data: object) =>
   put(`/system/cache-configs/${itemKey}`, data)
+export const deleteCacheConfig = (itemKey: string) => del(`/system/cache-configs/${itemKey}`)
+export const refreshCacheConfig = (itemKey: string) =>
+  post<{ count: number }>(`/system/cache-configs/${itemKey}/refresh`)
+export const listCacheLoaders = () => get<CacheLoaderInfo[]>('/system/cache-configs/loaders')
