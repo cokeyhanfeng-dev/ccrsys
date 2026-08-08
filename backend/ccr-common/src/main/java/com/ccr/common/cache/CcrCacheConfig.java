@@ -34,7 +34,9 @@ public class CcrCacheConfig {
     }
 
     @Bean
-    public CcrCacheUtil ccrCacheUtil(RedisTemplate<String, Object> ccrRedisTemplate, CcrCacheProperties properties) {
-        return new CcrCacheUtil(ccrRedisTemplate, properties);
+    public CcrCacheUtil ccrCacheUtil(RedisTemplate<String, Object> ccrRedisTemplate,
+                                     CcrCacheProperties properties,
+                                     CacheConfigHolder cacheConfigHolder) {
+        return new CcrCacheUtil(ccrRedisTemplate, properties, cacheConfigHolder);
     }
 }

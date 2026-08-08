@@ -6,12 +6,15 @@ import org.springframework.data.redis.core.RedisTemplate;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 缓存工具(详设 §3.6):统一前缀 {@code ccr:}、TTL 随机抖动、空值缓存、简单分布式锁。
+ * 缓存工具(详设 §3.6):统一前缀 {@code ccr:}、TTL 随机抖动、空值缓存、简单分布式锁、缓存项级配置。
  * <p>所有方法内部 catch Redis 异常降级——Redis 不可用时 {@code get} 返回 null(调用方直查库),
- * 写操作静默,业务不受影响;写路径不依赖缓存。</p>
+ * 写操作静默,业务不受影响;写路径不依赖缓存。
+ * 每项缓存(见 {@link CacheItem})经 {@link CacheConfigHolder} 解析 DB 覆盖值:disabled 时
+ * {@code get} 返回 null 直查库、{@code set} 跳过写入;TTL 优先级 DB覆盖 > yml items > 显式 > 全局默认。</p>
  */
 @Slf4j
 public class CcrCacheUtil {
@@ -32,19 +35,23 @@ public class CcrCacheUtil {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final CcrCacheProperties properties;
+    private final CacheConfigHolder cacheConfigHolder;
 
-    public CcrCacheUtil(RedisTemplate<String, Object> redisTemplate, CcrCacheProperties properties) {
+    public CcrCacheUtil(RedisTemplate<String, Object> redisTemplate,
+                        CcrCacheProperties properties,
+                        CacheConfigHolder cacheConfigHolder) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
+        this.cacheConfigHolder = cacheConfigHolder;
     }
 
     public boolean isEnabled() {
         return properties.isEnabled();
     }
 
-    /** 读缓存:未命中、空值占位或 Redis 降级均返回 null */
+    /** 读缓存:未命中、空值占位、Redis 降级或缓存项禁用均返回 null(禁用时直查库) */
     public Object get(String key) {
-        if (!isEnabled()) return null;
+        if (!isEnabled() || !itemEnabled(key)) return null;
         try {
             Object v = redisTemplate.opsForValue().get(prefix(key));
             if (v instanceof String s && s.isEmpty()) {
@@ -63,13 +70,13 @@ public class CcrCacheUtil {
     }
 
     public void set(String key, Object value, long ttlSeconds) {
-        if (!isEnabled()) return;
+        if (!isEnabled() || !itemEnabled(key)) return;
         try {
             String k = prefix(key);
             if (value == null) {
                 redisTemplate.opsForValue().set(k, EMPTY_MARKER, Duration.ofSeconds(properties.getEmptyTtlSeconds()));
             } else {
-                redisTemplate.opsForValue().set(k, value, Duration.ofSeconds(jitter(ttlSeconds)));
+                redisTemplate.opsForValue().set(k, value, Duration.ofSeconds(jitter(resolveTtlSeconds(key, ttlSeconds))));
             }
         } catch (Exception e) {
             log.warn("[cache] Redis 写入降级 key={}: {}", key, e.getMessage());
@@ -85,6 +92,20 @@ public class CcrCacheUtil {
             }
         } catch (Exception e) {
             log.warn("[cache] Redis 删除降级 keys={}: {}", String.join(",", keys), e.getMessage());
+        }
+    }
+
+    /** 按前缀删除(缓存项配置变更失效前缀型 key 用,如 ccr:cfg:rate-limit:*;当前 key 规模小,KEYS 可接受) */
+    public void deleteByPrefix(String prefix) {
+        if (!isEnabled() || StrUtil.isBlank(prefix)) return;
+        try {
+            Set<String> keys = redisTemplate.keys(prefix(prefix) + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                log.info("[cache] 前缀删除 {} 共 {} 个 key", prefix, keys.size());
+            }
+        } catch (Exception e) {
+            log.warn("[cache] Redis 前缀删除降级 prefix={}: {}", prefix, e.getMessage());
         }
     }
 
@@ -136,5 +157,33 @@ public class CcrCacheUtil {
         double f = 1 + (ThreadLocalRandom.current().nextDouble() * 2 - 1) * ratio;
         long v = (long) (ttl * f);
         return Math.max(v, 1);
+    }
+
+    // ---------- 缓存项级配置解析 ----------
+
+    /** 命中缓存项且被禁用 → false;未命中任何项视为启用(行为与改造前一致) */
+    private boolean itemEnabled(String key) {
+        CacheItem item = CacheItem.match(key);
+        if (item == null) return true;
+        CacheItemOverride override = cacheConfigHolder.getOverride(item.getCode());
+        if (override != null) return override.enabled();
+        CcrCacheProperties.CacheItemProperties yml = properties.getItems().get(item.getCode());
+        return yml == null || yml.getEnabled() == null || yml.getEnabled();
+    }
+
+    /** TTL 优先级:DB item 覆盖 > yml item > 显式/调用方 > 全局默认 */
+    private long resolveTtlSeconds(String key, long explicitTtl) {
+        CacheItem item = CacheItem.match(key);
+        if (item != null) {
+            CacheItemOverride override = cacheConfigHolder.getOverride(item.getCode());
+            if (override != null && override.ttlSeconds() != null && override.ttlSeconds() > 0) {
+                return override.ttlSeconds();
+            }
+            CcrCacheProperties.CacheItemProperties yml = properties.getItems().get(item.getCode());
+            if (yml != null && yml.getTtlSeconds() != null && yml.getTtlSeconds() > 0) {
+                return yml.getTtlSeconds();
+            }
+        }
+        return explicitTtl;
     }
 }

@@ -79,6 +79,19 @@ ccr:
     enabled: true
     default-ttl-seconds: 300
     ttl-jitter: 0.2
+    # 每项缓存静态默认(基准);DB ccr_cache_config 覆盖值优先级更高(管理端 /system/cache-configs 修改后不重启生效)
+    items:
+      lpr-effective:
+        enabled: true
+        ttl-seconds: 300
+      matrix-effective:
+        enabled: true
+        ttl-seconds: 300
+      rate-limit:
+        enabled: true
+        ttl-seconds: 300
+    config:
+      refresh-cron: 0 */1 * * * *   # 缓存配置定时兜底刷新(单实例经管理接口已实时生效)
 
 # 业务参数(代码内均有默认值,以下仅注释说明;需调整时取消注释)
 # ccr:
