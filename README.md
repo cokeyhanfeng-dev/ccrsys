@@ -77,6 +77,14 @@ npm run dev        # http://localhost:3000,代理 /api → localhost:8080
 | `GET /ccr/applications/{id}` 查询 | ✅ 完整返回 |
 | 前端 `npm run build` | ✅ 通过
 
+## 缓存配置能力(Redis,详设 §十三)
+
+> 需求:Redis 缓存内容可由管理员**自己增加和配置**,如把数仓数据缓存到 Redis。
+
+- **缓存项 DB 动态管理**:缓存项定义存 `ccr_cache_config`,可增删改(精确 key / key 前缀、TTL、写入开关、描述);内置 3 项(lpr/matrix/rate-limit)为种子受保护(不可删、不可改 key);改配置立即生效不重启。
+- **配置化刷新**:缓存项可配置数据加载器(第一版:数仓表最新批次 DW_TABLE),把 dw_/caps_ 表数据写入指定 Redis key;手动刷新 + 每小时定时(`ccr.cache.data.refresh-cron` 可配),单项失败不阻断。
+- **验证**:`db/14` 幂等升级;单测 ccr-common 65 / ccr-rule 30 / ccr-application 43 全绿;E2E 22 项通过(新增/刷新写入数仓数据/内置项保护 400/物理删除后同 itemKey 重建/编辑生效)。
+
 ## 下一步(按 WBS)
 
 | 里程碑 | 工作包 | 说明 |
