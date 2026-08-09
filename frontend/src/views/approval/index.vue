@@ -5,23 +5,30 @@
       <div class="section-tip">待办仅展示流转到本人当前审批节点的申请(按登录人角色过滤);已办为本人审批/表决/决策过的任务(§11.4)。</div>
     </div>
 
-    <!-- 待办统计(真实数据) -->
-    <div class="stat-row">
+    <!-- 待办统计(KPI 卡,与工作台同款) -->
+    <div class="stat-grid">
       <div class="stat-card">
-        <span class="stat-card__label">待我审批</span>
-        <b class="stat-card__num stat-card__num--warning">{{ todoCards.length }} 笔</b>
+        <div class="stat-card__icon"><el-icon :size="20"><Stamp /></el-icon></div>
+        <div class="stat-card__body">
+          <span class="stat-card__label">待我审批</span>
+          <b class="stat-card__num stat-card__num--warning">{{ todoCards.length }} 笔</b>
+          <div class="stat-card__sub">流转到本人当前节点的申请</div>
+        </div>
       </div>
-      <div class="stat-card">
-        <span class="stat-card__label">累计已办</span>
-        <b class="stat-card__num stat-card__num--success">{{ historyTotal }} 笔</b>
-        <div class="stat-card__sub">本人审批/表决/决策过的申请</div>
+      <div class="stat-card stat-card--tone2">
+        <div class="stat-card__icon"><el-icon :size="20"><CircleCheck /></el-icon></div>
+        <div class="stat-card__body">
+          <span class="stat-card__label">累计已办</span>
+          <b class="stat-card__num stat-card__num--success">{{ historyTotal }} 笔</b>
+          <div class="stat-card__sub">本人审批/表决/决策过的申请</div>
+        </div>
       </div>
     </div>
 
-    <!-- 待办 / 已办 页签 -->
-    <div class="view-switch">
-      <button class="btn" :class="tab === 'todo' ? 'btn--primary' : 'btn--ghost'" @click="tab = 'todo'">待办</button>
-      <button class="btn" :class="tab === 'done' ? 'btn--primary' : 'btn--ghost'" @click="switchDone">已办</button>
+    <!-- 待办 / 已办 分段页签 -->
+    <div class="segmented" style="margin-top:16px">
+      <button class="segmented__item" :class="{ 'segmented__item--active': tab === 'todo' }" @click="tab = 'todo'">待办</button>
+      <button class="segmented__item" :class="{ 'segmented__item--active': tab === 'done' }" @click="switchDone">已办</button>
     </div>
 
     <!-- 待办卡片列表 -->
@@ -218,7 +225,6 @@ onMounted(load)
 
 <style scoped>
 .stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
-.view-switch { display: flex; gap: 8px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
 .todo-card__customer { font-weight: 600; font-size: 16px; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }

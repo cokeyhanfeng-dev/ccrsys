@@ -9,12 +9,12 @@
       </div>
     </div>
 
-    <div class="tabs">
+    <div class="segmented">
       <button
         v-for="t in tabs"
         :key="t.key"
-        class="btn"
-        :class="activeTab === t.key ? 'btn--primary' : 'btn--ghost'"
+        class="segmented__item"
+        :class="{ 'segmented__item--active': activeTab === t.key }"
         @click="activeTab = t.key"
       >
         {{ t.label }}
@@ -23,6 +23,11 @@
 
     <!-- ========== 流程定义 ========== -->
     <div v-if="activeTab === 'flow'" class="card">
+      <div class="notice-bar">
+        <span>流程定义为 Warm-Flow 引擎的流程载体,系统启动时自动初始化“利率审批标准流程”,用于记录审批轨迹;
+        实际审批流转(哪些节点、谁能终审)由「参数管理 → 权限矩阵」决定,不由本页签控制。
+        需要调整审批人时,请使用「节点指派」页签。</span>
+      </div>
       <div class="card__head">
         <span>流程定义(Warm-Flow flow_definition)</span>
       </div>
@@ -288,10 +293,10 @@ import {
 } from '@/api/system'
 
 const tabs = [
-  { key: 'flow', label: '流程定义' },
-  { key: 'assignee', label: '节点指派' }
+  { key: 'assignee', label: '节点指派' },
+  { key: 'flow', label: '流程定义' }
 ]
-const activeTab = ref('flow')
+const activeTab = ref('assignee')
 
 function fmtTime(t: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
