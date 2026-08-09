@@ -641,11 +641,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
 .card--decision { border-color: var(--color-primary); }
 .decision-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .decision-item { font-size: 14px; }
@@ -653,12 +648,11 @@ onMounted(load)
 .decision-item .rate--approval { color: var(--color-warning); }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
-.stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 4px; }
-.empty { text-align: center; padding: 16px; color: var(--color-text-light); }
+.stat-card__sub { margin-top: 4px; }
 .warn-bar { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 .rate-ok { color: var(--color-success); font-weight: 600; }
 .rate-bad { color: var(--color-danger); font-weight: 600; }

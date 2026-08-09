@@ -127,11 +127,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow-sm); }
-.table { border-radius: var(--radius); overflow: hidden; }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
-.pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
+.pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

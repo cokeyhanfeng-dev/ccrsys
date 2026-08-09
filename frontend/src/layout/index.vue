@@ -1,24 +1,55 @@
 <template>
   <div class="app-shell">
-    <!-- 侧边栏导航(design-system) -->
+    <!-- 侧边栏导航(design-system,深藏蓝) -->
     <aside class="app-sidebar">
       <div class="brand">
+        <span class="brand-mark">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="14" width="5" height="13" rx="1.5" fill="#93c5fd"/>
+            <rect x="13.5" y="8" width="5" height="19" rx="1.5" fill="#bfdbfe"/>
+            <rect x="24" y="3" width="5" height="24" rx="1.5" fill="#ffffff"/>
+          </svg>
+        </span>
         <span class="brand-title">利率决策系统</span>
       </div>
-      <router-link
-        v-for="item in menus"
-        :key="item.path"
-        :to="item.path"
-        class="app-sidebar__item"
-        :class="{ 'app-sidebar__item--active': route.path.startsWith(item.path) }"
-      >
-        {{ item.title }}
-      </router-link>
+      <nav class="app-sidebar__nav">
+        <router-link
+          v-for="item in menus"
+          :key="item.path"
+          :to="item.path"
+          class="app-sidebar__item"
+          :class="{ 'app-sidebar__item--active': route.path.startsWith(item.path) }"
+        >
+          <el-icon class="app-sidebar__icon" :size="17">
+            <component
+              :is="{
+                '/overview': 'HomeFilled',
+                '/application/loan': 'EditPen',
+                '/application/deposit': 'Coin',
+                '/approval': 'Stamp',
+                '/commitment': 'Timer',
+                '/history': 'Document',
+                '/datacenter': 'DataAnalysis',
+                '/audit': 'View',
+                '/system/user': 'User',
+                '/system/role': 'Key',
+                '/system/dept': 'OfficeBuilding',
+                '/system/flow': 'Share',
+                '/system/params': 'Setting',
+                '/system/cache': 'Coin'
+              }[item.path] || 'Menu'"
+            />
+          </el-icon>
+          <span>{{ item.title }}</span>
+        </router-link>
+      </nav>
+      <div class="app-sidebar__foot">客户贡献度与利率决策系统</div>
     </aside>
 
     <div class="app-main">
-      <!-- 顶栏:消息中心铃铛 + 用户信息;页面标题由页面内提供(避免重复) -->
+      <!-- 顶栏:左侧当前页面名;右侧消息中心铃铛 + 用户信息 -->
       <div class="topbar">
+        <div class="topbar__title">{{ route.meta.title || '工作台' }}</div>
         <div class="topbar__actions">
           <!-- 消息中心(§12.2):铃铛 + 未读 badge,点击开抽屉 -->
           <el-badge
@@ -29,8 +60,10 @@
           >
             <el-icon class="msg-bell" :size="20" @click="openDrawer"><Bell /></el-icon>
           </el-badge>
+          <span class="topbar__divider"></span>
           <el-dropdown @command="onCommand">
             <span class="user-name">
+              <span class="user-avatar">{{ (userStore.userInfo?.nickName || '用').slice(0, 1) }}</span>
               {{ userStore.userInfo?.nickName || '用户' }}
               <el-icon><ArrowDown /></el-icon>
             </span>
@@ -43,7 +76,11 @@
         </div>
       </div>
 
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <transition name="page-fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
     </div>
 
     <!-- 消息抽屉(§12.2):approval/result/warning/system 四类分档,未读高亮,点击已读并跳转 -->
@@ -249,30 +286,88 @@ function onCommand(cmd: string) {
   overflow-y: auto;
   z-index: 10;
 }
+.app-sidebar__nav {
+  flex: 1;
+  padding-top: 8px;
+}
+.app-sidebar__icon {
+  flex: none;
+}
+.app-sidebar__foot {
+  padding: 16px 20px 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, .32);
+  letter-spacing: .5px;
+}
 .app-main {
-  margin-left: 220px;
+  margin-left: 208px;
   min-height: 100vh;
 }
 .brand {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
   margin-bottom: 8px;
+}
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.brand-mark svg {
+  width: 18px;
+  height: 18px;
 }
 .brand-title {
   font-weight: 700;
-  font-size: 16px;
-  color: var(--color-primary);
+  font-size: 15px;
+  color: #fff;
+  letter-spacing: 1px;
 }
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end; /* 消息+用户信息靠右 */
-  padding: 0 0 16px;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 20px;
+  margin-bottom: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.topbar__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  display: flex;
+  align-items: center;
+}
+.topbar__title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 15px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: var(--grad-primary);
 }
 .topbar__actions {
   display: inline-flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
+}
+.topbar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
 }
 .msg-badge :deep(.el-badge__content) {
   border: none;
@@ -281,6 +376,7 @@ function onCommand(cmd: string) {
   cursor: pointer;
   color: var(--color-text-sub);
   vertical-align: middle;
+  transition: color .15s;
 }
 .msg-bell:hover {
   color: var(--color-primary);
@@ -289,8 +385,25 @@ function onCommand(cmd: string) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--color-text-sub);
+  gap: 8px;
+  color: var(--color-text-main);
+  font-weight: 500;
+}
+.user-name .el-icon {
+  color: var(--color-text-light);
+}
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--grad-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-primary);
 }
 
 /* 消息抽屉(§12.2:四类分档 + 未读高亮圆点) */

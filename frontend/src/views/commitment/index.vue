@@ -480,28 +480,14 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-.stat-card { background: var(--color-bg); border-radius: var(--radius); padding: 16px; }
-.stat-card__label { font-size: 13px; color: var(--color-text-sub); }
-.stat-card__num { display: block; font-size: 24px; }
-.stat-card__num--primary { color: var(--color-primary); }
-.stat-card__num--success { color: var(--color-success); }
-.stat-card__num--warning { color: var(--color-warning); }
-.stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); margin-bottom: 16px; }
-.card__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
-.table { border-radius: var(--radius); overflow: hidden; }
-.empty { text-align: center; padding: 16px; color: var(--color-text-light); }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.plan-card { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px; cursor: pointer; background: var(--color-surface); }
-.plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.plan-card { border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 14px; cursor: pointer; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: border-color .18s, box-shadow .18s, transform .18s; }
+.plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow); transform: translateY(-2px); }
 .plan-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .plan-card__meta { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
 .metric-row { margin-bottom: 14px; }

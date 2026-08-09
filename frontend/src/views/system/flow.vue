@@ -537,15 +537,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.card__head { gap: 8px; flex-wrap: wrap; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .req { color: var(--color-danger); }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
 .assignee-layout { display: flex; gap: 16px; align-items: flex-start; }
 .node-list { flex: 0 0 300px; }
 .assignee-detail { flex: 1; overflow-x: auto; }

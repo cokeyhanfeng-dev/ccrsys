@@ -935,15 +935,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.card__head { gap: 8px; flex-wrap: wrap; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .req { color: var(--color-danger); }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
 .trial-form { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
 .trial-form .form-field { min-width: 160px; }
 .trial-result { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }

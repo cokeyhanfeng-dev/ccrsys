@@ -288,17 +288,12 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .dept-layout { display: flex; gap: 16px; align-items: flex-start; }
 .dept-tree { flex: 0 0 360px; max-height: calc(100vh - 220px); overflow: auto; }
 .dept-detail { flex: 1; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+.card__head { gap: 8px; flex-wrap: wrap; }
 .tree-node { display: inline-flex; align-items: center; gap: 8px; }
 .tree-node__code { color: var(--color-text-light); font-size: 12px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .req { color: var(--color-danger); }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
 </style>

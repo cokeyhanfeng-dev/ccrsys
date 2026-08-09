@@ -254,17 +254,8 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-.stat-card { background: var(--color-bg); border-radius: var(--radius); padding: 16px; }
-.stat-card__label { font-size: 13px; color: var(--color-text-sub); }
-.stat-card__num { display: block; font-size: 24px; }
-.stat-card__num--primary { color: var(--color-primary); }
-.stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
-.todo-card { display: flex; align-items: center; justify-content: space-between; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
 .todo-card__customer { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
 .todo-card__summary { font-size: 14px; color: var(--color-text-sub); margin-bottom: 8px; }
 .todo-card__meta { display: flex; gap: 8px; }
@@ -275,7 +266,6 @@ onMounted(load)
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .vote-summary { display: flex; gap: 12px; flex-wrap: wrap; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
-.empty { text-align: center; padding: 16px; color: var(--color-text-light); }
 </style>

@@ -7,10 +7,33 @@
 
     <!-- 待办统计卡片(真实数据,点击一键跳转) -->
     <div class="stat-grid">
-      <div class="stat-card" v-for="s in stats" :key="s.label" @click="s.to && $router.push(s.to)">
-        <span class="stat-card__label">{{ s.label }}</span>
-        <b :class="'stat-card__num ' + s.cls">{{ s.value }}</b>
-        <div class="stat-card__sub" v-if="s.sub">{{ s.sub }}</div>
+      <div
+        class="stat-card"
+        :class="'stat-card--tone' + (i % 3)"
+        v-for="(s, i) in stats"
+        :key="s.label"
+        @click="s.to && $router.push(s.to)"
+      >
+        <div class="stat-card__icon">
+          <el-icon :size="20">
+            <component
+              :is="{
+                '我的申请': 'Document',
+                '审批中申请': 'Loading',
+                '待我决策': 'Stamp',
+                '待我表决': 'Key',
+                '待我审批': 'Stamp',
+                '已办': 'CircleCheck'
+              }[s.label] || 'DataLine'"
+            />
+          </el-icon>
+        </div>
+        <div class="stat-card__body">
+          <span class="stat-card__label">{{ s.label }}</span>
+          <b :class="'stat-card__num ' + s.cls">{{ s.value }}</b>
+          <div class="stat-card__sub" v-if="s.sub">{{ s.sub }}</div>
+        </div>
+        <el-icon v-if="s.to" class="stat-card__arrow"><ArrowRight /></el-icon>
       </div>
     </div>
 
@@ -50,16 +73,25 @@
     <!-- 客户经理:快捷入口 -->
     <div class="shortcut-row" style="margin-top:16px" v-if="role === 'customer_manager'">
       <router-link to="/application/loan" class="shortcut">
-        <div class="shortcut__title">贷款利率申请</div>
-        <div class="shortcut__desc">按贷款合同/担保方式切分</div>
+        <span class="shortcut__icon"><el-icon :size="18"><EditPen /></el-icon></span>
+        <div>
+          <div class="shortcut__title">贷款利率申请</div>
+          <div class="shortcut__desc">按贷款合同/担保方式切分</div>
+        </div>
       </router-link>
       <router-link to="/application/deposit" class="shortcut">
-        <div class="shortcut__title">存款利率申请</div>
-        <div class="shortcut__desc">现有账户或拟开户方案</div>
+        <span class="shortcut__icon"><el-icon :size="18"><Coin /></el-icon></span>
+        <div>
+          <div class="shortcut__title">存款利率申请</div>
+          <div class="shortcut__desc">现有账户或拟开户方案</div>
+        </div>
       </router-link>
       <router-link to="/commitment" class="shortcut">
-        <div class="shortcut__title">贡献度跟踪</div>
-        <div class="shortcut__desc">履约进度与落差提醒</div>
+        <span class="shortcut__icon"><el-icon :size="18"><Timer /></el-icon></span>
+        <div>
+          <div class="shortcut__title">贡献度跟踪</div>
+          <div class="shortcut__desc">履约进度与落差提醒</div>
+        </div>
       </router-link>
     </div>
   </div>
@@ -234,26 +266,84 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.stat-card { background: var(--color-bg); border-radius: var(--radius); padding: 16px; cursor: pointer; }
-.stat-card:hover { box-shadow: var(--shadow-sm); }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+/* KPI 统计卡:图标 + 大数字,三种色调 */
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius);
+  padding: 20px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease);
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.stat-card__icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--grad-primary);
+  box-shadow: var(--shadow-primary);
+}
+.stat-card--tone1 .stat-card__icon {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, .3);
+}
+.stat-card--tone2 .stat-card__icon {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, .3);
+}
+.stat-card__body { flex: 1; min-width: 0; }
 .stat-card__label { font-size: 13px; color: var(--color-text-sub); }
-.stat-card__num { display: block; font-size: 24px; }
+.stat-card__num { display: block; font-size: 28px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .stat-card__num--primary { color: var(--color-primary); }
 .stat-card__num--warning { color: var(--color-warning); }
 .stat-card__num--success { color: var(--color-success); }
 .stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
-.shortcut-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.shortcut { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; text-decoration: none; color: var(--color-text-main); }
-.shortcut:hover { box-shadow: var(--shadow-sm); }
+.stat-card__arrow { color: var(--color-text-light); transition: color .15s, transform .15s; }
+.stat-card:hover .stat-card__arrow { color: var(--color-primary); transform: translateX(2px); }
+.shortcut-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  text-decoration: none;
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s;
+}
+.shortcut:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: #c7d7f8; }
+.shortcut__icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
 .shortcut__title { font-weight: 600; margin-bottom: 4px; color: var(--color-primary); }
 .shortcut__desc { font-size: 12px; color: var(--color-text-sub); }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.card { background: var(--color-surface); border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+.card__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 14px; }
+.card__head > span:first-child { display: inline-flex; align-items: center; }
+.card__head > span:first-child::before { content: ""; display: inline-block; width: 4px; height: 15px; margin-right: 8px; border-radius: 2px; background: var(--grad-primary); }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .btn-sm { padding: 4px 10px; font-size: 13px; }
-.empty { text-align: center; padding: 32px; color: var(--color-text-light); }
+.empty { padding: 44px 32px 48px; }
 </style>

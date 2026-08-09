@@ -226,16 +226,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow-sm); margin-bottom: 16px; }
-.card-title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
 .sensitive-alert { margin-bottom: 12px; }
 .query-bar { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .query-field { display: flex; flex-direction: column; gap: 4px; }
 .query-label { font-size: 12px; color: var(--color-text-sub); }
 .query-input { width: 220px; }
-.table { border-radius: var(--radius); overflow: hidden; }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 </style>

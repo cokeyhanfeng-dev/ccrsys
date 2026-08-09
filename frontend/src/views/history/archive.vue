@@ -479,14 +479,9 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
 .app-no { font-size: 14px; color: var(--color-text-sub); font-weight: 400; margin-left: 8px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .head-actions { margin-top: 10px; display: flex; gap: 8px; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); margin-bottom: 16px; }
-.card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: 600; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .desc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 16px; font-size: 14px; }
 .desc-item { display: flex; flex-direction: column; gap: 2px; }
 .desc-item--full { grid-column: 1 / -1; }

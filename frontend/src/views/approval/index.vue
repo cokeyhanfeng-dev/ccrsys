@@ -217,27 +217,15 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
-.stat-card { background: var(--color-bg); border-radius: var(--radius); padding: 16px; }
-.stat-card__label { font-size: 13px; color: var(--color-text-sub); }
-.stat-card__num { display: block; font-size: 24px; }
-.stat-card__num--success { color: var(--color-success); }
-.stat-card__num--warning { color: var(--color-warning); }
-.stat-card__sub { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
+.stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 .view-switch { display: flex; gap: 8px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
-.todo-card { display: flex; align-items: center; justify-content: space-between; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
 .todo-card__customer { font-weight: 600; font-size: 16px; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
 .todo-card__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px; font-size: 14px; }
 .tc-item .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .todo-card__action { display: flex; align-items: center; gap: 8px; }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.table { border-radius: var(--radius); overflow: hidden; }
-.empty { text-align: center; padding: 32px; color: var(--color-text-light); }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; font-size: 14px; }
 .check-item .dg-label { display: block; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }

@@ -287,14 +287,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
-.card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.table { border-radius: var(--radius); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 .req { color: var(--color-danger); }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
 .modal__card--wide { width: 720px; max-width: 92vw; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .binding-block { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }

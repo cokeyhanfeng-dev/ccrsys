@@ -1,4 +1,7 @@
 // 全局样式:设计 token 参照 DESIGN.md(金融蓝 #2563eb)
+// 基础 token 与通用组件样式见 design-system.css,本文件负责
+// Element Plus 主题对齐、组件质感精修、滚动条与页面过渡。
+
 :root {
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;
@@ -10,6 +13,29 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
+
+  // ── Element Plus 主题变量对齐品牌蓝 ──
+  --el-color-primary: #2563eb;
+  --el-color-primary-dark-2: #1e4fbc;
+  --el-color-primary-light-3: #6692f1;
+  --el-color-primary-light-5: #92b1f5;
+  --el-color-primary-light-7: #bed0f9;
+  --el-color-primary-light-8: #d3e0fb;
+  --el-color-primary-light-9: #e9effd;
+  --el-color-success: #10b981;
+  --el-color-warning: #f59e0b;
+  --el-color-danger: #ef4444;
+  --el-color-error: #ef4444;
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 999px;
+  --el-font-size-base: 14px;
+  --el-text-color-primary: #1f2937;
+  --el-text-color-regular: #374151;
+  --el-border-color: #e5e7eb;
+  --el-border-color-light: #e9edf3;
+  --el-border-color-lighter: #eef1f5;
+  --el-fill-color-light: #f4f6f9;
 }
 
 * {
@@ -29,25 +55,168 @@ body,
   font-size: 14px;
 }
 
-// 布局
+// ── 滚动条美化 ──
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+
+  &:hover {
+    background: #94a3b8;
+  }
+}
+// 深色侧栏内的滚动条
+.app-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+}
+
+// ── 页面淡入过渡(layout router-view 使用) ──
+.page-fade-enter-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-fade-leave-active {
+  transition: opacity 0.12s ease;
+}
+.page-fade-leave-to {
+  opacity: 0;
+}
+
+// ============================================================
+// Element Plus 组件质感精修
+// ============================================================
+
+// 按钮
+.el-button {
+  font-weight: 500;
+  transition: all 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.el-button--primary {
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
+
+  &:not(.is-disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(37, 99, 235, 0.3);
+  }
+
+  &:not(.is-disabled):active {
+    transform: translateY(0);
+  }
+}
+.el-button.is-disabled,
+.el-button.is-disabled:hover {
+  box-shadow: none;
+  transform: none;
+}
+
+// 输入框 / 选择器
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px #eff6ff;
+}
+.el-form-item__label {
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+// 表格(el-table 使用处统一表头与 hover 观感)
+.el-table {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: #6b7280;
+  --el-table-row-hover-bg-color: #f5f8ff;
+  --el-table-border-color: #eef1f5;
+
+  th.el-table__cell {
+    font-weight: 600;
+  }
+}
+
+// 卡片
+.el-card {
+  border-radius: 12px;
+  border-color: #eef1f5;
+  box-shadow: 0 1px 2px rgba(15, 42, 92, 0.04), 0 4px 14px rgba(15, 42, 92, 0.07);
+}
+
+// 弹窗 / 抽屉
+.el-dialog {
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(15, 42, 92, 0.14);
+
+  .el-dialog__title {
+    font-weight: 600;
+  }
+}
+.el-overlay {
+  backdrop-filter: blur(2px);
+}
+.el-drawer__header {
+  margin-bottom: 16px;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+// 消息提示
+.el-message {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 42, 92, 0.14);
+}
+
+// 分页
+.el-pagination {
+  --el-pagination-button-bg-color: #ffffff;
+  font-weight: 400;
+}
+
+// 折叠面板
+.el-collapse {
+  --el-collapse-header-height: 44px;
+  border-top-color: #eef1f5;
+  border-bottom-color: #eef1f5;
+}
+
+// 徽标
+.el-badge__content {
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
+// 布局(历史遗留类,保持与深色侧栏一致)
 .layout {
   height: 100vh;
 
   .layout-aside {
-    background: #fff;
-    border-right: 1px solid var(--color-border);
+    background: #0f2a5c;
+    border-right: none;
 
     .brand {
       height: 56px;
       display: flex;
       align-items: center;
       padding: 0 20px;
-      border-bottom: 1px solid var(--color-border);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 
       .brand-title {
         font-weight: 600;
         font-size: 16px;
-        color: var(--color-primary);
+        color: #fff;
       }
     }
 
@@ -89,16 +258,17 @@ body,
   top: 0;
   background: var(--color-bg);
   z-index: 5;
-  padding: 8px 0;
+  padding: 8px 0 12px;
 }
 
-// 通用卡片
+// 通用卡片(与 design-system .card 观感一致)
 .page-card {
   background: var(--color-surface);
+  border: 1px solid #eef1f5;
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 42, 92, 0.04), 0 4px 14px rgba(15, 42, 92, 0.07);
 
   .card-title {
     font-size: 16px;
@@ -110,26 +280,30 @@ body,
   }
 }
 
-// 状态徽章
+// 状态徽章(连字符写法,与 design-system 的 BEM 修饰符观感统一)
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 10px;
-  border-radius: 4px;
+  border-radius: 999px;
   font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
 
   &.badge-success {
-    background: #ecfdf5;
-    color: var(--color-success);
+    background: #d1fae5;
+    color: #047857;
   }
 
   &.badge-warning {
-    background: #fffbeb;
-    color: var(--color-warning);
+    background: #fef3c7;
+    color: #92400e;
   }
 
   &.badge-danger {
-    background: #fef2f2;
-    color: var(--color-danger);
+    background: #fee2e2;
+    color: #b91c1c;
   }
 
   &.badge-primary {

@@ -106,15 +106,9 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-head { margin-bottom: 16px; }
-.section-title { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 6px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .dc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 1200px) { .dc-grid { grid-template-columns: 1fr; } }
-.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow-sm); }
-.card-title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; }
-.table { border-radius: var(--radius); overflow: hidden; }
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 24px 0; }
+.table { border-radius: var(--radius-sm); overflow: hidden; }
 
 /* 时效看板状态灯:OK 绿 / STALE 红 */
 .source-list { display: flex; flex-direction: column; gap: 10px; }
@@ -122,9 +116,11 @@ onMounted(load)
   display: flex;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
+  transition: box-shadow .18s;
 }
+.source-item:hover { box-shadow: var(--shadow-sm); }
 .source-item--stale {
   border-color: var(--color-danger);
   background: var(--color-danger-light);
@@ -136,8 +132,8 @@ onMounted(load)
   border-radius: 50%;
   margin-top: 5px;
 }
-.source-dot--ok { background: var(--color-success); }
-.source-dot--stale { background: var(--color-danger); }
+.source-dot--ok { background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-light); }
+.source-dot--stale { background: var(--color-danger); box-shadow: 0 0 0 3px var(--color-danger-light); }
 .source-item__body { flex: 1; min-width: 0; }
 .source-item__name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .source-item__date { margin-top: 4px; font-size: 12px; color: var(--color-text-sub); }
