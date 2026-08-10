@@ -40,7 +40,7 @@
       </div>
     </div>
 
-    <!-- 主区:左栏当前工作,右栏贡献度概况 + 最近已办 -->
+    <!-- 主区:左栏当前工作,右栏贡献度概况 -->
     <div class="workbench-grid">
       <!-- ============ 左栏 ============ -->
       <div class="workbench-grid__left">
@@ -135,43 +135,18 @@
           </template>
         </div>
 
-        <!-- 最近已办 -->
-        <div class="card workbench-card">
-          <div class="card__head">
-            <span>最近已办</span>
-            <button class="btn btn--text" @click="router.push('/history')">全部历史</button>
-          </div>
-          <table class="table" v-if="doneTop.length">
-            <thead>
-              <tr><th>申请号</th><th>客户</th><th>动作</th><th>时间</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(r, i) in doneTop" :key="i" class="row-link" @click="router.push('/history')">
-                <td>{{ r.applicationNo || '—' }}</td>
-                <td>{{ r.customerNo || '—' }}</td>
-                <td>
-                  <span class="badge" :class="['REJECT', 'VETO'].includes(r.actionType) ? 'badge--danger' : 'badge--success'">
-                    {{ actionText(r.actionType) }}
-                  </span>
-                </td>
-                <td>{{ fmtTime(r.operationTime) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="empty" v-else>暂无已办记录</div>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { listApprovalDone } from '@/api/approval2'
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { get } from '@/api/request'
 import { listApprovalTasks, pageApprovalHistory } from '@/api/approval'
-import { listApprovalDone } from '@/api/approval2'
 import { listVoteTodo, listPresidentTodo } from '@/api/vote'
 import { listCommitmentPlans } from '@/api/commitment'
 import {
@@ -380,7 +355,6 @@ const atRiskTop = computed(() => {
 const doneToday = computed(
   () => doneRows.value.filter((r) => String(r.operationTime || '').slice(0, 10) === todayStr).length
 )
-const doneTop = computed(() => doneRows.value.slice(0, 8))
 
 // ---------- KPI 卡(按角色差异化) ----------
 const stats = computed(() => {
@@ -539,6 +513,4 @@ onMounted(load)
 .risk-item__main .dg-label { font-size: 12px; margin-right: 0; }
 .risk-item__ratio { flex: none; font-weight: 600; color: var(--color-warning); font-variant-numeric: tabular-nums; }
 
-/* ---------- 最近已办行可点 ---------- */
-.row-link { cursor: pointer; }
 </style>
