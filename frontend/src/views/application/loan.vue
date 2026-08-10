@@ -433,13 +433,11 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 第一行:担保方式/成员(集团)/贷款合同 -->
+        <!-- 第一行:存量=贷款合同(协议项下,只读带出)+担保方式(按合同带出);新增=纯担保方式切分,无合同概念 -->
         <div class="mortgage-item__grid">
-          <div class="form-field">
-            <label class="form-field__label">担保方式 <span class="req">*</span></label>
-            <select class="form-select" v-model="g.guaranteeType">
-              <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
-            </select>
+          <div class="form-field" v-if="form.businessType === 'EXISTING'">
+            <label class="form-field__label">贷款合同 <span class="req">*</span></label>
+            <input class="form-input" :value="g.contractBusinessKey" disabled />
           </div>
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
@@ -451,19 +449,10 @@
             </select>
           </div>
           <div class="form-field">
-            <label class="form-field__label">贷款合同 <span class="req">*</span></label>
-            <template v-if="form.businessType === 'EXISTING'">
-              <select class="form-select" v-model="g.contractBusinessKey" @change="onContractSelect(g)">
-                <option value="" disabled>选择合同</option>
-                <option v-for="c in contractOptions(g)" :key="c.contractNo" :value="c.contractNo">
-                  {{ c.contractNo }}(余额 {{ c.contractBalance ?? c.loanBalance ?? '-' }} 万)
-                </option>
-              </select>
-            </template>
-            <template v-else>
-              <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(留空自动生成)" />
-              <span class="badge badge--neutral" style="margin-top:4px">拟签合同</span>
-            </template>
+            <label class="form-field__label">担保方式 <span class="req">*</span></label>
+            <select class="form-select" v-model="g.guaranteeType">
+              <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
+            </select>
           </div>
         </div>
         <!-- 第二行:产品/期限/金额/原利率(存量带出只读)/申请利率/币种 -->
@@ -604,7 +593,7 @@
                 </table>
         </div>
       </div>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
+      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">{{ form.businessType === 'EXISTING' ? '＋ 补入贷款合同' : '＋ 添加担保分项' }}</button>
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 1">上一步</button>
@@ -1143,6 +1132,8 @@ function onContractSelect(g: GuaranteeRow) {
     // 存量:分项金额按合同金额自动带出(合同金额缺省用合同余额)
     const amt = c.contractAmount ?? c.loanBalance
     if (amt != null) g.amount = String(amt)
+    // 担保方式按合同担保类型带出
+    if (c.guaranteeType) g.guaranteeType = c.guaranteeType
   }
 }
 /** 存量:把授信项下全部贷款合同自动列为担保分项(客户经理可删除不需要提交调息的合同) */
@@ -1155,6 +1146,8 @@ function autoItemsFromContracts(contracts: any[]) {
     g.originalRate = c.executionRate != null ? String(c.executionRate) : ''
     g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
     g.currency = c.currency || 'CNY'
+    const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
+    if (c.guaranteeType || fin?.guaranteeType) g.guaranteeType = c.guaranteeType || fin.guaranteeType
     return g
   })
 }
@@ -1177,6 +1170,24 @@ function isMarginType(t: string) {
 }
 
 function addGuarantee() {
+  if (form.businessType === 'EXISTING') {
+    // 存量:分项=授信协议项下贷款合同,添加即补回一个未在列的合同
+    const used = new Set(form.guarantees.map((g) => g.contractBusinessKey))
+    const rest = creditContracts.value.filter((c) => c.contractNo && !used.has(c.contractNo))
+    if (!rest.length) {
+      ElMessage.warning('该授信项下全部贷款合同已在列表中')
+      return
+    }
+    const g = newGuarantee()
+    const c = rest[0]
+    g.contractBusinessKey = c.contractNo
+    g.originalRate = c.executionRate != null ? String(c.executionRate) : ''
+    g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
+    const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
+    if (fin?.guaranteeType) g.guaranteeType = fin.guaranteeType
+    form.guarantees.push(g)
+    return
+  }
   form.guarantees.push(newGuarantee())
 }
 function removeGuarantee(idx: number) {
