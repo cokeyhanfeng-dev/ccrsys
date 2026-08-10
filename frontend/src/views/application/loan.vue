@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="wizard-page">
     <div class="section-head">
       <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
       <div class="section-title">贷款利率申请</div>
@@ -384,7 +384,38 @@
           <div class="credit-overview__item"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
         </template>
       </div>
-      <div v-if="overGroupAvailable" class="credit-overview-warning">
+      <!-- 协议项下贷款合同与关联担保(选择授信协议后自动带出) -->
+      <div class="agreement-detail" v-if="selectedAgreement">
+        <div class="sub-title">协议项下贷款合同</div>
+        <table class="table" v-if="creditContracts.length">
+          <thead><tr><th>合同号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率(%)</th><th>起止日期</th><th>借据</th></tr></thead>
+          <tbody>
+            <tr v-for="(c, i) in creditContracts" :key="i">
+              <td>{{ c.contractNo }}</td>
+              <td class="num">{{ c.contractAmount ?? '—' }}</td>
+              <td class="num">{{ c.contractBalance ?? '—' }}</td>
+              <td class="num">{{ c.executionRate ?? '—' }}</td>
+              <td>{{ c.startDate || '—' }} 至 {{ c.maturityDate || '—' }}</td>
+              <td><span class="badge badge--neutral">{{ (c.notes || []).length }} 笔</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty">该协议项下暂无贷款合同</div>
+        <div class="sub-title" style="margin-top:12px">关联抵押物 / 保证人</div>
+        <div class="agreement-detail__gua">
+          <div class="gua-chip" v-for="(m, i) in relatedGuarantees.mortgages" :key="'m'+i">
+            <span class="badge badge--info">抵押物</span> {{ m.collateralName || m.name || m.collateralNo || '—' }}
+            <span class="section-tip">估值 {{ m.assessedValue ?? m.evalValue ?? '—' }} 万</span>
+          </div>
+          <div class="gua-chip" v-for="(gt, i) in relatedGuarantees.guarantors" :key="'g'+i">
+            <span class="badge badge--warning">保证人</span> {{ gt.guarantorName || gt.name || gt.guarantorNo || '—' }}
+            <span class="section-tip">担保金额 {{ gt.guaranteeAmount ?? '—' }} 万</span>
+          </div>
+          <div class="empty" v-if="!relatedGuarantees.mortgages.length && !relatedGuarantees.guarantors.length">暂无关联抵押物/保证人数据</div>
+        </div>
+      </div>
+
+            <div v-if="overGroupAvailable" class="credit-overview-warning">
         分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
       </div>
 
@@ -959,6 +990,8 @@ async function loadCustomerDetail() {
     try {
       const view = await getCustomerBusinessView(form.customerNo)
       creditAgreements.value = view.creditAgreements || []
+      creditContracts.value = view.contracts || []
+      relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
       if (creditAgreements.value.length === 1) {
         form.creditAgreementNo = creditAgreements.value[0].agreementNo
         onAgreementSelect()
@@ -1069,12 +1102,21 @@ const guaranteesTotalAmount = computed(() =>
   }, 0)
 )
 const creditAgreements = ref<any[]>([])
+const creditContracts = ref<any[]>([])
+const relatedGuarantees = ref<{ mortgages: any[]; guarantors: any[] }>({ mortgages: [], guarantors: [] })
 /** 当前选中的授信协议(存量) */
 const selectedAgreement = computed(() =>
   creditAgreements.value.find((a) => a.agreementNo === form.creditAgreementNo) || null)
 function onAgreementSelect() {
   const a = selectedAgreement.value
   if (a) form.totalCredit = String(a.creditAmount ?? '')
+  // 带出协议项下贷款合同与关联抵押物/保证人(数仓,按客户)
+  if (form.customerNo) {
+    getCustomerBusinessView(form.customerNo).then((view: any) => {
+      creditContracts.value = view.contracts || []
+      relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
+    }).catch(() => {})
+  }
 }
 const guaranteesTotalText = computed(() => (Math.round(guaranteesTotalAmount.value * 100) / 100).toString())
 
@@ -1749,8 +1791,17 @@ async function loadDraftIntoForm(id: number) {
   font-size: 12px; font-weight: 500;
 }
 
-/* 利率申请分项卡片网格(覆盖全局 4 列,本页 3 列更整齐) */
-.mortgage-item__grid { grid-template-columns: repeat(3, 1fr) !important; }
-@media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, 1fr) !important; } }
+/* 利率申请分项卡片网格(3 列等宽,minmax 防内容溢出) */
+.mortgage-item__grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px 20px !important; }
+.mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
+@media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 .credit-overview__item--full { grid-column: 1 / -1; }
+/* 向导内容限宽,宽屏下不松散 */
+.wizard-page { max-width: 1360px; }
+
+/* 协议项下合同与关联担保 */
+.agreement-detail { background: #f8fafc; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 14px; }
+.agreement-detail .sub-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.agreement-detail__gua { display: flex; flex-wrap: wrap; gap: 8px; }
+.gua-chip { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
 </style>
