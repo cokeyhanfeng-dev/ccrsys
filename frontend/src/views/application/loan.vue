@@ -797,7 +797,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
-  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES
+  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES, agreementTypeText
 } from '@/utils/dict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'

@@ -505,7 +505,7 @@ import {
   customerTypeText, memberRoleText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
-import { inputModeText, relationTypeText } from '@/utils/dict'
+import { inputModeText, relationTypeText, agreementTypeText } from '@/utils/dict'
 
 const route = useRoute()
 const router = useRouter()
