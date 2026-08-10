@@ -128,3 +128,18 @@ INSERT INTO dw_credit_agreement_snapshot (etl_md5,data_dt,agreement_no,customer_
 (5304,CURDATE(),'AGR-MA-2026','MEMBER_A','COMPREHENSIVE',6000.0000,3000.0000,3000.0000,'CNY','2026-01-01','2026-12-31','EFFECTIVE'),
 (5305,CURDATE(),'AGR-MB-2026','MEMBER_B','COMPREHENSIVE',4000.0000,2000.0000,2000.0000,'CNY','2026-01-01','2026-12-31','EFFECTIVE')
 ON DUPLICATE KEY UPDATE used_amount=VALUES(used_amount);
+
+-- ---------- 8. 授信协议扩展场景(2026-08-10,授信信息卡/选择器测试) ----------
+-- 场景覆盖:多协议选择、单笔单批、循环授信、已到期、额度用尽
+-- CUST001 增加第二份协议(循环授信):验证下拉多选与切换带出
+INSERT INTO dw_credit_agreement_snapshot (etl_md5,data_dt,agreement_no,customer_no,agreement_type,credit_amount,used_amount,available_amount,currency,start_date,end_date,agreement_status) VALUES
+(5311,CURDATE(),'AGR-C001-2026B','CUST001','REVOLVING',2000.0000,500.0000,1500.0000,'CNY','2026-03-01','2027-02-28','EFFECTIVE'),
+-- CUST002 第二份协议(单笔单批)
+(5312,CURDATE(),'AGR-C002-2026B','CUST002','SINGLE',1000.0000,0.0000,1000.0000,'CNY','2026-06-01','2026-11-30','EFFECTIVE'),
+-- CUST003 已到期协议(验证到期状态展示)
+(5313,CURDATE(),'AGR-C003-2025','CUST003','COMPREHENSIVE',2000.0000,1500.0000,500.0000,'CNY','2025-01-01','2025-12-31','EXPIRED'),
+-- CUST003 有效协议(额度已用尽:可用 0)
+(5314,CURDATE(),'AGR-C003-2026','CUST003','COMPREHENSIVE',3000.0000,3000.0000,0.0000,'CNY','2026-01-01','2026-12-31','EFFECTIVE'),
+-- CUST101 第二份协议(个人,单笔单批小额)
+(5315,CURDATE(),'AGR-C101-2026B','CUST101','SINGLE',200.0000,50.0000,150.0000,'CNY','2026-05-01','2027-04-30','EFFECTIVE')
+ON DUPLICATE KEY UPDATE used_amount=VALUES(used_amount);
