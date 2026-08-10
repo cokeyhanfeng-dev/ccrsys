@@ -368,7 +368,7 @@
           <div class="credit-overview__item"><span>授信额度(万元)</span><b>{{ selectedAgreement.creditAmount }}</b></div>
           <div class="credit-overview__item"><span>已用额度(万元)</span><b>{{ selectedAgreement.usedAmount }}</b></div>
         </template>
-        <div class="credit-overview__item" v-else-if="form.customerNo"><span class="section-tip">该客户无数仓授信协议,请手工录入下方总授信额度</span></div>
+        <div class="credit-overview__item credit-overview__item--full" v-else-if="form.customerNo"><span class="section-tip">该客户无数仓授信协议,请手工录入下方总授信额度</span></div>
         <div class="credit-overview__item" v-if="form.businessType === 'EXISTING'">
           <span>总授信额度(万元)</span><b>{{ form.totalCredit || '—' }}</b>
         </div>
@@ -403,7 +403,7 @@
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
         <!-- 第一行:担保方式/成员(集团)/贷款合同 -->
-        <div class="form-grid mortgage-item__grid">
+        <div class="mortgage-item__grid">
           <div class="form-field">
             <label class="form-field__label">担保方式 <span class="req">*</span></label>
             <select class="form-select" v-model="g.guaranteeType">
@@ -436,7 +436,7 @@
           </div>
         </div>
         <!-- 第二行:产品/期限/金额/原利率(存量带出只读)/申请利率/币种 -->
-        <div class="form-grid mortgage-item__grid" style="margin-top:10px">
+        <div class="mortgage-item__grid" style="margin-top:10px">
           <div class="form-field">
             <label class="form-field__label">产品 <span class="req">*</span></label>
             <select class="form-select" v-model="g.productCode">
@@ -447,8 +447,8 @@
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
             <div style="display:flex;gap:4px">
-              <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="width:80px" />
-              <select class="form-select" v-model="g.termUnit" style="width:80px">
+              <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="flex:1" />
+              <select class="form-select" v-model="g.termUnit" style="width:76px">
                 <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
               </select>
             </div>
@@ -480,7 +480,7 @@
                     <select class="form-select" style="width:140px" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select>
                     <button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button>
                   </div>
-                  <div class="form-grid mortgage-item__grid">
+                  <div class="mortgage-item__grid">
                     <!-- 不动产(住宅/厂房/土地)共有:名称+坐落+面积 -->
                     <div class="form-field"><label class="form-field__label">{{ m.type === '土地' ? '地块名称' : m.type === '设备' ? '设备名称' : m.type === '车辆' ? '品牌型号' : '名称' }}</label><input class="form-input" v-model="m.name" /></div>
                     <template v-if="m.type === '住宅' || m.type === '厂房'">
@@ -1748,4 +1748,9 @@ async function loadDraftIntoForm(id: number) {
   background: var(--color-primary-light); color: var(--color-primary);
   font-size: 12px; font-weight: 500;
 }
+
+/* 利率申请分项卡片网格(覆盖全局 4 列,本页 3 列更整齐) */
+.mortgage-item__grid { grid-template-columns: repeat(3, 1fr) !important; }
+@media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, 1fr) !important; } }
+.credit-overview__item--full { grid-column: 1 / -1; }
 </style>
