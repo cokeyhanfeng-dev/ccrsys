@@ -219,55 +219,8 @@
     <!-- 第二步:业务/合同(融资情况:本行融资+他行融资) -->
     <div v-show="step === 1" class="form-card">
       <div class="form-card__title">融资情况</div>
-      <div class="form-grid">
-        <div class="form-field">
-          <label class="form-field__label">贷款品种 <span class="req">*</span></label>
-          <select class="form-select" v-model="form.loanType">
-            <option value="CORP_LOAN">对公贷款</option>
-            <option value="PERSONAL_LOAN">个人经营性贷款</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">业务类型 <span class="req">*</span></label>
-          <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
-            <option value="EXISTING">存量调息(选择现有贷款合同)</option>
-            <option value="NEW">新增授信(拟签合同)</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">金额档 <span class="req">*</span></label>
-          <select class="form-select" v-model="form.amountTier">
-            <option value="GE_5000">5000万以上(含)贷款</option>
-            <option value="LT_5000">5000万以下贷款</option>
-          </select>
-          <div v-if="form.amountTier === 'GE_5000'" class="section-tip" style="color:var(--color-warning);margin-top:6px">
-            5000万以上贷款必经六人小组表决 + 总行行长决策(§8A.5②),请确认材料齐全
-          </div>
-        </div>
-      </div>
 
-      <!-- 本行融资(与利率申请步骤同源:business-view 贷款合同,数仓最新批次) -->
-      <template v-if="form.customerScope !== 'GROUP'">
-        <div class="sub-title">本行融资(贷款合同) <span class="badge badge--info">数仓取数</span></div>
-        <table class="table" v-if="creditContracts.length">
-          <thead>
-            <tr><th>合同号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>担保类型</th><th>起止日期</th><th>借据</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="f in creditContracts" :key="f.contractNo">
-              <td>{{ f.contractNo }}</td>
-              <td class="num">{{ f.contractAmount ?? '暂无数据' }}</td>
-              <td class="num">{{ f.contractBalance ?? '暂无数据' }}</td>
-              <td class="num">{{ f.executionRate != null ? f.executionRate + '%' : '暂无数据' }}</td>
-              <td>{{ guaranteeTypeText(finGuaranteeType(f.contractNo), '暂无数据') }}</td>
-              <td>{{ f.startDate || '—' }} 至 {{ f.maturityDate || '—' }}</td>
-              <td><span class="badge badge--neutral">{{ (f.notes || []).length }} 笔</span></td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="empty" v-else>暂无本行融资数据(请先选择客户)</div>
-      </template>
-      <template v-else>
+      <template v-if="form.customerScope === 'GROUP'">
         <div class="sub-title">成员合同 <span class="badge badge--info">数仓取数</span></div>
         <table class="table" v-if="groupContractRows.length">
           <thead>
@@ -350,6 +303,34 @@
         <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
         <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
         集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
+      </div>
+
+      <!-- 申请要素(品种/业务类型/金额档) -->
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-field">
+          <label class="form-field__label">贷款品种 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.loanType">
+            <option value="CORP_LOAN">对公贷款</option>
+            <option value="PERSONAL_LOAN">个人经营性贷款</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">业务类型 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
+            <option value="EXISTING">存量调息(选择现有贷款合同)</option>
+            <option value="NEW">新增授信(拟签合同)</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">金额档 <span class="req">*</span></label>
+          <select class="form-select" v-model="form.amountTier">
+            <option value="GE_5000">5000万以上(含)贷款</option>
+            <option value="LT_5000">5000万以下贷款</option>
+          </select>
+          <div v-if="form.amountTier === 'GE_5000'" class="section-tip" style="color:var(--color-warning);margin-top:6px">
+            5000万以上贷款必经六人小组表决 + 总行行长决策(§8A.5②),请确认材料齐全
+          </div>
+        </div>
       </div>
 
       <!-- 授信信息:按客户带出授信协议列表,选择(或单条自动带出)后展示协议要素;存量总授信额度按协议填充,新增手工录入 -->
@@ -794,6 +775,7 @@ import { useUserStore } from '@/store/user'
 import {
   searchCustomers as apiSearchCustomers,
   getCustomerDetail,
+  getCustomerBusinessView,
   getGroup,
   getGroupMembers,
   getMemberCreditView,
