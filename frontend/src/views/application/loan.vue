@@ -366,7 +366,7 @@
           <div class="credit-overview__item"><span>协议有效期</span><b>{{ selectedAgreement ? selectedAgreement.startDate + ' 至 ' + selectedAgreement.endDate : '—' }}</b></div>
           <div class="credit-overview__item">
             <span>拆分细项合计(万元)</span>
-            <b :style="existingOverCredit ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
+            <b>{{ guaranteesTotalText }}</b>
           </div>
         </template>
         <template v-else>
@@ -375,10 +375,7 @@
             <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
           </div>
           <div class="credit-overview__item">
-            <span>拆分细项合计(万元)</span><b :style="totalMismatch ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
-          </div>
-          <div class="credit-overview__item" v-if="totalMismatch">
-            <span class="section-tip" style="color:var(--color-danger)">拆分合计与总授信额度不一致,请核对</span>
+            <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
           </div>
         </template>
         <template v-if="form.customerScope === 'GROUP'">
@@ -1079,18 +1076,8 @@ function onAgreementSelect() {
   if (a) form.totalCredit = String(a.creditAmount ?? '')
 }
 const guaranteesTotalText = computed(() => (Math.round(guaranteesTotalAmount.value * 100) / 100).toString())
-// 存量:拆分细项合计超协议授信额度提示
-const existingOverCredit = computed(() => {
-  const total = Number(form.totalCredit)
-  return form.businessType === 'EXISTING' && Number.isFinite(total) && total > 0
-    && guaranteesTotalAmount.value > total + 0.01
-})
-// 新增场景:拆分细项合计与手工录入的总授信额度不一致提示(容差 0.01)
-const totalMismatch = computed(() => {
-  const total = Number(form.totalCredit)
-  if (!Number.isFinite(total) || total <= 0 || guaranteesTotalAmount.value <= 0) return false
-  return Math.abs(guaranteesTotalAmount.value - total) > 0.01
-})
+
+
 const overGroupAvailable = computed(() => {
   if (form.customerScope !== 'GROUP') return false
   const avail = groupCredit.value?.availableAmount
