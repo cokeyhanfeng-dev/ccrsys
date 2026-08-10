@@ -73,6 +73,7 @@ public class AuthController {
         userInfo.put("roles", new String[]{user.getRoleCode()});
         userInfo.put("orgId", user.getOrgId());
         userInfo.put("orgCode", orgCode);
+        userInfo.put("orgName", dept == null ? null : dept.getDeptName());
         userInfo.put("dataScope", dataScope.getLevel());
 
         Map<String, Object> result = new LinkedHashMap<>();

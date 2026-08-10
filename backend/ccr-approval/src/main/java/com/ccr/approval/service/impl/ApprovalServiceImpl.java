@@ -99,9 +99,27 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (nodeCode == null || RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
             return List.of();
         }
+        // 支行行长(含网点)只见本支行及下辖网点客户经理的申请(§5.4 DEPT 级:apply_branch_code 前缀匹配)
+        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(user.getRoleCode())) {
+            String branchPrefix = branchCodeOf(user.getOrgId());
+            if (branchPrefix != null) {
+                wrapper.inSql(CcrPricingItem::getApplicationId,
+                        "SELECT id FROM ccr_application WHERE del_flag = '0' AND apply_branch_code LIKE '" + branchPrefix + "%'");
+            }
+        }
         List<CcrPricingItem> items = pricingItemMapper.selectList(
                 wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode));
         return filterByNodeAssignee(items, nodeCode, user.getId());
+    }
+
+    /** 支行编码(机构 org_id → ccr_sys_dept.branch_code;网点用户上溯所属支行) */
+    private String branchCodeOf(Long orgId) {
+        if (orgId == null) {
+            return null;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT branch_code FROM ccr_sys_dept WHERE id = ? AND del_flag = '0' LIMIT 1", orgId);
+        return rows.isEmpty() || rows.get(0).get("branch_code") == null ? null : String.valueOf(rows.get(0).get("branch_code"));
     }
 
     @Override
@@ -119,6 +137,19 @@ public class ApprovalServiceImpl implements ApprovalService {
         // 存款双轨消除:普通审批链对 DEPOSIT 分项只允许支行行长节点动作
         if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手,此后上会小组表决");
+        }
+        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
+        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
+            String branchPrefix = branchCodeOf(operator.getOrgId());
+            if (branchPrefix != null) {
+                List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
+                        "SELECT apply_branch_code FROM ccr_application WHERE id = ? LIMIT 1", application.getId());
+                String appBranch = appRows.isEmpty() || appRows.get(0).get("apply_branch_code") == null
+                        ? null : String.valueOf(appRows.get(0).get("apply_branch_code"));
+                if (appBranch == null || !appBranch.startsWith(branchPrefix)) {
+                    throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "非本支行客户经理的申请,无权审批");
+                }
+            }
         }
 
         CcrNodePermission perm = nodePermissionMapper.selectOne(new LambdaQueryWrapper<CcrNodePermission>()
@@ -219,6 +250,19 @@ public class ApprovalServiceImpl implements ApprovalService {
         guardNodeAssignee(nodeCode, application, operator);
         if ("DEPOSIT".equals(application.getBusinessType()) && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手");
+        }
+        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
+        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
+            String branchPrefix = branchCodeOf(operator.getOrgId());
+            if (branchPrefix != null) {
+                List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
+                        "SELECT apply_branch_code FROM ccr_application WHERE id = ? LIMIT 1", application.getId());
+                String appBranch = appRows.isEmpty() || appRows.get(0).get("apply_branch_code") == null
+                        ? null : String.valueOf(appRows.get(0).get("apply_branch_code"));
+                if (appBranch == null || !appBranch.startsWith(branchPrefix)) {
+                    throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "非本支行客户经理的申请,无权审批");
+                }
+            }
         }
 
         updateItemWithStateAndVersion(item, item.getCurrentNodeCode(), PricingItemStatus.REJECTED.getCode(),

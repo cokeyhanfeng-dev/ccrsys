@@ -3,7 +3,7 @@
     <div class="section-head">
       <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
       <div class="section-title">贷款利率申请</div>
-      <div class="section-tip">分步录入客户、业务/合同、担保组合、利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
+      <div class="section-tip">分步录入客户、融资情况、担保组合、利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -212,13 +212,13 @@
 
       <div class="wizard-actions">
         <span></span>
-        <button class="btn btn--primary" @click="goNext(1)">下一步:业务/合同</button>
+        <button class="btn btn--primary" @click="goNext(1)">下一步:融资情况</button>
       </div>
     </div>
 
     <!-- 第二步:业务/合同(融资情况:本行融资+他行融资) -->
     <div v-show="step === 1" class="form-card">
-      <div class="form-card__title">业务/合同</div>
+      <div class="form-card__title">融资情况</div>
       <div class="form-grid">
         <div class="form-field">
           <label class="form-field__label">贷款品种 <span class="req">*</span></label>
@@ -797,7 +797,7 @@ const userStore = useUserStore()
 const route = useRoute()
 
 // ---------- 步骤条(§14.1) ----------
-const steps = ['客户信息', '业务/合同', '担保组合', '利率定价', '贡献承诺', '材料附件', '提交预览']
+const steps = ['客户信息', '融资情况', '担保组合', '利率定价', '贡献承诺', '材料附件', '提交预览']
 const step = ref(0)
 
 // ---------- 字典 ----------
@@ -877,7 +877,7 @@ const form = reactive({
   guarantees: [newGuarantee()] as GuaranteeRow[]
 })
 
-const applyOrgText = computed(() => userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据')
+const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
 
 // 数仓带出数据
 const ownFinancing = ref<any[]>([])
@@ -1104,7 +1104,7 @@ function addOtherLoan() {
   otherLoans.value.push({ lenderName: '', creditAmount: '', usedAmount: '', balanceAmount: '', annualRate: '', inputMode: 'MANUAL' })
 }
 
-// Excel 导入(材料附件步骤,结果回显业务/合同步骤)
+// Excel 导入(材料附件步骤,结果回显融资情况步骤)
 const fileInput = ref<HTMLInputElement | null>(null)
 function triggerImport() {
   fileInput.value?.click()

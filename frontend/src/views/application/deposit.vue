@@ -346,7 +346,7 @@ function exceedOf(d: DepositItemRow): boolean {
   return bp != null && bp > 0
 }
 
-const applyOrgText = computed(() => userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据')
+const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
 
 // 草稿与提交闭环状态
 const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
