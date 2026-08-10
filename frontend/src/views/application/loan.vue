@@ -349,35 +349,36 @@
         集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
       </div>
 
-      <!-- 总授信额度:存量按授信协议自动填充(只读);新增由客户经理手工录入;拆分细项为一个方案并自动合计核对 -->
+      <!-- 授信信息:按客户带出授信协议列表,选择(或单条自动带出)后展示协议要素;存量总授信额度按协议填充,新增手工录入 -->
       <div class="credit-overview">
-        <template v-if="form.businessType === 'EXISTING'">
-          <div class="credit-overview__item">
-            <span>授信协议</span>
-            <select class="form-select" style="min-width:280px" v-model="form.creditAgreementNo" @change="onAgreementSelect">
-              <option value="" disabled>选择授信协议</option>
-              <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
-                {{ a.agreementNo }} · {{ agreementTypeText(a.agreementType) }} · {{ a.creditAmount }} 万
-              </option>
-            </select>
-          </div>
-          <div class="credit-overview__item"><span>总授信额度(万元)</span><b>{{ form.totalCredit || '—' }}</b></div>
-          <div class="credit-overview__item"><span>已用额度(万元)</span><b>{{ selectedAgreement?.usedAmount ?? '—' }}</b></div>
-          <div class="credit-overview__item"><span>协议有效期</span><b>{{ selectedAgreement ? selectedAgreement.startDate + ' 至 ' + selectedAgreement.endDate : '—' }}</b></div>
-          <div class="credit-overview__item">
-            <span>拆分细项合计(万元)</span>
-            <b>{{ guaranteesTotalText }}</b>
-          </div>
+        <div class="credit-overview__item">
+          <span>授信协议</span>
+          <select class="form-select" style="min-width:300px" v-model="form.creditAgreementNo" @change="onAgreementSelect">
+            <option value="" disabled>选择授信协议</option>
+            <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
+              {{ a.agreementNo }} · {{ agreementTypeText(a.agreementType) }} · {{ a.creditAmount }} 万
+            </option>
+          </select>
+        </div>
+        <template v-if="selectedAgreement">
+          <div class="credit-overview__item"><span>授信协议编号</span><b>{{ selectedAgreement.agreementNo }}</b></div>
+          <div class="credit-overview__item"><span>授信类型</span><b>{{ agreementTypeText(selectedAgreement.agreementType) }}</b></div>
+          <div class="credit-overview__item"><span>开始日期</span><b>{{ selectedAgreement.startDate }}</b></div>
+          <div class="credit-overview__item"><span>结束日期</span><b>{{ selectedAgreement.endDate }}</b></div>
+          <div class="credit-overview__item"><span>授信额度(万元)</span><b>{{ selectedAgreement.creditAmount }}</b></div>
+          <div class="credit-overview__item"><span>已用额度(万元)</span><b>{{ selectedAgreement.usedAmount }}</b></div>
         </template>
-        <template v-else>
-          <div class="credit-overview__item">
-            <span>总授信额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
-          </div>
-          <div class="credit-overview__item">
-            <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
-          </div>
-        </template>
+        <div class="credit-overview__item" v-else-if="form.customerNo"><span class="section-tip">该客户无数仓授信协议,请手工录入下方总授信额度</span></div>
+        <div class="credit-overview__item" v-if="form.businessType === 'EXISTING'">
+          <span>总授信额度(万元)</span><b>{{ form.totalCredit || '—' }}</b>
+        </div>
+        <div class="credit-overview__item" v-else>
+          <span>总授信额度(万元)</span>
+          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
+        </div>
+        <div class="credit-overview__item">
+          <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
+        </div>
         <template v-if="form.customerScope === 'GROUP'">
           <div class="credit-overview__item"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="credit-overview__item"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
