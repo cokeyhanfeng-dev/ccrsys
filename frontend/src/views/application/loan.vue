@@ -246,19 +246,22 @@
         </div>
       </div>
 
-      <!-- 本行融资(数仓带出,合同选择来源) -->
+      <!-- 本行融资(与利率申请步骤同源:business-view 贷款合同,数仓最新批次) -->
       <template v-if="form.customerScope !== 'GROUP'">
-        <div class="sub-title">本行融资 <span class="badge badge--info">数仓取数</span></div>
-        <table class="table" v-if="ownFinancing.length">
+        <div class="sub-title">本行融资(贷款合同) <span class="badge badge--info">数仓取数</span></div>
+        <table class="table" v-if="creditContracts.length">
           <thead>
-            <tr><th>合同号</th><th>贷款余额(万元)</th><th>执行利率</th><th>担保类型</th></tr>
+            <tr><th>合同号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>担保类型</th><th>起止日期</th><th>借据</th></tr>
           </thead>
           <tbody>
-            <tr v-for="f in ownFinancing" :key="f.contractNo">
+            <tr v-for="f in creditContracts" :key="f.contractNo">
               <td>{{ f.contractNo }}</td>
-              <td class="num">{{ f.loanBalance ?? '暂无数据' }}</td>
-              <td class="num">{{ f.contractRate != null ? f.contractRate + '%' : '暂无数据' }}</td>
-              <td>{{ guaranteeTypeText(f.guaranteeType, '暂无数据') }}</td>
+              <td class="num">{{ f.contractAmount ?? '暂无数据' }}</td>
+              <td class="num">{{ f.contractBalance ?? '暂无数据' }}</td>
+              <td class="num">{{ f.executionRate != null ? f.executionRate + '%' : '暂无数据' }}</td>
+              <td>{{ guaranteeTypeText(finGuaranteeType(f.contractNo), '暂无数据') }}</td>
+              <td>{{ f.startDate || '—' }} 至 {{ f.maturityDate || '—' }}</td>
+              <td><span class="badge badge--neutral">{{ (f.notes || []).length }} 笔</span></td>
             </tr>
           </tbody>
         </table>
@@ -1199,6 +1202,12 @@ function populateMeasuresFromDw(g: GuaranteeRow, contractNo: string) {
       balance: t.guaranteeBalance != null ? String(t.guaranteeBalance) : ''
     })
   }
+}
+
+/** 合同担保类型(own_financing 按合同号匹配) */
+function finGuaranteeType(contractNo: string): string {
+  const fin = ownFinancing.value.find((f: any) => f.contractNo === contractNo)
+  return fin?.guaranteeType || ''
 }
 
 function addGuarantee() {
