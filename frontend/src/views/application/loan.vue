@@ -17,7 +17,7 @@
         v-for="(s, i) in steps" :key="s"
         class="stepper__step"
         :class="{ 'stepper__step--active': i === step, 'stepper__step--done': i < step }"
-        @click="step = i"
+        @click="goStep(i)"
       >
         <span class="stepper__dot">{{ i + 1 }}</span>
         <div>{{ s }}</div>
@@ -212,7 +212,7 @@
 
       <div class="wizard-actions">
         <span></span>
-        <button class="btn btn--primary" @click="step = 1">下一步:业务/合同</button>
+        <button class="btn btn--primary" @click="goNext(1)">下一步:业务/合同</button>
       </div>
     </div>
 
@@ -321,12 +321,18 @@
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无他行融资明细(可人工补录或在材料附件步骤 Excel 导入)</div>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addOtherLoan">＋ 添加他行融资</button>
+      <div class="empty" v-else>暂无他行融资明细(可人工补录或 Excel 导入)</div>
+      <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+        <button class="btn btn--secondary" @click="addOtherLoan">＋ 添加他行融资</button>
+        <button class="btn btn--secondary" @click="triggerImport">📄 Excel 导入</button>
+        <a class="btn btn--text" href="/templates/other-loans-template.xlsx" download="他行融资明细导入模板.xlsx">⬇ 模板下载</a>
+        <span class="section-tip">列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%</span>
+      </div>
+      <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 0">上一步</button>
-        <button class="btn btn--primary" @click="step = 2">下一步:担保组合</button>
+        <button class="btn btn--primary" @click="goNext(2)">下一步:担保组合</button>
       </div>
     </div>
 
@@ -488,7 +494,7 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 1">上一步</button>
-        <button class="btn btn--primary" @click="step = 3">下一步:利率定价</button>
+        <button class="btn btn--primary" @click="goNext(3)">下一步:利率定价</button>
       </div>
     </div>
 
@@ -547,7 +553,7 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 2">上一步</button>
-        <button class="btn btn--primary" @click="step = 4">下一步:贡献承诺</button>
+        <button class="btn btn--primary" @click="goNext(4)">下一步:贡献承诺</button>
       </div>
     </div>
 
@@ -637,7 +643,7 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 3">上一步</button>
-        <button class="btn btn--primary" @click="step = 5">下一步:材料附件</button>
+        <button class="btn btn--primary" @click="goNext(5)">下一步:材料附件</button>
       </div>
     </div>
 
@@ -645,12 +651,7 @@
     <div v-show="step === 5" class="form-card">
       <div class="form-card__title">材料附件</div>
 
-      <div class="sub-title">他行融资明细 Excel 导入</div>
-      <div class="section-tip" style="margin-bottom:8px">约定列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%;导入结果回显在“业务/合同”步骤的他行融资明细。</div>
-      <button class="btn btn--primary" @click="triggerImport">📄 Excel 导入</button>
-      <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
-
-      <div class="sub-title" style="margin-top:24px">其他申请附件</div>
+      <div class="sub-title">其他申请附件</div>
       <div class="section-tip" style="margin-bottom:8px">后端暂无通用附件上传接口,附件在前端暂存(base64),不随申请单上传、不阻断提交流程;上传接口就绪后自动接入。</div>
       <button class="btn btn--secondary" @click="attachmentInput?.click()">＋ 添加附件</button>
       <input ref="attachmentInput" type="file" multiple style="display:none" @change="onAttachmentFiles" />
@@ -669,7 +670,7 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 4">上一步</button>
-        <button class="btn btn--primary" @click="step = 6">下一步:提交预览</button>
+        <button class="btn btn--primary" @click="goNext(6)">下一步:提交预览</button>
       </div>
     </div>
 
@@ -1136,6 +1137,71 @@ function onAttachmentFiles(e: Event) {
 // ---------- 提交闭环:创建/保存草稿 → submit-check → 确认 → submit ----------
 function isBlank(v: any) {
   return v === undefined || v === null || String(v).trim() === ''
+}
+
+// ---------- 分步校验(点击下一步/跳步时提示当前必填项) ----------
+function validateStep(s: number): string | null {
+  if (s === 0) {
+    if (form.customerScope === 'GROUP') {
+      if (isBlank(form.groupNo) || !groupInfo.value) return '请录入集团编号并查询加载集团信息'
+      if (!selectedMembers.value.length) return '请至少勾选一名集团成员'
+      const bad = selectedMembers.value.find((m) => isBlank(m.requestAmount) || Number(m.requestAmount) <= 0)
+      if (bad) return `成员 ${bad.memberCustomerNo} 未录入本次申请金额`
+    } else if (isBlank(form.customerNo)) {
+      return '请查询并选择客户'
+    }
+  }
+  if (s === 2) {
+    for (let i = 0; i < form.guarantees.length; i++) {
+      const g = form.guarantees[i]
+      if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
+      if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
+      if (isBlank(g.guaranteeType)) return `第 ${i + 1} 条担保分项未选择担保方式`
+      if (g.guaranteeType !== 'CREDIT') {
+        const n = g.mortgages.length + g.guarantors.length + g.pledges.length + g.margins.length + g.cds.length
+        if (n === 0) return `第 ${i + 1} 条担保分项为「${guaranteeTypeText(g.guaranteeType)}」,请至少登记一条担保措施明细`
+      }
+    }
+  }
+  if (s === 3) {
+    for (let i = 0; i < form.guarantees.length; i++) {
+      const g = form.guarantees[i]
+      if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品`
+      if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限`
+      if (isBlank(g.amount) || Number(g.amount) <= 0) return `第 ${i + 1} 条分项未录入金额`
+      if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率`
+    }
+  }
+  if (s === 4) {
+    for (let i = 0; i < commitments.value.length; i++) {
+      const c = commitments.value[i]
+      if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
+      if (c.metricCode === 'OTHER' ? isBlank(c.commitmentDesc) : isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入目标`
+    }
+  }
+  return null
+}
+function goNext(target: number) {
+  const err = validateStep(step.value)
+  if (err) {
+    ElMessage.warning(err)
+    return
+  }
+  step.value = target
+}
+function goStep(i: number) {
+  if (i <= step.value) {
+    step.value = i
+    return
+  }
+  for (let s = step.value; s < i; s++) {
+    const err = validateStep(s)
+    if (err) {
+      ElMessage.warning(err)
+      return
+    }
+  }
+  step.value = i
 }
 
 function validateForDraft(): string | null {
