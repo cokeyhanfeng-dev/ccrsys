@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `dw_mortgage_snapshot` (
   `assess_date`       DATE         NULL COMMENT '评估日期',
   `mortgage_ratio`    DECIMAL(7,4)  NULL COMMENT '抵押率%',
   `mortgage_addr`     VARCHAR(128) NULL COMMENT '抵押物位置',
+  `ext_json`          JSON         NULL COMMENT '类型特有元素(厂房/土地:面积/产权证号;土地:使用权类型与到期日;设备:规格型号/数量/购置日期;车辆:车牌/车架号/登记日期)',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_cust` (`cust_no`),
   KEY `idx_contract` (`contract_no`)

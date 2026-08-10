@@ -143,3 +143,17 @@ INSERT INTO dw_credit_agreement_snapshot (etl_md5,data_dt,agreement_no,customer_
 -- CUST101 第二份协议(个人,单笔单批小额)
 (5315,CURDATE(),'AGR-C101-2026B','CUST101','SINGLE',200.0000,50.0000,150.0000,'CNY','2026-05-01','2027-04-30','EFFECTIVE')
 ON DUPLICATE KEY UPDATE used_amount=VALUES(used_amount);
+
+-- ---------- 9. 合同关联抵押物/保证人(按类型带 ext_json 特有元素;贷款合同→担保一对一) ----------
+-- CUST001 LC20260001:厂房(带面积/产权证号) + 保证人
+INSERT INTO dw_mortgage_snapshot (etl_md5,data_dt,cust_no,contract_no,mortgage_type,mortgage_name,owner_name,owner_cert_no,register_no,assess_value,assess_date,mortgage_ratio,mortgage_addr,ext_json) VALUES
+(5401,CURDATE(),'CUST001','LC20260001','FACTORY','某某工业园3号厂房','江苏某某科技有限公司','91320000XXXXXXXXX9','苏(2026)宜兴不动产权第0001号',6500.0000,'2026-01-05',60.0000,'宜兴市XX工业园3号',JSON_OBJECT('area','4200','certNo','苏(2026)宜兴不动产权第0001号')),
+(5402,CURDATE(),'CUST002','LC20260002','VEHICLE','重型半挂牵引车','宜兴市某某制造有限公司','91320000XXXXXXXXX8','机动车登记第3301号',180.0000,'2026-02-10',50.0000,'宜兴市XX厂区',JSON_OBJECT('plateNo','苏B12345','vin','LFV2A21KXG000001','regDate','2023-06-15')),
+(5403,CURDATE(),'CUST002','LC20260002','EQUIPMENT','数控加工中心2台','宜兴市某某制造有限公司','91320000XXXXXXXXX8','动抵登2026-007',900.0000,'2026-02-12',45.0000,'宜兴市XX路2号车间',JSON_OBJECT('specModel','VMC-850','quantity','2','purchaseDate','2021-03-20')),
+(5404,CURDATE(),'MEMBER_A','CONTRACT_A001','LAND','城东工业用地','江苏某某控股电气有限公司','91320000XXXXXXXXX6','苏(2026)宜兴不动产权第0002号',4000.0000,'2026-01-20',55.0000,'城东工业园东区',JSON_OBJECT('area','15000','landUseType','出让','landUseExpiry','2068-05-30'))
+ON DUPLICATE KEY UPDATE assess_value=VALUES(assess_value);
+
+INSERT INTO dw_guarantor_snapshot (etl_md5,data_dt,cust_no,contract_no,guarantor_name,guarantor_cert_type,guarantor_cert_no,guarantee_type,guarantee_amount,guarantee_balance) VALUES
+(5411,CURDATE(),'CUST001','LC20260001','江苏某某担保有限公司','UNIFIED','91320000YYYYYYYY01','JOINT',3000.0000,2800.0000),
+(5412,CURDATE(),'CUST101','LC20260003','张某个体','ID','320***********5678','GENERAL',200.0000,180.0000)
+ON DUPLICATE KEY UPDATE guarantee_balance=VALUES(guarantee_balance);

@@ -1148,6 +1148,7 @@ function autoItemsFromContracts(contracts: any[]) {
     g.currency = c.currency || 'CNY'
     const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
     if (c.guaranteeType || fin?.guaranteeType) g.guaranteeType = c.guaranteeType || fin.guaranteeType
+    populateMeasuresFromDw(g, c.contractNo)
     return g
   })
 }
@@ -1169,6 +1170,37 @@ function isMarginType(t: string) {
   return t === 'BILL_MARGIN' || t === 'CREDIT_MARGIN' || t === 'MARGIN_PLEDGE'
 }
 
+/** 数仓抵押物类型 → 表单类型 */
+const DW_MORTGAGE_TYPE: Record<string, string> = { FACTORY: '厂房', HOUSE: '住宅', LAND: '土地', EQUIPMENT: '设备', VEHICLE: '车辆' }
+function parseExtJson(j: any): any {
+  if (!j) return {}
+  if (typeof j === 'object') return j
+  try { return JSON.parse(j) } catch { return {} }
+}
+/** 合同关联的抵押物/保证人从数仓带出到分项(可再编辑) */
+function populateMeasuresFromDw(g: GuaranteeRow, contractNo: string) {
+  for (const m of relatedGuarantees.value.mortgages.filter((x: any) => x.contractNo === contractNo)) {
+    const ext = parseExtJson(m.extJson)
+    g.mortgages.push({
+      type: DW_MORTGAGE_TYPE[m.mortgageType] || '住宅',
+      name: m.mortgageName || '', addr: m.mortgageAddr || '',
+      value: m.assessValue != null ? String(m.assessValue) : '',
+      owner: m.ownerName || '', ratio: m.mortgageRatio != null ? String(m.mortgageRatio) : '',
+      area: ext.area || '', certNo: ext.certNo || m.registerNo || '',
+      landUseType: ext.landUseType || '出让', landUseExpiry: ext.landUseExpiry || '',
+      specModel: ext.specModel || '', quantity: ext.quantity || '', purchaseDate: ext.purchaseDate || '',
+      plateNo: ext.plateNo || '', vin: ext.vin || '', regDate: ext.regDate || ''
+    })
+  }
+  for (const t of relatedGuarantees.value.guarantors.filter((x: any) => x.contractNo === contractNo)) {
+    g.guarantors.push({
+      name: t.guarantorName || '', certNo: t.guarantorCertNo || '',
+      amount: t.guaranteeAmount != null ? String(t.guaranteeAmount) : '',
+      balance: t.guaranteeBalance != null ? String(t.guaranteeBalance) : ''
+    })
+  }
+}
+
 function addGuarantee() {
   if (form.businessType === 'EXISTING') {
     // 存量:分项=授信协议项下贷款合同,添加即补回一个未在列的合同
@@ -1185,6 +1217,7 @@ function addGuarantee() {
     g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
     const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
     if (fin?.guaranteeType) g.guaranteeType = fin.guaranteeType
+    populateMeasuresFromDw(g, c.contractNo)
     form.guarantees.push(g)
     return
   }
