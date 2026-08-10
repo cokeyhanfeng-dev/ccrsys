@@ -496,7 +496,7 @@ CREATE TABLE IF NOT EXISTS `ccr_application_attachment` (
   `application_id`      BIGINT       NOT NULL COMMENT '申请主键',
   `file_name`           VARCHAR(255) NOT NULL COMMENT '文件名',
   `file_size`           BIGINT       NOT NULL COMMENT '文件大小(字节)',
-  `file_type`           VARCHAR(64)  NULL COMMENT '内容类型(MIME)',
+  `file_type`           VARCHAR(128) NULL COMMENT '内容类型(MIME)',
   `content`             MEDIUMBLOB   NOT NULL COMMENT '文件内容(演示期落库;生产建议对象存储)',
   PRIMARY KEY (`id`),
   KEY `idx_att_app` (`application_id`)

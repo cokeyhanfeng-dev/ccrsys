@@ -126,6 +126,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         entity.setStatus(ApplicationStatus.DRAFT.getCode());
         // 数据日期基线(§7.1 步骤9:提交时与最新成功批次比对)
         entity.setDataBaselineJson(buildBaselineJson(businessType, customerScope));
+        if (entity.getVersionNo() == null) {
+            entity.setVersionNo(1); // 与 DB DEFAULT 一致,保证返回体携带版本号供后续 PUT 乐观锁
+        }
         applicationMapper.insert(entity);
 
         // 集团场景:写入涉及成员(逐成员真实金额/币种/角色,成员额度从数仓回填)

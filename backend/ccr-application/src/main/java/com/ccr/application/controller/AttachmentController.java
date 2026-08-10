@@ -50,7 +50,8 @@ public class AttachmentController {
             att.setApplicationId(applicationId);
             att.setFileName(file.getOriginalFilename() == null ? "附件" : file.getOriginalFilename());
             att.setFileSize(file.getSize());
-            att.setFileType(file.getContentType());
+            att.setFileType(file.getContentType() != null && file.getContentType().length() > 128
+                    ? file.getContentType().substring(0, 128) : file.getContentType());
             att.setContent(file.getBytes());
             attachmentMapper.insert(att);
             return R.ok(Map.of("id", att.getId(), "fileName", att.getFileName(), "fileSize", att.getFileSize()));

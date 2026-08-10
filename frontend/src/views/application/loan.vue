@@ -1383,7 +1383,7 @@ async function ensureDraft(): Promise<boolean> {
     } else {
       const created = await createApplication(payload)
       draft.id = created.id
-      draft.versionNo = created.versionNo
+      draft.versionNo = created.versionNo ?? 1
       draft.applicationNo = created.applicationNo
     }
     return true
@@ -1453,7 +1453,7 @@ onMounted(async () => {
   try {
     const newDraft = await reapplyApplication(String(src))
     draft.id = newDraft.id
-    draft.versionNo = newDraft.versionNo
+    draft.versionNo = newDraft.versionNo ?? 1
     draft.applicationNo = newDraft.applicationNo
     await loadDraftIntoForm(newDraft.id)
     ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)

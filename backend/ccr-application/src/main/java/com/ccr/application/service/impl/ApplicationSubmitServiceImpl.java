@@ -853,6 +853,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 + IdUtil.fastSimpleUUID().substring(0, 4).toUpperCase());
         target.setStatus(ApplicationStatus.DRAFT.getCode());
         target.setDataBaselineJson(buildBaselineJson(source));
+        if (target.getVersionNo() == null) {
+            target.setVersionNo(1); // 与 DB DEFAULT 一致,保证重提草稿返回体携带版本号
+        }
         applicationMapper.insert(target);
 
         // 复制涉及成员
