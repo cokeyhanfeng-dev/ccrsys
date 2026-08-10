@@ -119,6 +119,8 @@ public class CustomerController {
         result.put("custType", corp != null ? "CORP" : "INDV");
         // 本行融资(授信概况)
         result.put("financing", camelRows(dataWarehouseService.ownFinancing(customerNo)));
+        // 授信协议(授信信息卡:协议编号/类型/起止/额度/已用)
+        result.put("creditAgreements", camelRows(dataWarehouseService.creditAgreements(customerNo)));
         // 存款账户
         result.put("depositAccounts", camelRows(dataWarehouseService.depositAccounts(customerNo)));
         // 合同 + 合同下借据

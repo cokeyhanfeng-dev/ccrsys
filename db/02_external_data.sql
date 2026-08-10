@@ -377,3 +377,23 @@ CREATE TABLE IF NOT EXISTS `dw_deposit_account_snapshot` (
 -- 说明:关联人无独立关系表;关联人身份由客户经理申请时录入(证件号),
 -- 数仓按其证件号反查关联人贡献度明细,承载在 dw_contribution_metric.metric_scope='RELATED' 行(PRD V2 §8.2)
 -- ============================================================
+
+-- ---------- 授信协议快照(手工测试/联调补充;数仓契约待正式推送确认) ----------
+-- 授信信息展示口径(2026-08 业务确认):授信协议编号/授信类型/开始日期/结束日期/授信额度/已用额度
+CREATE TABLE IF NOT EXISTS `dw_credit_agreement_snapshot` (
+  `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
+  `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
+  `agreement_no`      VARCHAR(64)  NOT NULL COMMENT '授信协议编号',
+  `customer_no`       VARCHAR(64)  NOT NULL COMMENT '客户号(单户或集团成员)',
+  `agreement_type`    VARCHAR(32)  NOT NULL COMMENT '授信类型:COMPREHENSIVE综合授信/SINGLE单笔单批/REVOLVING循环授信',
+  `credit_amount`     DECIMAL(18,4) NOT NULL COMMENT '授信额度(万元)',
+  `used_amount`       DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '已用额度(万元)',
+  `available_amount`  DECIMAL(18,4) NOT NULL COMMENT '可用额度(万元)',
+  `currency`          VARCHAR(8)   NOT NULL DEFAULT 'CNY',
+  `start_date`        DATE         NOT NULL COMMENT '开始日期',
+  `end_date`          DATE         NOT NULL COMMENT '结束日期',
+  `agreement_status`  VARCHAR(16)  NOT NULL COMMENT 'EFFECTIVE有效/EXPIRED到期/CLOSED终止',
+  PRIMARY KEY (`etl_md5`),
+  KEY `idx_agr_no` (`agreement_no`),
+  KEY `idx_agr_cust` (`customer_no`)
+) ENGINE=InnoDB COMMENT='授信协议快照(数仓推送契约补充)';

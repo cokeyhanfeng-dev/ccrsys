@@ -15,7 +15,8 @@ export const GUARANTEE_TYPES: DictItem[] = [
   { code: 'CREDIT', name: '信用' },
   { code: 'BILL_MARGIN', name: '银票保证金' },
   { code: 'CREDIT_MARGIN', name: '信用证保证金' },
-  { code: 'CERTIFICATE_DEPOSIT', name: '存单质押' }
+  { code: 'CERTIFICATE_DEPOSIT', name: '存单质押' },
+  { code: 'MARGIN_PLEDGE', name: '保证金质押' }
 ]
 
 const NAME_MAP: Record<string, string> = Object.fromEntries(GUARANTEE_TYPES.map((t) => [t.code, t.name]))
@@ -384,6 +385,16 @@ export function relationTypeText(code?: string): string {
     DIRECT_RELATIVE: '直系亲属',
     RELATIVE: '亲属',
     INVESTEE: '被投资企业'
+  }
+  return code ? (map[code] || code) : '—'
+}
+
+/** 授信协议类型(dw_credit_agreement.agreement_type) */
+export function agreementTypeText(code?: string): string {
+  const map: Record<string, string> = {
+    COMPREHENSIVE: '综合授信',
+    SINGLE: '单笔单批',
+    REVOLVING: '循环授信'
   }
   return code ? (map[code] || code) : '—'
 }

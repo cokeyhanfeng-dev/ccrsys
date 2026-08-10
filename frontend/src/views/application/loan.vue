@@ -229,7 +229,7 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">业务类型 <span class="req">*</span></label>
-          <select class="form-select" v-model="form.businessType">
+          <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
             <option value="EXISTING">存量调息(选择现有贷款合同)</option>
             <option value="NEW">新增授信(拟签合同)</option>
           </select>
@@ -349,21 +349,38 @@
         集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
       </div>
 
-      <!-- 总授信额度:存量按所选合同金额自动带出;新增由客户经理手工录入,拆分细项合计与总额核对 -->
+      <!-- 总授信额度:存量按授信协议自动填充(只读);新增由客户经理手工录入;拆分细项为一个方案并自动合计核对 -->
       <div class="credit-overview">
-        <div class="credit-overview__item" v-if="form.businessType === 'EXISTING'">
-          <span>总授信额度(万元,按合同带出)</span><b>{{ guaranteesTotalText }}</b>
-        </div>
-        <div class="credit-overview__item" v-else>
-          <span>总授信额度(万元)</span>
-          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
-        </div>
-        <div class="credit-overview__item" v-if="form.businessType !== 'EXISTING'">
-          <span>拆分细项合计(万元)</span><b :style="totalMismatch ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
-        </div>
-        <div class="credit-overview__item" v-if="form.businessType !== 'EXISTING' && totalMismatch">
-          <span class="section-tip" style="color:var(--color-danger)">拆分合计与总授信额度不一致,请核对</span>
-        </div>
+        <template v-if="form.businessType === 'EXISTING'">
+          <div class="credit-overview__item">
+            <span>授信协议</span>
+            <select class="form-select" style="min-width:280px" v-model="form.creditAgreementNo" @change="onAgreementSelect">
+              <option value="" disabled>选择授信协议</option>
+              <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
+                {{ a.agreementNo }} · {{ agreementTypeText(a.agreementType) }} · {{ a.creditAmount }} 万
+              </option>
+            </select>
+          </div>
+          <div class="credit-overview__item"><span>总授信额度(万元)</span><b>{{ form.totalCredit || '—' }}</b></div>
+          <div class="credit-overview__item"><span>已用额度(万元)</span><b>{{ selectedAgreement?.usedAmount ?? '—' }}</b></div>
+          <div class="credit-overview__item"><span>协议有效期</span><b>{{ selectedAgreement ? selectedAgreement.startDate + ' 至 ' + selectedAgreement.endDate : '—' }}</b></div>
+          <div class="credit-overview__item">
+            <span>拆分细项合计(万元)</span>
+            <b :style="existingOverCredit ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
+          </div>
+        </template>
+        <template v-else>
+          <div class="credit-overview__item">
+            <span>总授信额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
+          </div>
+          <div class="credit-overview__item">
+            <span>拆分细项合计(万元)</span><b :style="totalMismatch ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
+          </div>
+          <div class="credit-overview__item" v-if="totalMismatch">
+            <span class="section-tip" style="color:var(--color-danger)">拆分合计与总授信额度不一致,请核对</span>
+          </div>
+        </template>
         <template v-if="form.customerScope === 'GROUP'">
           <div class="credit-overview__item"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="credit-overview__item"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
@@ -381,7 +398,7 @@
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
             <span v-else-if="g.guaranteeType === 'PLEDGE'" class="badge badge--neutral">质押物 {{ g.pledges.length }} 项</span>
-            <span v-else-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="badge badge--neutral">保证金 {{ g.margins.length }} 笔</span>
+            <span v-else-if="isMarginType(g.guaranteeType)" class="badge badge--neutral">保证金 {{ g.margins.length }} 笔</span>
             <span v-else-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="badge badge--neutral">存单 {{ g.cds.length }} 张</span>
             <span v-else class="badge badge--neutral">无需措施</span>
           </span>
@@ -512,7 +529,7 @@
                 </table>
         </div>
         <!-- 保证金明细(银票/信用证) -->
-        <div v-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="guarantee-detail-block">
+        <div v-if="isMarginType(g.guaranteeType)" class="guarantee-detail-block">
           <div class="detail-title">保证金(关联本分项) <button class="btn btn--text" @click="addMargin(g)">＋ 添加保证金</button></div>
                 <table class="table table--nested" v-if="g.margins.length">
                   <thead><tr><th>保证金金额(万元)</th><th>保证金比例(%)</th><th>期限(月)</th><th></th></tr></thead>
@@ -851,7 +868,8 @@ const form = reactive({
   customerNo: '',
   loanType: 'CORP_LOAN',
   businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
-  totalCredit: '', // 新增授信总授信额度(手工录入;拆分细项合计核对)
+  totalCredit: '', // 总授信额度(存量=协议带出;新增=手工录入)
+  creditAgreementNo: '', // 授信协议编号(存量)
   amountTier: 'LT_5000',
   customerNature: 'EXISTING',
   customerType: 'NON_SOE',
@@ -939,6 +957,18 @@ async function loadCustomerDetail() {
     form.phone = basic.phone || ''
     form.customerNature = basic.customerClass === 'NEW' ? 'NEW' : 'EXISTING'
     ownFinancing.value = detail.financing || []
+    // 授信协议(数仓);存量模式:授信项下全部贷款合同自动列为分项(可删除不需要调息的)
+    try {
+      const view = await getCustomerBusinessView(form.customerNo)
+      creditAgreements.value = view.creditAgreements || []
+      if (creditAgreements.value.length === 1) {
+        form.creditAgreementNo = creditAgreements.value[0].agreementNo
+        onAgreementSelect()
+      }
+      if (form.businessType === 'EXISTING') {
+        autoItemsFromContracts(view.contracts || [])
+      }
+    } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
     otherSummary.value = detail.creditSummary?.[0] || null
     otherLoans.value = (detail.creditDetail || []).map((d: any) => ({ ...d, inputMode: 'DW' }))
@@ -1040,7 +1070,21 @@ const guaranteesTotalAmount = computed(() =>
     return acc + (Number.isFinite(n) && n > 0 ? n : 0)
   }, 0)
 )
+const creditAgreements = ref<any[]>([])
+/** 当前选中的授信协议(存量) */
+const selectedAgreement = computed(() =>
+  creditAgreements.value.find((a) => a.agreementNo === form.creditAgreementNo) || null)
+function onAgreementSelect() {
+  const a = selectedAgreement.value
+  if (a) form.totalCredit = String(a.creditAmount ?? '')
+}
 const guaranteesTotalText = computed(() => (Math.round(guaranteesTotalAmount.value * 100) / 100).toString())
+// 存量:拆分细项合计超协议授信额度提示
+const existingOverCredit = computed(() => {
+  const total = Number(form.totalCredit)
+  return form.businessType === 'EXISTING' && Number.isFinite(total) && total > 0
+    && guaranteesTotalAmount.value > total + 0.01
+})
 // 新增场景:拆分细项合计与手工录入的总授信额度不一致提示(容差 0.01)
 const totalMismatch = computed(() => {
   const total = Number(form.totalCredit)
@@ -1071,6 +1115,37 @@ function onContractSelect(g: GuaranteeRow) {
     if (amt != null) g.amount = String(amt)
   }
 }
+/** 存量:把授信项下全部贷款合同自动列为担保分项(客户经理可删除不需要提交调息的合同) */
+function autoItemsFromContracts(contracts: any[]) {
+  const rows = (contracts || []).filter((c) => c && c.contractNo)
+  if (!rows.length) return
+  form.guarantees = rows.map((c) => {
+    const g = newGuarantee()
+    g.contractBusinessKey = c.contractNo
+    g.originalRate = c.executionRate != null ? String(c.executionRate) : ''
+    g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
+    g.currency = c.currency || 'CNY'
+    return g
+  })
+}
+function onBusinessTypeChange() {
+  if (form.businessType === 'EXISTING') {
+    form.totalCredit = ''
+    form.creditAgreementNo = ''
+    // 已有客户则立即列出全部合同
+    if (form.customerNo) {
+      getCustomerBusinessView(form.customerNo)
+        .then((view: any) => autoItemsFromContracts(view.contracts || []))
+        .catch(() => {})
+    }
+  }
+}
+
+/** 保证金类担保(银票/信用证/存单外另行)——保证金质押同样录入金额/比例/期限 */
+function isMarginType(t: string) {
+  return t === 'BILL_MARGIN' || t === 'CREDIT_MARGIN' || t === 'MARGIN_PLEDGE'
+}
+
 function addGuarantee() {
   form.guarantees.push(newGuarantee())
 }

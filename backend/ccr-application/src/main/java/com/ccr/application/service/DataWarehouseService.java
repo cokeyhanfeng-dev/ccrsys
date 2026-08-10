@@ -160,6 +160,14 @@ public class DataWarehouseService {
                 ORDER BY tranche_no""", memberCustomerNo);
     }
 
+    /** 授信协议(按客户,最新批次;单户与集团成员统一按 customer_no) */
+    public List<Map<String, Object>> creditAgreements(String customerNo) {
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_credit_agreement_snapshot
+                WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot)
+                ORDER BY agreement_no""", customerNo);
+    }
+
     /** 贷款合同(按用信分项,最新批次) */
     public List<Map<String, Object>> contractsByTranche(String trancheNo) {
         return jdbcTemplate.queryForList("""

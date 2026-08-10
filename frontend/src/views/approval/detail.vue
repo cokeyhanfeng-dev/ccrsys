@@ -110,6 +110,25 @@
       </el-collapse>
     </div>
 
+    <!-- 6c. 授信信息(授信协议:编号/类型/起止/额度/已用) -->
+    <div class="card">
+      <div class="card__head"><span>授信信息</span><span class="badge badge--info">数仓</span></div>
+      <table class="table" v-if="creditAgreements.length">
+        <thead><tr><th>授信协议编号</th><th>授信类型</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th></tr></thead>
+        <tbody>
+          <tr v-for="(a, i) in creditAgreements" :key="i">
+            <td>{{ a.agreementNo }}</td>
+            <td>{{ agreementTypeText(a.agreementType) }}</td>
+            <td>{{ a.startDate || '—' }}</td>
+            <td>{{ a.endDate || '—' }}</td>
+            <td class="num">{{ a.creditAmount ?? '—' }}</td>
+            <td class="num">{{ a.usedAmount ?? '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">暂无授信协议数据</div>
+    </div>
+
     <!-- 7. 授信/账户与本行融资 -->
     <div class="card">
       <div class="card__head"><span>授信/账户与本行融资</span><span class="badge badge--info">数仓</span></div>
@@ -277,7 +296,7 @@
                   <span class="dg-label">估值(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
                   <span class="dg-label">权属人</span>{{ extOf(g).owner || '暂无数据' }}
                 </template>
-                <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN'">
+                <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN' || g.measureType === 'MARGIN_PLEDGE'">
                   <span class="dg-label">保证金(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
                   <span class="dg-label">比例</span>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '暂无数据' }}
                   <span class="dg-label">期限(月)</span>{{ extOf(g).termMonths || '暂无数据' }}
@@ -515,6 +534,7 @@ const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
 const relatedPersons = ref<any[]>([])
+const creditAgreements = ref<any[]>([])
 const attachments = ref<any[]>([])
 const resolutions = ref<any[]>([])
 const resolutionExecutions = ref<any[]>([])
@@ -616,6 +636,7 @@ async function load() {
     otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
     relations.value = data.relations || []
     relatedPersons.value = data.relatedPersons || []
+    creditAgreements.value = data.creditAgreements || []
     attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []
     resolutionExecutions.value = data.resolutionExecutions || []
