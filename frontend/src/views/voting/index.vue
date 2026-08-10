@@ -12,11 +12,15 @@
       </div>
       <table class="table">
         <thead>
-          <tr><th>担保分项</th><th>申请金额(万元)</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th></tr>
+          <tr><th>定价分项</th><th>担保类型</th><th>申请金额(万元)</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th></tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in rows" :key="row.roundId + '-' + row.pricingItemId">
-            <td>{{ productName(row.productCode) }}</td>
+            <td>
+              <div>{{ row.pricingItemNo }}</div>
+              <div class="section-tip">{{ productName(row.productCode) }}</div>
+            </td>
+            <td><span class="badge badge--info">{{ guaranteeTypeText(row.guaranteeType, '—') }}</span></td>
             <td class="num">{{ row.pricingAmount ?? '—' }}</td>
             <td class="num">{{ row.requestedRate }}%</td>
             <td>
@@ -34,7 +38,7 @@
             </td>
             <td><span :class="row.submitted ? 'badge badge--success' : 'badge badge--neutral'">{{ row.submitted ? '已提交' : '未提交' }}</span></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="6" class="empty">暂无待表决分项</td></tr>
+          <tr v-if="!rows.length"><td colspan="7" class="empty">暂无待表决分项</td></tr>
         </tbody>
       </table>
       <div style="margin-top:16px;display:flex;align-items:center;gap:12px" v-if="pendingCount > 0">
@@ -50,7 +54,7 @@ import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listVoteTodo, fetchMyBallot, submitBallot } from '@/api/vote'
 import { newIdempotencyKey } from '@/api/approval'
-import { productName } from '@/utils/dict'
+import { productName, guaranteeTypeText } from '@/utils/dict'
 
 const rows = ref<any[]>([])
 const submitting = ref(false)
@@ -64,6 +68,8 @@ async function load() {
       roundId: p.roundId,
       pricingItemId: p.pricingItemId,
       productCode: p.productCode || '—',
+      pricingItemNo: p.pricingItemNo || '',
+      guaranteeType: p.guaranteeType || '',
       pricingAmount: p.pricingAmount,
       requestedRate: p.requestedRate,
       choice: '',

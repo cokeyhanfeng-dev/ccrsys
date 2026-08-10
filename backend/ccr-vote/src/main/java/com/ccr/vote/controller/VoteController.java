@@ -82,8 +82,12 @@ public class VoteController {
         Long voterUserId = currentLoginUser.requireLoginId();
         String sql = """
                 SELECT va.round_id roundId, va.voter_anonym_no anonymNo, va.status assignStatus,
-                       ri.pricing_item_id pricingItemId, pi.requested_rate requestedRate,
-                       pi.pricing_amount pricingAmount, pi.product_code productCode
+                       ri.pricing_item_id pricingItemId, pi.pricing_item_no pricingItemNo,
+                       pi.requested_rate requestedRate,
+                       pi.pricing_amount pricingAmount, pi.product_code productCode,
+                       pi.pricing_customer_no customerNo,
+                       (SELECT gp.main_guarantee_type FROM ccr_guarantee_package gp
+                        WHERE gp.pricing_item_id = pi.id AND gp.del_flag = '0' LIMIT 1) guaranteeType
                 FROM ccr_vote_assignment va
                 JOIN ccr_vote_round_item ri ON ri.round_id = va.round_id
                 JOIN ccr_pricing_item pi ON pi.id = ri.pricing_item_id
