@@ -245,6 +245,11 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
             // 分项与贷款合同关系(现有合同号或拟签合同标识)
             String contractBusinessKey = StrUtil.blankToDefault(strVal(g.get("contractBusinessKey")), strVal(g.get("contractNo")));
+            // 拟签合同标识留空时自动按分项编号生成(新增授信审批后回填正式合同号,§5.6)
+            if (StrUtil.isBlank(contractBusinessKey)
+                    && "Y".equals(StrUtil.blankToDefault(strVal(g.get("plannedContractFlag")), "N"))) {
+                contractBusinessKey = "PLANNED-" + pi.getPricingItemNo();
+            }
             if (StrUtil.isNotBlank(contractBusinessKey)) {
                 CcrPricingItemContractRel rel = new CcrPricingItemContractRel();
                 rel.setApplicationId(entity.getId());

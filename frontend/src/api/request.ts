@@ -22,13 +22,24 @@ service.interceptors.response.use(
     if (res.code === 200) {
       return res.data
     }
+    // 会话过期/未登录(Sa-Token 经全局异常处理返回业务码 401):清 token 并跳登录页
+    if (res.code === 401) {
+      localStorage.removeItem('ccr_token')
+      const redirect = window.location.pathname + window.location.search
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login?redirect=' + encodeURIComponent(redirect)
+      }
+      return Promise.reject(new Error(res.msg || '登录已过期'))
+    }
     ElMessage.error(res.msg || '请求失败')
     return Promise.reject(new Error(res.msg))
   },
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 || error.response?.data?.code === 401) {
       localStorage.removeItem('ccr_token')
-      window.location.href = '/login'
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
     } else {
       ElMessage.error(error.response?.data?.msg || '网络异常')
     }

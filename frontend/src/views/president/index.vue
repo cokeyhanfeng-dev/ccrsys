@@ -196,7 +196,7 @@ async function openDetail(c: any) {
     if (vr?.roundId) {
       try {
         const rounds = await listRoundOpinions(vr.roundId)
-        const row = (rounds || []).find((r: any) => Number(r.pricingItemId) === Number(c.id))
+        const row = (rounds || []).find((r: any) => String(r.pricingItemId) === String(c.id))
         detail.value.opinions = row?.opinions || []
       } catch {
         detail.value.opinions = []

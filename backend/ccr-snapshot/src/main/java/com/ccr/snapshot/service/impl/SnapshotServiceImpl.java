@@ -468,44 +468,49 @@ public class SnapshotServiceImpl implements SnapshotService {
         try {
             for (String custNo : customerIds) {
                 List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                        SELECT metric_code, metric_value FROM dw_contribution_metric
+                        SELECT metric_code, metric_value, metric_scope FROM dw_contribution_metric
                         WHERE cust_no = ?
                           AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric WHERE cust_no = ?)
                         """, custNo, custNo);
-                java.math.BigDecimal total = null;
-                java.math.BigDecimal detailSum = java.math.BigDecimal.ZERO;
-                boolean hasDetail = false;
+                // 按 metric_scope 分组勾稽(§10.3 双概念:对公/本人/关联人/集团/成员各自独立口径,不得混加)
+                Map<String, java.math.BigDecimal> totals = new java.util.HashMap<>();
+                Map<String, java.math.BigDecimal> detailSums = new java.util.HashMap<>();
                 for (Map<String, Object> row : rows) {
                     java.math.BigDecimal value = toBigDecimal(row.get("metric_value"));
                     if (value == null) {
                         continue;
                     }
+                    String scope = row.get("metric_scope") == null ? "" : String.valueOf(row.get("metric_scope"));
                     if ("TOTAL".equals(String.valueOf(row.get("metric_code")))) {
-                        total = value;
+                        totals.merge(scope, value, java.math.BigDecimal::add);
                     } else {
-                        detailSum = detailSum.add(value);
-                        hasDetail = true;
+                        detailSums.merge(scope, value, java.math.BigDecimal::add);
                     }
                 }
-                if (total == null || !hasDetail) {
-                    continue; // 无 TOTAL 行或无明细行:无数据空跑
-                }
-                anyChecked = true;
-                java.math.BigDecimal diff = total.subtract(detailSum).abs();
-                if (diff.compareTo(java.math.BigDecimal.ZERO) == 0) {
-                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "PASS",
-                            expected, "差额 0", null);
-                } else if (diff.compareTo(reconcileTolerance) <= 0) {
-                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "WARN",
-                            expected, "差额 " + diff,
-                            "贡献度勾稽差额在容差内(TOTAL=" + total + ",明细合计=" + detailSum + ")");
-                    warn++;
-                } else {
-                    addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "BLOCK",
-                            expected, "差额 " + diff,
-                            "贡献度勾稽不符:TOTAL=" + total + ",明细合计=" + detailSum
-                                    + ",差额 " + diff + " 超过容差 " + reconcileTolerance + "(§9.2 D13)");
-                    block++;
+                for (Map.Entry<String, java.math.BigDecimal> e : totals.entrySet()) {
+                    java.math.BigDecimal detailSum = detailSums.getOrDefault(e.getKey(), java.math.BigDecimal.ZERO);
+                    if (!detailSums.containsKey(e.getKey())) {
+                        continue; // 该口径无明细行:空跑
+                    }
+                    anyChecked = true;
+                    java.math.BigDecimal total = e.getValue();
+                    String scopeText = e.getKey().isEmpty() ? "" : ("[" + e.getKey() + "]");
+                    java.math.BigDecimal diff = total.subtract(detailSum).abs();
+                    if (diff.compareTo(java.math.BigDecimal.ZERO) == 0) {
+                        addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "PASS",
+                                expected, scopeText + "差额 0", null);
+                    } else if (diff.compareTo(reconcileTolerance) <= 0) {
+                        addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "WARN",
+                                expected, scopeText + "差额 " + diff,
+                                "贡献度勾稽差额在容差内" + scopeText + "(TOTAL=" + total + ",明细合计=" + detailSum + ")");
+                        warn++;
+                    } else {
+                        addQuality(bundle, "CONTRIBUTION_RECONCILE", "CUSTOMER", custNo, "BLOCK",
+                                expected, scopeText + "差额 " + diff,
+                                "贡献度勾稽不符" + scopeText + ":TOTAL=" + total + ",明细合计=" + detailSum
+                                        + ",差额 " + diff + " 超过容差 " + reconcileTolerance + "(§9.2 D13)");
+                        block++;
+                    }
                 }
             }
             if (!anyChecked) {

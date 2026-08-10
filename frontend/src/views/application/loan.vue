@@ -372,7 +372,7 @@
                   </select>
                 </template>
                 <template v-else>
-                  <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(可空)" />
+                  <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(留空自动生成)" />
                   <span class="badge badge--neutral" style="margin-top:4px">拟签合同</span>
                 </template>
               </td>
@@ -384,6 +384,9 @@
               <td>
                 <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
                 <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
+                <span v-else-if="g.guaranteeType === 'PLEDGE'" class="badge badge--neutral">质押物 {{ g.pledges.length }} 项</span>
+                <span v-else-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="badge badge--neutral">保证金 {{ g.margins.length }} 笔</span>
+                <span v-else-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="badge badge--neutral">存单 {{ g.cds.length }} 张</span>
                 <span v-else class="badge badge--neutral">无需措施</span>
               </td>
               <td><button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button></td>
@@ -403,6 +406,58 @@
                       <td><input class="form-input" v-model="m.owner" /></td>
                       <td><input class="form-input form-input--amount" v-model="m.ratio" /></td>
                       <td><button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            <!-- 质押物明细 -->
+            <tr v-if="g.guaranteeType === 'PLEDGE'" class="guarantee-detail">
+              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
+                <div class="detail-title">质押物(关联本分项) <button class="btn btn--text" @click="addPledge(g)">＋ 添加质押物</button></div>
+                <table class="table table--nested" v-if="g.pledges.length">
+                  <thead><tr><th>质押物类型</th><th>名称</th><th>估值(万元)</th><th>权属人</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="(m, mi) in g.pledges" :key="mi">
+                      <td><select class="form-select" v-model="m.type"><option>存单</option><option>股权</option><option>应收账款</option><option>存货</option><option>仓单</option></select></td>
+                      <td><input class="form-input" v-model="m.name" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.value" /></td>
+                      <td><input class="form-input" v-model="m.owner" /></td>
+                      <td><button class="btn btn--text" @click="g.pledges.splice(mi, 1)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            <!-- 保证金明细(银票/信用证) -->
+            <tr v-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="guarantee-detail">
+              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
+                <div class="detail-title">保证金(关联本分项) <button class="btn btn--text" @click="addMargin(g)">＋ 添加保证金</button></div>
+                <table class="table table--nested" v-if="g.margins.length">
+                  <thead><tr><th>保证金金额(万元)</th><th>保证金比例(%)</th><th>期限(月)</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="(m, mi) in g.margins" :key="mi">
+                      <td><input class="form-input form-input--amount" v-model="m.amount" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.ratio" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.term" /></td>
+                      <td><button class="btn btn--text" @click="g.margins.splice(mi, 1)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            <!-- 存单质押明细 -->
+            <tr v-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="guarantee-detail">
+              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
+                <div class="detail-title">存单质押(关联本分项) <button class="btn btn--text" @click="addCd(g)">＋ 添加存单</button></div>
+                <table class="table table--nested" v-if="g.cds.length">
+                  <thead><tr><th>存单号</th><th>金额(万元)</th><th>到期日</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="(m, mi) in g.cds" :key="mi">
+                      <td><input class="form-input" v-model="m.cdNo" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.amount" /></td>
+                      <td><input class="form-input" type="date" v-model="m.maturityDate" /></td>
+                      <td><button class="btn btn--text" @click="g.cds.splice(mi, 1)">删除</button></td>
                     </tr>
                   </tbody>
                 </table>
@@ -763,7 +818,13 @@ interface GuaranteeRow {
   requestedRate: string
   mortgages: MortgageRow[]
   guarantors: GuarantorRow[]
+  pledges: PledgeRow[]
+  margins: MarginRow[]
+  cds: CdRow[]
 }
+interface PledgeRow { type: string; name: string; value: string; owner: string }
+interface MarginRow { amount: string; ratio: string; term: string }
+interface CdRow { cdNo: string; amount: string; maturityDate: string }
 interface CommitmentRow {
   metricCode: string
   targetType: string
@@ -780,7 +841,7 @@ function newGuarantee(): GuaranteeRow {
   return {
     memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
     productCode: '', termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
-    originalRate: '', requestedRate: '', mortgages: [], guarantors: []
+    originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
 }
 
@@ -996,6 +1057,15 @@ function addGuaranteeMortgage(g: GuaranteeRow) {
 function addGuaranteeGuarantor(g: GuaranteeRow) {
   g.guarantors.push({ name: '', certNo: '', amount: '', balance: '' })
 }
+function addPledge(g: GuaranteeRow) {
+  g.pledges.push({ type: '存单', name: '', value: '', owner: '' })
+}
+function addMargin(g: GuaranteeRow) {
+  g.margins.push({ amount: '', ratio: '', term: '' })
+}
+function addCd(g: GuaranteeRow) {
+  g.cds.push({ cdNo: '', amount: '', maturityDate: '' })
+}
 function onCustomerScopeChange() {
   if (form.customerScope !== 'GROUP') {
     selectedMembers.value = []
@@ -1117,6 +1187,33 @@ function buildMeasures(g: GuaranteeRow): GuaranteeMeasureInput[] {
       guaranteeAmount: t.amount || undefined,
       currency: 'CNY',
       extJson: { name: t.name, certNo: t.certNo, balance: t.balance }
+    })
+  }
+  for (const m of g.pledges) {
+    if (isBlank(m.name) && isBlank(m.value)) continue
+    list.push({
+      measureType: 'PLEDGE',
+      guaranteeAmount: m.value || undefined,
+      currency: 'CNY',
+      extJson: { pledgeType: m.type, name: m.name, owner: m.owner }
+    })
+  }
+  for (const m of g.margins) {
+    if (isBlank(m.amount)) continue
+    list.push({
+      measureType: g.guaranteeType,
+      guaranteeAmount: m.amount || undefined,
+      currency: 'CNY',
+      extJson: { marginRatio: m.ratio, termMonths: m.term }
+    })
+  }
+  for (const m of g.cds) {
+    if (isBlank(m.cdNo) && isBlank(m.amount)) continue
+    list.push({
+      measureType: 'CERTIFICATE_DEPOSIT',
+      guaranteeAmount: m.amount || undefined,
+      currency: 'CNY',
+      extJson: { certificateNo: m.cdNo, maturityDate: m.maturityDate }
     })
   }
   return list
@@ -1332,6 +1429,25 @@ async function loadDraftIntoForm(id: number) {
           certNo: ms.extJson?.certNo || '',
           amount: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
           balance: ms.extJson?.balance || ''
+        })
+      } else if (ms.measureType === 'PLEDGE') {
+        g.pledges.push({
+          type: ms.extJson?.pledgeType || '存单',
+          name: ms.extJson?.name || '',
+          value: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
+          owner: ms.extJson?.owner || ''
+        })
+      } else if (ms.measureType === 'BILL_MARGIN' || ms.measureType === 'CREDIT_MARGIN') {
+        g.margins.push({
+          amount: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
+          ratio: ms.extJson?.marginRatio || '',
+          term: ms.extJson?.termMonths || ''
+        })
+      } else if (ms.measureType === 'CERTIFICATE_DEPOSIT') {
+        g.cds.push({
+          cdNo: ms.extJson?.certificateNo || '',
+          amount: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
+          maturityDate: ms.extJson?.maturityDate || ''
         })
       }
     }

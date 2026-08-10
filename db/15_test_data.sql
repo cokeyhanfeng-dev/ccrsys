@@ -76,8 +76,9 @@ INSERT INTO dw_contribution_metric (etl_md5,data_dt,cust_no,metric_code,metric_n
 (5114,CURDATE(),'CUST101','PRIVATE_WEALTH','本人财富中收',10.0000,'CONTRIBUTION_AMOUNT','PRIVATE_SELF','2026-07-01','2026-07-31','V1.0')
 ON DUPLICATE KEY UPDATE metric_value=VALUES(metric_value);
 
--- CUST001 本人(对私口径)与关联人贡献(双概念/分层展示)
+-- CUST001 本人(对私口径)与关联人贡献(双概念/分层展示;PRIVATE_SELF 口径 TOTAL=12+8=20)
 INSERT INTO dw_contribution_metric (etl_md5,data_dt,cust_no,metric_code,metric_name,metric_value,value_type,metric_scope,stat_start,stat_end,calc_version) VALUES
+(5120,CURDATE(),'CUST001','TOTAL','本人综合贡献',20.0000,'CONTRIBUTION_AMOUNT','PRIVATE_SELF','2026-07-01','2026-07-31','V1.0'),
 (5121,CURDATE(),'CUST001','SELF_DEPOSIT_AVG','本人存款日均',12.0000,'CONTRIBUTION_AMOUNT','PRIVATE_SELF','2026-07-01','2026-07-31','V1.0'),
 (5122,CURDATE(),'CUST001','SELF_LOAN_AVG','本人贷款日均',8.0000,'CONTRIBUTION_AMOUNT','PRIVATE_SELF','2026-07-01','2026-07-31','V1.0'),
 (5123,CURDATE(),'REL001','TOTAL','关联人综合贡献',30.0000,'CONTRIBUTION_AMOUNT','RELATED','2026-07-01','2026-07-31','V1.0'),
