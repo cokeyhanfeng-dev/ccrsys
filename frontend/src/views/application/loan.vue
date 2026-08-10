@@ -681,7 +681,7 @@
           <tr v-for="(a, i) in attachments" :key="i">
             <td>{{ a.name }}</td>
             <td class="num">{{ (a.size / 1024).toFixed(1) }} KB</td>
-            <td><span class="badge badge--warning">前端暂存</span></td>
+            <td><span class="badge" :class="a.uploaded ? 'badge--success' : 'badge--warning'">{{ a.uploaded ? '已上传' : '待上传' }}</span></td>
             <td><button class="btn btn--text" @click="attachments.splice(i, 1)">移除</button></td>
           </tr>
         </tbody>
@@ -774,6 +774,8 @@ import {
   saveApplication,
   getApplicationDetail,
   routePreview,
+  uploadAttachment,
+  listAttachments,
   submitCheck,
   submitApplication,
   reapplyApplication,
@@ -894,7 +896,7 @@ const memberContracts = ref<Record<string, any[]>>({})
 
 // 承诺与附件
 const commitments = ref<CommitmentRow[]>([])
-const attachments = ref<Array<{ name: string; size: number; dataBase64: string }>>([])
+const attachments = ref<Array<{ name: string; size: number; dataBase64: string; file?: File; uploaded?: boolean }>>([])
 // 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
 const relations = ref<RelatedPersonRow[]>([])
 
@@ -1126,20 +1128,31 @@ async function onImportFile(e: Event) {
   }
 }
 
-// 其他附件:前端暂存 base64(后端无通用上传接口)
+// 其他附件:草稿存在时立即上传,否则暂存文件对象待提交前上传(§7.1 步骤6)
 const attachmentInput = ref<HTMLInputElement | null>(null)
-function onAttachmentFiles(e: Event) {
+async function onAttachmentFiles(e: Event) {
   const input = e.target as HTMLInputElement
   const files = Array.from(input.files || [])
   for (const f of files) {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      attachments.value.push({ name: f.name, size: f.size, dataBase64: result.split(',')[1] || '' })
-    }
-    reader.readAsDataURL(f)
+    attachments.value.push({ name: f.name, size: f.size, dataBase64: '', file: f, uploaded: false } as any)
   }
   input.value = ''
+  if (draft.id) {
+    await uploadPendingAttachments()
+  }
+}
+/** 提交前把暂存附件逐个上传(幂等:只传未上传过的) */
+async function uploadPendingAttachments() {
+  if (!draft.id) return
+  for (const a of attachments.value as any[]) {
+    if (a.uploaded || !a.file) continue
+    try {
+      await uploadAttachment(draft.id, a.file)
+      a.uploaded = true
+    } catch (err: any) {
+      ElMessage.error(`附件「${a.name}」上传失败:${err?.message || '网络异常'}`)
+    }
+  }
 }
 
 // ---------- 提交闭环:创建/保存草稿 → submit-check → 确认 → submit ----------
@@ -1389,6 +1402,7 @@ async function onSaveDraft() {
 
 async function onRoutePreview() {
   if (!(await ensureDraft()) || !draft.id) return
+  await uploadPendingAttachments()
   try {
     routeResult.value = await routePreview(draft.id)
   } catch {
@@ -1403,6 +1417,7 @@ async function onSubmit() {
     return
   }
   if (!(await ensureDraft()) || !draft.id) return
+  await uploadPendingAttachments()
   try {
     checkResult.value = await submitCheck(draft.id)
     checkDialogVisible.value = true
@@ -1544,6 +1559,15 @@ async function loadDraftIntoForm(id: number) {
     return g
   })
   if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+  // 已上传附件回显(材料附件步骤)
+  try {
+    const atts = await listAttachments(id)
+    for (const a of atts || []) {
+      if (!attachments.value.some((x) => x.name === a.fileName)) {
+        attachments.value.push({ name: a.fileName, size: a.fileSize, dataBase64: '', uploaded: true } as any)
+      }
+    }
+  } catch { /* 忽略 */ }
   form.businessType = hasPlanned ? 'NEW' : 'EXISTING'
 
   commitments.value = (d.commitments || []).map((c) => ({

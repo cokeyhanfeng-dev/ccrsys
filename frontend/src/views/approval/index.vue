@@ -1,38 +1,14 @@
 <template>
   <div>
     <div class="section-head">
-      <div class="section-title">我的审批工作台</div>
-      <div class="section-tip">待办仅展示流转到本人当前审批节点的申请(按登录人角色过滤);已办为本人审批/表决/决策过的任务(§11.4)。</div>
+      <div class="section-title">利率审批</div>
+      <div class="section-tip">流转到本人当前审批节点、需要处理的申请列表(按登录人角色过滤);已办与统计见工作台。</div>
     </div>
 
-    <!-- 待办统计(KPI 卡,与工作台同款) -->
-    <div class="stat-grid">
-      <div class="stat-card">
-        <div class="stat-card__icon"><el-icon :size="20"><Stamp /></el-icon></div>
-        <div class="stat-card__body">
-          <span class="stat-card__label">待我审批</span>
-          <b class="stat-card__num stat-card__num--warning">{{ todoCards.length }} 笔</b>
-          <div class="stat-card__sub">流转到本人当前节点的申请</div>
-        </div>
-      </div>
-      <div class="stat-card stat-card--tone2">
-        <div class="stat-card__icon"><el-icon :size="20"><CircleCheck /></el-icon></div>
-        <div class="stat-card__body">
-          <span class="stat-card__label">累计已办</span>
-          <b class="stat-card__num stat-card__num--success">{{ historyTotal }} 笔</b>
-          <div class="stat-card__sub">本人审批/表决/决策过的申请</div>
-        </div>
-      </div>
-    </div>
 
-    <!-- 待办 / 已办 分段页签 -->
-    <div class="segmented" style="margin-top:16px">
-      <button class="segmented__item" :class="{ 'segmented__item--active': tab === 'todo' }" @click="tab = 'todo'">待办</button>
-      <button class="segmented__item" :class="{ 'segmented__item--active': tab === 'done' }" @click="switchDone">已办</button>
-    </div>
 
     <!-- 待办卡片列表 -->
-    <div class="todo-list" v-show="tab === 'todo'">
+    <div class="todo-list">
       <div class="todo-card" v-for="c in todoCards" :key="c.id">
         <div class="todo-card__body">
           <div class="todo-card__customer">{{ c.customer }}</div>
@@ -53,42 +29,6 @@
       <div class="empty" v-if="!todoCards.length">暂无待审批任务</div>
     </div>
 
-    <!-- 已办列表(/ccr/approval/done) -->
-    <div class="card" v-show="tab === 'done'">
-      <table class="table" v-if="doneRows.length">
-        <thead>
-          <tr>
-            <th>申请号</th><th>定价分项</th><th>客户号</th><th>节点</th><th>动作</th>
-            <th>利率变化</th><th>状态变迁</th><th>分项状态</th><th>办理时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(r, i) in doneRows" :key="i">
-            <td>{{ r.applicationNo || '—' }}</td>
-            <td>{{ r.pricingItemNo || '—' }}</td>
-            <td>{{ r.customerNo || '—' }}</td>
-            <td>{{ nodeLabel(r.nodeCode) }}</td>
-            <td>
-              <span class="badge" :class="r.actionType === 'REJECT' ? 'badge--danger' : 'badge--success'">
-                {{ actionText(r.actionType) }}
-              </span>
-            </td>
-            <td class="num">
-              {{ r.beforeRate != null && r.afterRate != null && r.beforeRate !== r.afterRate ? `${r.beforeRate}% → ${r.afterRate}%` : '—' }}
-            </td>
-            <td>
-              <span v-if="r.fromStatus || r.toStatus" class="badge badge--neutral">
-                {{ statusText(r.fromStatus) }} → {{ statusText(r.toStatus) }}
-              </span>
-              <span v-else>—</span>
-            </td>
-            <td>{{ statusText(r.itemStatus) }}</td>
-            <td>{{ r.operationTime ? String(r.operationTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="empty" v-else>暂无已办任务</div>
-    </div>
 
     <!-- 核验资料弹层(§12.8:6 格摘要 + 进入完整审批) -->
     <div class="modal" v-if="check.show">
@@ -116,16 +56,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listApprovalTasks, pageApprovalHistory, getApprovalDetail } from '@/api/approval'
-import { listApprovalDone } from '@/api/approval2'
+import { listApprovalTasks, getApprovalDetail } from '@/api/approval'
 import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict'
 
 const router = useRouter()
 const todoCards = ref<any[]>([])
-const historyTotal = ref(0)
-const tab = ref<'todo' | 'done'>('todo')
-const doneRows = ref<any[]>([])
-const doneLoaded = ref(false)
 
 const check = ref<any>({
   show: false, loaded: false, id: null,
@@ -153,26 +88,8 @@ async function load() {
   } catch {
     todoCards.value = []
   }
-  try {
-    const h = await pageApprovalHistory(1, 1)
-    historyTotal.value = Number(h?.total) || 0
-  } catch {
-    historyTotal.value = 0
-  }
 }
 
-// 已办页签(首次切换时加载)
-async function switchDone() {
-  tab.value = 'done'
-  if (doneLoaded.value) return
-  try {
-    doneRows.value = await listApprovalDone<any[]>()
-  } catch {
-    doneRows.value = []
-  } finally {
-    doneLoaded.value = true
-  }
-}
 
 // 核验资料(§12.8):取审批详情的摘要信息
 async function openCheck(c: any) {

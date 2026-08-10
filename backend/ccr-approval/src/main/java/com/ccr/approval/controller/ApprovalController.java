@@ -154,8 +154,10 @@ public class ApprovalController {
         result.put("otherLoans", jdbcTemplate.queryForList(
                 "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
 
-        // 申请人工补录/Excel 导入的他行融资(随单持久化;与数仓征信分行展示)
+        // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
         if (appId != null) {
+            result.put("attachments", jdbcTemplate.queryForList(
+                    "SELECT id, file_name fileName, file_size fileSize, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
             result.put("appOtherLoans", jdbcTemplate.queryForList(
                     "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
         }

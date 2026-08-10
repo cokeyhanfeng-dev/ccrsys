@@ -21,15 +21,6 @@
       <div class="section-tip" v-else>未找到提交时冻结快照,客户/融资/贡献度为数仓实时查询结果,可能与提交时点存在差异。</div>
     </div>
 
-    <!-- 1. 流程路由 -->
-    <div class="card">
-      <div class="card__head"><span>流程路由</span><span class="badge badge--info">{{ businessTypeText }}</span></div>
-      <el-steps v-if="routeChain.length" :active="currentNodeIndex" align-center finish-status="success">
-        <el-step v-for="node in routeChain" :key="node" :title="nodeLabel(node)" />
-      </el-steps>
-      <div v-else class="empty">暂无数据</div>
-    </div>
-
 
     <!-- 3. 醒目利率决策区 -->
     <div class="card card--decision">
@@ -132,6 +123,22 @@
         </tbody>
       </table>
       <div v-else class="empty">暂无数据</div>
+    </div>
+
+    <!-- 6b. 申请材料附件 -->
+    <div class="card" v-if="attachments.length">
+      <div class="card__head"><span>申请材料附件</span></div>
+      <table class="table">
+        <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="(a, i) in attachments" :key="i">
+            <td>{{ a.fileName }}</td>
+            <td class="num">{{ (a.fileSize / 1024).toFixed(1) }} KB</td>
+            <td>{{ a.createTime ? String(a.createTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
+            <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- 7b. 他行融资(申请人工补录/Excel 导入 + 数仓征信) -->
@@ -456,6 +463,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
+import { download } from '@/api/request'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import {
@@ -493,6 +501,7 @@ const depositAccounts = ref<any[]>([])
 const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
+const attachments = ref<any[]>([])
 const resolutions = ref<any[]>([])
 const resolutionExecutions = ref<any[]>([])
 const voteRounds = ref<any[]>([])
@@ -592,6 +601,7 @@ async function load() {
     otherLoanSummary.value = data.otherLoanSummary || []
     otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
     relations.value = data.relations || []
+    attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []
     resolutionExecutions.value = data.resolutionExecutions || []
     voteRounds.value = data.voteRounds || []
@@ -603,6 +613,10 @@ async function load() {
   } catch {
     ElMessage.error('审批详情加载失败')
   }
+}
+
+function downloadAttachment(a: any) {
+  download(`/ccr/applications/${application.value.id}/attachments/${a.id}/download`)
 }
 
 function goBack() {

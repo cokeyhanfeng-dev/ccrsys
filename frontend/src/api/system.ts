@@ -202,3 +202,6 @@ export const deleteCacheConfig = (itemKey: string) => del(`/system/cache-configs
 export const refreshCacheConfig = (itemKey: string) =>
   post<{ count: number }>(`/system/cache-configs/${itemKey}/refresh`)
 export const listCacheLoaders = () => get<CacheLoaderInfo[]>('/system/cache-configs/loaders')
+
+/** 流程定义详情(节点+跳转,流程图查看) */
+export const getFlowDefinitionDetail = (id: number | string) => get<any>(`/system/flow/definitions/${id}/detail`)

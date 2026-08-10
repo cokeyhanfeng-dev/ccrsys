@@ -52,6 +52,7 @@
             </td>
             <td>{{ fmtTime(f.create_time) }}</td>
             <td>
+              <button class="btn btn--text" @click="viewFlow(f)">查看</button>
               <button v-if="f.is_publish !== 1" class="btn btn--text" @click="publish(f.id)">发布</button>
               <button v-else class="btn btn--text" @click="unpublish(f.id)">停用</button>
             </td>
@@ -62,6 +63,31 @@
     </div>
 
     <!-- ========== 节点审批人员指派(§12.17) ========== -->
+    <!-- 流程图查看弹窗(只读) -->
+    <div class="modal" v-if="flowView.show">
+      <div class="modal__card flow-viewer__card">
+        <div class="modal__title">流程预览 · {{ flowView.name }}</div>
+        <div class="modal__body">
+          <div class="flow-diagram" v-if="flowView.nodes.length">
+            <template v-for="(n, i) in flowView.nodes" :key="n.nodeCode">
+              <div class="flow-node" :class="nodeClassOf(n)">
+                <div class="flow-node__name">{{ nodeTextOf(n) }}</div>
+                <div class="flow-node__code">{{ n.nodeCode }}</div>
+              </div>
+              <div v-if="i < flowView.nodes.length - 1" class="flow-edge">
+                <div class="flow-edge__line"></div>
+                <div class="flow-edge__label">{{ edgeLabelOf(n.nodeCode) }}</div>
+              </div>
+            </template>
+          </div>
+          <div v-else class="empty">该流程暂无节点定义</div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--primary" @click="flowView.show = false">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="activeTab === 'assignee'" class="assignee-layout">
       <!-- 节点列表 -->
       <div class="card node-list">
@@ -285,7 +311,7 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  listFlowDefinitions, publishFlowDefinition, unpublishFlowDefinition,
+  listFlowDefinitions, publishFlowDefinition, unpublishFlowDefinition, getFlowDefinitionDetail,
   listFlowNodes, listAssignees, createAssignee, updateAssignee, deleteAssignee,
   delegateAssignee, resolveAssignees,
   listRoles, listUsers, listDepts,
@@ -298,6 +324,34 @@ const tabs = [
   { key: 'flow', label: '流程定义' }
 ]
 const activeTab = ref('assignee')
+
+// ---------- 流程图查看 ----------
+const flowView = ref<any>({ show: false, name: '', nodes: [], skips: [] })
+async function viewFlow(f: any) {
+  try {
+    const d = await getFlowDefinitionDetail(f.id)
+    flowView.value = { show: true, name: d.flow_name || f.flow_name, nodes: d.nodes || [], skips: d.skips || [] }
+  } catch {
+    flowView.value = { show: true, name: f.flow_name, nodes: [], skips: [] }
+  }
+}
+function nodeClassOf(n: any): string {
+  if (n.nodeType === 0 || n.nodeCode === 'start') return 'flow-node--start'
+  if (n.nodeType === 2 || n.nodeCode === 'end') return 'flow-node--end'
+  return 'flow-node--mid'
+}
+const FLOW_NODE_NAMES: Record<string, string> = {
+  start: '开始', end: '结束',
+  BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
+  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长'
+}
+function nodeTextOf(n: any): string {
+  return FLOW_NODE_NAMES[n.nodeCode] || n.nodeName || n.nodeCode
+}
+function edgeLabelOf(nowNodeCode: string): string {
+  const skip = flowView.value.skips.find((k: any) => k.nowNodeCode === nowNodeCode)
+  return skip?.skipName || '通过'
+}
 
 function fmtTime(t: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
@@ -548,4 +602,23 @@ onMounted(() => {
 .resolve-result__title { margin-bottom: 8px; font-weight: 600; }
 .resolve-chip { display: inline-block; background: var(--color-primary-light, #eff6ff); color: var(--color-primary); border-radius: 4px; padding: 2px 10px; margin: 0 6px 6px 0; font-size: 13px; }
 .resolve-empty { color: var(--color-danger); font-weight: 600; }
+
+/* 流程图查看器 */
+.flow-viewer__card { max-width: 520px; }
+.flow-diagram { display: flex; flex-direction: column; align-items: center; padding: 8px 0; }
+.flow-node {
+  min-width: 200px; text-align: center; padding: 10px 20px; border-radius: 10px;
+  border: 1.5px solid var(--color-primary); background: var(--color-primary-light);
+}
+.flow-node--start, .flow-node--end { border-color: var(--color-success); background: #ecfdf5; }
+.flow-node--mid { box-shadow: var(--shadow-sm); }
+.flow-node__name { font-weight: 600; }
+.flow-node__code { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
+.flow-edge { display: flex; flex-direction: column; align-items: center; }
+.flow-edge__line { width: 2px; height: 22px; background: var(--color-primary); position: relative; }
+.flow-edge__line::after {
+  content: ''; position: absolute; bottom: -5px; left: -4px;
+  border: 5px solid transparent; border-top-color: var(--color-primary);
+}
+.flow-edge__label { font-size: 12px; color: var(--color-text-sub); background: #fff; padding: 0 6px; margin-top: -14px; position: relative; z-index: 1; }
 </style>

@@ -478,3 +478,26 @@ CREATE TABLE IF NOT EXISTS `ccr_application_other_loan` (
   PRIMARY KEY (`id`),
   KEY `idx_otherloan_app` (`application_id`)
 ) ENGINE=InnoDB COMMENT='ccr_application_other_loan 人工补录他行融资(§7.1步骤6;与数仓权威快照分离存储)';
+
+-- ---------- 申请附件(材料附件步骤上传,内容落库;审批详情/档案可下载) ----------
+CREATE TABLE IF NOT EXISTS `ccr_application_attachment` (
+  `id`                  BIGINT       NOT NULL,
+  `tenant_id`           VARCHAR(20)  NOT NULL DEFAULT '000000',
+  `business_no`         VARCHAR(64)  NOT NULL,
+  `org_id`              BIGINT       NOT NULL,
+  `status`              VARCHAR(32)  NOT NULL DEFAULT 'ACTIVE',
+  `version_no`          INT          NOT NULL DEFAULT 1,
+  `create_dept`         BIGINT       NULL,
+  `create_by`           BIGINT       NOT NULL,
+  `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by`           BIGINT       NULL,
+  `update_time`         DATETIME     NULL,
+  `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
+  `application_id`      BIGINT       NOT NULL COMMENT '申请主键',
+  `file_name`           VARCHAR(255) NOT NULL COMMENT '文件名',
+  `file_size`           BIGINT       NOT NULL COMMENT '文件大小(字节)',
+  `file_type`           VARCHAR(64)  NULL COMMENT '内容类型(MIME)',
+  `content`             MEDIUMBLOB   NOT NULL COMMENT '文件内容(演示期落库;生产建议对象存储)',
+  PRIMARY KEY (`id`),
+  KEY `idx_att_app` (`application_id`)
+) ENGINE=InnoDB COMMENT='ccr_application_attachment 申请附件(材料附件步骤上传)';

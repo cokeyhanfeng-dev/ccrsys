@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -88,6 +89,22 @@ public class FlowConfigController {
                 ORDER BY create_time DESC
                 """;
         return R.ok(jdbcTemplate.queryForList(sql));
+    }
+
+    /** 流程定义查看(节点+跳转关系,供前端只读流程图渲染) */
+    @GetMapping("/definitions/{id}/detail")
+    public R<Map<String, Object>> definitionDetail(@PathVariable Long id) {
+        List<Map<String, Object>> defs = jdbcTemplate.queryForList(
+                "SELECT id, flow_code, flow_name, version, is_publish, activity_status FROM flow_definition WHERE id = ? AND del_flag = '0'", id);
+        if (defs.isEmpty()) {
+            throw new ServiceException(404, "流程定义不存在");
+        }
+        Map<String, Object> result = new LinkedHashMap<>(defs.get(0));
+        result.put("nodes", jdbcTemplate.queryForList(
+                "SELECT node_type nodeType, node_code nodeCode, node_name nodeName FROM flow_node WHERE definition_id = ? AND del_flag = '0' ORDER BY id", id));
+        result.put("skips", jdbcTemplate.queryForList(
+                "SELECT now_node_code nowNodeCode, next_node_code nextNodeCode, skip_name skipName, skip_type skipType FROM flow_skip WHERE definition_id = ? AND del_flag = '0' ORDER BY id", id));
+        return R.ok(result);
     }
 
     /** 发布流程 */

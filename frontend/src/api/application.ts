@@ -330,3 +330,22 @@ export function importOtherLoans(file: File) {
   formData.append('file', file)
   return request<any[]>({ url: '/ccr/other-loans/import', method: 'post', data: formData })
 }
+
+/** 附件上传(单文件,材料附件步骤) */
+export async function uploadAttachment(applicationId: string | number, file: File) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const resp = await fetch(`/api/ccr/applications/${applicationId}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: localStorage.getItem('ccr_token') || '' },
+    body: fd
+  })
+  const res = await resp.json()
+  if (res.code !== 200) throw new Error(res.msg || '附件上传失败')
+  return res.data
+}
+
+/** 附件列表 */
+export function listAttachments(applicationId: string | number) {
+  return get<any[]>(`/ccr/applications/${applicationId}/attachments`)
+}
