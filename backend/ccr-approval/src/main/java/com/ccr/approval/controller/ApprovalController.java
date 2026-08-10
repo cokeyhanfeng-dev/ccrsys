@@ -152,7 +152,7 @@ public class ApprovalController {
         result.put("otherLoanSummary", jdbcTemplate.queryForList(
                 "SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, npl_balance nplBalance, overdue_account_count overdueAccountCount FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo));
         result.put("otherLoans", jdbcTemplate.queryForList(
-                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, 'DW' inputMode FROM dw_credit_financing_detail WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE cust_no = ?)", custNo, custNo));
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
 
         // 申请人工补录/Excel 导入的他行融资(随单持久化;与数仓征信分行展示)
         if (appId != null) {
