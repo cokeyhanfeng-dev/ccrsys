@@ -90,7 +90,7 @@
             <td>{{ m.productCode || '通配' }}</td>
             <td>{{ m.amountTier || '通配' }}</td>
             <td>{{ m.termTier || '通配' }}</td>
-            <td>{{ m.guaranteeType || '通配' }}</td>
+            <td>{{ guaranteeTypeText(m.guaranteeType, '通配') }}</td>
             <td>{{ nodeText(m.startNodeCode) }}</td>
             <td>{{ boundaryText(m) }}</td>
             <td class="num">{{ m.priority }}</td>
@@ -252,7 +252,7 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">担保主类型</label>
-          <input class="form-input" v-model="trial.guaranteeType" placeholder="如 抵押/质押/信用" />
+          <input class="form-input" v-model="trial.guaranteeType" placeholder="如 MORTGAGE/PLEDGE/CREDIT,空=通配" />
         </div>
         <div class="form-field">
           <label class="form-field__label">申请金额(万元) <span class="req">*</span></label>
@@ -396,7 +396,10 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">担保主类型</label>
-            <input class="form-input" v-model="matrixDialog.form.guaranteeType" placeholder="空=通配" />
+            <select class="form-select" v-model="matrixDialog.form.guaranteeType">
+            <option value="">通配</option>
+            <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
+          </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">边界类型</label>
@@ -567,6 +570,7 @@ import {
   matrixRoute,
   type ConfigChangeLog
 } from '@/api/system'
+import { GUARANTEE_TYPES, guaranteeTypeText } from '@/utils/dict'
 
 const tabs = [
   { key: 'lpr', label: 'LPR 维护' },

@@ -154,7 +154,7 @@
         <tbody>
           <tr v-for="f in financing" :key="f.contractNo">
             <td>{{ f.contractNo }}</td><td class="num">{{ f.loanBalance ?? '—' }}</td>
-            <td class="num">{{ fmtRate(f.contractRate) }}</td><td>{{ f.guaranteeType || '—' }}</td>
+            <td class="num">{{ fmtRate(f.contractRate) }}</td><td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
           </tr>
         </tbody>
       </table>
@@ -198,7 +198,7 @@
         <tbody>
           <template v-for="(g, i) in guarantees" :key="i">
             <tr>
-              <td>{{ g.guaranteeType || '—' }}</td><td>{{ g.measureNo || '—' }}</td>
+              <td>{{ guaranteeTypeText(g.guaranteeType) }}</td><td>{{ g.measureNo || '—' }}</td>
               <td>{{ measureTypeText(g.measureType) }}</td><td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
             </tr>
             <!-- 担保措施明细行(抵押物坐落/面积/估值、保证人等,取快照 extJson;无则暂无数据) -->
@@ -407,6 +407,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
+import { guaranteeTypeText } from '@/utils/dict'
 
 const route = useRoute()
 const router = useRouter()

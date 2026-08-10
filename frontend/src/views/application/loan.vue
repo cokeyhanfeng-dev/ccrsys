@@ -258,7 +258,7 @@
               <td>{{ f.contractNo }}</td>
               <td class="num">{{ f.loanBalance ?? '暂无数据' }}</td>
               <td class="num">{{ f.contractRate != null ? f.contractRate + '%' : '暂无数据' }}</td>
-              <td>{{ f.guaranteeType || '暂无数据' }}</td>
+              <td>{{ guaranteeTypeText(f.guaranteeType, '暂无数据') }}</td>
             </tr>
           </tbody>
         </table>
@@ -378,18 +378,18 @@
               </td>
               <td>
                 <select class="form-select" v-model="g.guaranteeType">
-                  <option v-for="t in guaranteeTypes" :key="t" :value="t">{{ t }}</option>
+                  <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
                 </select>
               </td>
               <td>
-                <span v-if="g.guaranteeType === '抵押'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
-                <span v-else-if="g.guaranteeType === '保证'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
+                <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
+                <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
                 <span v-else class="badge badge--neutral">无需措施</span>
               </td>
               <td><button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button></td>
             </tr>
             <!-- 抵押物明细 -->
-            <tr v-if="g.guaranteeType === '抵押'" class="guarantee-detail">
+            <tr v-if="g.guaranteeType === 'MORTGAGE'" class="guarantee-detail">
               <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
                 <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
                 <table class="table table--nested" v-if="g.mortgages.length">
@@ -409,7 +409,7 @@
               </td>
             </tr>
             <!-- 保证人明细 -->
-            <tr v-if="g.guaranteeType === '保证'" class="guarantee-detail">
+            <tr v-if="g.guaranteeType === 'GUARANTEE'" class="guarantee-detail">
               <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
                 <div class="detail-title">保证人(关联本分项) <button class="btn btn--text" @click="addGuaranteeGuarantor(g)">＋ 添加保证人</button></div>
                 <table class="table table--nested" v-if="g.guarantors.length">
@@ -463,7 +463,7 @@
             <td>{{ idx + 1 }}</td>
             <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
             <td>{{ g.contractBusinessKey || '拟签合同' }}</td>
-            <td>{{ g.guaranteeType }}</td>
+            <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
             <td>
               <select class="form-select" v-model="g.productCode">
                 <option value="" disabled>选择产品</option>
@@ -710,6 +710,7 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
+import { GUARANTEE_TYPES, guaranteeTypeText } from '@/utils/dict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 
@@ -721,7 +722,7 @@ const steps = ['客户信息', '业务/合同', '担保组合', '利率定价', 
 const step = ref(0)
 
 // ---------- 字典 ----------
-const guaranteeTypes = ['抵押', '质押', '信用', '保证']
+const guaranteeTypes = GUARANTEE_TYPES
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 贷款产品(与规则/硬边界配置中的 product_code 对齐)
 const loanProducts = [
@@ -777,7 +778,7 @@ interface CommitmentRow {
 
 function newGuarantee(): GuaranteeRow {
   return {
-    memberCustomerNo: '', contractBusinessKey: '', guaranteeType: '抵押',
+    memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
     productCode: '', termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
     originalRate: '', requestedRate: '', mortgages: [], guarantors: []
   }
@@ -1307,7 +1308,7 @@ async function loadDraftIntoForm(id: number) {
     const g = newGuarantee()
     g.memberCustomerNo = p.memberCustomerNo || ''
     g.contractBusinessKey = rel?.contractBusinessKey || rel?.loanContractNo || ''
-    g.guaranteeType = pkg?.guaranteePackage?.mainGuaranteeType || '抵押'
+    g.guaranteeType = pkg?.guaranteePackage?.mainGuaranteeType || 'MORTGAGE'
     g.productCode = p.productCode || ''
     g.termValue = p.termValue != null ? String(p.termValue) : ''
     g.termUnit = p.termUnit || 'MONTH'
