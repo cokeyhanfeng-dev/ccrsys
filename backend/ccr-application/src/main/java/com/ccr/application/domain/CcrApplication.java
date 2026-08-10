@@ -94,4 +94,8 @@ public class CcrApplication extends BaseEntity {
     /** 拟达成贡献度承诺(非表字段,仅接收,落 ccr_application_commitment) */
     @TableField(exist = false)
     private List<CommitmentInput> commitments;
+
+    /** 人工补录他行融资(非表字段,仅接收,落 ccr_application_other_loan) */
+    @TableField(exist = false)
+    private List<CcrApplicationOtherLoan> otherLoans;
 }

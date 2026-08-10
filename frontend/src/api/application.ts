@@ -81,6 +81,14 @@ export interface ApplicationPayload {
   guarantees?: GuaranteeInput[] | null
   depositItems?: DepositItemInput[] | null
   commitments?: CommitmentInput[] | null
+  otherLoans?: Array<{
+    lenderName: string
+    creditAmount?: number | string
+    usedAmount?: number | string
+    balanceAmount?: number | string
+    annualRate?: number | string
+    inputMode?: string
+  }> | null
   applicantUserId?: number
   applicantOrgId?: number
   orgId?: number

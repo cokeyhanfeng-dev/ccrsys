@@ -29,28 +29,6 @@
             </table>
             <div class="empty" v-else>无数据批次差异</div>
           </div>
-
-          <!-- 质量预校验 -->
-          <div class="check-section">
-            <div class="check-section__title">资料质量预校验</div>
-            <table class="table" v-if="qualityRows.length">
-              <thead>
-                <tr><th>规则</th><th>级别</th><th>校验对象</th><th>说明</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(q, i) in qualityRows" :key="i">
-                  <td>{{ q.ruleCode }}</td>
-                  <td>
-                    <span :class="levelBadge(q.level)">{{ ruleLevelText(q.level) }}</span>
-                  </td>
-                  <td>{{ q.subjectId || '—' }}</td>
-                  <td>{{ q.message || '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div class="empty" v-else>质量预校验全部通过</div>
-          </div>
-
           <!-- 硬边界 -->
           <div class="check-section">
             <div class="check-section__title">硬边界校验</div>
@@ -101,7 +79,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SubmitCheck } from '@/api/application'
-import { ruleLevelText, productName } from '@/utils/dict'
+import { productName } from '@/utils/dict'
 
 const props = defineProps<{
   modelValue: boolean
@@ -115,9 +93,6 @@ const emit = defineEmits<{
 }>()
 
 // 仅展示 WARN/BLOCK 项,PASS 不逐条罗列
-const qualityRows = computed(() =>
-  (props.check?.qualityPrecheck || []).filter((q) => q.level !== 'PASS')
-)
 
 const baselineSourceText = computed(() => {
   const s = props.check?.baselineSource

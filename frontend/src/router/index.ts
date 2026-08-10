@@ -80,7 +80,7 @@ const routes: RouteRecordRaw[] = [
         path: 'datacenter',
         name: 'DataCenter',
         component: () => import('@/views/datacenter/index.vue'),
-        meta: { title: '数据中心', icon: 'DataAnalysis' }
+        meta: { title: '数据中心', icon: 'DataAnalysis', roles: ['admin'] }
       },
       {
         // 审计管理(§12.14):实际投票人反查/导出记录/配置版本查询,仅审计人员与 admin

@@ -453,3 +453,28 @@ CREATE TABLE IF NOT EXISTS `ccr_application_commitment` (
   KEY `idx_commit_app` (`application_id`),
   KEY `idx_commit_pricing` (`pricing_item_id`)
 ) ENGINE=InnoDB COMMENT='ccr_application_commitment 拟达成贡献度承诺(§7.1录入;审批通过后生成正式承诺计划)';
+
+-- ---------- 人工补录他行融资(申请随单录入;审批详情展示,提交时绑定快照) ----------
+CREATE TABLE IF NOT EXISTS `ccr_application_other_loan` (
+  `id`                  BIGINT       NOT NULL,
+  `tenant_id`           VARCHAR(20)  NOT NULL DEFAULT '000000',
+  `business_no`         VARCHAR(64)  NOT NULL,
+  `org_id`              BIGINT       NOT NULL,
+  `status`              VARCHAR(32)  NOT NULL DEFAULT 'ACTIVE',
+  `version_no`          INT          NOT NULL DEFAULT 1,
+  `create_dept`         BIGINT       NULL,
+  `create_by`           BIGINT       NOT NULL,
+  `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by`           BIGINT       NULL,
+  `update_time`         DATETIME     NULL,
+  `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
+  `application_id`      BIGINT       NOT NULL COMMENT '申请主键',
+  `lender_name`         VARCHAR(128) NOT NULL COMMENT '他行机构名称',
+  `credit_amount`       DECIMAL(20,4) NULL COMMENT '授信额(万元)',
+  `used_amount`         DECIMAL(20,4) NULL COMMENT '已用额(万元)',
+  `balance_amount`      DECIMAL(20,4) NULL COMMENT '余额(万元)',
+  `annual_rate`         DECIMAL(9,6)  NULL COMMENT '年化利率%',
+  `input_mode`          VARCHAR(16)  NOT NULL DEFAULT 'MANUAL' COMMENT '录入方式:MANUAL人工/EXCEL导入',
+  PRIMARY KEY (`id`),
+  KEY `idx_otherloan_app` (`application_id`)
+) ENGINE=InnoDB COMMENT='ccr_application_other_loan 人工补录他行融资(§7.1步骤6;与数仓权威快照分离存储)';

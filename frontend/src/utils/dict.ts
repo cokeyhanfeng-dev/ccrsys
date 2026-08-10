@@ -372,3 +372,18 @@ export const METRIC_SCOPE: Record<string, string> = {
 export function metricScopeText(code?: string, fallback = '—'): string {
   return textOf(METRIC_SCOPE, code, fallback)
 }
+
+/** 关联关系类型(V1.0 dw_customer_relation) */
+export function relationTypeText(code?: string): string {
+  const map: Record<string, string> = {
+    GROUP_MEMBER: '集团成员',
+    SAME_CONTROLLER: '同一实际控制人',
+    CONTROLLER: '实际控制人',
+    GUARANTOR: '担保人',
+    SPOUSE: '配偶',
+    DIRECT_RELATIVE: '直系亲属',
+    RELATIVE: '亲属',
+    INVESTEE: '被投资企业'
+  }
+  return code ? (map[code] || code) : '—'
+}

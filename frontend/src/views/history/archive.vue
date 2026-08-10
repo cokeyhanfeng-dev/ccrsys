@@ -144,33 +144,7 @@
         </table>
         <div v-else class="empty-block">暂无数据</div>
       </div>
-
-      <!-- 7. 资料校验 -->
-      <div class="card">
-        <div class="card__head">
-          <span>资料校验</span>
-          <span v-if="archive.qualityResults?.length" :class="qualityBadge">{{ qualityOverall }}</span>
-        </div>
-        <table class="table" v-if="archive.qualityResults?.length">
-          <thead><tr><th>规则</th><th>级别</th><th>对象</th><th>说明</th><th>校验时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(q, i) in archive.qualityResults" :key="i">
-              <td>{{ val(q, 'ruleCode', 'rule_code') }}</td>
-              <td>
-                <span :class="val(q, 'ruleLevel', 'rule_level') === 'BLOCK' ? 'badge badge--danger' : val(q, 'ruleLevel', 'rule_level') === 'WARN' ? 'badge badge--warning' : 'badge badge--success'">
-                  {{ ruleLevelText(val(q, 'ruleLevel', 'rule_level')) }}
-                </span>
-              </td>
-              <td>{{ val(q, 'subjectType', 'subject_type') }} {{ val(q, 'subjectId', 'subject_id') }}</td>
-              <td>{{ val(q, 'message') }}</td>
-              <td>{{ fmtTime(val(q, 'checkedTime', 'checked_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 8. 审批轨迹 -->
+<!-- 8. 审批轨迹 -->
       <div class="card">
         <div class="card__head"><span>审批轨迹</span></div>
         <table class="table" v-if="archive.approvalActions?.length">

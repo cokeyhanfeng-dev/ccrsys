@@ -144,9 +144,25 @@ public class ApprovalController {
             result.put("depositAccounts", depositAccountView(pricingItemId, snapshotRecords));
         }
 
-        // 担保分项
+        // 担保分项(含措施扩展字段,审批端按担保类型完整展示申请录入内容)
         result.put("guarantees", jdbcTemplate.queryForList(
-                "SELECT gp.main_guarantee_type guaranteeType, gp.package_version packageVersion, gm.measure_no measureNo, gm.measure_type measureType, gm.guarantee_amount guaranteeAmount FROM ccr_guarantee_package gp LEFT JOIN ccr_guarantee_measure gm ON gm.package_id = gp.id WHERE gp.pricing_item_id = ? AND gp.del_flag = '0'", pricingItemId));
+                "SELECT gp.main_guarantee_type guaranteeType, gp.package_version packageVersion, gm.measure_no measureNo, gm.measure_type measureType, gm.guarantee_amount guaranteeAmount, gm.ext_json extJson FROM ccr_guarantee_package gp LEFT JOIN ccr_guarantee_measure gm ON gm.package_id = gp.id WHERE gp.pricing_item_id = ? AND gp.del_flag = '0'", pricingItemId));
+
+        // 他行融资(申请人工补录/Excel 导入与数仓征信,最新批次)
+        result.put("otherLoanSummary", jdbcTemplate.queryForList(
+                "SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, npl_balance nplBalance, overdue_account_count overdueAccountCount FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo));
+        result.put("otherLoans", jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, 'DW' inputMode FROM dw_credit_financing_detail WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE cust_no = ?)", custNo, custNo));
+
+        // 申请人工补录/Excel 导入的他行融资(随单持久化;与数仓征信分行展示)
+        if (appId != null) {
+            result.put("appOtherLoans", jdbcTemplate.queryForList(
+                    "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
+        }
+
+        // 关联人(数仓客户关系快照,最新批次)
+        result.put("relations", jdbcTemplate.queryForList(
+                "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", custNo, custNo));
         return R.ok(result);
     }
 

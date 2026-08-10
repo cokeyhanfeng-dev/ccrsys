@@ -100,13 +100,6 @@
             <div class="check-item"><span class="dg-label">金额</span><b>{{ check.amount }}</b></div>
             <div class="check-item"><span class="dg-label">申请利率</span><b>{{ check.rate }}</b></div>
             <div class="check-item"><span class="dg-label">原利率</span><b>{{ check.originalRate }}</b></div>
-            <div class="check-item">
-              <span class="dg-label">资料校验结论</span>
-              <span v-if="check.qualityOverall" class="badge" :class="check.qualityOverall === 'BLOCK' ? 'badge--danger' : check.qualityOverall === 'WARN' ? 'badge--warning' : 'badge--success'">
-                {{ check.qualityOverall === 'BLOCK' ? '阻断' : check.qualityOverall === 'WARN' ? '预警' : '通过' }}
-              </span>
-              <b v-else>暂无数据</b>
-            </div>
             <div class="check-item"><span class="dg-label">快照数据日期</span><b>{{ check.dataDt }}</b></div>
           </div>
         </div>
@@ -136,7 +129,7 @@ const doneLoaded = ref(false)
 
 const check = ref<any>({
   show: false, loaded: false, id: null,
-  customer: '', amount: '', rate: '', originalRate: '', qualityOverall: '', dataDt: ''
+  customer: '', amount: '', rate: '', originalRate: '', dataDt: ''
 })
 
 function statusText(s?: string) {
@@ -196,7 +189,6 @@ async function openCheck(c: any) {
     check.value.amount = pi.pricing_amount != null ? `${pi.pricing_amount} 万元` : `${c.amount} 万元`
     check.value.rate = pi.requested_rate != null ? `${pi.requested_rate}%` : `${c.rate}%`
     check.value.originalRate = pi.original_rate != null ? `${pi.original_rate}%` : '新增业务'
-    check.value.qualityOverall = d.qualityOverall || ''
     check.value.dataDt = d.source === 'SNAPSHOT' ? (d.snapshotInfo?.dataDt || '—') : '实时取数(未冻结快照)'
     check.value.loaded = true
   } catch {

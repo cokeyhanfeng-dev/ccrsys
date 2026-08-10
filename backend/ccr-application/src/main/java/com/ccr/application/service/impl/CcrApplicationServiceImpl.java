@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
+import com.ccr.application.domain.CcrApplicationOtherLoan;
+import com.ccr.application.mapper.CcrApplicationOtherLoanMapper;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrGuaranteeMeasure;
 import com.ccr.application.domain.CcrGuaranteePackage;
@@ -77,6 +79,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
     @Resource
     private CcrApplicationCommitmentMapper commitmentMapper;
+    @Resource
+    private CcrApplicationOtherLoanMapper otherLoanMapper;
 
     @Resource
     private DataWarehouseService dataWarehouseService;
@@ -132,6 +136,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
         // 拟达成贡献度承诺(供审批通过后生成正式承诺计划读取)
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
+        // 人工补录他行融资(§7.1 步骤6,审批详情随申请展示)
+        saveOtherLoans(entity.getId(), request.getOtherLoans());
         return entity;
     }
 
@@ -380,6 +386,22 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     }
 
     /** 承诺落库;pricingItemNo 在本次新建分项中解析为分项主键 */
+    /** 人工补录他行融资落库(空行过滤;整表重建随 saveDraft 语义) */
+    private void saveOtherLoans(Long applicationId, List<CcrApplicationOtherLoan> otherLoans) {
+        if (otherLoans == null || otherLoans.isEmpty()) {
+            return;
+        }
+        for (CcrApplicationOtherLoan loan : otherLoans) {
+            if (loan == null || StrUtil.isBlank(loan.getLenderName())) {
+                continue;
+            }
+            loan.setId(null);
+            loan.setApplicationId(applicationId);
+            loan.setInputMode(StrUtil.blankToDefault(loan.getInputMode(), "MANUAL"));
+            otherLoanMapper.insert(loan);
+        }
+    }
+
     private void saveCommitments(Long applicationId, List<CommitmentInput> commitments, List<CcrPricingItem> createdItems) {
         if (commitments == null) {
             return;
@@ -531,6 +553,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         List<CcrPricingItem> createdItems = createItemsByBusinessType(
                 entity, request, entity.getBusinessType(), groupScope);
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
+        saveOtherLoans(entity.getId(), request.getOtherLoans());
     }
 
     /**
@@ -547,6 +570,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 .filter(i -> !"Y".equals(i.getInheritFlag()))
                 .map(CcrPricingItem::getId).toList();
 
+        otherLoanMapper.delete(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
+                .eq(CcrApplicationOtherLoan::getApplicationId, applicationId));
         applicationMemberMapper.delete(new LambdaQueryWrapper<CcrApplicationMember>()
                 .eq(CcrApplicationMember::getApplicationId, applicationId));
         if (inheritedIds.isEmpty()) {
@@ -630,6 +655,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         detail.setCommitments(commitmentMapper.selectList(new LambdaQueryWrapper<CcrApplicationCommitment>()
                 .eq(CcrApplicationCommitment::getApplicationId, id)
                 .orderByAsc(CcrApplicationCommitment::getId)));
+        detail.setOtherLoans(otherLoanMapper.selectList(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
+                .eq(CcrApplicationOtherLoan::getApplicationId, id)
+                .orderByAsc(CcrApplicationOtherLoan::getId)));
         return detail;
     }
 

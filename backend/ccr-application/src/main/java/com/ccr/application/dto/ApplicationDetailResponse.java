@@ -2,6 +2,7 @@ package com.ccr.application.dto;
 
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
+import com.ccr.application.domain.CcrApplicationOtherLoan;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrGuaranteeMeasure;
 import com.ccr.application.domain.CcrGuaranteePackage;
@@ -38,6 +39,9 @@ public class ApplicationDetailResponse {
 
     /** 拟达成贡献度承诺 */
     private List<CcrApplicationCommitment> commitments;
+
+    /** 人工补录他行融资 */
+    private List<CcrApplicationOtherLoan> otherLoans;
 
     /**
      * 担保组合及其措施

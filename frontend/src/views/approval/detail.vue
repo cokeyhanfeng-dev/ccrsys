@@ -30,33 +30,6 @@
       <div v-else class="empty">暂无数据</div>
     </div>
 
-    <!-- 2. 资料校验 -->
-    <div class="card">
-      <div class="card__head">
-        <span>资料校验</span>
-        <span v-if="qualityOverall" class="badge" :class="qualityBadge">{{ qualityText }}</span>
-      </div>
-      <template v-if="qualityOverall">
-        <table class="table" v-if="qualityResults.length">
-          <thead><tr><th>规则</th><th>级别</th><th>对象</th><th>说明</th><th>校验时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(q, i) in qualityResults" :key="i">
-              <td>{{ q.ruleCode }}</td>
-              <td>
-                <span class="badge" :class="q.ruleLevel === 'BLOCK' ? 'badge--danger' : q.ruleLevel === 'WARN' ? 'badge--warning' : 'badge--success'">
-                  {{ ruleLevelText(q.ruleLevel) }}
-                </span>
-              </td>
-              <td>{{ q.subjectType || '—' }} {{ q.subjectId || '' }}</td>
-              <td>{{ q.message || '—' }}</td>
-              <td>{{ q.checkedTime || '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty">校验通过,无异常明细</div>
-      </template>
-      <div v-else class="empty">暂无数据</div>
-    </div>
 
     <!-- 3. 醒目利率决策区 -->
     <div class="card card--decision">
@@ -161,6 +134,48 @@
       <div v-else class="empty">暂无数据</div>
     </div>
 
+    <!-- 7b. 他行融资(申请人工补录/Excel 导入 + 数仓征信) -->
+    <div class="card" v-if="isLoan">
+      <div class="card__head"><span>他行融资</span></div>
+      <div class="detail-grid" v-if="otherLoanSummary.length">
+        <div><span class="dg-label">他行机构数</span>{{ otherLoanSummary[0].lenderCount ?? '—' }}</div>
+        <div><span class="dg-label">授信总额</span>{{ otherLoanSummary[0].creditAmountTotal ?? '—' }} 万元</div>
+        <div><span class="dg-label">已用总额</span>{{ otherLoanSummary[0].usedAmountTotal ?? '—' }} 万元</div>
+        <div><span class="dg-label">不良余额</span>{{ otherLoanSummary[0].nplBalance ?? '—' }} 万元</div>
+        <div><span class="dg-label">逾期账户</span>{{ otherLoanSummary[0].overdueAccountCount ?? '—' }}</div>
+      </div>
+      <table class="table" v-if="otherLoans.length" style="margin-top:8px">
+        <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>来源</th></tr></thead>
+        <tbody>
+          <tr v-for="(d, i) in otherLoans" :key="i">
+            <td>{{ d.lenderName }}</td>
+            <td class="num">{{ d.creditAmount ?? '—' }}</td>
+            <td class="num">{{ d.usedAmount ?? '—' }}</td>
+            <td class="num">{{ d.balanceAmount ?? '—' }}</td>
+            <td class="num">{{ d.annualRate ?? '—' }}</td>
+            <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">暂无他行融资记录</div>
+    </div>
+
+    <!-- 7c. 关联人情况(数仓客户关系 + 申请录入) -->
+    <div class="card" v-if="isLoan">
+      <div class="card__head"><span>关联人情况</span></div>
+      <table class="table" v-if="relations.length">
+        <thead><tr><th>关联人</th><th>关系类型</th><th>关联强度</th></tr></thead>
+        <tbody>
+          <tr v-for="(r, i) in relations" :key="i">
+            <td>{{ r.relatedCustomerNo }}</td>
+            <td>{{ relationTypeText(r.relationType) }}</td>
+            <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">暂无关联人记录</div>
+    </div>
+
     <!-- 8. 贷款合同/存款账户与担保 -->
     <div class="card">
       <div class="card__head"><span>{{ isLoan ? '贷款合同与担保' : '存款账户' }}</span></div>
@@ -202,19 +217,55 @@
               <td>{{ measureTypeText(g.measureType) }}</td><td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
             </tr>
             <!-- 担保措施明细行(抵押物坐落/面积/估值、保证人等,取快照 extJson;无则暂无数据) -->
-            <tr class="measure-detail">
+            <tr class="measure-detail" v-if="extOf(g)">
               <td colspan="4">
                 <template v-if="g.measureType === 'MORTGAGE'">
-                  <span class="dg-label">抵押物</span>{{ g.extJson?.name || '暂无数据' }}
-                  <span class="dg-label">坐落</span>{{ g.extJson?.address || '暂无数据' }}
-                  <span class="dg-label">面积</span>{{ g.extJson?.area ? `${g.extJson.area}㎡` : '暂无数据' }}
+                  <span class="dg-label">类型</span>{{ extOf(g).collateralType || '暂无数据' }}
+                  <span class="dg-label">名称</span>{{ extOf(g).name || '暂无数据' }}
+                  <template v-if="extOf(g).collateralType === '土地'">
+                    <span class="dg-label">坐落</span>{{ extOf(g).address || '暂无数据' }}
+                    <span class="dg-label">面积</span>{{ extOf(g).area ? extOf(g).area + '㎡' : '暂无数据' }}
+                    <span class="dg-label">使用权</span>{{ extOf(g).landUseType || '暂无数据' }}{{ extOf(g).landUseExpiry ? '至' + extOf(g).landUseExpiry : '' }}
+                  </template>
+                  <template v-else-if="extOf(g).collateralType === '设备'">
+                    <span class="dg-label">规格型号</span>{{ extOf(g).specModel || '暂无数据' }}
+                    <span class="dg-label">数量</span>{{ extOf(g).quantity || '暂无数据' }}
+                    <span class="dg-label">购置日期</span>{{ extOf(g).purchaseDate || '暂无数据' }}
+                  </template>
+                  <template v-else-if="extOf(g).collateralType === '车辆'">
+                    <span class="dg-label">车牌号</span>{{ extOf(g).plateNo || '暂无数据' }}
+                    <span class="dg-label">车架号</span>{{ extOf(g).vin || '暂无数据' }}
+                    <span class="dg-label">登记日期</span>{{ extOf(g).regDate || '暂无数据' }}
+                  </template>
+                  <template v-else>
+                    <span class="dg-label">坐落</span>{{ extOf(g).address || '暂无数据' }}
+                    <span class="dg-label">面积</span>{{ extOf(g).area ? extOf(g).area + '㎡' : '暂无数据' }}
+                    <span class="dg-label">产权证号</span>{{ extOf(g).certNo || '暂无数据' }}
+                  </template>
                   <span class="dg-label">估值(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
-                  <span class="dg-label">权属人</span>{{ g.extJson?.owner || '暂无数据' }}
+                  <span class="dg-label">权属人</span>{{ extOf(g).owner || '暂无数据' }}
+                  <span class="dg-label">抵押率</span>{{ extOf(g).mortgageRatio ? extOf(g).mortgageRatio + '%' : '暂无数据' }}
                 </template>
                 <template v-else-if="g.measureType === 'GUARANTOR'">
-                  <span class="dg-label">保证人名称</span>{{ g.extJson?.name || '暂无数据' }}
-                  <span class="dg-label">证件号码</span>{{ g.extJson?.certNo || '暂无数据' }}
-                  <span class="dg-label">担保余额(万元)</span>{{ g.extJson?.balance ?? '暂无数据' }}
+                  <span class="dg-label">保证人名称</span>{{ extOf(g).name || '暂无数据' }}
+                  <span class="dg-label">证件号码</span>{{ extOf(g).certNo || '暂无数据' }}
+                  <span class="dg-label">担保余额(万元)</span>{{ extOf(g).balance ?? '暂无数据' }}
+                </template>
+                <template v-else-if="g.measureType === 'PLEDGE'">
+                  <span class="dg-label">质押物类型</span>{{ extOf(g).pledgeType || '暂无数据' }}
+                  <span class="dg-label">名称</span>{{ extOf(g).name || '暂无数据' }}
+                  <span class="dg-label">估值(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
+                  <span class="dg-label">权属人</span>{{ extOf(g).owner || '暂无数据' }}
+                </template>
+                <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN'">
+                  <span class="dg-label">保证金(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
+                  <span class="dg-label">比例</span>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '暂无数据' }}
+                  <span class="dg-label">期限(月)</span>{{ extOf(g).termMonths || '暂无数据' }}
+                </template>
+                <template v-else-if="g.measureType === 'CERTIFICATE_DEPOSIT'">
+                  <span class="dg-label">存单号</span>{{ extOf(g).certificateNo || '暂无数据' }}
+                  <span class="dg-label">金额(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
+                  <span class="dg-label">到期日</span>{{ extOf(g).maturityDate || '暂无数据' }}
                 </template>
                 <span v-else class="dg-label">暂无措施明细数据</span>
               </td>
@@ -225,8 +276,8 @@
       <div v-else class="empty" style="padding:8px">无担保明细</div>
     </div>
 
-    <!-- 9. 当前与拟达成贡献度(双概念并排,D1 组件化) -->
-    <div class="card">
+    <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
       <ContributionPanel :contribution="contribution" :commitments="commitments" />
     </div>
@@ -413,6 +464,8 @@ import {
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText
 } from '@/utils/dict'
+// eslint-disable-next-line no-duplicate-imports
+import { inputModeText, relationTypeText } from '@/utils/dict'
 
 const route = useRoute()
 const router = useRouter()
@@ -431,14 +484,15 @@ const commitments = ref<any[]>([])
 const guarantees = ref<any[]>([])
 const groupMembers = ref<any[]>([])
 const routeChain = ref<string[]>([])
-const qualityResults = ref<any[]>([])
-const qualityOverall = ref('')
 const flowTrace = ref<any[]>([])
 const source = ref('')
 const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
 const orgPerformance = ref<any[]>([])
 const depositAccounts = ref<any[]>([])
+const otherLoanSummary = ref<any[]>([])
+const otherLoans = ref<any[]>([])
+const relations = ref<any[]>([])
 const resolutions = ref<any[]>([])
 const resolutionExecutions = ref<any[]>([])
 const voteRounds = ref<any[]>([])
@@ -477,13 +531,16 @@ const rateAdjusted = computed(() => {
   return opRate.value != null && base != null && Number(opRate.value) !== Number(base)
 })
 
-const qualityBadge = computed(() =>
-  qualityOverall.value === 'BLOCK' ? 'badge--danger' : qualityOverall.value === 'WARN' ? 'badge--warning' : 'badge--success')
-const qualityText = computed(() =>
-  qualityOverall.value === 'BLOCK' ? '阻断' : qualityOverall.value === 'WARN' ? '预警' : '通过')
 
 const groupTotalAmount = computed(() =>
   groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
+
+function extOf(g: any): any {
+  const j = g?.extJson
+  if (!j) return null
+  if (typeof j === 'object') return j
+  try { return JSON.parse(j) } catch { return null }
+}
 
 function fmtRate(v: any) {
   return v == null || v === '' ? '—' : `${v}%`
@@ -526,14 +583,15 @@ async function load() {
     guarantees.value = data.guarantees || []
     groupMembers.value = data.groupMembers || []
     routeChain.value = data.routeChain || []
-    qualityResults.value = data.qualityResults || []
-    qualityOverall.value = data.qualityOverall || ''
     flowTrace.value = data.flowTrace || []
     source.value = data.source || ''
     snapshotInfo.value = data.snapshotInfo || {}
     tracking.value = data.tracking || []
     orgPerformance.value = data.orgPerformance || []
     depositAccounts.value = data.depositAccounts || []
+    otherLoanSummary.value = data.otherLoanSummary || []
+    otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
+    relations.value = data.relations || []
     resolutions.value = data.resolutions || []
     resolutionExecutions.value = data.resolutionExecutions || []
     voteRounds.value = data.voteRounds || []

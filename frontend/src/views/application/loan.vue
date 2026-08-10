@@ -1325,6 +1325,17 @@ function buildPayload(): ApplicationPayload {
       guaranteeType: g.guaranteeType,
       measures: buildMeasures(g)
     })),
+    // 人工补录/Excel 导入他行融资(随单持久化,审批详情展示;空行过滤,数仓带出的不回传)
+    otherLoans: otherLoans.value
+      .filter((d) => d.inputMode !== 'DW' && !isBlank(d.lenderName))
+      .map((d) => ({
+        lenderName: d.lenderName,
+        creditAmount: isBlank(d.creditAmount) ? undefined : d.creditAmount,
+        usedAmount: isBlank(d.usedAmount) ? undefined : d.usedAmount,
+        balanceAmount: isBlank(d.balanceAmount) ? undefined : d.balanceAmount,
+        annualRate: isBlank(d.annualRate) ? undefined : d.annualRate,
+        inputMode: d.inputMode || 'MANUAL'
+      })),
     commitments: commitments.value.map((c) => ({
       metricCode: c.metricCode,
       targetType: c.targetType,

@@ -110,16 +110,6 @@
       </div>
     </div>
 
-    <!-- 1b. 关联人员(§12.4④,随申请备注结构附带提交) -->
-    <div class="form-card">
-      <RelatedPersonsEditor v-model="relations" />
-    </div>
-
-    <!-- 1c. 当前贡献度参考(D1,数仓取数只读) -->
-    <div class="form-card">
-      <div class="form-card__title">贡献度参考 <span class="badge badge--info">数仓取数</span></div>
-      <ContributionPanel :contribution="contribution" :show-commitments="false" />
-    </div>
 
     <!-- 2. 存款分项(结构化 depositItems,不再拼 remark) -->
     <div class="form-card">
@@ -282,7 +272,6 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS } from '@/utils/dict'
@@ -337,7 +326,6 @@ const form = reactive({
 })
 const items = ref<DepositItemRow[]>([newItem()])
 // 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
-const relations = ref<RelatedPersonRow[]>([])
 const contribution = ref<any[]>([])
 // 产品标准上限(生效中的存款硬边界;非 admin 可能 403,失败则隐藏)
 const productLimits = ref<any[]>([])
@@ -502,7 +490,7 @@ function buildPayload(): ApplicationPayload {
     applicantOrgId: userStore.userInfo?.orgId,
     orgId: userStore.userInfo?.orgId,
     // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
-    applicationRemark: ((form.applicationRemark || '') + serializeRelations(relations.value)).trim() || undefined
+    applicationRemark: (form.applicationRemark || '').trim() || undefined
   }
 }
 
@@ -549,7 +537,6 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
-  const missingRel = validateRelations(relations.value)
   if (missingRel.length) {
     ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
     return
@@ -610,10 +597,7 @@ async function loadDraftIntoForm(id: number) {
   const app = d.application
   form.customerScope = app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
-  // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
-  const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
-  relations.value = rels
-  form.applicationRemark = cleanedRemark
+  form.applicationRemark = app.applicationRemark || ''
   if (app.customerNo) {
     await loadCustomerDetail()
   }

@@ -146,7 +146,7 @@ const allMenus = [
   { path: '/commitment', title: '贡献度跟踪', roles: ['*'] },
   { path: '/history', title: '历史', roles: ['*'] },
   // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,全角色可见
-  { path: '/datacenter', title: '数据中心', roles: ['*'] },
+  { path: '/datacenter', title: '数据中心', roles: ['admin'] },
   // 审计管理(§12.14):审计人员专用(admin 全量可见)
   { path: '/audit', title: '审计管理', roles: ['auditor'] },
   // 基础系统功能(管理端)

@@ -76,6 +76,8 @@ class CcrApplicationServiceImplTest {
     @Mock
     private DataWarehouseService dataWarehouseService;
     @Mock
+    private com.ccr.application.mapper.CcrApplicationOtherLoanMapper otherLoanMapper;
+    @Mock
     private com.ccr.application.support.AppLoginUser currentLoginUser;
     @Mock
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
