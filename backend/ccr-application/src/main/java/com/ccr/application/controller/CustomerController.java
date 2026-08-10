@@ -29,7 +29,7 @@ public class CustomerController {
     @Resource
     private DataWarehouseService dataWarehouseService;
 
-    /** 按客户姓名模糊查询(对公+对私),返回候选客户 */
+    /** 按客户姓名或客户号模糊查询(对公+对私),返回候选客户 */
     @GetMapping
     public R<List<Map<String, Object>>> search(@RequestParam String name) {
         if (name == null || name.isBlank()) {
@@ -39,13 +39,13 @@ public class CustomerController {
         String sql = """
                 SELECT cust_no AS customerNo, cust_name AS customerName, 'CORP' AS custType, cust_class AS customerClass
                 FROM caps_corp_cust_basic_info
-                WHERE cust_name LIKE ? AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
+                WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
                 UNION ALL
                 SELECT cust_no AS customerNo, cust_nm AS customerName, 'INDV' AS custType, cust_class AS customerClass
                 FROM caps_indv_cust_basic_info
-                WHERE cust_nm LIKE ? AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
+                WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
                 """;
-        return R.ok(jdbcTemplate.queryForList(sql, like, like));
+        return R.ok(jdbcTemplate.queryForList(sql, like, like, like, like));
     }
 
     /** 客户详情:基本信息 + 本行融资 + 当前贡献度 + 他行融资(申请带出) */
