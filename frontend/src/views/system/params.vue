@@ -86,12 +86,12 @@
             <td>{{ m.matrixNo }}</td>
             <td>{{ bizText(m.businessBigType) }}</td>
             <td>{{ m.newOrExisting === 'NEW' ? '新增' : '存量' }}</td>
-            <td>{{ m.customerType || '通配' }}</td>
-            <td>{{ m.productCode || '通配' }}</td>
-            <td>{{ m.amountTier || '通配' }}</td>
-            <td>{{ m.termTier || '通配' }}</td>
+            <td>{{ customerTypeText(m.customerType, '通配') }}</td>
+            <td>{{ productName(m.productCode, '通配') }}</td>
+            <td>{{ amountTierText(m.amountTier, '通配') }}</td>
+            <td>{{ termTierText(m.termTier, '通配') }}</td>
             <td>{{ guaranteeTypeText(m.guaranteeType, '通配') }}</td>
-            <td>{{ nodeText(m.startNodeCode) }}</td>
+            <td>{{ nodeLabel(m.startNodeCode) }}</td>
             <td>{{ boundaryText(m) }}</td>
             <td class="num">{{ m.priority }}</td>
             <td><span :class="statusBadge(m.status)">{{ statusText(m.status) }}</span></td>
@@ -129,9 +129,9 @@
           <tr v-for="p in productList" :key="p.id">
             <td>{{ p.productCode }}</td>
             <td>{{ p.productName || '—' }}</td>
-            <td>{{ p.businessType === 'LOAN' ? '贷款' : '存款' }}</td>
+            <td>{{ businessTypeText(p.businessType) }}</td>
             <td class="num">{{ p.hardBoundaryRate }}%</td>
-            <td>{{ p.rateDirection === 'HIGHER_BETTER' ? '越高越优惠(存款)' : '越低越优惠(贷款)' }}</td>
+            <td>{{ rateDirectionText(p.rateDirection) }}</td>
             <td>{{ fmtTime(p.effectiveFrom) }}</td>
             <td>{{ fmtTime(p.effectiveTo) }}</td>
             <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
@@ -252,7 +252,10 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">担保主类型</label>
-          <input class="form-input" v-model="trial.guaranteeType" placeholder="如 MORTGAGE/PLEDGE/CREDIT,空=通配" />
+          <select class="form-select" v-model="trial.guaranteeType">
+            <option value="">通配</option>
+            <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
+          </select>
         </div>
         <div class="form-field">
           <label class="form-field__label">申请金额(万元) <span class="req">*</span></label>
@@ -283,18 +286,18 @@
       </div>
 
       <div v-if="trialResult" class="trial-result">
-        <div class="result-row"><span class="dg-label">审批链首节点</span><b>{{ nodeText(trialResult.startNodeCode) }}</b><span class="badge badge--info">必经</span></div>
-        <div class="result-row"><span class="dg-label">终审岗位</span><b>{{ nodeText(trialResult.finalNodeCode) }}</b></div>
+        <div class="result-row"><span class="dg-label">审批链首节点</span><b>{{ nodeLabel(trialResult.startNodeCode) }}</b><span class="badge badge--info">必经</span></div>
+        <div class="result-row"><span class="dg-label">终审岗位</span><b>{{ nodeLabel(trialResult.finalNodeCode) }}</b></div>
         <div class="result-row">
           <span class="dg-label">审批链路</span>
           <span class="chain">
             <template v-for="(n, i) in trialResult.routeChain || []" :key="n">
-              <span class="chain__node">{{ nodeText(n) }}</span>
+              <span class="chain__node">{{ nodeLabel(n) }}</span>
               <span v-if="i < (trialResult.routeChain || []).length - 1" class="chain__arrow">→</span>
             </template>
           </span>
         </div>
-        <div class="result-row"><span class="dg-label">利率方向</span>{{ trialResult.rateDirection === 'HIGHER_BETTER' ? '越高越优惠(存款)' : '越低越优惠(贷款)' }}</div>
+        <div class="result-row"><span class="dg-label">利率方向</span>{{ rateDirectionText(trialResult.rateDirection) }}</div>
         <div class="result-row"><span class="dg-label">命中规则</span>{{ trialResult.matchedRuleName || trialResult.matchedRuleCode || '—' }}</div>
         <div class="result-row"><span class="dg-label">采用 LPR 版本</span>{{ trialResult.lprVersionCode || '—' }}</div>
         <div class="result-row"><span class="dg-label">计算说明</span>{{ trialResult.message || '—' }}</div>
@@ -571,6 +574,11 @@ import {
   type ConfigChangeLog
 } from '@/api/system'
 import { GUARANTEE_TYPES, guaranteeTypeText } from '@/utils/dict'
+import {
+  configStatusText, configActionText, configTypeText, businessBigTypeText,
+  nodeLabel, customerTypeText, amountTierText, termTierText, rateDirectionText,
+  businessTypeText, productName
+} from '@/utils/dict'
 
 const tabs = [
   { key: 'lpr', label: 'LPR 维护' },
@@ -599,7 +607,7 @@ const matrixStatus = ref('')
 const productStatus = ref('')
 
 function statusText(s: string) {
-  return statusOptions.find((o) => o.value === s)?.label || s || '—'
+  return configStatusText(s)
 }
 function statusBadge(s: string) {
   const map: Record<string, string> = {
@@ -614,20 +622,7 @@ function fmtTime(t: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
 }
 function bizText(b: string) {
-  const map: Record<string, string> = {
-    LOAN_PUBLIC: '对公贷款', LOAN_PERSONAL: '个人贷款', DEPOSIT: '存款', MARGIN: '保证金'
-  }
-  return map[b] || b || '—'
-}
-function nodeText(code: string) {
-  const map: Record<string, string> = {
-    BRANCH_MANAGER: '支行行长',
-    DEPT_GENERAL_MANAGER: '部门总经理',
-    VICE_PRESIDENT: '分管行长',
-    SIX_PEOPLE_GROUP: '六人小组',
-    PRESIDENT: '总行行长'
-  }
-  return map[code] || code || '—'
+  return businessBigTypeText(b)
 }
 function boundaryText(m: any) {
   if (m.boundaryMinRate != null && m.boundaryBp == null) return `≥ ${m.boundaryMinRate}%`
@@ -642,18 +637,8 @@ const configTypeOptions = [
   { value: 'RULE_SET', label: '利率规则集' },
   { value: 'PRODUCT_LIMIT', label: '产品边界' }
 ]
-function configTypeText(t: string) {
-  return configTypeOptions.find((o) => o.value === t)?.label || t || '—'
-}
-const actionOptions = [
-  { value: 'CREATE', label: '新增草稿' },
-  { value: 'SUBMIT', label: '送审' },
-  { value: 'PUBLISH', label: '复核发布' },
-  { value: 'DISABLE', label: '停用' },
-  { value: 'REJECT', label: '复核驳回' }
-]
 function actionText(a: string) {
-  return actionOptions.find((o) => o.value === a)?.label || a || '—'
+  return configActionText(a)
 }
 function actionBadge(a: string) {
   const map: Record<string, string> = {

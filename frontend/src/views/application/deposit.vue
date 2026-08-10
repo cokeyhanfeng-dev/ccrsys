@@ -3,7 +3,7 @@
     <div class="section-head">
       <div class="eyebrow">DEPOSIT APPLICATION · 存款利率申请</div>
       <div class="section-title">存款利率提升申请</div>
-      <div class="section-tip">存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(越高越优惠,HIGHER_BETTER)。</div>
+      <div class="section-tip">存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(存款越高越优惠)。</div>
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -125,7 +125,7 @@
     <div class="form-card">
       <div class="form-card__title">
         存款分项
-        <span class="badge badge--warning">存款越高越优惠(HIGHER_BETTER)</span>
+        <span class="badge badge--warning">存款利率越高越优惠</span>
       </div>
       <div class="section-tip" style="margin-bottom:12px">
         每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。
@@ -225,19 +225,19 @@
               <td>{{ it.pricingItemNo }}</td>
               <td>{{ productName(it.productCode || '') }}</td>
               <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-              <td>{{ directionName(it.rateDirection) }}</td>
+              <td>{{ rateDirectionText(it.rateDirection) }}</td>
               <td>
                 <template v-if="it.errorCode">
                   <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
                 </template>
                 <template v-else-if="it.routeChain?.length">
                   <span v-for="(n, ni) in it.routeChain" :key="ni">
-                    <span class="route-node">{{ nodeName(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
+                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
                   </span>
                 </template>
                 <span v-else>暂无数据</span>
               </td>
-              <td>{{ nodeName(it.finalNodeCode) }}</td>
+              <td>{{ nodeLabel(it.finalNodeCode) }}</td>
               <td>
                 <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
                 <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
@@ -277,8 +277,6 @@ import {
   submitCheck,
   submitApplication,
   reapplyApplication,
-  nodeName,
-  directionName,
   type ApplicationPayload,
   type RoutePreview,
   type SubmitCheck
@@ -287,22 +285,14 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
 
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 存款产品(product_code 与产品边界/数仓账户口径对齐)
-const depositProducts = [
-  { code: 'CORP_TIME_DEPOSIT', name: '对公定期存款' },
-  { code: 'AGREEMENT_DEPOSIT', name: '协定存款' },
-  { code: 'NOTICE_DEPOSIT', name: '通知存款' },
-  { code: 'BANK_ACCEPTANCE_MARGIN', name: '银票保证金' },
-  { code: 'LC_MARGIN', name: '信用证保证金' }
-]
-function productName(code: string) {
-  return depositProducts.find((p) => p.code === code)?.name || code || '暂无数据'
-}
+const depositProducts = DEPOSIT_PRODUCTS
 
 interface DepositItemRow {
   accountMode: 'EXISTING' | 'PLANNED'
@@ -579,8 +569,8 @@ async function onConfirmSubmit() {
   try {
     const result = await submitApplication(draft.id)
     checkDialogVisible.value = false
-    const firstNode = nodeName(result.items?.[0]?.currentNodeCode)
-    const finalNode = nodeName(result.items?.[0]?.routeCode)
+    const firstNode = nodeLabel(result.items?.[0]?.currentNodeCode)
+    const finalNode = nodeLabel(result.items?.[0]?.routeCode)
     ElMessageBox.alert(
       `申请号:${result.applicationNo}\n当前节点:${firstNode}\n终审岗位:${finalNode}\n提交时间:${result.submitTime || '—'}`,
       result.submitted === false ? '申请已提交(幂等返回)' : '提交成功',

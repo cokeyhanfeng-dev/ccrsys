@@ -104,18 +104,13 @@ import { useUserStore } from '@/store/user'
 import { get } from '@/api/request'
 import { listApprovalTasks, pageApprovalHistory } from '@/api/approval'
 import { listVoteTodo, listPresidentTodo } from '@/api/vote'
+import { itemStatusText, roleText, productName, businessTypeText } from '@/utils/dict'
 
 const router = useRouter()
 const userStore = useUserStore()
 
 const role = computed(() => userStore.userInfo?.roles?.[0] || 'customer_manager')
-const roleName = computed(() => {
-  const map: Record<string, string> = {
-    customer_manager: '客户经理', branch_manager: '支行行长', dept_gm: '部门总经理',
-    vice_president: '分管行长', committee_member: '审批小组成员', president: '总行行长'
-  }
-  return map[role.value] || role.value
-})
+const roleName = computed(() => roleText(role.value, role.value))
 const workbenchTitle = computed(() => {
   const map: Record<string, string> = {
     customer_manager: '我的申请工作台', branch_manager: '审批工作台', dept_gm: '审批工作台',
@@ -170,12 +165,6 @@ const stats = computed(() => {
   return cards
 })
 
-const STATUS_TEXT: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '路由中', APPROVED_LEVEL: '权限内已批',
-  VOTING: '小组表决', COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议',
-  FINAL: '终态', VETOED: '一票否决', REJECTED: '已否决', RETURNED: '已退回', CLOSED: '已关闭'
-}
-
 async function load() {
   if (role.value === 'customer_manager') {
     try {
@@ -184,12 +173,12 @@ async function load() {
       todoRows.value = (data || []).map((a) => ({
         applicationNo: a.applicationNo,
         customer: a.customerNo || '-',
-        businessType: a.businessType === 'LOAN' ? '贷款' : '存款',
+        businessType: businessTypeText(a.businessType),
         guarantee: '-',
         amount: '-',
         rate: '-',
         status: a.status,
-        statusText: STATUS_TEXT[a.status] || a.status,
+        statusText: itemStatusText(a.status),
         action: null
       }))
     } catch { todoRows.value = [] }
@@ -202,7 +191,7 @@ async function load() {
         applicationNo: '分项' + p.pricingItemId,
         customer: '-',
         businessType: '-',
-        guarantee: p.productCode || '—',
+        guarantee: productName(p.productCode),
         amount: p.pricingAmount ?? '-',
         rate: p.requestedRate ?? '-',
         status: 'processing',
@@ -235,11 +224,11 @@ async function load() {
         applicationNo: p.pricingItemNo || p.id,
         customer: p.pricingCustomerNo || '-',
         businessType: '-',
-        guarantee: p.productCode || '—',
+        guarantee: productName(p.productCode),
         amount: p.pricingAmount ?? '-',
         rate: p.requestedRate ?? '-',
         status: 'processing',
-        statusText: STATUS_TEXT[p.status] || p.status,
+        statusText: itemStatusText(p.status),
         action: { label: '查看审批', handler: (row: any) => router.push(`/approval/${row.id}`) }
       }))
     } catch { todoRows.value = [] }

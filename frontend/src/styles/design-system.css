@@ -571,3 +571,26 @@ body {
   line-height: 1.6;
   margin-bottom: 14px;
 }
+
+/* 抵押物明细卡片(申请页担保分项内嵌) */
+.mortgage-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: #fafbfd;
+}
+.mortgage-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.mortgage-item__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px 14px;
+}
+@media (max-width: 1200px) {
+  .mortgage-item__grid { grid-template-columns: repeat(2, 1fr); }
+}

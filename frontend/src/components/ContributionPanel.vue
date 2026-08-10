@@ -11,7 +11,7 @@
         <tbody>
           <tr v-for="(c, i) in contribution" :key="i">
             <td class="col-metric">
-              <div class="metric-name">{{ c.metricName || c.metricCode }}</div>
+              <div class="metric-name">{{ c.metricName || metricName(c.metricCode) }}</div>
               <div class="metric-code">{{ c.metricCode }}</div>
             </td>
             <td class="num col-value">
@@ -36,7 +36,7 @@
         <tbody>
           <tr v-for="(c, i) in commitments" :key="i">
             <td class="col-metric">
-              <div class="metric-name">{{ c.metricName || metricNameOf(c.metricCode) }}</div>
+              <div class="metric-name">{{ c.metricName || metricName(c.metricCode) }}</div>
               <div class="metric-code">{{ c.metricCode }}</div>
             </td>
             <td class="num">{{ c.baselineValue ?? '—' }} → {{ c.targetValue ?? '—' }}</td>
@@ -57,6 +57,8 @@
  * 勾稽 badge 依据数据可用性:已取数 / 待取数(有承诺目标但当前值缺失) / 无数据。
  * 适用于审批详情、申请单当前贡献度参考;录入场景传 show-commitments=false 仅展示左栏(整行通栏)。
  */
+import { metricName, metricScopeText } from '@/utils/dict'
+
 const props = withDefaults(
   defineProps<{
     /** 当前贡献度数组(metricCode/metricName/metricValue/valueType) */
@@ -71,27 +73,6 @@ const props = withDefaults(
   { commitments: () => [], showCommitments: true, asOfDate: '' }
 )
 
-/** 指标编码→中文名(兜底,数据未带 metricName 时用) */
-const METRIC_NAMES: Record<string, string> = {
-  TOTAL: '综合贡献总额',
-  PUBLIC_DEPOSIT_AVG: '存款日均',
-  PUBLIC_LOAN_AVG: '流贷日均',
-  PUBLIC_PROJECT_LOAN_AVG: '项目贷日均',
-  PUBLIC_DISCOUNT: '贴现利差收益',
-  PUBLIC_DISCOUNT_SPREAD: '贴现规模',
-  PUBLIC_INTERMEDIATE: '对公中间业务收入',
-  PUBLIC_OFF_BALANCE_INCOME: '对公中间业务收入',
-  PUBLIC_EXCHANGE: '汇兑利差收益',
-  PUBLIC_PAYROLL: '代发贡献度',
-  PUBLIC_WEALTH: '对公财富中收',
-  PRIVATE_DEPOSIT_AVG: '本人存款日均',
-  PRIVATE_LOAN_AVG: '本人贷款日均',
-  PRIVATE_WEALTH: '本人财富中收'
-}
-function metricNameOf(code?: string): string {
-  return code ? (METRIC_NAMES[code] || code) : '—'
-}
-
 /** 数值口径→单位文案 */
 function unitOf(valueType?: string): string {
   const map: Record<string, string> = {
@@ -102,16 +83,9 @@ function unitOf(valueType?: string): string {
   return valueType ? (map[valueType] || '') : ''
 }
 
-const SCOPE_NAMES: Record<string, string> = {
-  PUBLIC: '对公',
-  PRIVATE_SELF: '本人',
-  RELATED: '关联人',
-  GROUP: '集团',
-  GROUP_MEMBER: '集团成员'
-}
 function scopeOf(c: any): string {
   if (c.memberCustomerNo) return `成员 ${c.memberCustomerNo}`
-  return SCOPE_NAMES[c.metricScope] || c.metricScope || '整体'
+  return c.metricScope ? metricScopeText(c.metricScope) : '整体'
 }
 
 function checkBadgeOf(c: any): { cls: string; text: string } {

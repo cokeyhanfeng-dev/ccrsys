@@ -291,6 +291,7 @@ import {
   listRoles, listUsers, listDepts,
   type FlowNode, type NodeAssignee, type SysDept, type SysRole
 } from '@/api/system'
+import { nodeLabel, assigneeTypeText } from '@/utils/dict'
 
 const tabs = [
   { key: 'assignee', label: '节点指派' },
@@ -302,14 +303,7 @@ function fmtTime(t: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
 }
 function nodeText(code: string) {
-  const map: Record<string, string> = {
-    BRANCH_MANAGER: '支行行长',
-    DEPT_GENERAL_MANAGER: '部门总经理',
-    VICE_PRESIDENT: '分管行长',
-    SIX_PEOPLE_GROUP: '六人小组',
-    PRESIDENT: '总行行长'
-  }
-  return map[code] || code || '—'
+  return nodeLabel(code)
 }
 
 // ---------- 流程定义 ----------
@@ -382,8 +376,7 @@ async function loadRefs() {
 
 // ---------- 指派展示辅助 ----------
 function typeText(t: string) {
-  const map: Record<string, string> = { PERSON: '按人', ROLE: '按角色', DEPT: '按部门', GROUP: '按组' }
-  return map[t] || t || '—'
+  return assigneeTypeText(t)
 }
 function typeBadge(t: string) {
   const map: Record<string, string> = {

@@ -1,4 +1,5 @@
 import { get, post, put, request } from './request'
+import { nodeLabel, rateDirectionText } from '@/utils/dict'
 
 /**
  * 申请向导(贷款/存款)接口封装
@@ -229,25 +230,16 @@ export interface SubmitResult {
   }>
 }
 
-// ---------- 展示辅助 ----------
+// ---------- 展示辅助(统一委托 @/utils/dict,避免多套映射) ----------
 
 /** 流程节点编码 → 中文岗位名(ccr-approval RouteChains) */
-const NODE_NAMES: Record<string, string> = {
-  BRANCH_MANAGER: '支行行长',
-  DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长',
-  SIX_PEOPLE_GROUP: '六人表决小组'
-}
 export function nodeName(code?: string): string {
-  if (!code) return '暂无数据'
-  return NODE_NAMES[code] || code
+  return nodeLabel(code, '暂无数据')
 }
 
 /** 利率比较方向(贷款越低越优惠/存款越高越优惠) */
 export function directionName(direction?: string): string {
-  if (direction === 'LOWER_BETTER') return '越低越优惠(贷款)'
-  if (direction === 'HIGHER_BETTER') return '越高越优惠(存款)'
-  return '暂无数据'
+  return rateDirectionText(direction, '暂无数据')
 }
 
 // ---------- 客户/集团查询 ----------

@@ -21,7 +21,7 @@
               <td>{{ row.batchNo || '—' }}</td>
               <td>{{ fmtDate(row.dataDate) }}</td>
               <td class="num">{{ row.rowCount ?? '—' }}</td>
-              <td><span :class="batchBadge(row.status)">{{ row.status || '—' }}</span></td>
+              <td><span :class="batchBadge(row.status)">{{ batchStatusText(row.status) }}</span></td>
               <td>{{ fmtCost(row.costMs) }}</td>
             </tr>
             <tr v-if="!batches.length"><td colspan="6" class="empty-cell">暂无批次数据</td></tr>
@@ -44,7 +44,7 @@
               <div class="source-item__name">
                 {{ row.sourceName || row.sourceCode || '—' }}
                 <span :class="isStale(row.status) ? 'badge badge--danger' : 'badge badge--success'">
-                  {{ isStale(row.status) ? 'STALE' : 'OK' }}
+                  {{ isStale(row.status) ? '已过期' : '正常' }}
                 </span>
               </div>
               <div class="source-item__date">最新数据日期:{{ fmtDate(row.dataDate) }}</div>
@@ -66,6 +66,7 @@ import {
   type BatchLandingRow,
   type SourceStatusRow
 } from '@/api/datacenter'
+import { batchStatusText } from '@/utils/dict'
 
 const batches = ref<BatchLandingRow[]>([])
 const sources = ref<SourceStatusRow[]>([])

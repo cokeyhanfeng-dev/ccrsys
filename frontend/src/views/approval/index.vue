@@ -70,7 +70,7 @@
             <td>{{ nodeLabel(r.nodeCode) }}</td>
             <td>
               <span class="badge" :class="r.actionType === 'REJECT' ? 'badge--danger' : 'badge--success'">
-                {{ r.actionType === 'APPROVE' ? '通过' : r.actionType === 'REJECT' ? '否决' : (r.actionType || '—') }}
+                {{ actionText(r.actionType) }}
               </span>
             </td>
             <td class="num">
@@ -125,6 +125,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listApprovalTasks, pageApprovalHistory, getApprovalDetail } from '@/api/approval'
 import { listApprovalDone } from '@/api/approval2'
+import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict'
 
 const router = useRouter()
 const todoCards = ref<any[]>([])
@@ -138,20 +139,8 @@ const check = ref<any>({
   customer: '', amount: '', rate: '', originalRate: '', qualityOverall: '', dataDt: ''
 })
 
-const NODE_LABELS: Record<string, string> = {
-  BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组表决', PRESIDENT: '行长决策'
-}
-const STATUS_TEXT: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '路由中', APPROVED_LEVEL: '权限内已批',
-  VOTING: '小组表决', COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议',
-  FINAL: '终态', VETOED: '一票否决', REJECTED: '已否决', RETURNED: '已退回', CLOSED: '已关闭'
-}
-function nodeLabel(code?: string) {
-  return code ? (NODE_LABELS[code] || code) : '—'
-}
 function statusText(s?: string) {
-  return s ? (STATUS_TEXT[s] || s) : '—'
+  return itemStatusText(s)
 }
 
 async function load() {
@@ -164,8 +153,8 @@ async function load() {
       amount: p.pricingAmount ?? '-',
       rate: p.requestedRate ?? '-',
       originalRate: p.originalRate != null ? `${p.originalRate}%` : '新增业务',
-      productCode: p.productCode || '—',
-      nodeText: NODE_LABELS[p.currentNodeCode] || p.currentNodeCode || '—',
+      productCode: productName(p.productCode),
+      nodeText: nodeLabel(p.currentNodeCode),
       createTime: p.createTime ? String(p.createTime).replace('T', ' ').slice(0, 16) : '—'
     }))
   } catch {

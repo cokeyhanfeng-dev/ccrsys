@@ -317,7 +317,7 @@
             <td><input class="form-input form-input--amount" v-model="d.usedAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
             <td><input class="form-input form-input--amount" v-model="d.balanceAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
             <td><input class="form-input form-input--amount" v-model="d.annualRate" :disabled="d.inputMode !== 'MANUAL'" /></td>
-            <td><span class="badge badge--neutral">{{ d.inputMode === 'EXCEL' ? 'Excel导入' : d.inputMode === 'MANUAL' ? '人工' : '数仓' }}</span></td>
+            <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
           </tr>
         </tbody>
       </table>
@@ -401,20 +401,40 @@
             <tr v-if="g.guaranteeType === 'MORTGAGE'" class="guarantee-detail">
               <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
                 <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
-                <table class="table table--nested" v-if="g.mortgages.length">
-                  <thead><tr><th>抵押物类型</th><th>名称</th><th>坐落位置</th><th>评估价值(万元)</th><th>权属人</th><th>抵押率</th><th></th></tr></thead>
-                  <tbody>
-                    <tr v-for="(m, mi) in g.mortgages" :key="mi">
-                      <td><select class="form-select" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select></td>
-                      <td><input class="form-input" v-model="m.name" /></td>
-                      <td><input class="form-input" v-model="m.addr" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.value" /></td>
-                      <td><input class="form-input" v-model="m.owner" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.ratio" /></td>
-                      <td><button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button></td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div v-for="(m, mi) in g.mortgages" :key="mi" class="mortgage-item">
+                  <div class="mortgage-item__head">
+                    <select class="form-select" style="width:140px" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select>
+                    <button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button>
+                  </div>
+                  <div class="form-grid mortgage-item__grid">
+                    <!-- 不动产(住宅/厂房/土地)共有:名称+坐落+面积 -->
+                    <div class="form-field"><label class="form-field__label">{{ m.type === '土地' ? '地块名称' : m.type === '设备' ? '设备名称' : m.type === '车辆' ? '品牌型号' : '名称' }}</label><input class="form-input" v-model="m.name" /></div>
+                    <template v-if="m.type === '住宅' || m.type === '厂房'">
+                      <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
+                      <div class="form-field"><label class="form-field__label">建筑面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" /></div>
+                      <div class="form-field"><label class="form-field__label">产权证号</label><input class="form-input" v-model="m.certNo" /></div>
+                    </template>
+                    <template v-else-if="m.type === '土地'">
+                      <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
+                      <div class="form-field"><label class="form-field__label">土地面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" /></div>
+                      <div class="form-field"><label class="form-field__label">使用权类型</label><select class="form-select" v-model="m.landUseType"><option>出让</option><option>划拨</option></select></div>
+                      <div class="form-field"><label class="form-field__label">使用权到期日</label><input class="form-input" type="date" v-model="m.landUseExpiry" /></div>
+                    </template>
+                    <template v-else-if="m.type === '设备'">
+                      <div class="form-field"><label class="form-field__label">规格型号</label><input class="form-input" v-model="m.specModel" /></div>
+                      <div class="form-field"><label class="form-field__label">数量(台/套)</label><input class="form-input form-input--amount" v-model="m.quantity" /></div>
+                      <div class="form-field"><label class="form-field__label">购置日期</label><input class="form-input" type="date" v-model="m.purchaseDate" /></div>
+                    </template>
+                    <template v-else-if="m.type === '车辆'">
+                      <div class="form-field"><label class="form-field__label">车牌号</label><input class="form-input" v-model="m.plateNo" /></div>
+                      <div class="form-field"><label class="form-field__label">车架号(VIN)</label><input class="form-input" v-model="m.vin" /></div>
+                      <div class="form-field"><label class="form-field__label">登记日期</label><input class="form-input" type="date" v-model="m.regDate" /></div>
+                    </template>
+                    <div class="form-field"><label class="form-field__label">评估价值(万元)</label><input class="form-input form-input--amount" v-model="m.value" /></div>
+                    <div class="form-field"><label class="form-field__label">权属人</label><input class="form-input" v-model="m.owner" /></div>
+                    <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" /></div>
+                  </div>
+                </div>
               </td>
             </tr>
             <!-- 质押物明细 -->
@@ -502,7 +522,7 @@
     <div v-show="step === 3" class="form-card">
       <div class="form-card__title">
         利率定价
-        <span class="badge badge--warning">贷款越低越优惠(LOWER_BETTER)</span>
+        <span class="badge badge--warning">贷款利率越低越优惠</span>
       </div>
       <div class="section-tip" style="margin-bottom:12px">执行利率集中在定价分项模块录入;申请利率不得低于产品硬边界,突破将被提交校验阻断。</div>
       <table class="table">
@@ -698,21 +718,21 @@
             <tr v-for="it in routeResult.items" :key="it.pricingItemId">
               <td>{{ it.pricingItemNo }}</td>
               <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(it.memberCustomerNo || '') }}</td>
-              <td>{{ it.productCode || '—' }}</td>
+              <td>{{ productName(it.productCode) }}</td>
               <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-              <td>{{ directionName(it.rateDirection) }}</td>
+              <td>{{ rateDirectionText(it.rateDirection) }}</td>
               <td>
                 <template v-if="it.errorCode">
                   <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
                 </template>
                 <template v-else-if="it.routeChain?.length">
                   <span v-for="(n, ni) in it.routeChain" :key="ni">
-                    <span class="route-node">{{ nodeName(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
+                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
                   </span>
                 </template>
                 <span v-else>暂无数据</span>
               </td>
-              <td>{{ nodeName(it.finalNodeCode) }}</td>
+              <td>{{ nodeLabel(it.finalNodeCode) }}</td>
               <td>
                 <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
                 <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
@@ -758,15 +778,16 @@ import {
   submitApplication,
   reapplyApplication,
   importOtherLoans,
-  nodeName,
-  directionName,
   type ApplicationPayload,
   type GuaranteeMeasureInput,
   type RoutePreview,
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import { GUARANTEE_TYPES, guaranteeTypeText } from '@/utils/dict'
+import {
+  GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
+  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES
+} from '@/utils/dict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 
@@ -781,30 +802,17 @@ const step = ref(0)
 const guaranteeTypes = GUARANTEE_TYPES
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 贷款产品(与规则/硬边界配置中的 product_code 对齐)
-const loanProducts = [
-  { code: 'LOAN_A', name: '流动资金贷款' },
-  { code: 'LOAN_P', name: '个人经营性贷款' },
-  { code: 'LOAN_GENERAL', name: '一般对公贷款' }
-]
+const loanProducts = LOAN_PRODUCTS
 // 贡献度指标字典(§9;当前值由数仓带出,不做静态假定)
-const metricDict = [
-  { code: 'PUBLIC_DEPOSIT_AVG', name: '存款日均' },
-  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '项目贷日均' },
-  { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现规模' },
-  { code: 'PUBLIC_OFF_BALANCE_INCOME', name: '中间业务收入' },
-  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇业务总量' },
-  { code: 'PUBLIC_PAYROLL_CONTRIBUTION', name: '代发客户数' },
-  { code: 'PUBLIC_PAYROLL_AMOUNT', name: '代发金额' },
-  { code: 'PUBLIC_WEALTH_INCOME', name: '对公财富中收' },
-  { code: 'PRIVATE_DEPOSIT_AVG', name: '对私存款日均' },
-  { code: 'PRIVATE_LOAN_AVG', name: '对私贷款日均' },
-  { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' },
-  // §6.4 承诺类型"其它":手工录入(金额或文本),数仓无指标,无数值达成率、不参与机构达成率(D19)
-  { code: 'OTHER', name: '其它(手工录入,无数值达成率)' }
-]
+const metricDict = METRIC_CODES
 
 // ---------- 表单状态 ----------
-interface MortgageRow { type: string; name: string; addr: string; value: string; owner: string; ratio: string }
+interface MortgageRow {
+  type: string; name: string; addr: string; value: string; owner: string; ratio: string
+  area: string; certNo: string; landUseType: string; landUseExpiry: string
+  specModel: string; quantity: string; purchaseDate: string
+  plateNo: string; vin: string; regDate: string
+}
 interface GuarantorRow { name: string; certNo: string; amount: string; balance: string }
 interface GuaranteeRow {
   memberCustomerNo: string
@@ -1053,7 +1061,7 @@ function removeGuarantee(idx: number) {
   form.guarantees.splice(idx, 1)
 }
 function addGuaranteeMortgage(g: GuaranteeRow) {
-  g.mortgages.push({ type: '住宅', name: '', addr: '', value: '', owner: '', ratio: '' })
+  g.mortgages.push({ type: '住宅', name: '', addr: '', value: '', owner: '', ratio: '', area: '', certNo: '', landUseType: '出让', landUseExpiry: '', specModel: '', quantity: '', purchaseDate: '', plateNo: '', vin: '', regDate: '' })
 }
 function addGuaranteeGuarantor(g: GuaranteeRow) {
   g.guarantors.push({ name: '', certNo: '', amount: '', balance: '' })
@@ -1243,7 +1251,7 @@ function buildMeasures(g: GuaranteeRow): GuaranteeMeasureInput[] {
       measureType: 'MORTGAGE',
       guaranteeAmount: m.value || undefined,
       currency: 'CNY',
-      extJson: { collateralType: m.type, name: m.name, address: m.addr, owner: m.owner, mortgageRatio: m.ratio }
+      extJson: { collateralType: m.type, name: m.name, address: m.addr, owner: m.owner, mortgageRatio: m.ratio, area: m.area, certNo: m.certNo, landUseType: m.landUseType, landUseExpiry: m.landUseExpiry, specModel: m.specModel, quantity: m.quantity, purchaseDate: m.purchaseDate, plateNo: m.plateNo, vin: m.vin, regDate: m.regDate }
     })
   }
   for (const t of g.guarantors) {
@@ -1398,8 +1406,8 @@ async function onConfirmSubmit() {
   try {
     const result = await submitApplication(draft.id)
     checkDialogVisible.value = false
-    const firstNode = nodeName(result.items?.[0]?.currentNodeCode)
-    const finalNode = nodeName(result.items?.[0]?.routeCode)
+    const firstNode = nodeLabel(result.items?.[0]?.currentNodeCode)
+    const finalNode = nodeLabel(result.items?.[0]?.routeCode)
     ElMessageBox.alert(
       `申请号:${result.applicationNo}\n当前节点:${firstNode}\n终审岗位:${finalNode}\n提交时间:${result.submitTime || '—'}`,
       result.submitted === false ? '申请已提交(幂等返回)' : '提交成功',
@@ -1487,7 +1495,12 @@ async function loadDraftIntoForm(id: number) {
           addr: ms.extJson?.address || '',
           value: ms.guaranteeAmount != null ? String(ms.guaranteeAmount) : '',
           owner: ms.extJson?.owner || '',
-          ratio: ms.extJson?.mortgageRatio || ''
+          ratio: ms.extJson?.mortgageRatio || '',
+          area: ms.extJson?.area || '', certNo: ms.extJson?.certNo || '',
+          landUseType: ms.extJson?.landUseType || '出让', landUseExpiry: ms.extJson?.landUseExpiry || '',
+          specModel: ms.extJson?.specModel || '', quantity: ms.extJson?.quantity || '',
+          purchaseDate: ms.extJson?.purchaseDate || '', plateNo: ms.extJson?.plateNo || '',
+          vin: ms.extJson?.vin || '', regDate: ms.extJson?.regDate || ''
         })
       } else if (ms.measureType === 'GUARANTOR') {
         g.guarantors.push({

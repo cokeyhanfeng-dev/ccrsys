@@ -129,7 +129,7 @@
         <div class="card__head"><span>指标完成进度</span></div>
         <div v-for="(m, i) in planMetrics" :key="i" class="metric-row">
           <div class="metric-row__head">
-            <b>{{ m.metric_name || m.metric_code || '—' }}</b>
+            <b>{{ m.metric_name || metricName(m.metric_code) }}</b>
             <span v-if="m.metric_code !== 'OTHER'" class="dg-label">目标 {{ m.target_value ?? '—' }} · 实际 {{ m.actual_value ?? '暂无数据' }}</span>
             <span v-else class="dg-label">其它手工承诺(§6.4)</span>
             <span :class="resultBadge(m.result_status)">{{ resultText(m.result_status) }}</span>
@@ -154,7 +154,7 @@
           <thead><tr><th>指标</th><th>数据日期</th><th>实际值</th><th>达成率</th><th>结论</th></tr></thead>
           <tbody>
             <tr v-for="(e, i) in evaluations" :key="i">
-              <td>{{ e.metricCode || e.metric_code || '—' }}</td>
+              <td>{{ metricName(e.metricCode || e.metric_code) }}</td>
               <td>{{ e.dataDt || e.data_dt || '—' }}</td>
               <td class="num">{{ e.actualValue ?? e.actual_value ?? '—' }}</td>
               <td class="num">
@@ -201,11 +201,11 @@
           <tr v-for="p in policyDialog.list" :key="p.id">
             <td>{{ p.policyNo }}</td>
             <td>{{ p.policyName }}</td>
-            <td>{{ p.metricCode }}</td>
-            <td>{{ p.businessType || '不限' }}</td>
+            <td>{{ metricName(p.metricCode) }}</td>
+            <td>{{ businessTypeText(p.businessType, '不限') }}</td>
             <td>{{ p.orgCode || '通用' }}</td>
             <td class="num">{{ p.priority }}</td>
-            <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
+            <td><span :class="statusBadge(p.status)">{{ configStatusText(p.status) }}</span></td>
           </tr>
           <tr v-if="!policyDialog.list.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
         </tbody>
@@ -225,7 +225,7 @@
         </thead>
         <tbody>
           <tr v-for="(m, i) in policyDialog.simResult.metrics || []" :key="i">
-            <td>{{ m.metricCode }}</td>
+            <td>{{ metricName(m.metricCode) }}</td>
             <td>{{ m.matchedPolicyName || m.matchedPolicyNo || '默认策略' }}</td>
             <td>{{ m.matchedVersionCode || '—' }}</td>
             <td class="num">{{ m.achieveLine ?? '—' }}</td>
@@ -245,6 +245,10 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listCommitmentPlans, listTrackingPolicies, simulatePolicy } from '@/api/commitment'
 import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
+import {
+  planStatusText, configStatusText, evalResultText,
+  customerScopeText, metricName, businessTypeText
+} from '@/utils/dict'
 
 // ---------- 钻取层级(§12.11):1 客户列表 / 2 客户承诺记录 / 3 指标明细 ----------
 const level = ref<1 | 2 | 3>(1)
@@ -427,10 +431,7 @@ async function runSimulate() {
 
 // ---------- 展示映射 ----------
 function scopeText(s?: string) {
-  const map: Record<string, string> = {
-    INDIVIDUAL: '个人', CORPORATE_SINGLE: '企业单户', MEMBER: '集团成员', GROUP: '集团'
-  }
-  return s ? (map[s] || s) : '—'
+  return customerScopeText(s)
 }
 function ratioClass(ratio: number) {
   return ratio >= 100 ? 'badge badge--success' : ratio >= 80 ? 'badge badge--warning' : 'badge badge--danger'
@@ -446,12 +447,7 @@ function progressColor(ratio: any) {
   return r >= 100 ? 'var(--color-success)' : r >= 80 ? 'var(--color-warning)' : 'var(--color-danger)'
 }
 function statusText(s?: string) {
-  const map: Record<string, string> = {
-    PENDING: '待生效', TRACKING: '跟踪中', AT_RISK: '有风险', ACHIEVED: '已达成',
-    EXPIRED_UNMET: '到期未达成', DATA_PENDING: '数据待齐', TERMINATED: '已终止', SUPERSEDED: '已被替代',
-    DRAFT: '草稿', REVIEW: '待复核', EFFECTIVE: '已生效', INVALID: '已停用'
-  }
-  return s ? (map[s] || s) : '—'
+  return planStatusText(s)
 }
 function statusBadge(s?: string) {
   const map: Record<string, string> = {
@@ -462,11 +458,7 @@ function statusBadge(s?: string) {
   return map[s || ''] || 'badge badge--neutral'
 }
 function resultText(s?: string) {
-  const map: Record<string, string> = {
-    ACHIEVED: '已达成', AT_RISK: '有风险', DATA_PENDING: '数据待齐',
-    NO_EVALUATION: '暂无评估', ON_TRACK: '正常'
-  }
-  return s ? (map[s] || s) : '—'
+  return evalResultText(s)
 }
 function resultBadge(s?: string) {
   const map: Record<string, string> = {

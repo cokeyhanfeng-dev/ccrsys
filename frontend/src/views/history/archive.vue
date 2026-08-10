@@ -18,11 +18,11 @@
     <template v-else-if="archive.application">
       <!-- 1. 申请内容 -->
       <div class="card">
-        <div class="card__head"><span>申请内容</span><span :class="badgeClass(val(archive.application, 'status'))">{{ statusText(val(archive.application, 'status')) }}</span></div>
+        <div class="card__head"><span>申请内容</span><span :class="badgeClass(val(archive.application, 'status'))">{{ appStatusText(val(archive.application, 'status')) }}</span></div>
         <div class="desc-grid">
           <div class="desc-item"><span class="desc-label">申请号</span>{{ val(archive.application, 'application_no', 'applicationNo') }}</div>
-          <div class="desc-item"><span class="desc-label">业务类型</span>{{ bizText(val(archive.application, 'business_type', 'businessType')) }}</div>
-          <div class="desc-item"><span class="desc-label">客户范围</span>{{ scopeText(val(archive.application, 'customer_scope', 'customerScope')) }}</div>
+          <div class="desc-item"><span class="desc-label">业务类型</span>{{ businessTypeText(val(archive.application, 'business_type', 'businessType')) }}</div>
+          <div class="desc-item"><span class="desc-label">客户范围</span>{{ customerScopeText(val(archive.application, 'customer_scope', 'customerScope')) }}</div>
           <div class="desc-item"><span class="desc-label">客户号</span>{{ val(archive.application, 'customer_no', 'customerNo') }}</div>
           <div class="desc-item"><span class="desc-label">集团号</span>{{ val(archive.application, 'group_no', 'groupNo') }}</div>
           <div class="desc-item"><span class="desc-label">提交时间</span>{{ fmtTime(val(archive.application, 'submit_time', 'submitTime')) }}</div>
@@ -40,7 +40,7 @@
           <tbody>
             <tr v-for="(m, i) in archive.members" :key="i">
               <td>{{ val(m, 'member_customer_no', 'memberCustomerNo') }}</td>
-              <td>{{ val(m, 'member_role', 'memberRole') }}</td>
+              <td>{{ memberRoleText(val(m, 'member_role', 'memberRole')) }}</td>
               <td class="num">{{ val(m, 'request_amount', 'requestAmount') }}</td>
             </tr>
           </tbody>
@@ -113,14 +113,14 @@
             <tr v-for="p in archive.pricingItems" :key="val(p, 'id')">
               <td>{{ val(p, 'pricing_item_no', 'pricingItemNo') }}</td>
               <td>{{ val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
-              <td>{{ val(p, 'product_code', 'productCode') }}</td>
+              <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
               <td class="num">{{ val(p, 'pricing_amount', 'pricingAmount') }}</td>
               <td>{{ termText(p) }}</td>
               <td class="num">{{ rateText(val(p, 'requested_rate', 'requestedRate')) }}</td>
               <td class="num">{{ rateText(val(p, 'current_approval_rate', 'currentApprovalRate')) }}</td>
               <td class="num"><b>{{ rateText(val(p, 'final_rate', 'finalRate')) }}</b></td>
-              <td>{{ nodeText(val(p, 'route_code', 'routeCode')) }}</td>
-              <td><span :class="badgeClass(val(p, 'status'))">{{ statusText(val(p, 'status')) }}</span></td>
+              <td>{{ nodeLabel(val(p, 'route_code', 'routeCode')) }}</td>
+              <td><span :class="badgeClass(val(p, 'status'))">{{ itemStatusText(val(p, 'status')) }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -158,7 +158,7 @@
               <td>{{ val(q, 'ruleCode', 'rule_code') }}</td>
               <td>
                 <span :class="val(q, 'ruleLevel', 'rule_level') === 'BLOCK' ? 'badge badge--danger' : val(q, 'ruleLevel', 'rule_level') === 'WARN' ? 'badge badge--warning' : 'badge badge--success'">
-                  {{ val(q, 'ruleLevel', 'rule_level') }}
+                  {{ ruleLevelText(val(q, 'ruleLevel', 'rule_level')) }}
                 </span>
               </td>
               <td>{{ val(q, 'subjectType', 'subject_type') }} {{ val(q, 'subjectId', 'subject_id') }}</td>
@@ -179,7 +179,7 @@
           </thead>
           <tbody>
             <tr v-for="(a, i) in archive.approvalActions" :key="i">
-              <td>{{ nodeText(val(a, 'node_code', 'nodeCode')) }}</td>
+              <td>{{ nodeLabel(val(a, 'node_code', 'nodeCode')) }}</td>
               <td><span :class="actionBadge(val(a, 'action_type', 'actionType'))">{{ actionText(val(a, 'action_type', 'actionType')) }}</span></td>
               <td>{{ roleText(val(a, 'operator_role', 'operatorRole')) }}</td>
               <td class="num">{{ rateText(val(a, 'before_rate', 'beforeRate')) }}</td>
@@ -221,7 +221,7 @@
             <tr v-for="vr in archive.voteRounds" :key="val(vr, 'id')">
               <td>{{ val(vr, 'roundNo', 'round_no') }}</td>
               <td>{{ val(vr, 'roundName', 'round_name') }}</td>
-              <td>{{ val(vr, 'status') }}</td>
+              <td>{{ roundStatusText(val(vr, 'status')) }}</td>
               <td class="num">{{ val(vr, 'voterCount', 'voter_count') }} / {{ val(vr, 'requiredCount', 'required_count') }}</td>
               <td>{{ fmtTime(val(vr, 'roundStartTime', 'round_start_time')) }}</td>
               <td>{{ fmtTime(val(vr, 'roundEndTime', 'round_end_time')) }}</td>
@@ -251,7 +251,7 @@
           <tbody>
             <tr v-for="(d, i) in archive.presidentDecisions" :key="i">
               <td>{{ val(d, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td><span :class="val(d, 'decision') === 'AGREE' ? 'badge badge--success' : 'badge badge--danger'">{{ val(d, 'decision') === 'AGREE' ? '同意' : '一票否决' }}</span></td>
+              <td><span :class="val(d, 'decision') === 'AGREE' ? 'badge badge--success' : 'badge badge--danger'">{{ decisionText(val(d, 'decision')) }}</span></td>
               <td>{{ val(d, 'opinion') }}</td>
               <td>{{ fmtTime(val(d, 'decisionTime', 'decision_time')) }}</td>
             </tr>
@@ -272,7 +272,7 @@
               <td class="num"><b>{{ rateText(val(r, 'finalRate', 'final_rate')) }}</b></td>
               <td>{{ fmtDate(val(r, 'effectiveFrom', 'effective_from')) }} ~ {{ fmtDate(val(r, 'effectiveTo', 'effective_to')) }}</td>
               <td>{{ val(r, 'decisionSource', 'decision_source') }}</td>
-              <td>{{ val(r, 'status') }}</td>
+              <td>{{ execStatusText(val(r, 'status')) }}</td>
               <td>{{ fmtTime(val(r, 'issueTime', 'issue_time')) }}</td>
             </tr>
           </tbody>
@@ -285,7 +285,7 @@
               <td>{{ val(e, 'loanContractNo', 'loan_contract_no') }}</td>
               <td>{{ val(e, 'supplementAgreementNo', 'supplement_agreement_no') }}</td>
               <td class="num">{{ rateText(val(e, 'executionRate', 'execution_rate')) }}</td>
-              <td>{{ val(e, 'executionStatus', 'execution_status') }}</td>
+              <td>{{ execStatusText(val(e, 'executionStatus', 'execution_status')) }}</td>
               <td>{{ val(e, 'reconcileResult', 'reconcile_result') }}</td>
               <td>{{ fmtTime(val(e, 'reconcileTime', 'reconcile_time')) }}</td>
             </tr>
@@ -302,8 +302,8 @@
           <tbody>
             <tr v-for="c in archive.commitmentPlans" :key="val(c, 'id')">
               <td>{{ val(c, 'planNo', 'plan_no') }}</td>
-              <td>{{ scopeText(val(c, 'scopeType', 'scope_type')) }}</td>
-              <td><span :class="badgeClass(val(c, 'status'))">{{ statusText(val(c, 'status')) }}</span></td>
+              <td>{{ customerScopeText(val(c, 'scopeType', 'scope_type')) }}</td>
+              <td><span :class="badgeClass(val(c, 'status'))">{{ planStatusText(val(c, 'status')) }}</span></td>
               <td>{{ fmtDate(val(c, 'startDate', 'start_date')) }}</td>
               <td>{{ fmtDate(val(c, 'endDate', 'end_date')) }}</td>
             </tr>
@@ -314,8 +314,8 @@
           <tbody>
             <tr v-for="(m, i) in archive.commitmentMetrics" :key="i">
               <td>{{ val(m, 'planId', 'plan_id') }}</td>
-              <td>{{ val(m, 'metricCode', 'metric_code') }}</td>
-              <td>{{ val(m, 'targetType', 'target_type') }}</td>
+              <td>{{ metricName(val(m, 'metricCode', 'metric_code')) }}</td>
+              <td>{{ targetTypeText(val(m, 'targetType', 'target_type')) }}</td>
               <td class="num">{{ val(m, 'baselineValue', 'baseline_value') }}</td>
               <td class="num">{{ val(m, 'targetValue', 'target_value') }}</td>
               <td>{{ val(m, 'unit') }}</td>
@@ -335,6 +335,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { getArchive, exportArchive } from '@/api/history'
+import {
+  appStatusText, itemStatusText, planStatusText, roundStatusText, execStatusText,
+  businessTypeText, customerScopeText, nodeLabel, roleText, actionText, decisionText,
+  ruleLevelText, productName, metricName, targetTypeText, memberRoleText, termUnitText
+} from '@/utils/dict'
 
 const route = useRoute()
 const router = useRouter()
@@ -388,46 +393,10 @@ function termText(p: any) {
   const v = val(p, 'term_value', 'termValue')
   if (v === '—') return '—'
   const unit = val(p, 'term_unit', 'termUnit')
-  const unitText = unit === 'YEAR' ? '年' : unit === 'MONTH' ? '个月' : unit === 'DAY' ? '天' : unit
-  return `${v}${unitText}`
-}
-function bizText(b: any) {
-  return b === 'LOAN' ? '贷款' : b === 'DEPOSIT' ? '存款' : b || '—'
+  return `${v}${termUnitText(unit === '—' ? '' : unit)}`
 }
 function plannedText(f: any) {
   return f === 'Y' ? '是' : f === 'N' ? '否' : f || '—'
-}
-function scopeText(s: any) {
-  const map: Record<string, string> = {
-    INDIVIDUAL: '个人', CORPORATE_SINGLE: '企业单户', MEMBER: '集团成员', GROUP: '集团'
-  }
-  return map[s] || s || '—'
-}
-function nodeText(code: any) {
-  const map: Record<string, string> = {
-    BRANCH_MANAGER: '支行行长',
-    DEPT_GENERAL_MANAGER: '部门总经理',
-    VICE_PRESIDENT: '分管行长',
-    SIX_PEOPLE_GROUP: '六人小组',
-    PRESIDENT: '总行行长'
-  }
-  return map[code] || code || '—'
-}
-function roleText(code: any) {
-  const map: Record<string, string> = {
-    customer_manager: '客户经理', branch_manager: '支行行长', dept_gm: '部门总经理',
-    vice_president: '分管行长', committee_member: '审批小组成员', president: '总行行长', admin: '系统管理员'
-  }
-  return map[code] || code || '—'
-}
-function statusText(s: any) {
-  const map: Record<string, string> = {
-    DRAFT: '草稿', SUBMITTING: '提交中', PROCESSING: '审批中', PARTIAL_APPROVED: '部分通过',
-    APPROVED: '已通过', REJECTED: '已否决', CLOSED: '已关闭',
-    PENDING: '待生效', TRACKING: '跟踪中', AT_RISK: '有风险', ACHIEVED: '已达成',
-    EXPIRED_UNMET: '到期未达成', DATA_PENDING: '数据待齐', TERMINATED: '已终止', SUPERSEDED: '已被替代'
-  }
-  return map[s] || s || '—'
 }
 function badgeClass(s: any) {
   const map: Record<string, string> = {
@@ -437,12 +406,6 @@ function badgeClass(s: any) {
     AT_RISK: 'badge badge--warning', DATA_PENDING: 'badge badge--warning', PENDING: 'badge badge--warning'
   }
   return map[s] || 'badge badge--neutral'
-}
-function actionText(a: any) {
-  const map: Record<string, string> = {
-    APPROVE: '通过', REJECT: '否决', ADJUST: '调价', SUBMIT: '提交', RETURN: '退回'
-  }
-  return map[a] || a || '—'
 }
 function actionBadge(a: any) {
   const map: Record<string, string> = {

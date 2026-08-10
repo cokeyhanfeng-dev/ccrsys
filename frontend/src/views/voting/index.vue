@@ -16,7 +16,7 @@
         </thead>
         <tbody>
           <tr v-for="(row, idx) in rows" :key="row.roundId + '-' + row.pricingItemId">
-            <td>{{ row.productCode }}</td>
+            <td>{{ productName(row.productCode) }}</td>
             <td class="num">{{ row.pricingAmount ?? '—' }}</td>
             <td class="num">{{ row.requestedRate }}%</td>
             <td>
@@ -50,6 +50,7 @@ import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listVoteTodo, fetchMyBallot, submitBallot } from '@/api/vote'
 import { newIdempotencyKey } from '@/api/approval'
+import { productName } from '@/utils/dict'
 
 const rows = ref<any[]>([])
 const submitting = ref(false)

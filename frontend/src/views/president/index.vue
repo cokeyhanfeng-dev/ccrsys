@@ -60,7 +60,7 @@
                       <td>{{ o.anonymNo || '—' }}</td>
                       <td>
                         <span class="badge" :class="o.voteChoice === 'APPROVE' ? 'badge--success' : 'badge--danger'">
-                          {{ o.voteChoice === 'APPROVE' ? '同意' : o.voteChoice === 'REJECT' ? '否决' : (o.voteChoice || '—') }}
+                          {{ voteChoiceText(o.voteChoice) }}
                         </span>
                       </td>
                       <td>{{ o.voteComment || '—' }}</td>
@@ -100,7 +100,7 @@
                 <tr v-for="(t, i) in detail.flowTrace" :key="i">
                   <td>{{ t.operationTime || '—' }}</td>
                   <td>{{ nodeLabel(t.nodeCode) }}</td>
-                  <td>{{ t.actionType === 'APPROVE' ? '通过' : t.actionType === 'REJECT' ? '否决' : t.actionType }}</td>
+                  <td>{{ actionText(t.actionType) }}</td>
                   <td class="num">{{ t.beforeRate != null && t.afterRate != null && t.beforeRate !== t.afterRate ? `${t.beforeRate}% → ${t.afterRate}%` : '—' }}</td>
                   <td>{{ t.actionComment || '—' }}</td>
                 </tr>
@@ -138,6 +138,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { listPresidentTodo, getVoteResult, submitPresidentDecision } from '@/api/vote'
 import { getApprovalDetail } from '@/api/approval'
 import { listRoundOpinions } from '@/api/approval2'
+import { nodeLabel, actionText, voteChoiceText, metricName } from '@/utils/dict'
 
 const cards = ref<any[]>([])
 const submitting = ref(false)
@@ -145,14 +146,6 @@ const detail = ref<any>({
   show: false, loaded: false, id: null, customer: '', rate: '', opinion: '',
   voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '', opinions: []
 })
-
-const NODE_LABELS: Record<string, string> = {
-  BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组表决', PRESIDENT: '行长决策'
-}
-function nodeLabel(code?: string) {
-  return code ? (NODE_LABELS[code] || code) : '—'
-}
 
 // 行长待决策(表决通过的定价分项)
 async function load() {
@@ -186,7 +179,7 @@ async function openDetail(c: any) {
     detail.value.contribution = total ? `${total.metricValue} ${total.valueType || ''}`.trim() : (contribution.length ? `${contribution.length} 项指标` : '暂无数据')
     const commitments: any[] = d.commitments || []
     detail.value.commitment = commitments.length
-      ? commitments.map((m) => `${m.metricCode} ${m.baselineValue ?? '—'}→${m.targetValue ?? '—'}${m.unit || ''}`).join(';')
+      ? commitments.map((m) => `${metricName(m.metricCode)} ${m.baselineValue ?? '—'}→${m.targetValue ?? '—'}${m.unit || ''}`).join(';')
       : '暂无数据'
     detail.value.qualityOverall = d.qualityOverall || ''
     detail.value.flowTrace = d.flowTrace || []

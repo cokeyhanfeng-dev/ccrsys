@@ -44,7 +44,7 @@
               <td>{{ q.ruleCode }}</td>
               <td>
                 <span class="badge" :class="q.ruleLevel === 'BLOCK' ? 'badge--danger' : q.ruleLevel === 'WARN' ? 'badge--warning' : 'badge--success'">
-                  {{ q.ruleLevel === 'BLOCK' ? '阻断' : q.ruleLevel === 'WARN' ? '预警' : '通过' }}
+                  {{ ruleLevelText(q.ruleLevel) }}
                 </span>
               </td>
               <td>{{ q.subjectType || '—' }} {{ q.subjectId || '' }}</td>
@@ -91,9 +91,9 @@
         <div><span class="dg-label">客户号</span>{{ application.customerNo || pi.pricing_customer_no || '—' }}</div>
         <div><span class="dg-label">定价分项</span>{{ pi.pricing_item_no || '—' }}</div>
         <div><span class="dg-label">分项状态</span>{{ statusText }}</div>
-        <div><span class="dg-label">产品编码</span>{{ pi.product_code || '—' }}</div>
+        <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
         <div><span class="dg-label">原执行利率</span>{{ pi.original_rate != null ? fmtRate(pi.original_rate) : '新增业务' }}</div>
-        <div><span class="dg-label">期限</span>{{ pi.term_value ? `${pi.term_value}${termUnitText}` : '—' }}</div>
+        <div><span class="dg-label">期限</span>{{ pi.term_value ? `${pi.term_value}${termUnitText(pi.term_unit)}` : '—' }}</div>
         <div><span class="dg-label">当前节点</span>{{ pi.current_node_code ? nodeLabel(pi.current_node_code) : '—' }}</div>
       </div>
       <div class="remark-text" style="margin-top:12px" v-if="application.applicationRemark">{{ application.applicationRemark }}</div>
@@ -104,7 +104,7 @@
       <div class="card__head"><span>客户基本信息</span><span class="badge badge--info">数仓</span></div>
       <div class="detail-grid" v-if="hasCustomer">
         <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
-        <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customer.entpCharic }}</div>
+        <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
         <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
         <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
         <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
@@ -124,17 +124,17 @@
         <div><span class="dg-label">集团贡献度</span>暂无数据</div>
       </div>
       <el-collapse v-if="groupMembers.length" style="margin-top:12px">
-        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="`成员 ${m.memberCustomerNo}(${m.memberRole || '成员'})`" :name="i">
+        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="`成员 ${m.memberCustomerNo}(${memberRoleText(m.memberRole, '成员')})`" :name="i">
           <div class="detail-grid">
             <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
-            <div><span class="dg-label">成员角色</span>{{ m.memberRole || '—' }}</div>
+            <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
           </div>
           <table class="table" style="margin-top:8px" v-if="memberCommitments(m.memberCustomerNo).length">
             <thead><tr><th>承诺指标</th><th>基线</th><th>目标</th><th>单位</th></tr></thead>
             <tbody>
               <tr v-for="(c, j) in memberCommitments(m.memberCustomerNo)" :key="j">
-                <td>{{ c.metricCode }}</td>
+                <td>{{ metricName(c.metricCode) }}</td>
                 <td class="num">{{ c.baselineValue ?? '—' }}</td>
                 <td class="num">{{ c.targetValue ?? '—' }}</td>
                 <td>{{ c.unit || '—' }}</td>
@@ -165,7 +165,7 @@
     <div class="card">
       <div class="card__head"><span>{{ isLoan ? '贷款合同与担保' : '存款账户' }}</span></div>
       <div class="detail-grid" v-if="isLoan">
-        <div><span class="dg-label">定价载体</span>{{ pi.pricing_carrier_type === 'LOAN_CONTRACT' ? '贷款合同' : pi.pricing_carrier_type === 'DEPOSIT_ACCOUNT' ? '存款账户' : (pi.pricing_carrier_type || '—') }}</div>
+        <div><span class="dg-label">定价载体</span>{{ carrierTypeText(pi.pricing_carrier_type) }}</div>
         <div><span class="dg-label">载体来源</span>{{ pi.credit_tranche_ref || '—' }}</div>
         <div><span class="dg-label">合同下借据</span>暂无数据</div>
       </div>
@@ -177,10 +177,10 @@
           <tbody>
             <tr v-for="(a, i) in depositAccounts" :key="i">
               <td>{{ a.accountNoMasked || '—' }}</td>
-              <td>{{ a.productCode || pi.product_code || '—' }}</td>
+              <td>{{ productName(a.productCode || pi.product_code) }}</td>
               <td class="num">{{ a.accountBalance ?? '—' }}</td>
               <td class="num">{{ a.executionRate ?? '—' }}</td>
-              <td>{{ a.termValue ? `${a.termValue}${termUnitText}` : '—' }}</td>
+              <td>{{ a.termValue ? `${a.termValue}${termUnitText(a.termUnit || pi.term_unit)}` : '—' }}</td>
               <td>{{ a.openDate || '—' }}</td>
               <td>{{ a.maturityDate || '—' }}</td>
               <td><span class="badge" :class="a.plannedAccountFlag === 'Y' ? 'badge--neutral' : 'badge--success'">{{ a.plannedAccountFlag === 'Y' ? '拟开户' : '存量账户' }}</span></td>
@@ -236,14 +236,14 @@
       <div class="card__head"><span>历史履约</span><span class="badge badge--info">承诺跟踪</span></div>
       <template v-if="tracking.length">
         <div v-if="unmetTracking.length" class="warn-bar">
-          {{ unmetTracking.length }} 项承诺指标未达成({{ unmetTracking.map((t) => t.metricCode).join('、') }}),请关注履约风险。
+          {{ unmetTracking.length }} 项承诺指标未达成({{ unmetTracking.map((t) => metricName(t.metricCode)).join('、') }}),请关注履约风险。
         </div>
         <table class="table">
           <thead><tr><th>计划号</th><th>指标</th><th>目标值</th><th>实际值</th><th>完成率</th><th>评估结论</th><th>数据日期</th></tr></thead>
           <tbody>
             <tr v-for="(t, i) in tracking" :key="i">
               <td>{{ t.planNo || '—' }}</td>
-              <td>{{ t.metricCode || '—' }}</td>
+              <td>{{ metricName(t.metricCode) }}</td>
               <td class="num">{{ t.targetValue ?? '—' }}</td>
               <td class="num">{{ t.actualValue ?? '暂无数据' }}</td>
               <td class="num">
@@ -254,7 +254,7 @@
               </td>
               <td>
                 <span class="badge" :class="t.resultStatus === 'ACHIEVED' ? 'badge--success' : t.resultStatus === 'AT_RISK' ? 'badge--danger' : 'badge--warning'">
-                  {{ trackingResultText(t.resultStatus) }}
+                  {{ evalResultText(t.resultStatus) }}
                 </span>
               </td>
               <td>{{ t.dataDt || '—' }}</td>
@@ -300,7 +300,7 @@
             <td class="num">{{ fmtRate(r.finalRate) }}</td>
             <td>{{ r.decisionSource || '—' }}</td>
             <td>{{ fmtDate(r.issueTime) }}</td>
-            <td><span class="badge" :class="resolutionStatusBadge(r.status)">{{ resolutionStatusText(r.status) }}</span></td>
+            <td><span class="badge" :class="resolutionStatusBadge(r.status)">{{ execStatusText(r.status) }}</span></td>
           </tr>
         </tbody>
       </table>
@@ -311,7 +311,7 @@
             <td>{{ e.loanContractNo || '—' }}</td>
             <td>{{ e.supplementAgreementNo || '—' }}</td>
             <td class="num">{{ fmtRate(e.executionRate) }}</td>
-            <td>{{ e.executionStatus || '—' }}</td>
+            <td>{{ execStatusText(e.executionStatus) }}</td>
             <td>{{ e.reconcileResult || '—' }}</td>
             <td>{{ fmtDate(e.reconcileTime) }}</td>
           </tr>
@@ -327,7 +327,7 @@
         <tbody>
           <tr v-for="(v, i) in voteRounds" :key="i">
             <td>{{ v.roundName || v.roundNo || '—' }}</td>
-            <td><span class="badge" :class="v.status === 'PASSED' ? 'badge--success' : v.status === 'FAILED' ? 'badge--danger' : 'badge--warning'">{{ voteRoundStatusText(v.status) }}</span></td>
+            <td><span class="badge" :class="v.status === 'PASSED' ? 'badge--success' : v.status === 'FAILED' ? 'badge--danger' : 'badge--warning'">{{ roundStatusText(v.status) }}</span></td>
             <td class="num">{{ voteResultOf(v.id) }}</td>
             <td>{{ fmtDate(v.roundStartTime) }}</td>
             <td>{{ fmtDate(v.roundEndTime) }}</td>
@@ -338,7 +338,7 @@
         <thead><tr><th>行长决策</th><th>意见</th><th>决策时间</th></tr></thead>
         <tbody>
           <tr v-for="(d, i) in presidentDecisions" :key="i">
-            <td><span class="badge" :class="d.decision === 'AGREE' ? 'badge--success' : d.decision === 'VETO' ? 'badge--danger' : 'badge--warning'">{{ d.decision || '—' }}</span></td>
+            <td><span class="badge" :class="d.decision === 'AGREE' ? 'badge--success' : d.decision === 'VETO' ? 'badge--danger' : 'badge--warning'">{{ decisionText(d.decision) }}</span></td>
             <td>{{ d.opinion || '—' }}</td>
             <td>{{ fmtDate(d.decisionTime) }}</td>
           </tr>
@@ -353,11 +353,11 @@
         <el-timeline-item v-for="(t, i) in flowTrace" :key="i" :timestamp="t.operationTime || ''" placement="top">
           <div>
             <span class="badge" :class="t.actionType === 'REJECT' ? 'badge--rejected' : 'badge--approved'">
-              {{ t.actionType === 'APPROVE' ? '通过' : t.actionType === 'REJECT' ? '否决' : t.actionType }}
+              {{ actionText(t.actionType) }}
             </span>
             <span class="dg-label" style="margin-left:8px">{{ nodeLabel(t.nodeCode) }}</span>
             <span v-if="t.fromStatus || t.toStatus" class="badge badge--neutral" style="margin-left:8px">
-              {{ statusTextOf(t.fromStatus) }} → {{ statusTextOf(t.toStatus) }}
+              {{ itemStatusText(t.fromStatus) }} → {{ itemStatusText(t.toStatus) }}
             </span>
             <span v-if="t.beforeRate != null && t.afterRate != null && t.beforeRate !== t.afterRate" style="margin-left:8px">
               利率 {{ fmtRate(t.beforeRate) }} → {{ fmtRate(t.afterRate) }}
@@ -407,7 +407,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
-import { guaranteeTypeText } from '@/utils/dict'
+import {
+  guaranteeTypeText, nodeLabel, itemStatusText, actionText, decisionText,
+  execStatusText, roundStatusText, evalResultText, ruleLevelText,
+  productName, metricName, termUnitText, carrierTypeText, measureTypeText,
+  customerTypeText, memberRoleText
+} from '@/utils/dict'
 
 const route = useRoute()
 const router = useRouter()
@@ -443,21 +448,8 @@ const presidentDecisions = ref<any[]>([])
 const opRate = ref<number | undefined>(undefined)
 const opComment = ref('')
 
-const NODE_LABELS: Record<string, string> = {
-  BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组表决', PRESIDENT: '行长决策'
-}
 const ROLE_NODE: Record<string, string> = {
   branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT'
-}
-const STATUS_TEXT: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '路由中', APPROVED_LEVEL: '权限内已批',
-  VOTING: '小组表决', COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议',
-  FINAL: '终态', VETOED: '一票否决', REJECTED: '已否决', RETURNED: '已退回', CLOSED: '已关闭'
-}
-
-function nodeLabel(code?: string) {
-  return code ? (NODE_LABELS[code] || code) : '—'
 }
 
 const isLoan = computed(() => application.value.businessType !== 'DEPOSIT')
@@ -465,7 +457,7 @@ const businessTypeText = computed(() => application.value.businessType === 'DEPO
 const isGroup = computed(() => !!application.value.groupNo)
 const hasCustomer = computed(() => !!customer.value.customerName)
 const customerName = computed(() => customer.value.customerName || pi.value.pricing_customer_no || '—')
-const statusText = computed(() => STATUS_TEXT[pi.value.status] || pi.value.status || '—')
+const statusText = computed(() => itemStatusText(pi.value.status))
 
 // 当前节点在路由链中的位置(高亮)
 const currentNodeIndex = computed(() => {
@@ -493,11 +485,6 @@ const qualityText = computed(() =>
 const groupTotalAmount = computed(() =>
   groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
 
-const termUnitText = computed(() => {
-  const map: Record<string, string> = { D: '天', M: '个月', Y: '年', DAY: '天', MONTH: '个月', YEAR: '年' }
-  return map[pi.value.term_unit] || pi.value.term_unit || ''
-})
-
 function fmtRate(v: any) {
   return v == null || v === '' ? '—' : `${v}%`
 }
@@ -510,47 +497,18 @@ function memberCommitments(memberNo: string) {
 const unmetTracking = computed(() =>
   tracking.value.filter((t) => t.resultStatus && t.resultStatus !== 'ACHIEVED'))
 
-function measureTypeText(t?: string) {
-  const map: Record<string, string> = { MORTGAGE: '抵押物', GUARANTOR: '保证人', PLEDGE: '质押物' }
-  return t ? (map[t] || t) : '—'
-}
-
-function trackingResultText(s?: string) {
-  const map: Record<string, string> = {
-    ACHIEVED: '已达成', AT_RISK: '有风险', DATA_PENDING: '数据待齐',
-    NO_EVALUATION: '暂无评估', ON_TRACK: '正常'
-  }
-  return s ? (map[s] || s) : '—'
-}
-
-function statusTextOf(s?: string) {
-  return s ? (STATUS_TEXT[s] || s) : '—'
-}
-
 function fmtDate(v: any) {
   return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
 }
 
-// §12.7 ⑪ 决议状态:决议日期=issue_time,无有效期周期
-const RESOLUTION_STATUS: Record<string, string> = {
-  ISSUED: '已签发', CONTRACT_PENDING: '待签合同', EXECUTED: '已执行', VOID: '已作废'
-}
-function resolutionStatusText(s?: string) {
-  return s ? (RESOLUTION_STATUS[s] || s) : '—'
-}
+// §12.7 ⑪ 决议状态徽标:决议日期=issue_time,无有效期周期
 function resolutionStatusBadge(s?: string) {
   const map: Record<string, string> = {
     ISSUED: 'badge--info', CONTRACT_PENDING: 'badge--warning', EXECUTED: 'badge--success', VOID: 'badge--neutral'
   }
-  return map[s] || 'badge--neutral'
+  return map[s || ''] || 'badge--neutral'
 }
 
-const VOTE_ROUND_STATUS: Record<string, string> = {
-  VOTING: '表决中', PASSED: '通过', FAILED: '未通过', CLOSED: '已结束'
-}
-function voteRoundStatusText(s?: string) {
-  return s ? (VOTE_ROUND_STATUS[s] || s) : '—'
-}
 function voteResultOf(roundId: any) {
   const r = voteResults.value.find((x) => x.roundId === roundId)
   return r ? `${r.approveCount ?? 0} / ${r.rejectCount ?? 0}` : '—'

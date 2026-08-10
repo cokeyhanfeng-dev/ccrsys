@@ -122,6 +122,7 @@ import {
   listConfigChangeLog,
   type BallotDetailRow
 } from '@/api/audit'
+import { voteChoiceText, exportTypeText, configTypeText, configActionText } from '@/utils/dict'
 
 // ---------- ① 实际投票人反查 ----------
 const ballotQuery = reactive<{ roundId: string; pricingItemId: string }>({ roundId: '', pricingItemId: '' })
@@ -149,8 +150,7 @@ async function queryBallot() {
 }
 
 function ballotText(t?: string) {
-  const map: Record<string, string> = { APPROVE: '赞成', REJECT: '反对', AGREE: '赞成', DISAGREE: '反对' }
-  return map[t || ''] || t || '—'
+  return voteChoiceText(t)
 }
 function ballotBadge(t?: string) {
   return ['APPROVE', 'AGREE'].includes(t || '') ? 'badge badge--success' : 'badge badge--danger'
@@ -165,10 +165,6 @@ async function loadExportRecords() {
   } catch {
     exportRecords.value = []
   }
-}
-function exportTypeText(t?: string) {
-  const map: Record<string, string> = { ARCHIVE: '申请档案', RESOLUTION: '决议档案' }
-  return map[t || ''] || t || '—'
 }
 
 // ---------- ③ 配置版本查询 ----------
@@ -186,24 +182,8 @@ async function loadChangeLog() {
     changeLogLoading.value = false
   }
 }
-function configTypeText(t?: string) {
-  const map: Record<string, string> = {
-    LPR: 'LPR 阈值',
-    MATRIX: '权限矩阵',
-    RULE_SET: '利率规则集',
-    PRODUCT_LIMIT: '产品硬边界'
-  }
-  return map[t || ''] || t || '—'
-}
 function actionText(a?: string) {
-  const map: Record<string, string> = {
-    CREATE: '新增',
-    SUBMIT: '送复核',
-    PUBLISH: '发布',
-    DISABLE: '停用',
-    REJECT: '复核退回'
-  }
-  return map[a || ''] || a || '—'
+  return configActionText(a)
 }
 function actionBadge(a?: string) {
   const map: Record<string, string> = {

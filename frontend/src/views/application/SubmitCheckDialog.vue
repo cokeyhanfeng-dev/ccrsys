@@ -41,7 +41,7 @@
                 <tr v-for="(q, i) in qualityRows" :key="i">
                   <td>{{ q.ruleCode }}</td>
                   <td>
-                    <span :class="levelBadge(q.level)">{{ q.level }}</span>
+                    <span :class="levelBadge(q.level)">{{ ruleLevelText(q.level) }}</span>
                   </td>
                   <td>{{ q.subjectId || '—' }}</td>
                   <td>{{ q.message || '—' }}</td>
@@ -61,7 +61,7 @@
               <tbody>
                 <tr v-for="h in check.hardBoundaries" :key="h.pricingItemId">
                   <td>{{ h.pricingItemNo || h.pricingItemId }}</td>
-                  <td>{{ h.productCode || '—' }}</td>
+                  <td>{{ productName(h.productCode) }}</td>
                   <td class="num">{{ h.requestedRate }}%</td>
                   <td class="num">{{ h.boundaryRate != null ? h.boundaryRate + '%' : '暂无数据' }}</td>
                   <td>
@@ -101,6 +101,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SubmitCheck } from '@/api/application'
+import { ruleLevelText, productName } from '@/utils/dict'
 
 const props = defineProps<{
   modelValue: boolean

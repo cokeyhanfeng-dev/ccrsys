@@ -18,7 +18,7 @@
         <tbody>
           <tr v-for="row in records" :key="row.id">
             <td>{{ row.applicationNo }}</td>
-            <td>{{ row.businessType === 'LOAN' ? '贷款' : row.businessType === 'DEPOSIT' ? '存款' : row.businessType }}</td>
+            <td>{{ businessTypeText(row.businessType) }}</td>
             <td>{{ row.groupNo ? `集团 ${row.groupNo}` : row.customerNo || '—' }}</td>
             <td>{{ fmtTime(row.submitTime || row.createTime) }}</td>
             <td><span :class="badgeClass(row.status)">{{ statusText(row.status) }}</span></td>
@@ -51,6 +51,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { pageHistory } from '@/api/history'
+import { appStatusText, businessTypeText } from '@/utils/dict'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -85,16 +86,7 @@ function fmtTime(t: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
 }
 function statusText(s: string) {
-  const map: Record<string, string> = {
-    DRAFT: '草稿',
-    SUBMITTING: '提交中',
-    PROCESSING: '审批中',
-    PARTIAL_APPROVED: '部分通过',
-    APPROVED: '已通过',
-    REJECTED: '已否决',
-    CLOSED: '已关闭'
-  }
-  return map[s] || s || '—'
+  return appStatusText(s)
 }
 function badgeClass(s: string) {
   const map: Record<string, string> = {
