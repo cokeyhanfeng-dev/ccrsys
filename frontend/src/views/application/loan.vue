@@ -3,7 +3,7 @@
     <div class="section-head">
       <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
       <div class="section-title">贷款利率申请</div>
-      <div class="section-tip">分步录入客户、融资情况、担保组合与利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
+      <div class="section-tip">分步录入客户、融资情况、利率申请、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -332,14 +332,14 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 0">上一步</button>
-        <button class="btn btn--primary" @click="goNext(2)">下一步:担保组合与利率定价</button>
+        <button class="btn btn--primary" @click="goNext(2)">下一步:利率申请</button>
       </div>
     </div>
 
-    <!-- 第三步:担保组合与利率定价(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
+    <!-- 第三步:利率申请(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
     <div v-show="step === 2" class="form-card">
       <div class="form-card__title">
-        担保组合与利率定价
+        利率申请
         <span class="badge badge--info">逐担保方式独立路由/表决</span>
         <span class="badge badge--warning">贷款利率越低越优惠</span>
       </div>
@@ -786,7 +786,7 @@ const userStore = useUserStore()
 const route = useRoute()
 
 // ---------- 步骤条(§14.1) ----------
-const steps = ['客户信息', '融资情况', '担保组合与利率定价', '贡献承诺', '材料附件', '提交预览']
+const steps = ['客户信息', '融资情况', '利率申请', '贡献承诺', '材料附件', '提交预览']
 const step = ref(0)
 
 // ---------- 字典 ----------
@@ -1250,10 +1250,10 @@ function validateForDraft(): string | null {
     const g = form.guarantees[i]
     if (isGroup && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择涉及成员`
     if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
-    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(担保组合与利率定价步骤)`
-    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(担保组合与利率定价步骤)`
-    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(担保组合与利率定价步骤)`
-    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(担保组合与利率定价步骤)`
+    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(利率申请步骤)`
+    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率申请步骤)`
+    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率申请步骤)`
+    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(利率申请步骤)`
   }
   for (let i = 0; i < commitments.value.length; i++) {
     const c = commitments.value[i]
@@ -1513,7 +1513,7 @@ async function loadDraftIntoForm(id: number) {
     await loadCustomerDetail()
   }
 
-  // 分项 → 担保组合与利率定价;已批准沿用原决议的占位分项不在本页编辑
+  // 分项 → 利率申请;已批准沿用原决议的占位分项不在本页编辑
   const editable = (d.pricingItems || []).filter((p) => p.inheritFlag !== 'Y')
   inheritCount.value = (d.pricingItems || []).length - editable.length
   let hasPlanned = false
@@ -1622,7 +1622,7 @@ async function loadDraftIntoForm(id: number) {
 .guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
 .guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
 
-/* 总授信额度概览条(担保组合与利率定价步骤) */
+/* 总授信额度概览条(利率申请步骤) */
 .credit-overview {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
