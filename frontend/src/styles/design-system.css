@@ -1,13 +1,13 @@
 /* ============================================================
    客户贡献度管理与利率决策系统 · 设计系统样式
    依据 DESIGN.md v1.0 / PRD V2
-   品牌蓝 #2563eb · BEM 命名
+   品牌蓝 #1890ff · BEM 命名
    ============================================================ */
 
 :root {
   /* ── 色彩 ── */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+  --color-primary: #1890ff;
+  --color-primary-hover: #096dd9;
   --color-primary-active: #1e40af;
   --color-primary-light: #eff6ff;
   --color-primary-softer: #f5f8ff;
@@ -18,28 +18,28 @@
   --color-text-light: #9ca3af;
   --color-border: #e5e7eb;
   --color-border-light: #eef1f5;
-  --color-success: #10b981;
+  --color-success: #13ce66;
   --color-success-light: #d1fae5;
-  --color-warning: #f59e0b;
+  --color-warning: #ffba00;
   --color-warning-light: #fef3c7;
-  --color-danger: #ef4444;
+  --color-danger: #ff4949;
   --color-danger-light: #fee2e2;
   --color-info: #3b82f6;
   --color-disabled: #f3f4f6;
 
   /* ── 深藏蓝(侧栏 / 品牌区) ── */
-  --color-navy-900: #0a1c40;
-  --color-navy-800: #0f2a5c;
-  --color-navy-700: #163a75;
-  --color-navy-600: #1d4a8f;
+  --color-navy-900: #001528;
+  --color-navy-800: #1f2d3d;
+  --color-navy-700: #263d52;
+  --color-navy-600: #30475e;
   --sidebar-text: rgba(255, 255, 255, .68);
   --sidebar-text-active: #ffffff;
   --sidebar-hover-bg: rgba(255, 255, 255, .06);
-  --sidebar-active-bg: linear-gradient(90deg, rgba(59, 130, 246, .32), rgba(59, 130, 246, .12));
+  --sidebar-active-bg: linear-gradient(90deg, rgba(24, 144, 255, .35), rgba(24, 144, 255, .12));
 
   /* ── 渐变 ── */
-  --grad-primary: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  --grad-navy: linear-gradient(160deg, #163a75 0%, #0f2a5c 55%, #0a1c40 100%);
+  --grad-primary: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  --grad-navy: linear-gradient(160deg, #263d52 0%, #1f2d3d 55%, #001528 100%);
 
   /* ── 字体 ── */
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -67,7 +67,7 @@
   --shadow-sm: 0 1px 3px rgba(15, 42, 92, .07);
   --shadow: 0 1px 2px rgba(15, 42, 92, .04), 0 4px 14px rgba(15, 42, 92, .07);
   --shadow-lg: 0 12px 32px rgba(15, 42, 92, .14);
-  --shadow-primary: 0 4px 12px rgba(37, 99, 235, .28);
+  --shadow-primary: 0 4px 12px rgba(24, 144, 255, .28);
 
   /* ── 动效 ── */
   --ease: cubic-bezier(.22, .61, .36, 1);
@@ -501,7 +501,7 @@ body {
   height: 46px;
   border-radius: 12px;
   color: #fff;
-  background: var(--grad-primary, linear-gradient(135deg, #2563eb, #1d4ed8));
+  background: var(--grad-primary, linear-gradient(135deg, #1890ff, #096dd9));
   box-shadow: var(--shadow-primary, 0 4px 12px rgba(37, 99, 235, .3));
 }
 .stat-card--tone1 .stat-card__icon {

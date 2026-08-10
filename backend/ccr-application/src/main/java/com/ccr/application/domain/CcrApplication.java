@@ -98,4 +98,8 @@ public class CcrApplication extends BaseEntity {
     /** 人工补录他行融资(非表字段,仅接收,落 ccr_application_other_loan) */
     @TableField(exist = false)
     private List<CcrApplicationOtherLoan> otherLoans;
+
+    /** 关联人(非表字段,仅接收,落 ccr_application_related_person) */
+    @TableField(exist = false)
+    private List<CcrApplicationRelatedPerson> relatedPersons;
 }

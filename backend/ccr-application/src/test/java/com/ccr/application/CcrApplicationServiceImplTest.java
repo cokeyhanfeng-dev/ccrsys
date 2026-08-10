@@ -78,6 +78,8 @@ class CcrApplicationServiceImplTest {
     @Mock
     private com.ccr.application.mapper.CcrApplicationOtherLoanMapper otherLoanMapper;
     @Mock
+    private com.ccr.application.mapper.CcrApplicationRelatedPersonMapper relatedPersonMapper;
+    @Mock
     private com.ccr.application.support.AppLoginUser currentLoginUser;
     @Mock
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;

@@ -162,6 +162,11 @@ public class ApprovalController {
                     "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
         }
 
+        // 关联人(客户经理申请时实际录入,§12.4④)
+        if (appId != null) {
+            result.put("relatedPersons", jdbcTemplate.queryForList(
+                    "SELECT person_name personName, cert_no certNo, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
+        }
         // 关联人(数仓客户关系快照,最新批次)
         result.put("relations", jdbcTemplate.queryForList(
                 "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", custNo, custNo));

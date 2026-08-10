@@ -14,6 +14,8 @@ import java.util.Map;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
 import com.ccr.application.domain.CcrApplicationOtherLoan;
+import com.ccr.application.domain.CcrApplicationRelatedPerson;
+import com.ccr.application.mapper.CcrApplicationRelatedPersonMapper;
 import com.ccr.application.mapper.CcrApplicationOtherLoanMapper;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrGuaranteeMeasure;
@@ -81,6 +83,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     private CcrApplicationCommitmentMapper commitmentMapper;
     @Resource
     private CcrApplicationOtherLoanMapper otherLoanMapper;
+    @Resource
+    private CcrApplicationRelatedPersonMapper relatedPersonMapper;
 
     @Resource
     private DataWarehouseService dataWarehouseService;
@@ -141,6 +145,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         // 人工补录他行融资(§7.1 步骤6,审批详情随申请展示)
         saveOtherLoans(entity.getId(), request.getOtherLoans());
+        // 关联人(§12.4④,按客户经理实际录入保存并展示)
+        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         return entity;
     }
 
@@ -389,6 +395,21 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     }
 
     /** 承诺落库;pricingItemNo 在本次新建分项中解析为分项主键 */
+    /** 关联人落库(空行过滤;随 saveDraft 整表重建) */
+    private void saveRelatedPersons(Long applicationId, List<CcrApplicationRelatedPerson> persons) {
+        if (persons == null || persons.isEmpty()) {
+            return;
+        }
+        for (CcrApplicationRelatedPerson rp : persons) {
+            if (rp == null || StrUtil.isBlank(rp.getPersonName())) {
+                continue;
+            }
+            rp.setId(null);
+            rp.setApplicationId(applicationId);
+            relatedPersonMapper.insert(rp);
+        }
+    }
+
     /** 人工补录他行融资落库(空行过滤;整表重建随 saveDraft 语义) */
     private void saveOtherLoans(Long applicationId, List<CcrApplicationOtherLoan> otherLoans) {
         if (otherLoans == null || otherLoans.isEmpty()) {
@@ -557,6 +578,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 entity, request, entity.getBusinessType(), groupScope);
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         saveOtherLoans(entity.getId(), request.getOtherLoans());
+        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
     }
 
     /**
@@ -575,6 +597,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
         otherLoanMapper.delete(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
                 .eq(CcrApplicationOtherLoan::getApplicationId, applicationId));
+        relatedPersonMapper.delete(new LambdaQueryWrapper<CcrApplicationRelatedPerson>()
+                .eq(CcrApplicationRelatedPerson::getApplicationId, applicationId));
         applicationMemberMapper.delete(new LambdaQueryWrapper<CcrApplicationMember>()
                 .eq(CcrApplicationMember::getApplicationId, applicationId));
         if (inheritedIds.isEmpty()) {
@@ -661,6 +685,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         detail.setOtherLoans(otherLoanMapper.selectList(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
                 .eq(CcrApplicationOtherLoan::getApplicationId, id)
                 .orderByAsc(CcrApplicationOtherLoan::getId)));
+        detail.setRelatedPersons(relatedPersonMapper.selectList(new LambdaQueryWrapper<CcrApplicationRelatedPerson>()
+                .eq(CcrApplicationRelatedPerson::getApplicationId, id)
+                .orderByAsc(CcrApplicationRelatedPerson::getId)));
         return detail;
     }
 

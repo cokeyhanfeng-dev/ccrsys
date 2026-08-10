@@ -170,17 +170,30 @@
     <!-- 7c. 关联人情况(数仓客户关系 + 申请录入) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>关联人情况</span></div>
-      <table class="table" v-if="relations.length">
-        <thead><tr><th>关联人</th><th>关系类型</th><th>关联强度</th></tr></thead>
+      <table class="table" v-if="relatedPersons.length">
+        <thead><tr><th>姓名/名称</th><th>证件号码</th><th>关系类型</th><th>行内客户号</th></tr></thead>
         <tbody>
-          <tr v-for="(r, i) in relations" :key="i">
-            <td>{{ r.relatedCustomerNo }}</td>
+          <tr v-for="(r, i) in relatedPersons" :key="i">
+            <td>{{ r.personName }}</td>
+            <td>{{ r.certNo || '—' }}</td>
             <td>{{ relationTypeText(r.relationType) }}</td>
-            <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
+            <td>{{ r.relatedCustomerNo || '—' }}</td>
           </tr>
         </tbody>
       </table>
-      <div v-else class="empty">暂无关联人记录</div>
+      <template v-else>
+        <table class="table" v-if="relations.length">
+          <thead><tr><th>关联人</th><th>关系类型</th><th>关联强度</th></tr></thead>
+          <tbody>
+            <tr v-for="(r, i) in relations" :key="i">
+              <td>{{ r.relatedCustomerNo }}</td>
+              <td>{{ relationTypeText(r.relationType) }}</td>
+              <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty">暂无关联人记录</div>
+      </template>
     </div>
 
     <!-- 8. 贷款合同/存款账户与担保 -->
@@ -501,6 +514,7 @@ const depositAccounts = ref<any[]>([])
 const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
+const relatedPersons = ref<any[]>([])
 const attachments = ref<any[]>([])
 const resolutions = ref<any[]>([])
 const resolutionExecutions = ref<any[]>([])
@@ -601,6 +615,7 @@ async function load() {
     otherLoanSummary.value = data.otherLoanSummary || []
     otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
     relations.value = data.relations || []
+    relatedPersons.value = data.relatedPersons || []
     attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []
     resolutionExecutions.value = data.resolutionExecutions || []

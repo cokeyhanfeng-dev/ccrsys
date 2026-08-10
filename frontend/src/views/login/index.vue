@@ -125,7 +125,8 @@ async function onSubmit() {
   overflow: hidden;
   padding: 64px 72px;
   color: #fff;
-  background: linear-gradient(160deg, #163a75 0%, #0f2a5c 55%, #0a1c40 100%);
+  background: linear-gradient(160deg, rgba(15, 32, 52, .82) 0%, rgba(0, 21, 40, .88) 100%),
+    url('@/assets/img/login-background.jpg') center/cover no-repeat, #1f2d3d;
 
   &__inner {
     position: relative;

@@ -42,13 +42,14 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 普通节点审批单元测试
- * 覆盖:节点不符/小组绕过拒绝、存款双轨消除(支行过手→自动合批)、权限内终审→决议串联、
- * 调价越权/硬边界拒绝、版本冲突与任务已处理、幂等键、待办按登录人角色过滤
+ * 普通节点审批单元测试(整单流转口径)
+ * 覆盖:节点不符/小组绕过拒绝、存款双轨消除(超上限整单上会)、整单流转(权限内齐套终审/
+ * 超权限整单上送/整单否决)、调价越权/硬边界拒绝、版本冲突与任务已处理、幂等键、待办按登录人角色过滤
  */
 @ExtendWith(MockitoExtension.class)
 class ApprovalServiceImplTest {
@@ -122,16 +123,35 @@ class ApprovalServiceImplTest {
         return user;
     }
 
-    /** 通用打桩:支行行长登录 + 分项/申请/权限边界(贷款下限 3.0) */
-    private void stubBranchManagerLoan() {
+    /** 通用打桩:支行行长登录 + 申请/权限边界(贷款下限 3.0);不打桩分项,便于用例指定触发分项 */
+    private void stubBranchManagerLoanPerm() {
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         CcrNodePermission perm = new CcrNodePermission();
         perm.setNodeCode("BRANCH_MANAGER");
         perm.setBusinessType("LOAN");
         perm.setBoundaryMinRate(new BigDecimal("3.000000"));
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
+    }
+
+    /** 通用打桩:支行行长登录 + 分项/申请/权限边界(贷款下限 3.0) */
+    private void stubBranchManagerLoan() {
+        stubBranchManagerLoanPerm();
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+    }
+
+    /** 构造同申请 ROUTING 在支行节点的第二分项 */
+    private CcrPricingItem siblingItem(Long id, String itemNo, String rate) {
+        CcrPricingItem sibling = new CcrPricingItem();
+        sibling.setId(id);
+        sibling.setApplicationId(30L);
+        sibling.setPricingItemNo(itemNo);
+        sibling.setProductCode("P001");
+        sibling.setStatus(PricingItemStatus.ROUTING.getCode());
+        sibling.setCurrentNodeCode("BRANCH_MANAGER");
+        sibling.setCurrentApprovalRate(new BigDecimal(rate));
+        sibling.setVersionNo(1);
+        return sibling;
     }
 
     // ---------- 身份与节点校验 ----------
@@ -177,11 +197,12 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
 
-        // 存款支行过手后直接触发建表决批次,不走权限内终审
+        // 存款期限上限未冻结(boundaryRate 为空)视为超上限 → 整单上会,触发建表决批次
         verify(voteService).createGroupRound(30L);
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
@@ -199,16 +220,18 @@ class ApprovalServiceImplTest {
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
     }
 
-    // ---------- 权限内终审 / 上送 ----------
+    // ---------- 权限内终审 / 上送(整单流转:单项申请即整单) ----------
 
     @Test
     void approve_loan_inPermission_terminalAndFinalizes() {
         stubBranchManagerLoan();
+        // 单项申请:权限内通过即整单齐套 → 终审
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
 
-        // 权限内终审 → 决议/承诺/主申请聚合
+        // 整单齐套终审 → 决议/承诺/主申请聚合
         verify(itemFinalizationService).afterItemTerminal(10L, "LEVEL_APPROVED");
         verify(voteService, never()).createGroupRound(any());
         verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "APPROVE".equals(a.getActionType())
@@ -219,11 +242,12 @@ class ApprovalServiceImplTest {
     void approve_loan_beyondPermission_escalatesToNextNode() {
         stubBranchManagerLoan();
         item.setCurrentApprovalRate(new BigDecimal("2.800000")); // 低于支行下限 3.0
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率上送", 3, null);
 
-        // 超权限保留利率通过 → 上送部门总经理,不终审、不合批
+        // 超权限保留利率通过 → 整单上送部门总经理,不终审、不合批
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
         verify(voteService, never()).createGroupRound(any());
         verify(approvalActionMapper).insert(any(CcrApprovalAction.class));
@@ -240,12 +264,100 @@ class ApprovalServiceImplTest {
         perm.setBusinessType("LOAN");
         perm.setBoundaryMinRate(new BigDecimal("3.600000")); // 当前 3.5 低于分管行领导下限
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(10L, "VICE_PRESIDENT", null, null, 3, null);
 
-        // 上送终点为六人小组 → 自动合批
+        // 整单上送终点为六人小组 → 自动合批
         verify(voteService).createGroupRound(30L);
+    }
+
+    // ---------- 整单流转(多项申请) ----------
+
+    @Test
+    void approve_loan_firstItemAgreed_staysRouting_notFinalized() {
+        // 两项申请:第一项权限内通过 → 记「本节点已同意」,保持 ROUTING 在当前节点,暂不终审
+        stubBranchManagerLoan();
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+        verify(voteService, never()).createGroupRound(any());
+        // 仅更新触发分项(保持 ROUTING),留痕 ROUTING→ROUTING 表示本节点已同意
+        verify(pricingItemMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "APPROVE".equals(a.getActionType())
+                && PricingItemStatus.ROUTING.getCode().equals(a.getToStatus())));
+    }
+
+    @Test
+    void approve_loan_secondItemAgreed_allFinalizeTogether() {
+        // 两项申请:第一项已本节点同意,第二项权限内通过 → 两项一起终审
+        stubBranchManagerLoanPerm();
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.200000");
+        when(pricingItemMapper.selectById(11L)).thenReturn(item2);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        // 分项 10 已有本节点 APPROVE 动作(本节点已同意)
+        CcrApprovalAction prior = new CcrApprovalAction();
+        prior.setPricingItemId(10L);
+        when(approvalActionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(prior));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 1, null);
+
+        // 两项一起置 APPROVED_LEVEL(触发分项+随行分项各更新一次),逐项触发终态串联
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(itemFinalizationService).afterItemTerminal(10L, "LEVEL_APPROVED");
+        verify(itemFinalizationService).afterItemTerminal(11L, "LEVEL_APPROVED");
+        verify(voteService, never()).createGroupRound(any());
+        // 触发分项 + 随行分项各一条终审留痕(ROUTING→APPROVED_LEVEL)
+        verify(approvalActionMapper, times(2)).insert(argThat((CcrApprovalAction a) ->
+                PricingItemStatus.APPROVED_LEVEL.getCode().equals(a.getToStatus())));
+    }
+
+    @Test
+    void approve_loan_oneBeyondPermission_wholeOrderEscalates() {
+        // 两项申请:一项超权限保留利率通过 → 整单上送,两项一起推进下一节点
+        stubBranchManagerLoan();
+        item.setCurrentApprovalRate(new BigDecimal("2.800000")); // 低于支行下限 3.0
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率通过", 3, null);
+
+        // 两项一起更新(推进部门总经理),不终审、不合批;随行分项留痕注明整单上送
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+        verify(voteService, never()).createGroupRound(any());
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) ->
+                Long.valueOf(11L).equals(a.getPricingItemId())
+                        && a.getActionComment() != null && a.getActionComment().contains("整单上送")));
+    }
+
+    @Test
+    void approve_deposit_oneOverLimit_wholeOrderToGroup() {
+        // 存款两项:一项超期限上限 → 整单上会,两项一起推进小组并合批
+        application.setBusinessType("DEPOSIT");
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        item.setBoundaryRate(new BigDecimal("1.000000"));
+        item.setCurrentApprovalRate(new BigDecimal("1.500000")); // 超期限上限
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "0.900000");
+        item2.setBoundaryRate(new BigDecimal("1.000000"));
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(voteService).createGroupRound(30L);
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
 
     // ---------- 调价边界(B07) ----------
@@ -277,6 +389,7 @@ class ApprovalServiceImplTest {
     @Test
     void approve_adjustRate_withinBoundary_savedAndFinalized() {
         stubBranchManagerLoan();
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(10L, "BRANCH_MANAGER", new BigDecimal("3.200000"), "让利", 3, "K-1");
@@ -336,13 +449,14 @@ class ApprovalServiceImplTest {
         assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
     }
 
-    // ---------- 否决 ----------
+    // ---------- 否决(整单否决) ----------
 
     @Test
     void reject_success_terminalAndAggregates() {
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
@@ -350,6 +464,27 @@ class ApprovalServiceImplTest {
         verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
                 && PricingItemStatus.ROUTING.getCode().equals(a.getFromStatus())
                 && PricingItemStatus.REJECTED.getCode().equals(a.getToStatus())));
+        verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
+    void reject_oneItem_wholeOrderRejected() {
+        // 两项申请:否决任一分项 → 整单否决,两项一起置 REJECTED 并聚合主申请
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
+
+        // 触发分项 + 随行分项均置 REJECTED;随行分项留痕注明触发分项
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
+                && Long.valueOf(11L).equals(a.getPricingItemId())
+                && a.getActionComment() != null && a.getActionComment().contains("PI001")));
         verify(itemFinalizationService).afterItemTerminal(10L, null);
         verify(voteService, never()).createGroupRound(any());
     }

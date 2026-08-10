@@ -58,7 +58,7 @@ export function appStatusText(code?: string, fallback = '—'): string {
 
 /** 定价分项状态(审批流转) */
 export const ITEM_STATUS: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '路由中', APPROVED_LEVEL: '权限内已批',
+  DRAFT: '草稿', SUBMITTED: '已提交', ROUTING: '审批中', APPROVED_LEVEL: '权限内已批',
   VOTING: '小组表决', COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议',
   FINAL: '终态', VETOED: '一票否决', REJECTED: '已否决', RETURNED: '已退回', CLOSED: '已关闭'
 }

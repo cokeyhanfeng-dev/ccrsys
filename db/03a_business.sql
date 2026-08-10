@@ -501,3 +501,26 @@ CREATE TABLE IF NOT EXISTS `ccr_application_attachment` (
   PRIMARY KEY (`id`),
   KEY `idx_att_app` (`application_id`)
 ) ENGINE=InnoDB COMMENT='ccr_application_attachment 申请附件(材料附件步骤上传)';
+
+-- ---------- 申请关联人(客户经理实际录入;审批详情按录入内容展示) ----------
+CREATE TABLE IF NOT EXISTS `ccr_application_related_person` (
+  `id`                  BIGINT       NOT NULL,
+  `tenant_id`           VARCHAR(20)  NOT NULL DEFAULT '000000',
+  `business_no`         VARCHAR(64)  NOT NULL,
+  `org_id`              BIGINT       NOT NULL,
+  `status`              VARCHAR(32)  NOT NULL DEFAULT 'ACTIVE',
+  `version_no`          INT          NOT NULL DEFAULT 1,
+  `create_dept`         BIGINT       NULL,
+  `create_by`           BIGINT       NOT NULL,
+  `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by`           BIGINT       NULL,
+  `update_time`         DATETIME     NULL,
+  `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
+  `application_id`      BIGINT       NOT NULL COMMENT '申请主键',
+  `person_name`         VARCHAR(64)  NOT NULL COMMENT '姓名/名称',
+  `cert_no`             VARCHAR(255) NULL COMMENT '证件号码',
+  `relation_type`       VARCHAR(32)  NOT NULL COMMENT '关系类型(配偶/直系亲属/担保人/实际控制人等)',
+  `related_customer_no` VARCHAR(64)  NULL COMMENT '行内客户号(自动匹配或手工补录)',
+  PRIMARY KEY (`id`),
+  KEY `idx_relperson_app` (`application_id`)
+) ENGINE=InnoDB COMMENT='ccr_application_related_person 申请关联人(客户经理录入)';

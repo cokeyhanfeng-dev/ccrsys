@@ -3,7 +3,7 @@
     <div class="section-head">
       <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
       <div class="section-title">贷款利率申请</div>
-      <div class="section-tip">分步录入客户、融资情况、担保组合、利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
+      <div class="section-tip">分步录入客户、融资情况、担保组合与利率定价、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -332,75 +332,134 @@
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 0">上一步</button>
-        <button class="btn btn--primary" @click="goNext(2)">下一步:担保组合</button>
+        <button class="btn btn--primary" @click="goNext(2)">下一步:担保组合与利率定价</button>
       </div>
     </div>
 
-    <!-- 第三步:担保组合(按成员×合同切分,逐担保方式) -->
+    <!-- 第三步:担保组合与利率定价(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
     <div v-show="step === 2" class="form-card">
       <div class="form-card__title">
-        担保组合
+        担保组合与利率定价
         <span class="badge badge--info">逐担保方式独立路由/表决</span>
+        <span class="badge badge--warning">贷款利率越低越优惠</span>
       </div>
       <div class="section-tip" style="margin-bottom:12px">
         <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
         <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
-        集团场景按“成员 × 合同”生成分项。
+        集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
       </div>
-      <table class="table">
-        <thead>
-          <tr>
-            <th v-if="form.customerScope === 'GROUP'">涉及成员 <span class="req">*</span></th>
-            <th>贷款合同 <span class="req">*</span></th>
-            <th>担保方式 <span class="req">*</span></th>
-            <th>担保措施</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="(g, idx) in form.guarantees" :key="idx">
-            <tr>
-              <td v-if="form.customerScope === 'GROUP'">
-                <select class="form-select" v-model="g.memberCustomerNo" @change="g.contractBusinessKey = ''">
-                  <option value="" disabled>选择成员</option>
-                  <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
-                    {{ m.memberName || m.memberCustomerNo }}
-                  </option>
-                </select>
-              </td>
-              <td>
-                <template v-if="form.businessType === 'EXISTING'">
-                  <select class="form-select" v-model="g.contractBusinessKey" @change="onContractSelect(g)">
-                    <option value="" disabled>选择合同</option>
-                    <option v-for="c in contractOptions(g)" :key="c.contractNo" :value="c.contractNo">
-                      {{ c.contractNo }}(余额 {{ c.contractBalance ?? c.loanBalance ?? '-' }} 万)
-                    </option>
-                  </select>
-                </template>
-                <template v-else>
-                  <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(留空自动生成)" />
-                  <span class="badge badge--neutral" style="margin-top:4px">拟签合同</span>
-                </template>
-              </td>
-              <td>
-                <select class="form-select" v-model="g.guaranteeType">
-                  <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
-                </select>
-              </td>
-              <td>
-                <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
-                <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
-                <span v-else-if="g.guaranteeType === 'PLEDGE'" class="badge badge--neutral">质押物 {{ g.pledges.length }} 项</span>
-                <span v-else-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="badge badge--neutral">保证金 {{ g.margins.length }} 笔</span>
-                <span v-else-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="badge badge--neutral">存单 {{ g.cds.length }} 张</span>
-                <span v-else class="badge badge--neutral">无需措施</span>
-              </td>
-              <td><button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button></td>
-            </tr>
-            <!-- 抵押物明细 -->
-            <tr v-if="g.guaranteeType === 'MORTGAGE'" class="guarantee-detail">
-              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
-                <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
+
+      <!-- 总授信额度:存量按所选合同金额自动带出;新增由客户经理手工录入,拆分细项合计与总额核对 -->
+      <div class="credit-overview">
+        <div class="credit-overview__item" v-if="form.businessType === 'EXISTING'">
+          <span>总授信额度(万元,按合同带出)</span><b>{{ guaranteesTotalText }}</b>
+        </div>
+        <div class="credit-overview__item" v-else>
+          <span>总授信额度(万元)</span>
+          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
+        </div>
+        <div class="credit-overview__item" v-if="form.businessType !== 'EXISTING'">
+          <span>拆分细项合计(万元)</span><b :style="totalMismatch ? 'color:var(--color-danger)' : ''">{{ guaranteesTotalText }}</b>
+        </div>
+        <div class="credit-overview__item" v-if="form.businessType !== 'EXISTING' && totalMismatch">
+          <span class="section-tip" style="color:var(--color-danger)">拆分合计与总授信额度不一致,请核对</span>
+        </div>
+        <template v-if="form.customerScope === 'GROUP'">
+          <div class="credit-overview__item"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
+          <div class="credit-overview__item"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
+        </template>
+      </div>
+      <div v-if="overGroupAvailable" class="credit-overview-warning">
+        分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
+      </div>
+
+      <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/合同/措施明细 + 产品/期限/金额/利率 -->
+      <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
+        <div class="mortgage-item__head">
+          <span class="guarantee-item__title">
+            分项 {{ idx + 1 }}
+            <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
+            <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
+            <span v-else-if="g.guaranteeType === 'PLEDGE'" class="badge badge--neutral">质押物 {{ g.pledges.length }} 项</span>
+            <span v-else-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="badge badge--neutral">保证金 {{ g.margins.length }} 笔</span>
+            <span v-else-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="badge badge--neutral">存单 {{ g.cds.length }} 张</span>
+            <span v-else class="badge badge--neutral">无需措施</span>
+          </span>
+          <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
+        </div>
+        <!-- 第一行:担保方式/成员(集团)/贷款合同 -->
+        <div class="form-grid mortgage-item__grid">
+          <div class="form-field">
+            <label class="form-field__label">担保方式 <span class="req">*</span></label>
+            <select class="form-select" v-model="g.guaranteeType">
+              <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
+            </select>
+          </div>
+          <div class="form-field" v-if="form.customerScope === 'GROUP'">
+            <label class="form-field__label">涉及成员 <span class="req">*</span></label>
+            <select class="form-select" v-model="g.memberCustomerNo" @change="g.contractBusinessKey = ''">
+              <option value="" disabled>选择成员</option>
+              <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
+                {{ m.memberName || m.memberCustomerNo }}
+              </option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">贷款合同 <span class="req">*</span></label>
+            <template v-if="form.businessType === 'EXISTING'">
+              <select class="form-select" v-model="g.contractBusinessKey" @change="onContractSelect(g)">
+                <option value="" disabled>选择合同</option>
+                <option v-for="c in contractOptions(g)" :key="c.contractNo" :value="c.contractNo">
+                  {{ c.contractNo }}(余额 {{ c.contractBalance ?? c.loanBalance ?? '-' }} 万)
+                </option>
+              </select>
+            </template>
+            <template v-else>
+              <input class="form-input" v-model="g.contractBusinessKey" placeholder="拟签合同标识(留空自动生成)" />
+              <span class="badge badge--neutral" style="margin-top:4px">拟签合同</span>
+            </template>
+          </div>
+        </div>
+        <!-- 第二行:产品/期限/金额/原利率(存量带出只读)/申请利率/币种 -->
+        <div class="form-grid mortgage-item__grid" style="margin-top:10px">
+          <div class="form-field">
+            <label class="form-field__label">产品 <span class="req">*</span></label>
+            <select class="form-select" v-model="g.productCode">
+              <option value="" disabled>选择产品</option>
+              <option v-for="p in loanProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">期限 <span class="req">*</span></label>
+            <div style="display:flex;gap:4px">
+              <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="width:80px" />
+              <select class="form-select" v-model="g.termUnit" style="width:80px">
+                <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">授信金额(万元) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="g.amount" />
+          </div>
+          <div class="form-field" v-if="form.businessType === 'EXISTING'">
+            <label class="form-field__label">原利率(%)</label>
+            <input class="form-input form-input--amount" v-model="g.originalRate" disabled placeholder="合同带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="g.requestedRate" placeholder="如 3.40" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">币种</label>
+            <select class="form-select" v-model="g.currency">
+              <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </div>
+        </div>
+        <!-- 抵押物明细 -->
+        <div v-if="g.guaranteeType === 'MORTGAGE'" class="guarantee-detail-block">
+          <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
                 <div v-for="(m, mi) in g.mortgages" :key="mi" class="mortgage-item">
                   <div class="mortgage-item__head">
                     <select class="form-select" style="width:140px" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select>
@@ -435,12 +494,10 @@
                     <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" /></div>
                   </div>
                 </div>
-              </td>
-            </tr>
-            <!-- 质押物明细 -->
-            <tr v-if="g.guaranteeType === 'PLEDGE'" class="guarantee-detail">
-              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
-                <div class="detail-title">质押物(关联本分项) <button class="btn btn--text" @click="addPledge(g)">＋ 添加质押物</button></div>
+        </div>
+        <!-- 质押物明细 -->
+        <div v-if="g.guaranteeType === 'PLEDGE'" class="guarantee-detail-block">
+          <div class="detail-title">质押物(关联本分项) <button class="btn btn--text" @click="addPledge(g)">＋ 添加质押物</button></div>
                 <table class="table table--nested" v-if="g.pledges.length">
                   <thead><tr><th>质押物类型</th><th>名称</th><th>估值(万元)</th><th>权属人</th><th></th></tr></thead>
                   <tbody>
@@ -453,12 +510,10 @@
                     </tr>
                   </tbody>
                 </table>
-              </td>
-            </tr>
-            <!-- 保证金明细(银票/信用证) -->
-            <tr v-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="guarantee-detail">
-              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
-                <div class="detail-title">保证金(关联本分项) <button class="btn btn--text" @click="addMargin(g)">＋ 添加保证金</button></div>
+        </div>
+        <!-- 保证金明细(银票/信用证) -->
+        <div v-if="g.guaranteeType === 'BILL_MARGIN' || g.guaranteeType === 'CREDIT_MARGIN'" class="guarantee-detail-block">
+          <div class="detail-title">保证金(关联本分项) <button class="btn btn--text" @click="addMargin(g)">＋ 添加保证金</button></div>
                 <table class="table table--nested" v-if="g.margins.length">
                   <thead><tr><th>保证金金额(万元)</th><th>保证金比例(%)</th><th>期限(月)</th><th></th></tr></thead>
                   <tbody>
@@ -470,12 +525,10 @@
                     </tr>
                   </tbody>
                 </table>
-              </td>
-            </tr>
-            <!-- 存单质押明细 -->
-            <tr v-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="guarantee-detail">
-              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
-                <div class="detail-title">存单质押(关联本分项) <button class="btn btn--text" @click="addCd(g)">＋ 添加存单</button></div>
+        </div>
+        <!-- 存单质押明细 -->
+        <div v-if="g.guaranteeType === 'CERTIFICATE_DEPOSIT'" class="guarantee-detail-block">
+          <div class="detail-title">存单质押(关联本分项) <button class="btn btn--text" @click="addCd(g)">＋ 添加存单</button></div>
                 <table class="table table--nested" v-if="g.cds.length">
                   <thead><tr><th>存单号</th><th>金额(万元)</th><th>到期日</th><th></th></tr></thead>
                   <tbody>
@@ -487,12 +540,10 @@
                     </tr>
                   </tbody>
                 </table>
-              </td>
-            </tr>
-            <!-- 保证人明细 -->
-            <tr v-if="g.guaranteeType === 'GUARANTEE'" class="guarantee-detail">
-              <td :colspan="form.customerScope === 'GROUP' ? 5 : 4" class="detail-cell">
-                <div class="detail-title">保证人(关联本分项) <button class="btn btn--text" @click="addGuaranteeGuarantor(g)">＋ 添加保证人</button></div>
+        </div>
+        <!-- 保证人明细 -->
+        <div v-if="g.guaranteeType === 'GUARANTEE'" class="guarantee-detail-block">
+          <div class="detail-title">保证人(关联本分项) <button class="btn btn--text" @click="addGuaranteeGuarantor(g)">＋ 添加保证人</button></div>
                 <table class="table table--nested" v-if="g.guarantors.length">
                   <thead><tr><th>保证人名称</th><th>证件号码</th><th>担保金额(万元)</th><th>担保余额(万元)</th><th></th></tr></thead>
                   <tbody>
@@ -505,80 +556,18 @@
                     </tr>
                   </tbody>
                 </table>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保方式</button>
+        </div>
+      </div>
+      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 1">上一步</button>
-        <button class="btn btn--primary" @click="goNext(3)">下一步:利率定价</button>
+        <button class="btn btn--primary" @click="goNext(3)">下一步:贡献承诺</button>
       </div>
     </div>
 
-    <!-- 第四步:利率定价(执行利率集中在定价分项,贷款越低越优惠) -->
+    <!-- 第四步:贡献承诺(拟达成贡献度,随申请提交 commitments) -->
     <div v-show="step === 3" class="form-card">
-      <div class="form-card__title">
-        利率定价
-        <span class="badge badge--warning">贷款利率越低越优惠</span>
-      </div>
-      <div class="section-tip" style="margin-bottom:12px">执行利率集中在定价分项模块录入;申请利率不得低于产品硬边界,突破将被提交校验阻断。</div>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th v-if="form.customerScope === 'GROUP'">成员</th>
-            <th>合同</th><th>担保方式</th>
-            <th>产品 <span class="req">*</span></th>
-            <th>期限 <span class="req">*</span></th>
-            <th>授信金额(万元) <span class="req">*</span></th>
-            <th>币种</th>
-            <th v-if="form.businessType === 'EXISTING'">原利率(%)</th>
-            <th>申请利率(%) <span class="req">*</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(g, idx) in form.guarantees" :key="idx">
-            <td>{{ idx + 1 }}</td>
-            <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
-            <td>{{ g.contractBusinessKey || '拟签合同' }}</td>
-            <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
-            <td>
-              <select class="form-select" v-model="g.productCode">
-                <option value="" disabled>选择产品</option>
-                <option v-for="p in loanProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
-              </select>
-            </td>
-            <td>
-              <div style="display:flex;gap:4px">
-                <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="width:80px" />
-                <select class="form-select" v-model="g.termUnit" style="width:80px">
-                  <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
-                </select>
-              </div>
-            </td>
-            <td><input class="form-input form-input--amount" v-model="g.amount" /></td>
-            <td>
-              <select class="form-select" v-model="g.currency">
-                <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </td>
-            <td v-if="form.businessType === 'EXISTING'"><input class="form-input form-input--amount" v-model="g.originalRate" disabled placeholder="合同带出" /></td>
-            <td><input class="form-input form-input--amount" v-model="g.requestedRate" placeholder="如 3.40" /></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 2">上一步</button>
-        <button class="btn btn--primary" @click="goNext(4)">下一步:贡献承诺</button>
-      </div>
-    </div>
-
-    <!-- 第五步:贡献承诺(拟达成贡献度,随申请提交 commitments) -->
-    <div v-show="step === 4" class="form-card">
       <div class="form-card__title">
         贡献承诺
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
@@ -662,13 +651,13 @@
       <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 3">上一步</button>
-        <button class="btn btn--primary" @click="goNext(5)">下一步:材料附件</button>
+        <button class="btn btn--secondary" @click="step = 2">上一步</button>
+        <button class="btn btn--primary" @click="goNext(4)">下一步:材料附件</button>
       </div>
     </div>
 
-    <!-- 第六步:材料附件(他行融资 Excel 导入 + 其他附件前端暂存) -->
-    <div v-show="step === 5" class="form-card">
+    <!-- 第五步:材料附件(他行融资 Excel 导入 + 其他附件前端暂存) -->
+    <div v-show="step === 4" class="form-card">
       <div class="form-card__title">材料附件</div>
 
       <div class="sub-title">其他申请附件</div>
@@ -689,13 +678,13 @@
       <div class="empty" v-else>暂无附件</div>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 4">上一步</button>
-        <button class="btn btn--primary" @click="goNext(6)">下一步:提交预览</button>
+        <button class="btn btn--secondary" @click="step = 3">上一步</button>
+        <button class="btn btn--primary" @click="goNext(5)">下一步:提交预览</button>
       </div>
     </div>
 
-    <!-- 第七步:提交预览(路由预览 + 提交校验确认 + 正式提交) -->
-    <div v-show="step === 6" class="form-card">
+    <!-- 第六步:提交预览(路由预览 + 提交校验确认 + 正式提交) -->
+    <div v-show="step === 5" class="form-card">
       <div class="form-card__title">提交预览</div>
       <div class="section-tip" style="margin-bottom:12px">提交前先生成/保存草稿,再逐分项预览审批路由;正式提交需通过数据批次差异与质量预校验确认(§7.1 步骤9-11)。</div>
       <div class="form-field">
@@ -745,7 +734,7 @@
       </template>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 5">上一步</button>
+        <button class="btn btn--secondary" @click="step = 4">上一步</button>
         <div style="display:flex;gap:12px">
           <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
           <button class="btn btn--secondary" :disabled="saving" @click="onRoutePreview">路由预览</button>
@@ -797,7 +786,7 @@ const userStore = useUserStore()
 const route = useRoute()
 
 // ---------- 步骤条(§14.1) ----------
-const steps = ['客户信息', '融资情况', '担保组合', '利率定价', '贡献承诺', '材料附件', '提交预览']
+const steps = ['客户信息', '融资情况', '担保组合与利率定价', '贡献承诺', '材料附件', '提交预览']
 const step = ref(0)
 
 // ---------- 字典 ----------
@@ -862,6 +851,7 @@ const form = reactive({
   customerNo: '',
   loanType: 'CORP_LOAN',
   businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
+  totalCredit: '', // 新增授信总授信额度(手工录入;拆分细项合计核对)
   amountTier: 'LT_5000',
   customerNature: 'EXISTING',
   customerType: 'NON_SOE',
@@ -1043,6 +1033,28 @@ const groupContractRows = computed(() => {
 })
 
 // ---------- 担保组合 ----------
+// 总授信额度概览:分项金额自动合计(万元);集团场景对照可用额度,超限仅前端预警,阻断靠后端
+const guaranteesTotalAmount = computed(() =>
+  form.guarantees.reduce((acc, g) => {
+    const n = Number(g.amount)
+    return acc + (Number.isFinite(n) && n > 0 ? n : 0)
+  }, 0)
+)
+const guaranteesTotalText = computed(() => (Math.round(guaranteesTotalAmount.value * 100) / 100).toString())
+// 新增场景:拆分细项合计与手工录入的总授信额度不一致提示(容差 0.01)
+const totalMismatch = computed(() => {
+  const total = Number(form.totalCredit)
+  if (!Number.isFinite(total) || total <= 0 || guaranteesTotalAmount.value <= 0) return false
+  return Math.abs(guaranteesTotalAmount.value - total) > 0.01
+})
+const overGroupAvailable = computed(() => {
+  if (form.customerScope !== 'GROUP') return false
+  const avail = groupCredit.value?.availableAmount
+  if (avail === null || avail === undefined || avail === '') return false
+  const n = Number(avail)
+  return Number.isFinite(n) && guaranteesTotalAmount.value > n
+})
+
 function contractOptions(g: GuaranteeRow) {
   if (form.customerScope === 'GROUP') {
     return memberContracts.value[g.memberCustomerNo] || []
@@ -1054,6 +1066,9 @@ function onContractSelect(g: GuaranteeRow) {
   if (c) {
     g.originalRate = c.executionRate ?? c.contractRate ?? ''
     if (c.currency) g.currency = c.currency
+    // 存量:分项金额按合同金额自动带出(合同金额缺省用合同余额)
+    const amt = c.contractAmount ?? c.loanBalance
+    if (amt != null) g.amount = String(amt)
   }
 }
 function addGuarantee() {
@@ -1182,18 +1197,13 @@ function validateStep(s: number): string | null {
         const n = g.mortgages.length + g.guarantors.length + g.pledges.length + g.margins.length + g.cds.length
         if (n === 0) return `第 ${i + 1} 条担保分项为「${guaranteeTypeText(g.guaranteeType)}」,请至少登记一条担保措施明细`
       }
-    }
-  }
-  if (s === 3) {
-    for (let i = 0; i < form.guarantees.length; i++) {
-      const g = form.guarantees[i]
       if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品`
       if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限`
       if (isBlank(g.amount) || Number(g.amount) <= 0) return `第 ${i + 1} 条分项未录入金额`
       if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率`
     }
   }
-  if (s === 4) {
+  if (s === 3) {
     for (let i = 0; i < commitments.value.length; i++) {
       const c = commitments.value[i]
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
@@ -1240,10 +1250,10 @@ function validateForDraft(): string | null {
     const g = form.guarantees[i]
     if (isGroup && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择涉及成员`
     if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
-    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(利率定价步骤)`
-    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率定价步骤)`
-    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率定价步骤)`
-    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(利率定价步骤)`
+    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(担保组合与利率定价步骤)`
+    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(担保组合与利率定价步骤)`
+    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(担保组合与利率定价步骤)`
+    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(担保组合与利率定价步骤)`
   }
   for (let i = 0; i < commitments.value.length; i++) {
     const c = commitments.value[i]
@@ -1338,6 +1348,15 @@ function buildPayload(): ApplicationPayload {
       guaranteeType: g.guaranteeType,
       measures: buildMeasures(g)
     })),
+    // 关联人(结构化随单提交,审批详情按录入内容展示)
+    relatedPersons: relations.value
+      .filter((r) => !isBlank(r.name))
+      .map((r) => ({
+        personName: r.name,
+        certNo: r.certNo || undefined,
+        relationType: r.relationType,
+        relatedCustomerNo: isBlank(r.customerNo) ? undefined : r.customerNo
+      })),
     // 人工补录/Excel 导入他行融资(随单持久化,审批详情展示;空行过滤,数仓带出的不回传)
     otherLoans: otherLoans.value
       .filter((d) => d.inputMode !== 'DW' && !isBlank(d.lenderName))
@@ -1494,7 +1513,7 @@ async function loadDraftIntoForm(id: number) {
     await loadCustomerDetail()
   }
 
-  // 分项 → 担保组合/利率定价;已批准沿用原决议的占位分项不在本页编辑
+  // 分项 → 担保组合与利率定价;已批准沿用原决议的占位分项不在本页编辑
   const editable = (d.pricingItems || []).filter((p) => p.inheritFlag !== 'Y')
   inheritCount.value = (d.pricingItems || []).length - editable.length
   let hasPlanned = false
@@ -1599,7 +1618,24 @@ async function loadDraftIntoForm(id: number) {
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .table { border-radius: var(--radius); overflow: hidden; }
 .table--nested { margin-top: 8px; }
-.guarantee-detail > td.detail-cell { background: #fafbfc; padding: 12px 16px; }
+.guarantee-item { margin-bottom: 14px; }
+.guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
+
+/* 总授信额度概览条(担保组合与利率定价步骤) */
+.credit-overview {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  background: var(--color-primary-light); border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4); margin-bottom: 14px;
+}
+.credit-overview__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.credit-overview__item span { color: var(--color-text-sub); font-size: 12px; }
+.credit-overview__item b { font-variant-numeric: tabular-nums; }
+.credit-overview-warning {
+  background: #fef2f2; color: var(--color-danger);
+  border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
+  padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
+}
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .customer-cand:last-child { border-bottom: none; }
