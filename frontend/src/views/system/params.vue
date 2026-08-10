@@ -341,105 +341,116 @@
     <div class="modal" v-if="matrixDialog.show">
       <div class="modal__card">
         <div class="modal__title">新增权限矩阵行(草稿)</div>
-        <div class="modal__body">
-          <div class="form-field">
-            <label class="form-field__label">行编码 <span class="req">*</span></label>
-            <input class="form-input" v-model="matrixDialog.form.matrixNo" placeholder="如 MX-LOAN-NEW-001" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">业务大类 <span class="req">*</span></label>
-            <select class="form-select" v-model="matrixDialog.form.businessBigType">
-              <option value="LOAN_PUBLIC">对公贷款</option>
-              <option value="LOAN_PERSONAL">个人贷款</option>
-              <option value="DEPOSIT">存款</option>
-              <option value="MARGIN">保证金</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">存量/新增 <span class="req">*</span></label>
-            <select class="form-select" v-model="matrixDialog.form.newOrExisting">
-              <option value="NEW">新增授信</option>
-              <option value="EXISTING">存量授信</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">终审岗位 <span class="req">*</span></label>
-            <select class="form-select" v-model="matrixDialog.form.startNodeCode">
-              <option value="BRANCH_MANAGER">支行行长</option>
-              <option value="DEPT_GENERAL_MANAGER">部门总经理</option>
-              <option value="VICE_PRESIDENT">分管行长</option>
-              <option value="SIX_PEOPLE_GROUP">六人小组</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">客户类型</label>
-            <select class="form-select" v-model="matrixDialog.form.customerType">
-              <option value="">通配</option>
-              <option value="SOE">国企</option>
-              <option value="NON_SOE">非国企</option>
-              <option value="PERSONAL">个人</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">金额档</label>
-            <select class="form-select" v-model="matrixDialog.form.amountTier">
-              <option value="">通配</option>
-              <option value="LT_5000">5000万以下</option>
-              <option value="GE_5000">5000万及以上</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">期限档</label>
-            <select class="form-select" v-model="matrixDialog.form.termTier">
-              <option value="">通配</option>
-              <option value="1Y">1年</option>
-              <option value="3Y">3年</option>
-              <option value="5Y">5年</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">担保主类型</label>
-            <select class="form-select" v-model="matrixDialog.form.guaranteeType">
-            <option value="">通配</option>
-            <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
-          </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">边界类型</label>
-            <select class="form-select" v-model="matrixDialog.form.boundaryType">
-              <option value="RATE">直接利率</option>
-              <option value="SPREAD">存量降幅</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">绝对利率下限(%)</label>
-            <input class="form-input" v-model="matrixDialog.form.boundaryMinRate" type="number" step="0.01" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">BP 边界</label>
-            <div style="display:flex;gap:4px">
-              <select class="form-select" v-model="matrixDialog.form.bpSign" style="width:70px">
-                <option value="+">+</option>
-                <option value="-">-</option>
+        <div class="modal__body matrix-dialog__body">
+          <div class="sub-title">匹配维度</div>
+          <div class="form-grid">
+            <div class="form-field" style="grid-column: span 2">
+              <label class="form-field__label">行编码 <span class="req">*</span></label>
+              <input class="form-input" v-model="matrixDialog.form.matrixNo" placeholder="如 MX-LOAN-NEW-001" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">业务大类 <span class="req">*</span></label>
+              <select class="form-select" v-model="matrixDialog.form.businessBigType">
+                <option value="LOAN_PUBLIC">对公贷款</option>
+                <option value="LOAN_PERSONAL">个人贷款</option>
+                <option value="DEPOSIT">存款</option>
+                <option value="MARGIN">保证金</option>
               </select>
-              <input class="form-input" v-model="matrixDialog.form.boundaryBp" type="number" />
-              <select class="form-select" v-model="matrixDialog.form.lprTerm" style="width:90px">
-                <option value="1Y">1Y LPR</option>
-                <option value="5Y+">5Y+ LPR</option>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">存量/新增 <span class="req">*</span></label>
+              <select class="form-select" v-model="matrixDialog.form.newOrExisting">
+                <option value="NEW">新增授信</option>
+                <option value="EXISTING">存量授信</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">客户类型</label>
+              <select class="form-select" v-model="matrixDialog.form.customerType">
+                <option value="">通配</option>
+                <option value="SOE">国企</option>
+                <option value="NON_SOE">非国企</option>
+                <option value="PERSONAL">个人</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">金额档</label>
+              <select class="form-select" v-model="matrixDialog.form.amountTier">
+                <option value="">通配</option>
+                <option value="LT_5000">5000万以下</option>
+                <option value="GE_5000">5000万及以上</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">期限档</label>
+              <select class="form-select" v-model="matrixDialog.form.termTier">
+                <option value="">通配</option>
+                <option value="1Y">1年</option>
+                <option value="3Y">3年</option>
+                <option value="5Y">5年</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">担保主类型</label>
+              <select class="form-select" v-model="matrixDialog.form.guaranteeType">
+                <option value="">通配</option>
+                <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
               </select>
             </div>
           </div>
-          <div class="form-field">
-            <label class="form-field__label">优先级(低值优先)</label>
-            <input class="form-input" v-model="matrixDialog.form.priority" type="number" />
+
+          <div class="sub-title" style="margin-top:14px">终审与边界</div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label">终审岗位 <span class="req">*</span></label>
+              <select class="form-select" v-model="matrixDialog.form.startNodeCode">
+                <option value="BRANCH_MANAGER">支行行长</option>
+                <option value="DEPT_GENERAL_MANAGER">部门总经理</option>
+                <option value="VICE_PRESIDENT">分管行长</option>
+                <option value="SIX_PEOPLE_GROUP">六人小组</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">优先级(低值优先)</label>
+              <input class="form-input" v-model="matrixDialog.form.priority" type="number" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">边界类型</label>
+              <select class="form-select" v-model="matrixDialog.form.boundaryType">
+                <option value="RATE">直接利率</option>
+                <option value="SPREAD">存量降幅</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">绝对利率下限(%)</label>
+              <input class="form-input" v-model="matrixDialog.form.boundaryMinRate" type="number" step="0.01" />
+            </div>
+            <div class="form-field" style="grid-column: span 2">
+              <label class="form-field__label">BP 边界(按 LPR 换算)</label>
+              <div style="display:flex;gap:6px">
+                <select class="form-select" v-model="matrixDialog.form.bpSign" style="width:70px">
+                  <option value="+">+</option>
+                  <option value="-">-</option>
+                </select>
+                <input class="form-input" v-model="matrixDialog.form.boundaryBp" type="number" placeholder="BP 值" />
+                <select class="form-select" v-model="matrixDialog.form.lprTerm" style="width:110px">
+                  <option value="1Y">1Y LPR</option>
+                  <option value="5Y+">5Y+ LPR</option>
+                </select>
+              </div>
+            </div>
           </div>
-          <div class="form-field">
-            <label class="form-field__label">生效时间 <span class="req">*</span></label>
-            <input class="form-input" v-model="matrixDialog.form.effectiveFrom" type="datetime-local" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">备注</label>
-            <input class="form-input" v-model="matrixDialog.form.remark" />
+
+          <div class="sub-title" style="margin-top:14px">生效与备注</div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label">生效时间 <span class="req">*</span></label>
+              <input class="form-input" v-model="matrixDialog.form.effectiveFrom" type="datetime-local" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">备注</label>
+              <input class="form-input" v-model="matrixDialog.form.remark" />
+            </div>
           </div>
         </div>
         <div class="modal__actions">
@@ -940,4 +951,7 @@ onMounted(() => {
 .json-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .json-compare__title { font-weight: 600; margin-bottom: 6px; }
 .json-view { background: var(--color-bg, #f8fafc); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px; font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+
+.matrix-dialog__body { max-height: 68vh; overflow-y: auto; padding-right: 6px; }
+.modal__card { max-width: 720px; width: 92vw; }
 </style>
