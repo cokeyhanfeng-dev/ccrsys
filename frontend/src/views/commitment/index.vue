@@ -134,9 +134,20 @@
             <span v-else class="dg-label">其它手工承诺(§6.4)</span>
             <span :class="resultBadge(m.result_status)">{{ resultText(m.result_status) }}</span>
           </div>
-          <!-- §6.4 "其它"承诺:无数值达成率/进度条,不参与机构达成率(D19);描述录入依赖后端 track_desc 接口 -->
-          <div v-if="m.metric_code === 'OTHER'" class="section-tip" style="margin-top:6px">
-            手工描述跟踪,无数值达成率、不参与机构达成率(D19);跟踪反馈录入依赖后端 track_desc 字段/接口(登记依赖未就绪)。
+          <!-- §6.4 "其它"承诺:无数值达成率/进度条,不参与机构达成率(D19);以客户经理手工描述跟踪(track_desc 留痕) -->
+          <div v-if="m.metric_code === 'OTHER'" class="other-track">
+            <div class="other-track__desc">
+              <span class="dg-label">跟踪描述</span>
+              <span v-if="m.track_desc">{{ m.track_desc }}</span>
+              <span v-else class="section-tip">暂无跟踪描述,手工录入留痕(§6.4)</span>
+            </div>
+            <div class="other-track__edit">
+              <textarea class="form-input" rows="2"
+                :value="trackDraft[m.metric_id ?? m.id] || ''"
+                @input="setTrackDraft(m, ($event.target as HTMLTextAreaElement).value)"
+                placeholder="录入本期跟踪描述(留痕;以文本替代数值对比)" style="width:100%;resize:vertical" />
+              <button class="btn btn--secondary" style="margin-top:6px" @click="saveTrack(m)">保存跟踪描述</button>
+            </div>
           </div>
           <el-progress v-else
             :percentage="progressPct(m.achievement_ratio)"
@@ -170,7 +181,7 @@
         <div v-else class="empty">暂无评估历史</div>
       </div>
 
-      <!-- 月报入口(§12.11) -->
+      <!-- 月报入口(§12.11:月报汇总 + 风险/结论分布) -->
       <div class="card">
         <div class="card__head"><span>承诺月报</span></div>
         <div class="report-bar">
@@ -178,15 +189,32 @@
           <input class="form-input" v-model="reportOrgId" placeholder="机构ID(可空,默认本机构)" style="width:200px" />
           <button class="btn btn--primary" :disabled="reportLoading" @click="loadReport">查询月报</button>
         </div>
-        <table class="table" v-if="reportRows.length" style="margin-top:12px">
-          <thead><tr><th v-for="h in reportHeaders" :key="h">{{ h }}</th></tr></thead>
+        <div class="report-summary" v-if="report.month">
+          <div><span class="dg-label">统计月份</span>{{ report.month }}</div>
+          <div><span class="dg-label">承诺计划数</span>{{ report.planCount ?? '—' }}</div>
+          <div><span class="dg-label">评估笔数</span>{{ report.evaluationCount ?? '—' }}</div>
+          <div><span class="dg-label">平均达成率</span>{{ report.avgAchievementRatio != null ? Number(report.avgAchievementRatio).toFixed(2) + '%' : '—' }}</div>
+        </div>
+        <table class="table" v-if="report.riskDistribution?.length" style="margin-top:12px">
+          <thead><tr><th>风险等级</th><th>评估笔数</th></tr></thead>
           <tbody>
-            <tr v-for="(r, i) in reportRows" :key="i">
-              <td v-for="h in reportHeaders" :key="h">{{ r[h] ?? '—' }}</td>
+            <tr v-for="(d, i) in report.riskDistribution" :key="i">
+              <td><span class="badge" :class="riskBadge(d.riskLevel)">{{ riskLevelText(d.riskLevel) }}</span></td>
+              <td class="num">{{ d.evaluationCount ?? '—' }}</td>
             </tr>
           </tbody>
         </table>
-        <div v-else class="empty" style="margin-top:12px">{{ reportHint }}</div>
+        <table class="table" v-if="report.resultDistribution?.length" style="margin-top:8px">
+          <thead><tr><th>评估结论</th><th>评估笔数</th></tr></thead>
+          <tbody>
+            <tr v-for="(d, i) in report.resultDistribution" :key="i">
+              <td>{{ evalResultText(d.resultStatus) }}</td>
+              <td class="num">{{ d.evaluationCount ?? '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="report.month && !report.riskDistribution?.length && !report.resultDistribution?.length" class="empty" style="margin-top:12px">该月份暂无月报数据</div>
+        <div v-else-if="!report.month" class="empty" style="margin-top:12px">{{ reportHint }}</div>
       </div>
     </template>
 
@@ -243,7 +271,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listCommitmentPlans, listTrackingPolicies, simulatePolicy } from '@/api/commitment'
+import { listCommitmentPlans, listTrackingPolicies, simulatePolicy, saveMetricTrackDesc } from '@/api/commitment'
 import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
 import {
   planStatusText, configStatusText, evalResultText,
@@ -344,7 +372,7 @@ const planDetail = ref<any | null>(null)
 const evaluations = ref<any[]>([])
 const reportMonth = ref(new Date().toISOString().slice(0, 7))
 const reportOrgId = ref('')
-const reportRows = ref<any[]>([])
+const report = ref<any>({})
 const reportLoading = ref(false)
 const reportHint = ref('选择月份后查询承诺月报')
 
@@ -355,13 +383,11 @@ const planMetrics = computed(() => {
   return currentPlan.value?.metrics || []
 })
 
-const reportHeaders = computed(() => (reportRows.value.length ? Object.keys(reportRows.value[0]) : []))
-
 async function enterPlan(p: any) {
   currentPlan.value = p
   planDetail.value = null
   evaluations.value = []
-  reportRows.value = []
+  report.value = {}
   reportHint.value = '选择月份后查询承诺月报'
   level.value = 3
   try {
@@ -373,6 +399,29 @@ async function enterPlan(p: any) {
   }
 }
 
+// ---------- "其它"承诺跟踪描述录入(§6.4:以 metric 主键为键的草稿,保存 track_desc 留痕) ----------
+const trackDraft = reactive<Record<number, string>>({})
+function setTrackDraft(m: any, v: string) {
+  trackDraft[Number(m.metric_id ?? m.id)] = v
+}
+async function saveTrack(m: any) {
+  const metricId = Number(m.metric_id ?? m.id)
+  const desc = (trackDraft[metricId] || '').trim()
+  if (!desc) {
+    ElMessage.warning('请录入跟踪描述')
+    return
+  }
+  try {
+    await saveMetricTrackDesc(metricId, desc)
+    // 更新本地行数据与当前计划指标,无需重拉列表
+    m.track_desc = desc
+    trackDraft[metricId] = ''
+    ElMessage.success('跟踪描述已保存留痕')
+  } catch {
+    ElMessage.error('跟踪描述保存失败')
+  }
+}
+
 async function loadReport() {
   if (!reportMonth.value) {
     ElMessage.warning('请选择月份')
@@ -380,15 +429,27 @@ async function loadReport() {
   }
   reportLoading.value = true
   try {
+    // P1-3 月报联调:后端返回 {month,planCount,evaluationCount,avgAchievementRatio,riskDistribution,resultDistribution}
     const data = await getCommitmentMonthlyReport(reportMonth.value, reportOrgId.value || undefined)
-    reportRows.value = Array.isArray(data) ? data : (data?.rows || [])
-    reportHint.value = reportRows.value.length ? '' : '该月份暂无月报数据'
+    report.value = (data || {}) as any
+    if (!report.value.month) report.value.month = reportMonth.value
+    reportHint.value = report.value.planCount != null ? '' : '该月份暂无月报数据'
   } catch {
-    reportRows.value = []
+    report.value = {}
     reportHint.value = '月报查询失败或接口暂未开放'
   } finally {
     reportLoading.value = false
   }
+}
+
+// P1-3 月报联调:风险等级文案与徽标(ccr_tracking_evaluation.risk_level)
+function riskLevelText(code?: string) {
+  const map: Record<string, string> = { LOW: '低', MEDIUM: '中', HIGH: '高', UNKNOWN: '未知' }
+  return map[code || ''] || (code || '—')
+}
+function riskBadge(code?: string) {
+  const map: Record<string, string> = { LOW: 'badge--success', MEDIUM: 'badge--warning', HIGH: 'badge--danger', UNKNOWN: 'badge--neutral' }
+  return map[code || ''] || 'badge--neutral'
 }
 
 // ---------- 数据加载(无参,服务端定数据范围) ----------
@@ -474,7 +535,7 @@ onMounted(load)
 <style scoped>
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -484,7 +545,12 @@ onMounted(load)
 .plan-card__meta { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
 .metric-row { margin-bottom: 14px; }
 .metric-row__head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; font-size: 14px; }
+.other-track { background: #f8fafc; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 6px; }
+.other-track__desc { font-size: 13px; margin-bottom: 8px; }
+.other-track__edit { max-width: 560px; }
 .report-bar { display: flex; gap: 8px; align-items: center; }
+.report-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 16px; font-size: 14px; margin-top: 12px; }
+.dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .dlg-section-title { font-weight: 600; margin-bottom: 8px; }
 .simulate-bar { display: flex; gap: 8px; }
 </style>

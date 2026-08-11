@@ -23,6 +23,12 @@ export const submitLpr = (id: number) => post(`/system/flow/thresholds/lpr/${id}
 export const publishLpr = (id: number) => post(`/system/flow/thresholds/lpr/${id}/publish`)
 export const disableLpr = (id: number) => post(`/system/flow/thresholds/lpr/${id}/disable`)
 
+// ---------- LPR 明细(§8A.3;按版本×期限×产品逐行,矩阵式编辑,保存为全量替换) ----------
+export const listLprConfigs = (versionId: number) =>
+  get<any[]>('/system/lpr-configs', { versionId })
+export const saveLprConfigs = (configs: object[]) =>
+  post('/system/lpr-configs', configs)
+
 // ---------- 权限矩阵阈值(同构生命周期) ----------
 export const listMatrix = (status?: string) =>
   get<any[]>('/system/flow/thresholds/matrix', status ? { status } : {})
@@ -103,6 +109,37 @@ export const disableProductLimit = (id: number) => post(`/system/flow/thresholds
 // 驳回意见为 query 参数(后端 @RequestParam)
 export const rejectProductLimit = (id: number, opinion: string) =>
   post(`/system/flow/thresholds/product-limit/${id}/reject?opinion=${encodeURIComponent(opinion)}`)
+
+// ---------- 产品目录(§8A.5①;启用产品为 LPR 明细/矩阵/申请页的权威下拉) ----------
+// 公开只读端点(/ccr/products):申请页客户经理可读,替代 /system/product(仅 admin)
+export const listEnabledProducts = (businessBigType?: string) =>
+  get<any[]>('/ccr/products/enabled', businessBigType ? { businessBigType } : {})
+
+// ---------- 产品配置中心(P2-4;/system/product/** 仅 admin) ----------
+export const listProductCatalog = (businessBigType?: string, status?: string) =>
+  get<any[]>('/system/product/catalog', {
+    ...(businessBigType ? { businessBigType } : {}),
+    ...(status ? { status } : {})
+  })
+export const createProduct = (data: object) => post<number>('/system/product/catalog', data)
+export const updateProduct = (id: number, data: object) => put(`/system/product/catalog/${id}`, data)
+// 启停为 query 参数(后端 @RequestParam)
+export const changeProductStatus = (id: number, status: string) =>
+  post(`/system/product/catalog/${id}/status?status=${encodeURIComponent(status)}`)
+export const deleteProduct = (id: number) => del(`/system/product/catalog/${id}`)
+
+export const listProductRoutes = (productCode?: string, status?: string) =>
+  get<any[]>('/system/product/routes', {
+    ...(productCode ? { productCode } : {}),
+    ...(status ? { status } : {})
+  })
+export const createProductRoute = (data: object) => post<number>('/system/product/routes', data)
+export const submitProductRoute = (id: number) => post(`/system/product/routes/${id}/submit`)
+export const publishProductRoute = (id: number) => post(`/system/product/routes/${id}/publish`)
+export const rejectProductRoute = (id: number, opinion: string) =>
+  post(`/system/product/routes/${id}/reject?opinion=${encodeURIComponent(opinion)}`)
+export const disableProductRoute = (id: number) => post(`/system/product/routes/${id}/disable`)
+export const deleteProductRoute = (id: number) => del(`/system/product/routes/${id}`)
 
 // ---------- 配置变更日志(§8A.2;configType: LPR/MATRIX/RULE_SET/PRODUCT_LIMIT) ----------
 export interface ConfigChangeLog {

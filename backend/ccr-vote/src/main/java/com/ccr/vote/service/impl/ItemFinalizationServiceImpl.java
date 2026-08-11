@@ -159,11 +159,11 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(),
                     "承诺计划事件要素缺失: 分项 " + pricingItemId + " 决议 " + resolutionId);
         }
-        // 幂等:该决议已存在承诺计划则跳过(event_no 防重之外的业务兜底)
+        // 幂等:该申请已存在承诺计划则跳过(event_no 防重之外的业务兜底;承诺按申请聚合,同申请多分项终态只建一份)
         Long exists = commitmentPlanMapper.selectCount(new LambdaQueryWrapper<CcrCommitmentPlan>()
-                .eq(CcrCommitmentPlan::getResolutionId, resolution.getId()));
+                .eq(CcrCommitmentPlan::getApplicationId, item.getApplicationId()));
         if (exists != null && exists > 0) {
-            log.info("决议 {} 已存在承诺计划,幂等跳过", resolution.getResolutionNo());
+            log.info("申请 {} 已存在承诺计划,幂等跳过(分项 {})", item.getApplicationId(), item.getPricingItemNo());
             return;
         }
         createCommitmentPlan(item, resolution);
@@ -246,7 +246,7 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
     private void createCommitmentPlan(CcrPricingItem item, CcrResolution resolution) {
         List<ApplicationCommitmentRead> rows = commitmentReadMapper.selectList(
                 new LambdaQueryWrapper<ApplicationCommitmentRead>()
-                        .eq(ApplicationCommitmentRead::getPricingItemId, item.getId()));
+                        .eq(ApplicationCommitmentRead::getApplicationId, item.getApplicationId()));
         if (rows.isEmpty()) {
             log.info("分项 {} 无承诺指标,跳过承诺计划创建", item.getId());
             return;
@@ -255,6 +255,7 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         String scopeType = application == null ? null : application.getCustomerScope();
 
         CcrCommitmentPlan plan = new CcrCommitmentPlan();
+        plan.setApplicationId(item.getApplicationId());
         plan.setResolutionId(resolution.getId());
         plan.setScopeType(scopeType);
         plan.setCustomerNo(application == null ? null : application.getCustomerNo());
@@ -274,8 +275,9 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             metric.setMetricCode(row.getMetricCode());
             metric.setMetricName(row.getMetricCode());
             metric.setTargetType(row.getTargetType());
-            metric.setBaselineValue(row.getBaselineValue());
-            metric.setTargetValue(row.getTargetValue());
+            // 基线/目标兜底:申请未带基线值时不得向 NOT NULL 列写 null
+            metric.setBaselineValue(row.getBaselineValue() == null ? BigDecimal.ZERO : row.getBaselineValue());
+            metric.setTargetValue(row.getTargetValue() == null ? BigDecimal.ZERO : row.getTargetValue());
             metric.setUnit(row.getUnit());
             metric.setMetricScope(row.getMetricScope());
             metrics.add(metric);
@@ -284,8 +286,8 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
                 CcrCommitmentMemberAlloc alloc = new CcrCommitmentMemberAlloc();
                 alloc.setMetricCode(row.getMetricCode());
                 alloc.setMemberCustomerNo(row.getMemberCustomerNo());
-                alloc.setAllocatedTarget(row.getTargetValue());
-                alloc.setAllocatedBaseline(row.getBaselineValue());
+                alloc.setAllocatedTarget(row.getTargetValue() == null ? BigDecimal.ZERO : row.getTargetValue());
+                alloc.setAllocatedBaseline(row.getBaselineValue() == null ? BigDecimal.ZERO : row.getBaselineValue());
                 memberAllocs.add(alloc);
             }
         }

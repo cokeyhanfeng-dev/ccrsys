@@ -1,17 +1,23 @@
 package com.ccr.rule.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
+import com.ccr.rule.domain.CcrLprConfig;
 import com.ccr.rule.domain.CcrLprVersion;
 import com.ccr.rule.domain.CcrProductRateLimit;
+import com.ccr.rule.domain.CcrProductRoute;
 import com.ccr.rule.domain.CcrRateMatrix;
 import com.ccr.rule.dto.MatrixRouteInput;
 import com.ccr.rule.dto.RouteResult;
+import com.ccr.rule.mapper.CcrLprConfigMapper;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrProductRateLimitMapper;
+import com.ccr.rule.mapper.CcrProductRouteMapper;
 import com.ccr.rule.mapper.CcrRateMatrixMapper;
 import com.ccr.rule.service.RateMatrixRouter;
 import jakarta.annotation.Resource;
@@ -46,6 +52,19 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     /** 上会兜底岗位:存贷款利率审批小组 */
     private static final String GROUP_NODE = "SIX_PEOPLE_GROUP";
 
+    /** 总行行长决策节点(§8A.5② president_decision/表决通过后必经,B11/D20a) */
+    private static final String PRESIDENT_NODE = "PRESIDENT";
+
+    /** 产品链路路由模式:直接上会(存款/保证金 D16b,必经支行行长后直接上会,不参与链式优先级) */
+    private static final String DIRECT_VOTE = "DIRECT_VOTE";
+
+    /** 产品链路排序:生效日最新优先,同日 priority 低值优先(§8A.5② 同一时点仅一版 PUBLISHED 生效) */
+    private static final Comparator<CcrProductRoute> ROUTE_BY_DATE_DESC = Comparator.comparing(
+            (CcrProductRoute r) -> r.getEffectiveDate() == null ? LocalDateTime.MIN : r.getEffectiveDate(),
+            Comparator.reverseOrder());
+    private static final Comparator<CcrProductRoute> ROUTE_BY_PRIORITY_ASC = Comparator.comparing(
+            (CcrProductRoute r) -> r.getPriority() == null ? 0 : r.getPriority());
+
     private static final BigDecimal ONE_BP = new BigDecimal("0.01");
     private static final BigDecimal FIVE_THOUSAND = new BigDecimal("5000");
 
@@ -56,7 +75,13 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     private CcrLprVersionMapper lprVersionMapper;
 
     @Resource
+    private CcrLprConfigMapper lprConfigMapper;
+
+    @Resource
     private CcrProductRateLimitMapper productRateLimitMapper;
+
+    @Resource
+    private CcrProductRouteMapper productRouteMapper;
 
     @Resource
     private CcrCacheUtil cacheUtil;
@@ -68,6 +93,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         }
         // 冻结口径:按提交时冻结的生效日期取矩阵行(§8.4),缺省取当前时间
         LocalDateTime asOf = input.getAsOfDate() == null ? LocalDateTime.now() : input.getAsOfDate();
+        // 产品审批链路(§8A.5②):按产品编码命中最新 PUBLISHED 链路;未配置链路时保持矩阵纯驱动(向后兼容)
+        CcrProductRoute route = loadProductRoute(input, asOf);
         List<CcrRateMatrix> rows = effectiveRows(input.getBusinessBigType(), input.getNewOrExisting(), asOf);
         if (rows.isEmpty()) {
             throw new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(),
@@ -96,23 +123,38 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         // 产品硬边界(§8.2 D3):贷款=全行下限,存款=全行上限;终审边界=矩阵边界与硬边界取交集
         BigDecimal hardBoundary = loadProductHardBoundary(input, asOf, isLoan);
 
+        // DIRECT_VOTE(§8A.5②/D16b):必经支行行长后直接进入六人小组(+行长决策),不参与链式优先级
+        if (route != null && DIRECT_VOTE.equals(route.getRouteMode())) {
+            return buildVoteResult(matched, route, hardBoundary, isLoan,
+                    "产品链路 DIRECT_VOTE(直接上会):必经支行行长后进入六人小组表决(≥4票)");
+        }
+
         // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于上限才上会小组;
         // 未超上限(含等于)由支行行长终审(用户拍板口径:超过挂牌价才提交上级)
         if (!isLoan) {
             CcrRateMatrix row = matched.get(0);
             BigDecimal upper = calcBoundary(row, input, null);
+            // 强制上会(§8A.5② mandatory_vote):与利率是否越界无关
+            if (route != null && "Y".equals(route.getMandatoryVote())) {
+                return buildVoteResult(matched, route, hardBoundary, false,
+                        "产品链路强制上会:存款/保证金必经六人小组表决(≥4票)");
+            }
             if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
                 return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
                         "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
             }
-            return buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
+            return applyPresident(buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
                     upper == null ? "存款/保证金一律直接上会小组(D16b)"
-                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)");
+                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)"), route);
         }
 
-        // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底
+        // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底;
+        // 强制上会/命中上会条件(§8A.5②)时无论利率是否权限内均必经六人小组
         CcrLprVersion lpr = loadLpr(input, asOf);
-        Map<String, BigDecimal> lprMap = Map.of("1Y", lpr.getLpr1y(), "5Y", lpr.getLpr5y());
+        // §8A.3:BP 基准按 (lpr_term, product_type=产品编码) 明细精确取值,无明细回退头表 1Y/5Y
+        Map<String, BigDecimal> lprMap = Map.of(
+                "1Y", lprValueOf(lpr, "1Y", input.getProductCode()),
+                "5Y", lprValueOf(lpr, "5Y", input.getProductCode()));
         for (CcrRateMatrix row : matched) {
             if (GROUP_NODE.equals(row.getStartNodeCode())) {
                 continue; // 上会兜底行最后处理
@@ -120,26 +162,150 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal boundary = calcBoundary(row, input, lprMap);
             if (boundary == null) {
                 // 无边界 = 权限内即终审(D3)
-                return buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
-                        "该岗位权限内即终审(D3)");
+                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
+                        "该岗位权限内即终审(D3)"), route, input, matched);
             }
             if (rate != null && rate.compareTo(boundary) >= 0) {
                 String msg = FIRST_NODE.equals(row.getStartNodeCode())
                         ? "申请利率" + rate + "% ≥ 支行行长终审边界(部门总经理线)" + boundary + "%,支行行长终审"
                         : "申请利率" + rate + "% ≥ 岗位下限" + boundary + "%," + row.getStartNodeCode() + "终审";
-                return buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg);
+                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
+                        route, input, matched);
             }
         }
-        // 无岗位可终审 → 上会小组(≥4票)
-        return matched.stream()
+        // 无岗位可终审 → 上会小组(≥4票);配置行长决策时必经总行行长(applyPresident)
+        RouteResult vote = matched.stream()
                 .filter(r -> GROUP_NODE.equals(r.getStartNodeCode()))
                 .findFirst()
                 .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), hardBoundary, lpr,
                         "利率低于全部岗位下限,提交小组表决(≥4票)"))
                 .orElseThrow(() -> new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(), "未配置上会兜底行"));
+        return applyPresident(vote, route);
     }
 
     // ---------- 私有 ----------
+
+    /**
+     * 命中产品审批链路(§8A.5②):按产品编码取生效窗口内最新 PUBLISHED 链路;
+     * 产品未配置/未发布链路时返回 null(矩阵纯驱动,向后兼容)。
+     * 缓存 key ccr:cfg:product-route:effective(全量 PUBLISHED 整体缓存,产品发布/停用时失效)。
+     */
+    private CcrProductRoute loadProductRoute(MatrixRouteInput input, LocalDateTime asOf) {
+        if (StrUtil.isBlank(input.getProductCode())) {
+            return null;
+        }
+        List<CcrProductRoute> effective = readProductRouteEffectiveCache();
+        if (effective == null) {
+            effective = productRouteMapper.selectList(new LambdaQueryWrapper<CcrProductRoute>()
+                    .eq(CcrProductRoute::getStatus, "PUBLISHED"));
+            cacheUtil.set(CcrCacheUtil.KEY_PRODUCT_ROUTE_EFFECTIVE, effective);
+        }
+        return effective.stream()
+                .filter(r -> input.getProductCode().equals(r.getProductCode()))
+                .filter(r -> r.getEffectiveDate() == null || !r.getEffectiveDate().isAfter(asOf))
+                .sorted(ROUTE_BY_DATE_DESC.thenComparing(ROUTE_BY_PRIORITY_ASC))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 读产品链路缓存:Redis JSON 反序列化元素退化为 LinkedHashMap,类型不符或为空一律按缓存失效处理 */
+    @SuppressWarnings("unchecked")
+    private List<CcrProductRoute> readProductRouteEffectiveCache() {
+        Object cached = cacheUtil.get(CcrCacheUtil.KEY_PRODUCT_ROUTE_EFFECTIVE);
+        if (cached instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof CcrProductRoute) {
+            return (List<CcrProductRoute>) list;
+        }
+        return null;
+    }
+
+    /**
+     * 上会条件命中判定(§8A.5② vote_condition JSON,命中即上会):
+     * amount_tier(金额档,与矩阵定档口径一致 §B18)、enterprise_type(SOE/NON_SOE);
+     * JSON 解析失败按不命中处理(配置错误由配置中心校验)。
+     */
+    private boolean voteConditionHit(CcrProductRoute route, MatrixRouteInput input) {
+        if (StrUtil.isBlank(route.getVoteCondition())) {
+            return false;
+        }
+        try {
+            JSONObject cond = JSONUtil.parseObj(route.getVoteCondition());
+            String amountTier = cond.getStr("amount_tier");
+            if (StrUtil.isNotBlank(amountTier)) {
+                BigDecimal basis = input.getGroupCreditTotal() != null
+                        && !MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT.equals(input.getAmountBasis())
+                        ? input.getGroupCreditTotal()
+                        : (input.getAmount() == null ? BigDecimal.ZERO : input.getAmount());
+                String tier = basis.compareTo(FIVE_THOUSAND) < 0 ? "LT_5000" : "GE_5000";
+                if (amountTier.equals(tier)) {
+                    return true;
+                }
+            }
+            String enterpriseType = cond.getStr("enterprise_type");
+            return StrUtil.isNotBlank(enterpriseType) && enterpriseType.equals(input.getCustomerType());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 贷款结果应用产品链路(§8A.5②):强制上会(mandatory_vote)/命中上会条件(vote_condition)
+     * 时无论利率是否权限内均必经六人小组(保留链式层级);必经行长决策经 applyPresident 追加。
+     */
+    private RouteResult applyProductRoute(RouteResult result, CcrProductRoute route, MatrixRouteInput input,
+                                          List<CcrRateMatrix> matched) {
+        if (route == null) {
+            return result;
+        }
+        boolean forceVote = "Y".equals(route.getMandatoryVote()) || voteConditionHit(route, input);
+        if (forceVote) {
+            result.setFinalNodeCode(GROUP_NODE);
+            result.setRouteChain(buildChain(matched, GROUP_NODE));
+            result.setMessage("产品链路" + ("Y".equals(route.getMandatoryVote()) ? "强制上会" : "命中上会条件")
+                    + ":必经六人小组表决(≥4票)" + ("Y".equals(route.getPresidentDecision()) ? ",并经总行行长决策" : ""));
+        }
+        return applyPresident(result, route);
+    }
+
+    /**
+     * 必经总行行长决策(§8A.5② president_decision/B11/D20a):终审为六人小组时链路追加 PRESIDENT。
+     */
+    private RouteResult applyPresident(RouteResult result, CcrProductRoute route) {
+        if (route != null && "Y".equals(route.getPresidentDecision()) && GROUP_NODE.equals(result.getFinalNodeCode())) {
+            List<String> chain = new ArrayList<>(result.getRouteChain() == null ? List.of() : result.getRouteChain());
+            if (!chain.contains(PRESIDENT_NODE)) {
+                chain.add(PRESIDENT_NODE);
+                result.setRouteChain(chain);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 组装直接上会/强制上会结果(§8A.5②):首节点恒为支行行长,终审=六人小组,
+     * 必经行长决策时追加 PRESIDENT;不参与链式优先级(链路固定,不含中间层级)。
+     */
+    private RouteResult buildVoteResult(List<CcrRateMatrix> matched, CcrProductRoute route,
+                                        BigDecimal hardBoundary, boolean isLoan, String msg) {
+        CcrRateMatrix row = matched.get(0);
+        RouteResult result = new RouteResult();
+        result.setStartNodeCode(FIRST_NODE);
+        result.setFinalNodeCode(GROUP_NODE);
+        List<String> chain = new ArrayList<>();
+        chain.add(FIRST_NODE);
+        chain.add(GROUP_NODE);
+        if ("Y".equals(route.getPresidentDecision())) {
+            chain.add(PRESIDENT_NODE);
+        }
+        result.setRouteChain(chain);
+        result.setRateDirection(isLoan ? "LOWER_BETTER" : "HIGHER_BETTER");
+        result.setMatchedRuleCode(row.getMatrixNo());
+        result.setMatchedRuleName(row.getRemark());
+        result.setMatchedMatrixNo(row.getMatrixNo());
+        result.setBoundaryRate(hardBoundary);
+        result.setDeptCode(row.getDeptCode());
+        result.setMessage(msg + ("Y".equals(route.getPresidentDecision()) ? ",并经总行行长决策" : ""));
+        return result;
+    }
 
     /**
      * 按业务维度取生效矩阵行(§3.6 缓存 key ccr:cfg:matrix:effective):
@@ -281,6 +447,28 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     }
 
     /**
+     * LPR 基准取值(§8A.3/§8A.12):按冻结版本 (lpr_term, product_type=产品编码) 明细精确取值,
+     * 该产品未配置明细时回退版本头表 1Y/5Y(兼容既有单行两列数据)。
+     * 明细表小且有 (version_id, lpr_term, product_type) 唯一索引,路由按分项直接查库可接受。
+     */
+    private BigDecimal lprValueOf(CcrLprVersion lpr, String lprTerm, String productCode) {
+        if (StrUtil.isNotBlank(productCode) && lpr != null) {
+            CcrLprConfig cfg = lprConfigMapper.selectOne(new LambdaQueryWrapper<CcrLprConfig>()
+                    .eq(CcrLprConfig::getVersionId, lpr.getId())
+                    .eq(CcrLprConfig::getLprTerm, lprTerm)
+                    .eq(CcrLprConfig::getProductType, productCode)
+                    .last("limit 1"));
+            if (cfg != null && cfg.getLprValue() != null) {
+                return cfg.getLprValue();
+            }
+        }
+        if (lpr == null) {
+            return null;
+        }
+        return "1Y".equals(lprTerm) ? lpr.getLpr1y() : lpr.getLpr5y();
+    }
+
+    /**
      * 查询产品硬边界(§8.2):按 product_code + 业务类型(LOAN/DEPOSIT)取生效窗口内最新一版。
      * 入参未指定产品或该产品未配置硬边界时返回 null(不收紧矩阵边界)。
      */
@@ -331,6 +519,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         result.setMatchedRuleName(terminalRow.getRemark());
         // 终审命中行编号(小组兜底行同样记录,审计溯源 §8.6)
         result.setMatchedMatrixNo(terminalRow.getMatrixNo());
+        // 部门归属编码(矩阵透出,§D16a 部门分流:对公存量GSB/对公新增SXSB/个人经营LSB)
+        result.setDeptCode(terminalRow.getDeptCode());
         // 终审节点有效边界:矩阵边界 ∩ 产品硬边界(D3)
         result.setBoundaryRate(intersectBoundary(boundary, hardBoundary, isLoan));
         if (lpr != null) {

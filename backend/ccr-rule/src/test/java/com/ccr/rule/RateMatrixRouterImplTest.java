@@ -3,13 +3,17 @@ package com.ccr.rule;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
+import com.ccr.rule.domain.CcrLprConfig;
 import com.ccr.rule.domain.CcrLprVersion;
 import com.ccr.rule.domain.CcrProductRateLimit;
+import com.ccr.rule.domain.CcrProductRoute;
 import com.ccr.rule.domain.CcrRateMatrix;
 import com.ccr.rule.dto.MatrixRouteInput;
 import com.ccr.rule.dto.RouteResult;
+import com.ccr.rule.mapper.CcrLprConfigMapper;
 import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrProductRateLimitMapper;
+import com.ccr.rule.mapper.CcrProductRouteMapper;
 import com.ccr.rule.mapper.CcrRateMatrixMapper;
 import com.ccr.rule.service.impl.RateMatrixRouterImpl;
 import org.junit.jupiter.api.Test;
@@ -24,6 +28,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -43,7 +48,13 @@ class RateMatrixRouterImplTest {
     private CcrLprVersionMapper lprVersionMapper;
 
     @Mock
+    private CcrLprConfigMapper lprConfigMapper;
+
+    @Mock
     private CcrProductRateLimitMapper productRateLimitMapper;
+
+    @Mock
+    private CcrProductRouteMapper productRouteMapper;
 
     @Mock
     private CcrCacheUtil cacheUtil;
@@ -537,5 +548,136 @@ class RateMatrixRouterImplTest {
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4"));
         assertEquals(new BigDecimal("3.40"), result.getBoundaryRate());
         assertEquals("M-LT-NSOE-1Y-BM", result.getMatchedMatrixNo());
+    }
+
+    // ---------- §8A.5② 产品审批链路接入 ----------
+
+    private CcrProductRoute productRoute(String productCode, String mode, String mandatoryVote,
+                                         String president, String voteCondition) {
+        CcrProductRoute r = new CcrProductRoute();
+        r.setProductCode(productCode);
+        r.setBusinessBigType("LOAN_PUBLIC");
+        r.setRouteMode(mode);
+        r.setMandatoryVote(mandatoryVote);
+        r.setPresidentDecision(president);
+        r.setVoteCondition(voteCondition);
+        r.setEffectiveDate(LocalDateTime.now().minusDays(1));
+        r.setPriority(0);
+        return r;
+    }
+
+    private void stubProductRoute(CcrProductRoute... routes) {
+        when(productRouteMapper.selectList(any())).thenReturn(java.util.Arrays.asList(routes));
+    }
+
+    @Test
+    void 存款_产品链路DIRECT_VOTE_必经支行行长后上会并行长决策() {
+        when(matrixMapper.selectList(any())).thenReturn(List.of(depositRow("M-DEP-TIME-3M", "TIME_DEPOSIT", "3M", "0.85")));
+        // DIRECT_VOTE 不参与链式优先级:申请利率 0.8 未超上限 0.85 也直接上会
+        stubProductRoute(productRoute("TIME_DEPOSIT", "DIRECT_VOTE", "N", "Y", null));
+        MatrixRouteInput in = new MatrixRouteInput();
+        in.setBusinessBigType("DEPOSIT");
+        in.setNewOrExisting("NEW");
+        in.setProductCode("TIME_DEPOSIT");
+        in.setTermValue(3);
+        in.setTermUnit("MONTH");
+        in.setRequestedRate(new BigDecimal("0.8"));
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getRouteChain());
+    }
+
+    @Test
+    void 贷款_产品链路强制上会_利率权限内仍必经小组() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 3.4 ≥ BM线3.4 本应支行行长终审;mandatory_vote=Y → 强制必经六人小组
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "Y", "N", null));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertEquals("BRANCH_MANAGER", result.getStartNodeCode());
+    }
+
+    @Test
+    void 贷款_命中上会条件金额档_必经小组() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // LT_5000 命中 vote_condition.amount_tier → 强制上会(本应 BM 终审)
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"amount_tier\":\"LT_5000\"}"));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertTrue(result.getMessage().contains("命中上会条件"));
+    }
+
+    @Test
+    void 贷款_命中上会条件企业类型SOE_必经小组() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        // 国企 3.0 ≥ GM线3.0 本应 GM 终审;命中 enterprise_type=SOE → 强制上会
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"enterprise_type\":\"SOE\"}"));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "3.0");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+    }
+
+    @Test
+    void 贷款_上会并必经行长决策() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 3.1 低于全部岗位线 → 上会小组;president_decision=Y → 链路追加 PRESIDENT
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "Y", null));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.1");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT",
+                "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getRouteChain());
+    }
+
+    @Test
+    void 产品未配置链路_链路不生效() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 仅配置 OTHER 产品强制上会;本申请 PUB_LOAN_01 未配置 → 矩阵纯驱动,BM 终审
+        stubProductRoute(productRoute("OTHER", "CHAINED", "Y", "N", null));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("BRANCH_MANAGER", result.getFinalNodeCode());
+    }
+
+    // ---------- §8A.3 LPR 明细按 (lpr_term, product_type) 取值 ----------
+
+    @Test
+    void 贷款_LPR明细按产品取值_优先于头表默认() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 该产品 1Y 明细=2.8(低于头表3.0):BM线=3.2 → 3.3 支行行长权限内终审;
+        // 无明细时 BM线=3.4 → 3.3 上送 VP。以此验证明细优先于头表默认
+        CcrLprConfig cfg1y = new CcrLprConfig();
+        cfg1y.setVersionId(9601L);
+        cfg1y.setLprTerm("1Y");
+        cfg1y.setProductType("PUB_LOAN_01");
+        cfg1y.setLprValue(new BigDecimal("2.8"));
+        // 第一次(1Y)返回明细,第二次(5Y+)返回 null → 回退头表
+        when(lprConfigMapper.selectOne(any())).thenReturn(cfg1y, null);
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.3");
+        in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("BRANCH_MANAGER", result.getFinalNodeCode());
+    }
+
+    @Test
+    void 贷款_无产品LPR明细_回退头表默认值() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 无产品编码 → 不查明细 → 回退头表 1Y=3.0 → BM线3.4,3.3 上送 VP
+        RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.3"));
+        assertEquals("VICE_PRESIDENT", result.getFinalNodeCode());
     }
 }

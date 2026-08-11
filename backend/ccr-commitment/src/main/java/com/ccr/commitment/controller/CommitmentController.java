@@ -108,6 +108,13 @@ public class CommitmentController {
                 body.get("sourceBatch") == null ? "MOCK-BATCH" : body.get("sourceBatch").toString()));
     }
 
+    /** 保存指标跟踪描述(§6.4/§10.3.15:承诺类型"其它"手工跟踪留痕,track_desc 覆盖式更新) */
+    @PostMapping("/metrics/{metricId}/track")
+    public R<CcrCommitmentMetric> saveTrackDesc(@PathVariable Long metricId, @RequestBody Map<String, Object> body) {
+        String trackDesc = body.get("trackDesc") == null ? null : body.get("trackDesc").toString();
+        return R.ok(commitmentService.saveTrackDesc(metricId, trackDesc));
+    }
+
     /**
      * 贡献度跟踪列表(数据权限,§5.4:身份/角色一律取登录态+用户表,不接受传参防越权):
      * 6人小组/总行行长/admin/审计 → 全部;客户经理 → 本人申请;普通审批人 → 本人审批过的客户
@@ -126,7 +133,7 @@ public class CommitmentController {
                 || "admin".equals(roleCode) || "auditor".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           cm.metric_code, cm.metric_name, cm.target_value,
+                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
@@ -141,7 +148,7 @@ public class CommitmentController {
         if ("customer_manager".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           cm.metric_code, cm.metric_name, cm.target_value,
+                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     JOIN ccr_resolution r ON r.id = cp.resolution_id

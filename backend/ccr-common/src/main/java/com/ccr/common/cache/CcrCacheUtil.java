@@ -30,6 +30,9 @@ public class CcrCacheUtil {
     /** 利率矩阵全量生效行缓存 key(路由计算按维度内存过滤,发布时失效) */
     public static final String KEY_MATRIX_EFFECTIVE = "ccr:cfg:matrix:effective";
 
+    /** 产品审批链路生效配置缓存 key(路由 buildRoute 按产品读取,发布时失效) */
+    public static final String KEY_PRODUCT_ROUTE_EFFECTIVE = "ccr:cfg:product-route:effective";
+
     /** 空值缓存占位(反序列化后为空串) */
     private static final String EMPTY_MARKER = "";
 

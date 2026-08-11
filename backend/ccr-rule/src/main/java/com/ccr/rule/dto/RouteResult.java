@@ -36,6 +36,9 @@ public class RouteResult {
     /** 命中的权限矩阵行编号(审计溯源,§8.6) */
     private String matchedMatrixNo;
 
+    /** 部门归属编码(矩阵透出:GSB公司金融部/SXSB授信评审部/LSB零售金融部;提交时冻结到分项,§D16a 部门分流) */
+    private String deptCode;
+
     /** 本次路由采用的 LPR 版本主键(冻结溯源用,§8.4) */
     private Long lprVersionId;
 

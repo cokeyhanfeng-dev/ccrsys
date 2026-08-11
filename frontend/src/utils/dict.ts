@@ -140,7 +140,8 @@ export function nodeLabel(code?: string, fallback = '—'): string {
 /** 审批动作 */
 export const ACTION_TEXT: Record<string, string> = {
   APPROVE: '通过', REJECT: '否决', ADJUST: '调价', SUBMIT: '提交',
-  RETURN: '退回', VETO: '一票否决', AGREE: '同意', COUNT_PASS: '计票通过'
+  RETURN: '退回', VETO: '一票否决', AGREE: '同意', COUNT_PASS: '计票通过',
+  ESCALATE: '上送'
 }
 export function actionText(code?: string, fallback = '—'): string {
   return textOf(ACTION_TEXT, code, fallback)
@@ -198,6 +199,21 @@ export function customerScopeText(code?: string, fallback = '—'): string {
 export const CUSTOMER_TYPE: Record<string, string> = { SOE: '国企', NON_SOE: '非国企', PERSONAL: '个人' }
 export function customerTypeText(code?: string, fallback = '—'): string {
   return textOf(CUSTOMER_TYPE, code, fallback)
+}
+
+/** 客户分类(审批详情数仓字段,EXISTING 存量/NEW 新增) */
+export const CUSTOMER_CLASS: Record<string, string> = { EXISTING: '存量客户', NEW: '新增客户' }
+export function customerClassText(code?: string, fallback = '—'): string {
+  return textOf(CUSTOMER_CLASS, code, fallback)
+}
+
+/** 证件类型(caps 数仓 cert_tp,对公统一社会信用代码/对私身份证) */
+export const CERT_TYPE: Record<string, string> = {
+  UNIFIED: '统一社会信用代码', ID: '身份证',
+  UNIFIED_SOCIAL: '统一社会信用代码', ID_CARD: '身份证'
+}
+export function certTypeText(code?: string, fallback = '—'): string {
+  return textOf(CERT_TYPE, code, fallback)
 }
 
 /** 金额档 */
@@ -311,9 +327,8 @@ export function roleText(code?: string, fallback = '—'): string {
 
 /** 产品编码→产品名(与规则/硬边界配置中的 product_code 对齐) */
 export const PRODUCTS: DictItem[] = [
-  { code: 'LOAN_A', name: '流动资金贷款' },
+  { code: 'LOAN_A', name: '对公贷款' },
   { code: 'LOAN_P', name: '个人经营性贷款' },
-  { code: 'LOAN_GENERAL', name: '一般对公贷款' },
   { code: 'CORP_TIME_DEPOSIT', name: '对公定期存款' },
   { code: 'AGREEMENT_DEPOSIT', name: '协定存款' },
   { code: 'NOTICE_DEPOSIT', name: '通知存款' },
@@ -325,7 +340,7 @@ export const PRODUCTS: DictItem[] = [
 const PRODUCT_NAME_MAP: Record<string, string> = Object.fromEntries(PRODUCTS.map((p) => [p.code, p.name]))
 
 /** 贷款产品下拉选项(option value 保持编码) */
-export const LOAN_PRODUCTS: DictItem[] = PRODUCTS.filter((p) => ['LOAN_A', 'LOAN_P', 'LOAN_GENERAL'].includes(p.code))
+export const LOAN_PRODUCTS: DictItem[] = PRODUCTS.filter((p) => ['LOAN_A', 'LOAN_P'].includes(p.code))
 /** 存款产品下拉选项(option value 保持编码) */
 export const DEPOSIT_PRODUCTS: DictItem[] = PRODUCTS.filter((p) =>
   ['CORP_TIME_DEPOSIT', 'AGREEMENT_DEPOSIT', 'NOTICE_DEPOSIT', 'BANK_ACCEPTANCE_MARGIN', 'LC_MARGIN'].includes(p.code))
@@ -397,4 +412,24 @@ export function agreementTypeText(code?: string): string {
     REVOLVING: '循环授信'
   }
   return code ? (map[code] || code) : '—'
+}
+
+/** 授信协议状态(dw_credit_agreement_snapshot.agreement_status) */
+export function agreementStatusText(code?: string): string {
+  const map: Record<string, string> = {
+    EFFECTIVE: '有效',
+    EXPIRED: '已到期',
+    CLOSED: '已终止'
+  }
+  return code ? (map[code] || code) : '—'
+}
+
+/** 授信协议状态徽标样式 */
+export function agreementStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    EFFECTIVE: 'badge badge--success',
+    EXPIRED: 'badge badge--warning',
+    CLOSED: 'badge badge--neutral'
+  }
+  return map[code || ''] || 'badge badge--neutral'
 }

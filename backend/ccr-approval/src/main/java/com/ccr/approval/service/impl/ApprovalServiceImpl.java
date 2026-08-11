@@ -42,10 +42,14 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 普通节点审批实现(§7.2 贷款 / §7.3 存款)
@@ -138,8 +142,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         guardIdempotency(idempotencyKey);
         CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
         CcrApplication application = getApplication(item.getApplicationId());
-        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作
-        guardNodeAssignee(nodeCode, application, operator);
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按分项 dept_code)
+        guardNodeAssignee(nodeCode, application, operator, item.getDeptCode());
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
         // 存款双轨消除:普通审批链对 DEPOSIT 分项只允许支行行长节点动作
@@ -200,21 +204,21 @@ public class ApprovalServiceImpl implements ApprovalService {
         boolean escalate = !withinPermission && next != null;
 
         if (!escalate) {
-            // 「本节点已同意」集合:ccr_approval_action 中本节点 APPROVE 动作覆盖的分项
+            // 已通过集合:存在任意节点「权限内 APPROVE」的分项。超权限转送已用 ESCALATE 区分,
+            // APPROVE 只表示权限内通过;上级已通过的分项在后续节点只展示、不重复审批(本节点已同意的分项也在其中)。
             List<Long> appItemIds = appItems.stream().map(CcrPricingItem::getId).toList();
             List<CcrApprovalAction> nodeApproves = approvalActionMapper.selectList(
                     new LambdaQueryWrapper<CcrApprovalAction>()
                             .select(CcrApprovalAction::getPricingItemId)
-                            .eq(CcrApprovalAction::getNodeCode, nodeCode)
                             .eq(CcrApprovalAction::getActionType, "APPROVE")
                             .in(CcrApprovalAction::getPricingItemId, appItemIds));
-            List<Long> agreedItemIds = nodeApproves.stream()
+            List<Long> passedItemIds = nodeApproves.stream()
                     .map(CcrApprovalAction::getPricingItemId).toList();
-            // 全部分项均 ROUTING 在本节点且均已本节点同意(触发分项本次动作即视为已同意) → 整单齐套终审
+            // 全部分项均 ROUTING 在本节点且均已通过(触发分项本次动作即视为已通过)→ 整单齐套终审
             boolean allAgreed = appItems.stream().allMatch(i ->
                     PricingItemStatus.ROUTING.getCode().equals(i.getStatus())
                             && nodeCode.equals(i.getCurrentNodeCode())
-                            && (i.getId().equals(item.getId()) || agreedItemIds.contains(i.getId())));
+                            && (i.getId().equals(item.getId()) || passedItemIds.contains(i.getId())));
 
             if (allAgreed) {
                 // 整单齐套终审:全部分项一起置 APPROVED_LEVEL,走既有终态串联(决议/承诺/主申请聚合)
@@ -273,7 +277,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
         }
         // §14.7 流转留痕:动作前 ROUTING,动作后 上送→ROUTING / 上送小组→VOTING
-        insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
+        insertAction(buildAction(item.getId(), "ESCALATE", nodeCode, operator.getId(),
                 comment, beforeRate, effectiveRate, idempotencyKey,
                 PricingItemStatus.ROUTING.getCode(),
                 toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
@@ -284,7 +288,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 continue;
             }
             updateSiblingWholeOrder(sibling, next, PricingItemStatus.ROUTING.getCode(), null, null);
-            insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
+            insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
                     "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[" + next + "]",
                     sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
                     PricingItemStatus.ROUTING.getCode(),
@@ -313,8 +317,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         guardIdempotency(idempotencyKey);
         CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
         CcrApplication application = getApplication(item.getApplicationId());
-        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作
-        guardNodeAssignee(nodeCode, application, operator);
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按分项 dept_code)
+        guardNodeAssignee(nodeCode, application, operator, item.getDeptCode());
         if ("DEPOSIT".equals(application.getBusinessType()) && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手");
         }
@@ -475,7 +479,86 @@ public class ApprovalServiceImpl implements ApprovalService {
                 "SELECT cp.id, cp.plan_no planNo, cp.resolution_id resolutionId, cp.scope_type scopeType, cp.status, cp.start_date startDate, cp.end_date endDate FROM ccr_commitment_plan cp JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cp.del_flag = '0'", applicationId));
         result.put("commitmentMetrics", jdbcTemplate.queryForList(
                 "SELECT cm.plan_id planId, cm.metric_code metricCode, cm.target_type targetType, cm.baseline_value baselineValue, cm.target_value targetValue, cm.unit, cm.metric_scope metricScope FROM ccr_commitment_metric cm JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cm.del_flag = '0'", applicationId));
+
+        // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
+        List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
+                "SELECT person_name personName, cert_no certNo, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+        enrichRelated(relatedPersons);
+        result.put("relatedPersons", relatedPersons);
+
+        // 拟达成贡献度(申请承诺指标,按申请关联 §十三 13.2-6;成员级含成员客户号)
+        result.put("commitments", jdbcTemplate.queryForList(
+                "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", applicationId));
         return result;
+    }
+
+    /** 关联人信息补全(§12.4④):按 relatedCustomerNo 批量反查基本信息(caps_corp/indv)+授信信息(授信协议数/本行贷款余额) */
+    private void enrichRelated(List<Map<String, Object>> persons) {
+        if (persons == null || persons.isEmpty()) {
+            return;
+        }
+        Set<String> customerNos = new LinkedHashSet<>();
+        for (Map<String, Object> p : persons) {
+            Object no = p.get("relatedCustomerNo");
+            if (no != null && StrUtil.isNotBlank(no.toString())) {
+                customerNos.add(no.toString());
+            }
+        }
+        if (customerNos.isEmpty()) {
+            return;
+        }
+        String in = String.join(",", Collections.nCopies(customerNos.size(), "?"));
+        Object[] args = customerNos.toArray();
+
+        // 基本信息:对私优先填充、对公覆盖(与快照客户 CORP 优先口径一致)
+        Map<String, Map<String, Object>> basics = new HashMap<>();
+        for (Map<String, Object> iv : jdbcTemplate.queryForList(
+                "SELECT cust_no custNo, ocupn occupation, whlyr_incm annualIncome FROM caps_indv_cust_basic_info"
+                        + " WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)", args)) {
+            basics.put(String.valueOf(iv.get("custNo")), iv);
+        }
+        for (Map<String, Object> c : jdbcTemplate.queryForList(
+                "SELECT cust_no custNo, entp_charic entpCharic, entp_scale entpScale, blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass"
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)", args)) {
+            basics.put(String.valueOf(c.get("custNo")), c);
+        }
+
+        // 授信信息:授信协议数 + 本行贷款余额合计(万元)
+        Map<String, Object> agreementCounts = new HashMap<>();
+        for (Map<String, Object> a : jdbcTemplate.queryForList(
+                "SELECT customer_no customerNo, COUNT(*) cnt FROM dw_credit_agreement_snapshot"
+                        + " WHERE customer_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot)"
+                        + " GROUP BY customer_no", args)) {
+            agreementCounts.put(String.valueOf(a.get("customerNo")), a.get("cnt"));
+        }
+        Map<String, Object> loanBalances = new HashMap<>();
+        for (Map<String, Object> l : jdbcTemplate.queryForList(
+                "SELECT borrower_customer_no customerNo, SUM(contract_balance) balance FROM dw_loan_contract_snapshot"
+                        + " WHERE borrower_customer_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM dw_loan_contract_snapshot)"
+                        + " GROUP BY borrower_customer_no", args)) {
+            loanBalances.put(String.valueOf(l.get("customerNo")), l.get("balance"));
+        }
+
+        for (Map<String, Object> p : persons) {
+            Object no = p.get("relatedCustomerNo");
+            if (no == null) {
+                continue;
+            }
+            Map<String, Object> basic = basics.get(no.toString());
+            if (basic != null) {
+                boolean corp = basic.containsKey("entpCharic");
+                p.put("custType", corp ? "CORP" : "INDIV");
+                p.put("entpCharic", basic.get("entpCharic"));
+                p.put("entpScale", basic.get("entpScale"));
+                p.put("industry", basic.get("industry"));
+                p.put("creditLevel", basic.get("creditLevel"));
+                p.put("fiveLevelClass", basic.get("fiveLevelClass"));
+                p.put("occupation", basic.get("occupation"));
+                p.put("annualIncome", basic.get("annualIncome"));
+            }
+            p.put("creditAgreementCount", agreementCounts.get(no.toString()));
+            p.put("loanBalanceTotal", loanBalances.get(no.toString()));
+        }
     }
 
     // ---------- 私有 ----------
@@ -583,8 +666,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         List<CcrPricingItem> filtered = new ArrayList<>();
         for (CcrPricingItem item : items) {
+            // §D16a 部门分流:部门总经理/分管行长按分项 dept_code 解析处理人,其他节点传 null 走原逻辑
             List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
-                    appOrg.get(item.getApplicationId()));
+                    appOrg.get(item.getApplicationId()), item.getDeptCode());
             if (!assignees.isEmpty() && !assignees.contains(userId)) {
                 continue;
             }
@@ -594,8 +678,10 @@ public class ApprovalServiceImpl implements ApprovalService {
     }
 
     /** 节点审批人配置校验(§5.5.1):配置了有效指派时,仅解析出的处理人可通过/否决 */
-    private void guardNodeAssignee(String nodeCode, CcrApplication application, SysUserRead operator) {
-        List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode, application.getApplicantOrgId());
+    private void guardNodeAssignee(String nodeCode, CcrApplication application, SysUserRead operator,
+                                   String deptCode) {
+        List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
+                application.getApplicantOrgId(), deptCode);
         if (!assignees.isEmpty() && !assignees.contains(operator.getId())) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "节点[" + nodeCode + "]已配置指定审批人,当前登录人不在指派范围内");

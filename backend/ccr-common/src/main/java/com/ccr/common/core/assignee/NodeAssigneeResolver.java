@@ -29,6 +29,12 @@ public class NodeAssigneeResolver {
     /** 命中层级:无配置/未解析出处理人(=不限制) */
     public static final String LEVEL_NONE = "NONE";
 
+    /** 命中层级:部门-分管行长映射(§D16a,一人可分管多部门) */
+    public static final String LEVEL_DEPT_VP = "DEPT_VP";
+
+    /** 分管行领导节点编码(部门-分管行长映射专用;ccr-common 不依赖 ccr-approval,字符串字面量) */
+    private static final String VICE_PRESIDENT_NODE = "VICE_PRESIDENT";
+
     private static final List<String> LAYER_ORDER = List.of("PERSON", "GROUP", "DEPT", "ROLE");
 
     @Resource
@@ -36,7 +42,12 @@ public class NodeAssigneeResolver {
 
     /** 解析节点实际处理人(仅全局配置,即 flow_key 为空的指派) */
     public ResolveResult resolve(String nodeCode, Long orgId) {
-        return resolve(nodeCode, orgId, null);
+        return resolve(nodeCode, orgId, null, null);
+    }
+
+    /** 解析节点实际处理人(带流程定义key) */
+    public ResolveResult resolve(String nodeCode, Long orgId, String flowKey) {
+        return resolve(nodeCode, orgId, flowKey, null);
     }
 
     /**
@@ -45,9 +56,18 @@ public class NodeAssigneeResolver {
      * @param nodeCode 节点编码
      * @param orgId    申请人机构(ccr_sys_dept.id),用于 DEPT 层归属判定;可空(空时 DEPT 配置不参与)
      * @param flowKey  流程定义key,可空;非空时同时命中该流程专属配置与全局配置
+     * @param deptCode 分项部门归属编码(§D16a,矩阵透出落库:GSB/SXSB/LSB);部门类节点
+     *                 (DEPT_GENERAL_MANAGER/VICE_PRESIDENT)按此解析,非部门节点传 null 走原逻辑
      */
-    public ResolveResult resolve(String nodeCode, Long orgId, String flowKey) {
+    public ResolveResult resolve(String nodeCode, Long orgId, String flowKey, String deptCode) {
         try {
+            // §D16a 分管行领导:分项 dept_code 已冻结时按部门-分管行长映射解析(一人可分管多部门,纯配置)
+            if (VICE_PRESIDENT_NODE.equals(nodeCode) && deptCode != null && !deptCode.isBlank()) {
+                List<AssigneeUser> vp = findDeptVpUsers(deptCode);
+                if (!vp.isEmpty()) {
+                    return new ResolveResult(nodeCode, LEVEL_DEPT_VP, vp);
+                }
+            }
             List<Map<String, Object>> configs = loadConfigs(nodeCode, flowKey);
             if (configs.isEmpty()) {
                 return ResolveResult.empty(nodeCode);
@@ -59,7 +79,7 @@ public class NodeAssigneeResolver {
                 if (layerConfigs.isEmpty()) {
                     continue;
                 }
-                List<AssigneeUser> users = resolveLayer(layer, layerConfigs, applicantOrgCode);
+                List<AssigneeUser> users = resolveLayer(layer, layerConfigs, applicantOrgCode, deptCode);
                 if (!users.isEmpty()) {
                     return new ResolveResult(nodeCode, layer, users);
                 }
@@ -75,6 +95,11 @@ public class NodeAssigneeResolver {
     /** 解析节点处理人用户id列表(空=不限制) */
     public List<Long> resolveUserIds(String nodeCode, Long orgId) {
         return resolve(nodeCode, orgId).userIds();
+    }
+
+    /** 带分项部门归属编码的解析(§D16a:部门总经理/分管行长按分项 dept_code 解析处理人) */
+    public List<Long> resolveUserIds(String nodeCode, Long orgId, String deptCode) {
+        return resolve(nodeCode, orgId, null, deptCode).userIds();
     }
 
     // ---------- 私有 ----------
@@ -97,7 +122,7 @@ public class NodeAssigneeResolver {
 
     /** 单层解析:按指派类型展开为启用用户列表(去重,保持配置顺序) */
     private List<AssigneeUser> resolveLayer(String layer, List<Map<String, Object>> layerConfigs,
-                                            String applicantOrgCode) {
+                                            String applicantOrgCode, String deptCode) {
         Map<Long, AssigneeUser> users = new LinkedHashMap<>();
         for (Map<String, Object> config : layerConfigs) {
             String assigneeCode = String.valueOf(config.get("assignee_code"));
@@ -118,10 +143,23 @@ public class NodeAssigneeResolver {
                     }
                 }
                 case "DEPT" -> {
-                    // 申请人机构归属于配置机构(org_code 前缀匹配)时,该机构及下级机构启用用户入选
-                    if (applicantOrgCode != null && applicantOrgCode.startsWith(assigneeCode)) {
-                        for (AssigneeUser user : findEnabledUsersUnderOrg(assigneeCode)) {
-                            users.putIfAbsent(user.getUserId(), user);
+                    // 「dept_code:role」语法(§D16a 部门分流):按分项部门归属编码精确匹配机构 dept_code,
+                    // 取该机构下指定角色启用用户(部门总经理按所属部门解析,不依赖具体工号)
+                    int colon = assigneeCode.indexOf(':');
+                    if (colon > 0) {
+                        String cfgDeptCode = assigneeCode.substring(0, colon);
+                        String roleCode = assigneeCode.substring(colon + 1);
+                        if (deptCode != null && deptCode.equals(cfgDeptCode)) {
+                            for (AssigneeUser user : findEnabledUsersByRoleAndDept(roleCode, cfgDeptCode)) {
+                                users.putIfAbsent(user.getUserId(), user);
+                            }
+                        }
+                    } else {
+                        // 原语义:申请人机构归属于配置机构(org_code 前缀匹配)时,该机构及下级机构启用用户入选
+                        if (applicantOrgCode != null && applicantOrgCode.startsWith(assigneeCode)) {
+                            for (AssigneeUser user : findEnabledUsersUnderOrg(assigneeCode)) {
+                                users.putIfAbsent(user.getUserId(), user);
+                            }
                         }
                     }
                 }
@@ -187,6 +225,34 @@ public class NodeAssigneeResolver {
                         """,
                 (rs, i) -> new AssigneeUser(rs.getLong("id"), rs.getString("username"),
                         rs.getString("nick_name")), orgCode);
+    }
+
+    /** 指定部门(dept_code 精确匹配机构)下指定角色启用用户(§D16a 部门总经理按部门归属解析) */
+    private List<AssigneeUser> findEnabledUsersByRoleAndDept(String roleCode, String deptCode) {
+        return jdbcTemplate.query("""
+                        SELECT u.id, u.username, u.nick_name FROM ccr_sys_user u
+                        JOIN ccr_sys_dept d ON d.id = u.org_id AND d.del_flag = '0'
+                        WHERE d.dept_code = ? AND u.role_code = ?
+                          AND u.status = 'ENABLE' AND u.del_flag = '0'
+                        ORDER BY u.id
+                        """,
+                (rs, i) -> new AssigneeUser(rs.getLong("id"), rs.getString("username"),
+                        rs.getString("nick_name")), deptCode, roleCode);
+    }
+
+    /** 部门-分管行长映射(§D16a):按分项部门归属编码查分管行领导,一人可分管多部门(纯配置) */
+    private List<AssigneeUser> findDeptVpUsers(String deptCode) {
+        LocalDateTime now = LocalDateTime.now();
+        return jdbcTemplate.query("""
+                        SELECT u.id, u.username, u.nick_name FROM ccr_dept_vp vp
+                        JOIN ccr_sys_user u ON u.id = vp.vp_user_id AND u.status = 'ENABLE' AND u.del_flag = '0'
+                        WHERE vp.dept_code = ? AND vp.status = 'ACTIVE' AND vp.del_flag = '0'
+                          AND (vp.valid_from IS NULL OR vp.valid_from <= ?)
+                          AND (vp.valid_to IS NULL OR vp.valid_to >= ?)
+                        ORDER BY vp.id
+                        """,
+                (rs, i) -> new AssigneeUser(rs.getLong("id"), rs.getString("username"),
+                        rs.getString("nick_name")), deptCode, now, now);
     }
 
     /** 机构id → org_code(查不到返回 null,DEPT 层不命中) */

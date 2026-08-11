@@ -19,7 +19,7 @@ const routes: RouteRecordRaw[] = [
         path: 'overview',
         name: 'Overview',
         component: () => import('@/views/overview/index.vue'),
-        meta: { title: '我的申请工作台', icon: 'HomeFilled' }
+        meta: { title: '我的工作台', icon: 'HomeFilled' }
       },
       {
         path: 'application/loan',

@@ -42,4 +42,7 @@ public class CcrApplicationCommitment extends BaseEntity {
 
     /** 集团成员客户号(集团场景) */
     private String memberCustomerNo;
+
+    /** 承诺类型"其它"(§6.4)手工目标描述(金额或文本);该类型下 targetValue 可空 */
+    private String commitmentDesc;
 }

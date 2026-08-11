@@ -38,8 +38,11 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
   KEY `idx_org_parent` (`parent_org_code`)
 ) ENGINE=InnoDB COMMENT='sys_org 机构主数据(机构档案,§10.3.25)';
 
--- ---------- 机构维度落地(dw_org_dim,§10.3.24) ----------
--- 数仓机构主数据落地,本系统只读;org_code 与 sys_dept.org_code 层级前缀对齐,
+-- ---------- 机构维度落地(dw_org_dim,§10.3.24) ⚠️ 已决策弃用 ----------
+-- 2026-08-11 业务确认:机构维度**不纳入数仓契约(去冗余)**,完全由系统内维护
+-- (ccr_sys_dept 机构树 + sys_org 机构档案);数仓不做机构主数据推送。
+-- 本表定义保留备用,系统侧不再消费(无查询/无推送)。
+-- 原说明:数仓机构主数据落地,本系统只读;org_code 与 sys_dept.org_code 层级前缀对齐,
 -- 资质字段以 sys_org 为准(本表不含资质)
 CREATE TABLE IF NOT EXISTS `dw_org_dim` (
   `etl_md5`         BIGINT       NOT NULL COMMENT '主键(自增)',
@@ -160,3 +163,43 @@ INSERT INTO `ccr_node_permission`
   (8003,'000000','NODE_PERM_LOAN_SEED',1000,'EFFECTIVE',1,'0','VICE_PRESIDENT','vice_president','LOAN',3.200000,'2026-01-01 00:00:00',1004)
 ON DUPLICATE KEY UPDATE
   boundary_min_rate=VALUES(boundary_min_rate), status=VALUES(status), effective_from=VALUES(effective_from);
+
+-- ---------- 部门归属(ccr_pricing_item.dept_code,幂等 ALTER;§D16a 部门分流) ----------
+-- 矩阵路由透出的部门归属编码落库到分项,部门总经理/分管行长节点按分项 dept_code 解析处理人
+DROP PROCEDURE IF EXISTS `ccr_add_pricing_item_dept_code`;
+DELIMITER $$
+CREATE PROCEDURE `ccr_add_pricing_item_dept_code`()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA='ccr_rate' AND TABLE_NAME='ccr_pricing_item'
+                   AND COLUMN_NAME='dept_code') THEN
+    ALTER TABLE `ccr_pricing_item`
+      ADD COLUMN `dept_code` VARCHAR(64) NULL
+      COMMENT '部门归属编码(矩阵透出并提交冻结:GSB公司金融部/SXSB授信评审部/LSB零售金融部,§D16a)';
+  END IF;
+END$$
+DELIMITER ;
+CALL `ccr_add_pricing_item_dept_code`();
+DROP PROCEDURE `ccr_add_pricing_item_dept_code`;
+
+-- ---------- 部门分管行长映射(ccr_dept_vp,§D16a) ----------
+-- 分管行领导与部门多对多:一个部门可配多个分管行长、一个分管行长可分管多个部门;
+-- 部门总经理按「dept_code→机构下 dept_gm 角色用户」解析,分管行长按本表按 dept_code 精确映射。
+CREATE TABLE IF NOT EXISTS `ccr_dept_vp` (
+  `id`             BIGINT       NOT NULL COMMENT '雪花主键',
+  `tenant_id`      VARCHAR(20)  NOT NULL DEFAULT '000000' COMMENT '租户标识',
+  `dept_code`      VARCHAR(64)  NOT NULL COMMENT '部门归属编码(对齐 ccr_rate_matrix.dept_code:GSB/SXSB/LSB)',
+  `vp_user_id`     BIGINT       NOT NULL COMMENT '分管行领导用户id(ccr_sys_user.id,复用 vice_president 角色码)',
+  `status`         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'EFFECTIVE/INACTIVE',
+  `valid_from`     DATETIME     NULL COMMENT '生效时间(空=不限)',
+  `valid_to`       DATETIME     NULL COMMENT '失效时间(空=不限)',
+  `version_no`     INT          NOT NULL DEFAULT 1 COMMENT '乐观锁版本',
+  `del_flag`       CHAR(1)      NOT NULL DEFAULT '0' COMMENT '逻辑删除0否1是',
+  `create_by`      VARCHAR(64)  NULL COMMENT '创建人',
+  `create_time`    DATETIME     NULL COMMENT '创建时间',
+  `update_by`      VARCHAR(64)  NULL COMMENT '更新人',
+  `update_time`    DATETIME     NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_dept_code` (`dept_code`),
+  KEY `idx_vp_user` (`vp_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门-分管行领导映射(§D16a;一人可分管多部门,纯配置)';

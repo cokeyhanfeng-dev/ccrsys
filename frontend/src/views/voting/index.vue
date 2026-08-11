@@ -12,7 +12,7 @@
       </div>
       <table class="table">
         <thead>
-          <tr><th>定价分项</th><th>担保类型</th><th>申请金额(万元)</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th></tr>
+          <tr><th>定价分项</th><th>担保类型</th><th>申请金额(万元)</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in rows" :key="row.roundId + '-' + row.pricingItemId">
@@ -37,8 +37,9 @@
               <span v-else class="stat-card__sub">{{ row.myComment || '—' }}</span>
             </td>
             <td><span :class="row.submitted ? 'badge badge--success' : 'badge badge--neutral'">{{ row.submitted ? '已提交' : '未提交' }}</span></td>
+            <td><button class="btn btn--text" @click="goDetail(row)">查看详情</button></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="7" class="empty">暂无待表决分项</td></tr>
+          <tr v-if="!rows.length"><td colspan="8" class="empty">暂无待表决分项</td></tr>
         </tbody>
       </table>
       <div style="margin-top:16px;display:flex;align-items:center;gap:12px" v-if="pendingCount > 0">
@@ -51,11 +52,13 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { listVoteTodo, fetchMyBallot, submitBallot } from '@/api/vote'
 import { newIdempotencyKey } from '@/api/approval'
 import { productName, guaranteeTypeText } from '@/utils/dict'
 
+const router = useRouter()
 const rows = ref<any[]>([])
 const submitting = ref(false)
 
@@ -95,11 +98,28 @@ async function load() {
   }
 }
 
+// 查看分项审批详情(只读,委员无操作权限)
+function goDetail(row: any) {
+  router.push(`/approval/detail/${row.pricingItemId}`)
+}
+
 async function submitAll() {
   const targets = rows.value.filter((r) => !r.submitted && r.choice)
   if (!targets.length) {
     ElMessage.warning('请先选择票型')
     return
+  }
+  // P2-1:反对未填意见时提示补充(建议性,不阻断投票)
+  const noCommentRejects = targets.filter((r) => r.choice === 'REJECT' && !r.comment?.trim())
+  if (noCommentRejects.length) {
+    try {
+      await ElMessageBox.confirm(
+        `${noCommentRejects.length} 项反对票未填写意见。建议补充意见以便后续环节参考,仍确认提交?`,
+        '反对意见缺失', { type: 'warning', confirmButtonText: '仍提交', cancelButtonText: '返回补充' }
+      )
+    } catch {
+      return
+    }
   }
   submitting.value = true
   for (const row of targets) {
@@ -123,5 +143,5 @@ onMounted(load)
 
 <style scoped>
 .vote-option { margin-right: 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 </style>

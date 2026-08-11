@@ -287,7 +287,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .req { color: var(--color-danger); }
 .modal__card--wide { width: 720px; max-width: 92vw; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }

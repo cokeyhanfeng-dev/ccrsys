@@ -79,8 +79,9 @@
             <div class="detail-grid">
               <div><span class="dg-label">当前贡献度</span>{{ detail.contribution }}</div>
               <div><span class="dg-label">拟达成贡献度</span>{{ detail.commitment }}</div>
-              <div><span class="dg-label">历史履约</span>暂无数据</div>
-              <div><span class="dg-label">机构达成</span>暂无数据</div>
+              <!-- P1-2:历史履约/机构达成接数(approval detail tracking/orgPerformance) -->
+              <div><span class="dg-label">历史履约</span>{{ trackingSummary() }}</div>
+              <div><span class="dg-label">机构达成</span>{{ orgSummary() }}</div>
               <div>
                 <span class="dg-label">资料校验</span>
                 <span v-if="detail.qualityOverall" class="badge" :class="detail.qualityOverall === 'BLOCK' ? 'badge--danger' : detail.qualityOverall === 'WARN' ? 'badge--warning' : 'badge--success'">
@@ -144,7 +145,8 @@ const cards = ref<any[]>([])
 const submitting = ref(false)
 const detail = ref<any>({
   show: false, loaded: false, id: null, customer: '', rate: '', opinion: '',
-  voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '', opinions: []
+  voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '',
+  opinions: [], tracking: [], orgPerformance: []
 })
 
 // 行长待决策(表决通过的定价分项)
@@ -167,7 +169,8 @@ async function load() {
 async function openDetail(c: any) {
   detail.value = {
     show: true, loaded: false, id: c.id, customer: c.customer, rate: c.approvalRate !== '-' ? c.approvalRate : c.rate,
-    opinion: '', voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '', opinions: []
+    opinion: '', voteResult: null, contribution: '—', commitment: '—', qualityOverall: '', flowTrace: [], remark: '',
+    opinions: [], tracking: [], orgPerformance: []
   }
   try {
     const [d, vr] = await Promise.all([
@@ -184,6 +187,9 @@ async function openDetail(c: any) {
     detail.value.qualityOverall = d.qualityOverall || ''
     detail.value.flowTrace = d.flowTrace || []
     detail.value.remark = d.application?.[0]?.applicationRemark || ''
+    // P1-2:历史履约/机构达成接数(审批详情接口已返回 tracking/orgPerformance)
+    detail.value.tracking = d.tracking || []
+    detail.value.orgPerformance = d.orgPerformance || []
     detail.value.voteResult = vr
     // 委员匿名意见(§12.7):按计票结果 roundId 查询,过滤本分项
     if (vr?.roundId) {
@@ -202,7 +208,29 @@ async function openDetail(c: any) {
   }
 }
 
+// P1-2:历史履约/机构达成摘要(审批详情接口已返回 tracking/orgPerformance)
+function trackingSummary() {
+  const list = detail.value.tracking || []
+  if (!list.length) return '暂无数据'
+  const risk = list.filter((t: any) => t.resultStatus === 'AT_RISK').length
+  return `${list.length} 项最新评估${risk ? `,${risk} 项风险` : ''}`
+}
+function orgSummary() {
+  const list = detail.value.orgPerformance || []
+  if (!list.length) return '暂无数据'
+  const latest = list[0]
+  return latest.completionRate != null ? `完成率 ${latest.completionRate}%` : '已同步(无数值)'
+}
+
 async function approve() {
+  // P2-1:行长同意为不可逆终态,提交前二次确认最终利率
+  try {
+    await ElMessageBox.confirm(`确认同意利率 ${detail.value.rate}%?同意后将触发决议签发,不可撤销。`, '同意利率', {
+      type: 'info', confirmButtonText: '确认同意', cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
   submitting.value = true
   try {
     await submitPresidentDecision({
@@ -259,6 +287,6 @@ onMounted(load)
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .vote-summary { display: flex; gap: 12px; flex-wrap: wrap; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 </style>

@@ -17,12 +17,10 @@ INSERT INTO caps_indv_cust_basic_info (etl_md5,data_dt,cust_no,cust_nm,cert_tp,c
 ('md5_indv_001',CURDATE(),'CUST101','张三','ID','320***********1234','男','正常','个体经营',80.0000,'已婚','南京市XX小区',13800000001,1001,'城东支行','2018-01-01','EXISTING')
 ON DUPLICATE KEY UPDATE cust_nm=VALUES(cust_nm);
 
--- ---------- 本行融资(dw_own_financing) ----------
-INSERT INTO dw_own_financing_snapshot (etl_md5,data_dt,cust_no,contract_no,crgant_start_dt,crgant_due_dt,crgant_matu,guarantee_type,loan_balance,contract_rate) VALUES
-(1,CURDATE(),'CUST001','HT20260001','2026-01-01','2027-01-01',12,'MORTGAGE',5000.0000,3.8500),
-(2,CURDATE(),'CUST001','HT20260002','2026-02-01','2028-02-01',24,'CREDIT',3000.0000,3.9000),
-(3,CURDATE(),'CUST002','HT20260003','2026-03-01','2027-03-01',12,'MORTGAGE',2000.0000,3.7000)
-ON DUPLICATE KEY UPDATE contract_rate=VALUES(contract_rate);
+-- ---------- 本行融资(原 dw_own_financing 已并入贷款合同,2026-08-11 去冗余) ----------
+-- 存量贷款调息数据统一从 dw_loan_contract_snapshot 取(borrower_customer_no 匹配):
+-- 原利率=execution_rate、担保类型=guarantee_type、余额=contract_balance;
+-- 单户存量合同见 15_test_data.sql(LC20260001-03),本文件不再单独 mock
 
 -- ---------- 当前贡献度(dw_contribution_metric,对公8项+TOTAL;TOTAL行=同客户明细行之和,勾稽一致) ----------
 INSERT INTO dw_contribution_metric (etl_md5,data_dt,cust_no,metric_code,metric_name,metric_value,value_type,metric_scope,stat_start,stat_end,calc_version) VALUES
@@ -101,19 +99,20 @@ INSERT INTO dw_credit_tranche_snapshot (etl_md5,data_dt,tranche_no,member_limit_
 ON DUPLICATE KEY UPDATE used_amount=VALUES(used_amount);
 
 -- ---------- 贷款合同(dw_loan_contract_snapshot,每成员1份) ----------
-INSERT INTO dw_loan_contract_snapshot (etl_md5,data_dt,contract_no,tranche_no,borrower_customer_no,contract_amount,contract_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,contract_status,contract_version) VALUES
-(4131,CURDATE(),'CONTRACT_A001','TRANCHE001','MEMBER_A',2000.0000,2000.0000,'CNY',3.6000,'LPR_PLUS','1Y','2026-02-01','2027-02-01','EFFECTIVE',1),
-(4132,CURDATE(),'CONTRACT_B001','TRANCHE002','MEMBER_B',1500.0000,1500.0000,'CNY',3.8000,'LPR_PLUS','1Y','2026-03-01','2027-03-01','EFFECTIVE',1)
+-- agreement_no 关联授信协议(AGR-MA-2026/AGR-MB-2026);guarantee_type 取自用信分项主担保
+INSERT INTO dw_loan_contract_snapshot (etl_md5,data_dt,contract_no,agreement_no,tranche_no,borrower_customer_no,contract_amount,contract_balance,guarantee_type,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,contract_status,contract_version) VALUES
+(4131,CURDATE(),'CONTRACT_A001','AGR-MA-2026','TRANCHE001','MEMBER_A',2000.0000,2000.0000,'CREDIT','CNY',3.6000,'LPR_PLUS','1Y','2026-02-01','2027-02-01','EFFECTIVE',1),
+(4132,CURDATE(),'CONTRACT_B001','AGR-MB-2026','TRANCHE002','MEMBER_B',1500.0000,1500.0000,'MORTGAGE','CNY',3.8000,'LPR_PLUS','1Y','2026-03-01','2027-03-01','EFFECTIVE',1)
 ON DUPLICATE KEY UPDATE contract_balance=VALUES(contract_balance);
 
 -- ---------- 借据(dw_loan_note_snapshot,每合同2笔+1笔利率不一致用于核验异常演示) ----------
 -- NB_A003 执行利率3.9000 <> 合同CONTRACT_A001利率3.6000,供决议核验RECONCILE_EXCEPTION演示
-INSERT INTO dw_loan_note_snapshot (etl_md5,data_dt,loan_note_no,contract_no,tranche_no,borrower_customer_no,loan_amount,loan_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,note_status) VALUES
-(4141,CURDATE(),'NB_A001','CONTRACT_A001','TRANCHE001','MEMBER_A',1000.0000,1000.0000,'CNY',3.6000,'LPR_PLUS','1Y','2026-02-05','2027-02-01','NORMAL'),
-(4142,CURDATE(),'NB_A002','CONTRACT_A001','TRANCHE001','MEMBER_A',700.0000,700.0000,'CNY',3.6000,'LPR_PLUS','1Y','2026-03-10','2027-02-01','NORMAL'),
-(4143,CURDATE(),'NB_A003','CONTRACT_A001','TRANCHE001','MEMBER_A',300.0000,300.0000,'CNY',3.9000,'LPR_PLUS','1Y','2026-04-15','2027-02-01','NORMAL'),
-(4144,CURDATE(),'NB_B001','CONTRACT_B001','TRANCHE002','MEMBER_B',900.0000,900.0000,'CNY',3.8000,'LPR_PLUS','1Y','2026-03-05','2027-03-01','NORMAL'),
-(4145,CURDATE(),'NB_B002','CONTRACT_B001','TRANCHE002','MEMBER_B',600.0000,600.0000,'CNY',3.8000,'LPR_PLUS','1Y','2026-04-01','2027-03-01','NORMAL')
+INSERT INTO dw_loan_note_snapshot (etl_md5,data_dt,loan_note_no,agreement_no,contract_no,tranche_no,borrower_customer_no,loan_amount,loan_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,note_status) VALUES
+(4141,CURDATE(),'NB_A001','AGR-MA-2026','CONTRACT_A001','TRANCHE001','MEMBER_A',1000.0000,1000.0000,'CNY',3.6000,'LPR_PLUS','1Y','2026-02-05','2027-02-01','NORMAL'),
+(4142,CURDATE(),'NB_A002','AGR-MA-2026','CONTRACT_A001','TRANCHE001','MEMBER_A',700.0000,700.0000,'CNY',3.6000,'LPR_PLUS','1Y','2026-03-10','2027-02-01','NORMAL'),
+(4143,CURDATE(),'NB_A003','AGR-MA-2026','CONTRACT_A001','TRANCHE001','MEMBER_A',300.0000,300.0000,'CNY',3.9000,'LPR_PLUS','1Y','2026-04-15','2027-02-01','NORMAL'),
+(4144,CURDATE(),'NB_B001','AGR-MB-2026','CONTRACT_B001','TRANCHE002','MEMBER_B',900.0000,900.0000,'CNY',3.8000,'LPR_PLUS','1Y','2026-03-05','2027-03-01','NORMAL'),
+(4145,CURDATE(),'NB_B002','AGR-MB-2026','CONTRACT_B001','TRANCHE002','MEMBER_B',600.0000,600.0000,'CNY',3.8000,'LPR_PLUS','1Y','2026-04-01','2027-03-01','NORMAL')
 ON DUPLICATE KEY UPDATE loan_balance=VALUES(loan_balance);
 
 -- ---------- 存款账户(dw_deposit_account_snapshot) ----------

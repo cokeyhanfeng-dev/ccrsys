@@ -93,4 +93,7 @@ public class CcrPricingItem extends BaseEntity {
 
     /** 是否沿用原决议 Y/N(D18b:已批准分项连同最终利率与快照保留,不重新审批) */
     private String inheritFlag;
+
+    /** 部门归属编码(矩阵透出并提交冻结,§D16a 部门分流:GSB/SXSB/LSB;节点处理人按此解析) */
+    private String deptCode;
 }

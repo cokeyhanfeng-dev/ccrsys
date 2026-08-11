@@ -27,7 +27,7 @@ public class DatacenterServiceImpl implements DatacenterService {
     static {
         WAREHOUSE_TABLES.put("caps_corp_cust_basic_info", "对公客户主数据");
         WAREHOUSE_TABLES.put("caps_indv_cust_basic_info", "对私客户主数据");
-        WAREHOUSE_TABLES.put("dw_own_financing_snapshot", "本行融资(T2)");
+        // 2026-08-11 去冗余:dw_own_financing_snapshot 并入 dw_loan_contract_snapshot(见下方贷款合同),不再单列
         WAREHOUSE_TABLES.put("dw_contribution_metric", "当前贡献度(T3)");
         WAREHOUSE_TABLES.put("dw_credit_report_snapshot", "征信报告头(T4)");
         WAREHOUSE_TABLES.put("dw_org_performance_snapshot", "机构达成情况(T5)");

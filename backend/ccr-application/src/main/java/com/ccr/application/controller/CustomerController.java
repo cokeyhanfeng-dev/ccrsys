@@ -72,18 +72,22 @@ public class CustomerController {
             result.put("basic", indv.get(0));
             result.put("custType", "INDV");
         }
-        // 2. 本行融资
+        // 2. 本行融资/存量贷款(2026-08-11 去冗余:原 dw_own_financing 并入贷款合同)
         result.put("financing", jdbcTemplate.queryForList("""
-                SELECT contract_no contractNo, loan_balance loanBalance, contract_rate contractRate, guarantee_type guaranteeType
-                FROM dw_own_financing_snapshot WHERE cust_no = ?""", customerNo));
+                SELECT contract_no contractNo, agreement_no agreementNo, borrower_customer_no borrowerCustomerNo,
+                       contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,
+                       execution_rate contractRate, currency
+                FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?""", customerNo));
         // 3. 当前贡献度
         result.put("contribution", jdbcTemplate.queryForList("""
                 SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
                 FROM dw_contribution_metric WHERE cust_no = ?""", customerNo));
         // 4. 他行融资概要 + 明细
         result.put("creditSummary", jdbcTemplate.queryForList("""
-                SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal,
-                       npl_balance nplBalance, overdue_account_count overdueAccountCount
+                SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal,
+                       used_amount_total usedAmountTotal, loan_account_count loanAccountCount,
+                       overdue_account_count overdueAccountCount, overdue_balance overdueBalance,
+                       special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance
                 FROM dw_credit_financing_summary WHERE cust_no = ? LIMIT 1""", customerNo));
         result.put("creditDetail", jdbcTemplate.queryForList("""
                 SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate

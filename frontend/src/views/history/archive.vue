@@ -5,7 +5,7 @@
         申请档案
         <span v-if="archive.application" class="app-no">{{ val(archive.application, 'application_no', 'applicationNo') }}</span>
       </div>
-      <div class="section-tip">单笔申请全量档案(§14.4):申请内容、集团成员、分项、快照与校验、审批轨迹、表决汇总、行长决议、执行核验、承诺履约。</div>
+      <div class="section-tip">申请档案(§14.4):仅展示申请过程中填写的材料、审批轨迹与当前审批状态;表决汇总、行长决议、执行核验、承诺履约等审批后产物不在档案展示。</div>
       <div class="head-actions">
         <button class="btn btn--secondary" @click="router.push('/history')">返回列表</button>
         <button v-if="canExport" class="btn btn--primary" :disabled="exporting" @click="doExport">
@@ -106,7 +106,7 @@
           <thead>
             <tr>
               <th>分项号</th><th>定价客户</th><th>产品</th><th>金额(万元)</th><th>期限</th>
-              <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>终审岗位</th><th>状态</th>
+              <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>终审岗位</th><th>状态</th>
             </tr>
           </thead>
           <tbody>
@@ -119,12 +119,67 @@
               <td class="num">{{ rateText(val(p, 'requested_rate', 'requestedRate')) }}</td>
               <td class="num">{{ rateText(val(p, 'current_approval_rate', 'currentApprovalRate')) }}</td>
               <td class="num"><b>{{ rateText(val(p, 'final_rate', 'finalRate')) }}</b></td>
+              <td>{{ nodeLabel(val(p, 'current_node_code', 'currentNodeCode')) }}</td>
               <td>{{ nodeLabel(val(p, 'route_code', 'routeCode')) }}</td>
               <td><span :class="badgeClass(val(p, 'status'))">{{ itemStatusText(val(p, 'status')) }}</span></td>
             </tr>
           </tbody>
         </table>
         <div v-else class="empty-block">暂无数据</div>
+      </div>
+
+      <!-- 5b. 关联人(申请录入,按关联客户号补全基本信息/授信信息) -->
+      <div class="card" v-if="archive.relatedPersons?.length">
+        <div class="card__head"><span>关联人</span></div>
+        <table class="table">
+          <thead>
+            <tr><th>姓名/名称</th><th>证件号</th><th>关系类型</th><th>行内客户号</th><th>企业性质</th><th>行业</th><th>信用等级</th><th>五级分类</th><th>职业</th><th>年收入</th><th>授信协议数</th><th>本行贷款余额(万元)</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(r, i) in archive.relatedPersons" :key="i">
+              <td>{{ val(r, 'personName') }}</td>
+              <td>{{ val(r, 'certNo') }}</td>
+              <td>{{ val(r, 'relationType') }}</td>
+              <td>{{ val(r, 'relatedCustomerNo') }}</td>
+              <td v-if="r.custType === 'CORP'">{{ val(r, 'entpCharic') }}</td>
+              <td v-else>—</td>
+              <td v-if="r.custType === 'CORP'">{{ val(r, 'industry') }}</td>
+              <td v-else>—</td>
+              <td v-if="r.custType === 'CORP'">{{ val(r, 'creditLevel') }}</td>
+              <td v-else>—</td>
+              <td v-if="r.custType === 'CORP'">{{ val(r, 'fiveLevelClass') }}</td>
+              <td v-else>—</td>
+              <td v-if="r.custType === 'INDIV'">{{ val(r, 'occupation') }}</td>
+              <td v-else>—</td>
+              <td v-if="r.custType === 'INDIV'">{{ val(r, 'annualIncome') }}</td>
+              <td v-else>—</td>
+              <td class="num">{{ val(r, 'creditAgreementCount') }}</td>
+              <td class="num">{{ val(r, 'loanBalanceTotal') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 5c. 拟达成贡献度(申请承诺指标) -->
+      <div class="card" v-if="archive.commitments?.length">
+        <div class="card__head"><span>拟达成贡献度</span></div>
+        <table class="table">
+          <thead>
+            <tr><th>指标</th><th>目标类型</th><th>基线值</th><th>目标值</th><th>单位</th><th>范围</th><th>成员客户号</th><th>承诺描述</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(c, i) in archive.commitments" :key="i">
+              <td>{{ metricName(val(c, 'metricCode')) }}</td>
+              <td>{{ val(c, 'targetType') }}</td>
+              <td class="num">{{ val(c, 'baselineValue') }}</td>
+              <td class="num">{{ val(c, 'targetValue') }}</td>
+              <td>{{ val(c, 'unit') }}</td>
+              <td>{{ val(c, 'metricScope') }}</td>
+              <td>{{ val(c, 'memberCustomerNo') }}</td>
+              <td>{{ val(c, 'commitmentDesc') }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <!-- 6. 数据快照日期 -->
@@ -166,138 +221,6 @@
         <div v-else class="empty-block">暂无数据</div>
       </div>
 
-      <!-- 9. 调价记录 -->
-      <div class="card">
-        <div class="card__head"><span>调价记录</span></div>
-        <table class="table" v-if="archive.rateAdjustments?.length">
-          <thead>
-            <tr><th>分项</th><th>调整前利率</th><th>调整后利率</th><th>原因</th><th>操作时间</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, i) in archive.rateAdjustments" :key="i">
-              <td>{{ val(r, 'pricing_item_id', 'pricingItemId') }}</td>
-              <td class="num">{{ rateText(val(r, 'before_rate', 'beforeRate')) }}</td>
-              <td class="num">{{ rateText(val(r, 'after_rate', 'afterRate')) }}</td>
-              <td>{{ val(r, 'adjust_reason', 'adjustReason', 'reason') }}</td>
-              <td>{{ fmtTime(val(r, 'operation_time', 'operationTime')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 10. 表决汇总(匿名:仅计票结果,不展示投票人) -->
-      <div class="card">
-        <div class="card__head"><span>表决汇总</span><span class="badge badge--info">匿名表决 · 仅计票结果</span></div>
-        <table class="table" v-if="archive.voteRounds?.length">
-          <thead><tr><th>轮次</th><th>名称</th><th>状态</th><th>应投/实投</th><th>开始</th><th>结束</th></tr></thead>
-          <tbody>
-            <tr v-for="vr in archive.voteRounds" :key="val(vr, 'id')">
-              <td>{{ val(vr, 'roundNo', 'round_no') }}</td>
-              <td>{{ val(vr, 'roundName', 'round_name') }}</td>
-              <td>{{ roundStatusText(val(vr, 'status')) }}</td>
-              <td class="num">{{ val(vr, 'voterCount', 'voter_count') }} / {{ val(vr, 'requiredCount', 'required_count') }}</td>
-              <td>{{ fmtTime(val(vr, 'roundStartTime', 'round_start_time')) }}</td>
-              <td>{{ fmtTime(val(vr, 'roundEndTime', 'round_end_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table class="table" v-if="archive.voteResults?.length" style="margin-top:8px">
-          <thead><tr><th>分项</th><th>同意票</th><th>否决票</th><th>计票结果</th><th>计票时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(r, i) in archive.voteResults" :key="i">
-              <td>{{ val(r, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td class="num">{{ val(r, 'approveCount', 'approve_count') }}</td>
-              <td class="num">{{ val(r, 'rejectCount', 'reject_count') }}</td>
-              <td><span :class="val(r, 'result') === 'APPROVED' ? 'badge badge--success' : 'badge badge--danger'">{{ val(r, 'result') === 'APPROVED' ? '通过' : '否决' }}</span></td>
-              <td>{{ fmtTime(val(r, 'countTime', 'count_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!archive.voteRounds?.length && !archive.voteResults?.length" class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 11. 行长决议 -->
-      <div class="card">
-        <div class="card__head"><span>行长决议</span></div>
-        <table class="table" v-if="archive.presidentDecisions?.length">
-          <thead><tr><th>分项</th><th>决策</th><th>意见</th><th>决策时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(d, i) in archive.presidentDecisions" :key="i">
-              <td>{{ val(d, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td><span :class="val(d, 'decision') === 'AGREE' ? 'badge badge--success' : 'badge badge--danger'">{{ decisionText(val(d, 'decision')) }}</span></td>
-              <td>{{ val(d, 'opinion') }}</td>
-              <td>{{ fmtTime(val(d, 'decisionTime', 'decision_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 12. 决议与执行核验 -->
-      <div class="card">
-        <div class="card__head"><span>决议与执行核验</span></div>
-        <table class="table" v-if="archive.resolutions?.length">
-          <thead><tr><th>决议号</th><th>分项</th><th>最终利率</th><th>有效期</th><th>来源</th><th>状态</th><th>签发时间</th></tr></thead>
-          <tbody>
-            <tr v-for="r in archive.resolutions" :key="val(r, 'id')">
-              <td>{{ val(r, 'resolutionNo', 'resolution_no') }}</td>
-              <td>{{ val(r, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td class="num"><b>{{ rateText(val(r, 'finalRate', 'final_rate')) }}</b></td>
-              <td>{{ fmtDate(val(r, 'effectiveFrom', 'effective_from')) }} ~ {{ fmtDate(val(r, 'effectiveTo', 'effective_to')) }}</td>
-              <td>{{ val(r, 'decisionSource', 'decision_source') }}</td>
-              <td>{{ execStatusText(val(r, 'status')) }}</td>
-              <td>{{ fmtTime(val(r, 'issueTime', 'issue_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table class="table" v-if="archive.resolutionExecutions?.length" style="margin-top:8px">
-          <thead><tr><th>决议</th><th>借据/合同号</th><th>补充协议</th><th>执行利率</th><th>执行状态</th><th>核验结果</th><th>核验时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(e, i) in archive.resolutionExecutions" :key="i">
-              <td>{{ val(e, 'resolutionId', 'resolution_id') }}</td>
-              <td>{{ val(e, 'loanContractNo', 'loan_contract_no') }}</td>
-              <td>{{ val(e, 'supplementAgreementNo', 'supplement_agreement_no') }}</td>
-              <td class="num">{{ rateText(val(e, 'executionRate', 'execution_rate')) }}</td>
-              <td>{{ execStatusText(val(e, 'executionStatus', 'execution_status')) }}</td>
-              <td>{{ val(e, 'reconcileResult', 'reconcile_result') }}</td>
-              <td>{{ fmtTime(val(e, 'reconcileTime', 'reconcile_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!archive.resolutions?.length && !archive.resolutionExecutions?.length" class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 13. 承诺计划与履约 -->
-      <div class="card">
-        <div class="card__head"><span>承诺计划与履约</span></div>
-        <table class="table" v-if="archive.commitmentPlans?.length">
-          <thead><tr><th>计划号</th><th>范围</th><th>状态</th><th>开始</th><th>到期</th></tr></thead>
-          <tbody>
-            <tr v-for="c in archive.commitmentPlans" :key="val(c, 'id')">
-              <td>{{ val(c, 'planNo', 'plan_no') }}</td>
-              <td>{{ customerScopeText(val(c, 'scopeType', 'scope_type')) }}</td>
-              <td><span :class="badgeClass(val(c, 'status'))">{{ planStatusText(val(c, 'status')) }}</span></td>
-              <td>{{ fmtDate(val(c, 'startDate', 'start_date')) }}</td>
-              <td>{{ fmtDate(val(c, 'endDate', 'end_date')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table class="table" v-if="archive.commitmentMetrics?.length" style="margin-top:8px">
-          <thead><tr><th>计划</th><th>指标</th><th>目标类型</th><th>基线值</th><th>目标值</th><th>单位</th></tr></thead>
-          <tbody>
-            <tr v-for="(m, i) in archive.commitmentMetrics" :key="i">
-              <td>{{ val(m, 'planId', 'plan_id') }}</td>
-              <td>{{ metricName(val(m, 'metricCode', 'metric_code')) }}</td>
-              <td>{{ targetTypeText(val(m, 'targetType', 'target_type')) }}</td>
-              <td class="num">{{ val(m, 'baselineValue', 'baseline_value') }}</td>
-              <td class="num">{{ val(m, 'targetValue', 'target_value') }}</td>
-              <td>{{ val(m, 'unit') }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!archive.commitmentPlans?.length && !archive.commitmentMetrics?.length" class="empty-block">暂无数据</div>
-      </div>
     </template>
     <div v-else class="card empty-block">暂无数据</div>
   </div>
@@ -310,9 +233,9 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { getArchive, exportArchive } from '@/api/history'
 import {
-  appStatusText, itemStatusText, planStatusText, roundStatusText, execStatusText,
-  businessTypeText, customerScopeText, nodeLabel, roleText, actionText, decisionText,
-  ruleLevelText, productName, metricName, targetTypeText, memberRoleText, termUnitText
+  appStatusText, itemStatusText,
+  businessTypeText, customerScopeText, nodeLabel, roleText, actionText,
+  productName, metricName, memberRoleText, termUnitText
 } from '@/utils/dict'
 
 const route = useRoute()
@@ -418,7 +341,7 @@ onMounted(load)
 <style scoped>
 .app-no { font-size: 14px; color: var(--color-text-sub); font-weight: 400; margin-left: 8px; }
 .head-actions { margin-top: 10px; display: flex; gap: 8px; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .desc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 16px; font-size: 14px; }
 .desc-item { display: flex; flex-direction: column; gap: 2px; }
 .desc-item--full { grid-column: 1 / -1; }

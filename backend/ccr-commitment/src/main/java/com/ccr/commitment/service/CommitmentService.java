@@ -59,4 +59,10 @@ public interface CommitmentService {
      * 人工状态变迁(§11.1):仅支持 TERMINATED/SUPERSEDED,终态(TERMINATED/SUPERSEDED)不可再变迁
      */
     CcrCommitmentPlan changeStatus(Long planId, String targetStatus, String remark);
+
+    /**
+     * 保存指标跟踪描述(§6.4/§10.3.15):承诺类型"其它"以客户经理手工描述跟踪(track_desc 留痕),
+     * 覆盖式更新并返回最新指标。
+     */
+    CcrCommitmentMetric saveTrackDesc(Long metricId, String trackDesc);
 }

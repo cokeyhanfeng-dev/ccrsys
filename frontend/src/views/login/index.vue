@@ -79,12 +79,11 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()
-const route = useRoute()
 const userStore = useUserStore()
 
 const form = reactive({ username: '', password: '' })
@@ -99,7 +98,8 @@ async function onSubmit() {
   try {
     await userStore.login(form.username, form.password)
     ElMessage.success('登录成功')
-    router.push((route.query.redirect as string) || '/overview')
+    // 登录后固定进入工作台,忽略 redirect(不跳回被踢前的页面)
+    router.push('/overview')
   } catch {
     // 错误已由拦截器提示
   } finally {

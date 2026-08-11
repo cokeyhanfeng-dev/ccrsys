@@ -33,4 +33,7 @@ public class CommitmentInput {
 
     /** 集团成员客户号(集团场景) */
     private String memberCustomerNo;
+
+    /** 承诺类型"其它"(§6.4)手工目标描述(金额或文本);该类型下 target_value 可空 */
+    private String commitmentDesc;
 }

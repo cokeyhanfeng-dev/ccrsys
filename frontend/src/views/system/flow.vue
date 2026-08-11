@@ -41,19 +41,19 @@
             <td>{{ f.flow_name }}</td>
             <td>{{ f.version }}</td>
             <td>
-              <span :class="f.is_publish === 1 ? 'badge badge--success' : 'badge badge--neutral'">
-                {{ f.is_publish === 1 ? '已发布' : '未发布' }}
+              <span :class="f.is_publish == 1 ? 'badge badge--success' : 'badge badge--neutral'">
+                {{ f.is_publish == 1 ? '已发布' : '未发布' }}
               </span>
             </td>
             <td>
-              <span :class="f.activity_status === 1 ? 'badge badge--success' : 'badge badge--danger'">
-                {{ f.activity_status === 1 ? '激活' : '挂起' }}
+              <span :class="f.activity_status == 1 ? 'badge badge--success' : 'badge badge--danger'">
+                {{ f.activity_status == 1 ? '激活' : '挂起' }}
               </span>
             </td>
             <td>{{ fmtTime(f.create_time) }}</td>
             <td>
               <button class="btn btn--text" @click="viewFlow(f)">查看</button>
-              <button v-if="f.is_publish !== 1" class="btn btn--text" @click="publish(f.id)">发布</button>
+              <button v-if="f.is_publish != 1" class="btn btn--text" @click="publish(f.id)">发布</button>
               <button v-else class="btn btn--text" @click="unpublish(f.id)">停用</button>
             </td>
           </tr>
@@ -591,7 +591,7 @@ onMounted(() => {
 <style scoped>
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 .card__head { gap: 8px; flex-wrap: wrap; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .req { color: var(--color-danger); }
 .assignee-layout { display: flex; gap: 16px; align-items: flex-start; }
 .node-list { flex: 0 0 300px; }

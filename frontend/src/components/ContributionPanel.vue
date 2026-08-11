@@ -39,7 +39,8 @@
               <div class="metric-name">{{ c.metricName || metricName(c.metricCode) }}</div>
               <div class="metric-code">{{ c.metricCode }}</div>
             </td>
-            <td class="num">{{ c.baselineValue ?? '—' }} → {{ c.targetValue ?? '—' }}</td>
+            <!-- 承诺类型"其它"(§6.4):无数值目标,展示 commitment_desc 手工描述 -->
+            <td class="num">{{ c.metricCode === 'OTHER' ? (c.commitmentDesc || '—') : (`${c.baselineValue ?? '—'} → ${c.targetValue ?? '—'}`) }}</td>
             <td>{{ c.unit || '—' }}</td>
             <td class="col-scope">{{ scopeOf(c) }}</td>
           </tr>

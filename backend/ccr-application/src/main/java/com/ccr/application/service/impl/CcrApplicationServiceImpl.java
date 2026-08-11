@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import com.ccr.application.domain.CcrApplication;
@@ -434,20 +435,27 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         for (CcrPricingItem pi : createdItems) {
             itemNoToId.put(pi.getPricingItemNo(), pi.getId());
         }
-        // 承诺指标-分项关联兜底(契约缺口修复,§十三 13.2-6):单分项申请未指定 pricingItemNo 时关联唯一分项;
-        // 多分项未指定时保持 null(无法确定归属,承诺计划侧按申请兜底不适用,须由前端按分项编号提交)
-        Long soleItemId = createdItems.size() == 1 ? createdItems.get(0).getId() : null;
         for (CommitmentInput c : commitments) {
-            if (c == null || StrUtil.isBlank(c.getMetricCode()) || StrUtil.isBlank(c.getTargetType())
-                    || c.getTargetValue() == null) {
+            if (c == null || StrUtil.isBlank(c.getMetricCode()) || StrUtil.isBlank(c.getTargetType())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "承诺缺少必填项(metricCode/targetType/targetValue)");
+                        "承诺缺少必填项(metricCode/targetType)");
             }
+            // 承诺类型"其它"(§6.4):无数值目标(target_value 可空),以 commitment_desc 手工描述为准;
+            // 其余类型目标值必填
+            boolean isOther = "OTHER".equals(c.getMetricCode());
+            if (isOther) {
+                if (StrUtil.isBlank(c.getCommitmentDesc())) {
+                    throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                            "承诺类型'其它'须录入手工目标描述(commitmentDesc)");
+                }
+            } else if (c.getTargetValue() == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "承诺缺少必填项(targetValue)");
+            }
+            // 承诺按申请关联(§十三 13.2-6):分项显式指定 pricingItemNo 时按分项绑定,否则恒为申请级(pricing_item_id 空)
             Long resolvedItemId = null;
             if (StrUtil.isNotBlank(c.getPricingItemNo())) {
                 resolvedItemId = itemNoToId.get(c.getPricingItemNo());
-            } else if (soleItemId != null) {
-                resolvedItemId = soleItemId;
             }
             CcrApplicationCommitment commitment = new CcrApplicationCommitment();
             commitment.setApplicationId(applicationId);
@@ -455,10 +463,11 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setMetricCode(c.getMetricCode());
             commitment.setTargetType(c.getTargetType());
             commitment.setBaselineValue(c.getBaselineValue());
-            commitment.setTargetValue(c.getTargetValue());
+            commitment.setTargetValue(isOther ? null : c.getTargetValue());
             commitment.setUnit(StrUtil.blankToDefault(c.getUnit(), "WAN_YUAN"));
             commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));
             commitment.setMemberCustomerNo(c.getMemberCustomerNo());
+            commitment.setCommitmentDesc(c.getCommitmentDesc());
             commitmentMapper.insert(commitment);
         }
     }
@@ -702,6 +711,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         target.setBusinessNo(IdUtil.getSnowflakeNextIdStr());
         target.setOrgId(src.getOrgId());
         target.setApplicationRemark(src.getApplicationRemark());
+        target.setCustomerInfoJson(src.getCustomerInfoJson());
     }
 
     private void copyForUpdate(CcrApplication target, CcrApplication src) {
@@ -712,6 +722,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (src.getApplicantUserId() != null) target.setApplicantUserId(src.getApplicantUserId());
         if (src.getApplicantOrgId() != null) target.setApplicantOrgId(src.getApplicantOrgId());
         if (StrUtil.isNotBlank(src.getApplicationRemark())) target.setApplicationRemark(src.getApplicationRemark());
+        if (StrUtil.isNotBlank(src.getCustomerInfoJson())) target.setCustomerInfoJson(src.getCustomerInfoJson());
     }
 
     @Override
@@ -734,6 +745,55 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             // 客户经理及其他角色:仅本人申请
             wrapper.eq(CcrApplication::getApplicantUserId, user.getId());
         }
-        return applicationMapper.selectList(wrapper);
+        List<CcrApplication> list = applicationMapper.selectList(wrapper);
+        enrichNodeProgress(list);
+        return list;
+    }
+
+    /** 审批轨迹增强:补在途分项当前节点文本与到达当前节点时间(该节点最早动作时间;首节点回退提交时间) */
+    private void enrichNodeProgress(List<CcrApplication> list) {
+        if (list.isEmpty()) {
+            return;
+        }
+        StringBuilder inSb = new StringBuilder();
+        for (CcrApplication app : list) {
+            if (inSb.length() > 0) {
+                inSb.append(',');
+            }
+            inSb.append(app.getId());
+        }
+        Map<Long, LinkedHashSet<String>> nodeByApp = new HashMap<>();
+        Map<Long, String> reachByApp = new HashMap<>();
+        for (Map<String, Object> r : jdbcTemplate.queryForList(
+                "SELECT pi.application_id applicationId, pi.current_node_code nodeCode,"
+                        + " COALESCE(a.operation_time, ap.submit_time) reachTime"
+                        + " FROM ccr_pricing_item pi JOIN ccr_application ap ON ap.id = pi.application_id"
+                        + " LEFT JOIN (SELECT pricing_item_id, node_code, MIN(operation_time) operation_time"
+                        + "   FROM ccr_approval_action WHERE del_flag = '0' GROUP BY pricing_item_id, node_code) a"
+                        + "   ON a.pricing_item_id = pi.id AND a.node_code = pi.current_node_code"
+                        + " WHERE pi.application_id IN (" + inSb + ") AND pi.del_flag = '0'"
+                        + " AND pi.current_node_code IS NOT NULL AND pi.status != 'REJECTED'")) {
+            Long appId = ((Number) r.get("applicationId")).longValue();
+            Object node = r.get("nodeCode");
+            if (node == null) {
+                continue;
+            }
+            nodeByApp.computeIfAbsent(appId, k -> new LinkedHashSet<>()).add(node.toString());
+            if (r.get("reachTime") != null) {
+                String t = r.get("reachTime").toString();
+                reachByApp.merge(appId, t, (a, b) -> a.compareTo(b) <= 0 ? a : b);
+            }
+        }
+        for (CcrApplication app : list) {
+            // 草稿未提交不展示节点进度
+            if ("DRAFT".equals(app.getStatus())) {
+                continue;
+            }
+            LinkedHashSet<String> ns = nodeByApp.get(app.getId());
+            if (ns != null && !ns.isEmpty()) {
+                app.setCurrentNodeText(String.join("、", ns));
+            }
+            app.setNodeReachTime(reachByApp.get(app.getId()));
+        }
     }
 }

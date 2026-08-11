@@ -129,7 +129,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .req { color: var(--color-danger); }
 .menu-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .menu-check { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }

@@ -55,11 +55,16 @@ public class DataWarehouseService {
                 WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)""", customerNo);
     }
 
-    /** 本行融资(T2,最新批次) */
+    /** 本行融资/存量贷款(贷款合同,最新批次;2026-08-11 去冗余:原 dw_own_financing 并入贷款合同) */
     public List<Map<String, Object>> ownFinancing(String customerNo) {
         return jdbcTemplate.queryForList("""
-                SELECT * FROM dw_own_financing_snapshot
-                WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_own_financing_snapshot)""", customerNo);
+                SELECT contract_no contractNo, agreement_no agreementNo, borrower_customer_no borrowerCustomerNo,
+                       contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,
+                       execution_rate contractRate, currency, start_date startDate, maturity_date maturityDate,
+                       contract_status contractStatus
+                FROM dw_loan_contract_snapshot
+                WHERE borrower_customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_loan_contract_snapshot)
+                ORDER BY contract_no""", customerNo);
     }
 
     /** 当前贡献度(T3,最新批次) */
@@ -90,6 +95,15 @@ public class DataWarehouseService {
         return queryOne("""
                 SELECT * FROM dw_customer_group_snapshot
                 WHERE group_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot)""", groupNo);
+    }
+
+    /** 集团联想(最新批次;按集团号/集团名模糊,申请页下拉,前 10 条) */
+    public List<Map<String, Object>> suggestGroups(String keyword) {
+        return jdbcTemplate.queryForList("""
+                SELECT group_no, group_name FROM dw_customer_group_snapshot
+                WHERE (group_no LIKE ? OR group_name LIKE ?)
+                  AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot)
+                ORDER BY group_no LIMIT 10""", "%" + keyword + "%", "%" + keyword + "%");
     }
 
     /** 集团成员(最新批次;relation_end 空或未到期=在团) */
@@ -224,7 +238,7 @@ public class DataWarehouseService {
 
     /**
      * 申请相关的数仓数据集(提交比对基线/快照采集范围)
-     * 集团:集团链全量;单户:客户主数据+本行融资+贡献度+征信;存款附加存款账户
+     * 集团:集团链全量;单户:客户主数据+贷款合同+贡献度+征信;存款附加存款账户
      */
     public static List<String> relevantDatasets(String businessType, String customerScope) {
         List<String> tables = new java.util.ArrayList<>();
@@ -238,13 +252,13 @@ public class DataWarehouseService {
             tables.add("dw_loan_note_snapshot");
         } else if ("INDIVIDUAL".equals(customerScope)) {
             tables.add("caps_indv_cust_basic_info");
-            tables.add("dw_own_financing_snapshot");
+            tables.add("dw_loan_contract_snapshot");
             tables.add("dw_credit_report_snapshot");
             tables.add("dw_credit_financing_summary");
             tables.add("dw_credit_financing_detail");
         } else {
             tables.add("caps_corp_cust_basic_info");
-            tables.add("dw_own_financing_snapshot");
+            tables.add("dw_loan_contract_snapshot");
             tables.add("dw_credit_report_snapshot");
             tables.add("dw_credit_financing_summary");
             tables.add("dw_credit_financing_detail");

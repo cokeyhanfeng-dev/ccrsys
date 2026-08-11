@@ -26,9 +26,12 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     // 阈值配置(参数管理):admin/config_reviewer 任一角色可用
                     SaRouter.match("/system/flow/thresholds/**")
                             .check(r -> StpUtil.checkRoleOr("admin", "config_reviewer"));
+                    // 产品配置中心(产品目录/链路,§8A.5):admin 维护、config_reviewer 复核发布(双人复核)
+                    SaRouter.match("/system/product/**")
+                            .check(r -> StpUtil.checkRoleOr("admin", "config_reviewer"));
                     // 其余系统管理接口(用户/角色/部门/流程定义)仅 admin 角色
                     SaRouter.match("/system/**")
-                            .notMatch("/system/flow/thresholds/**")
+                            .notMatch("/system/flow/thresholds/**", "/system/product/**")
                             .check(r -> StpUtil.checkRole("admin"));
                 }))
                 .addPathPatterns("/**");

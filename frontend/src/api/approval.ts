@@ -13,11 +13,12 @@ export function getApprovalDetail<T = any>(pricingItemId: number | string): Prom
 }
 
 export interface ApprovalActionBody {
-  pricingItemId: number
+  // 雪花 id 为 19 位,超出 JS Number 安全整数,必须传字符串避免精度丢失
+  pricingItemId: number | string
   nodeCode: string
   adjustRate?: number | string | null
   comment?: string
-  versionNo: number
+  versionNo: number | string
 }
 
 /** 普通节点通过(可携带权限内调价 adjustRate);Idempotency-Key 头可选 */

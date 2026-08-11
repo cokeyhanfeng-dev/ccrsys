@@ -274,7 +274,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     ? dataWarehouseService.findIndvCustomer(app.getCustomerNo())
                     : dataWarehouseService.findCorpCustomer(app.getCustomerNo());
             if (basic == null) {
-                items.add(precheckItem("SUBJECT_EXISTS", "BLOCK", app.getCustomerNo(), "客户主数据快照缺失"));
+                // 新增客户:后台数仓拉不出主数据时,客户经理手工填写(customer_info_json 非空)即视为人工确权,降为 WARN 放行
+                boolean manualProvided = StrUtil.isNotBlank(app.getCustomerInfoJson());
+                items.add(precheckItem("SUBJECT_EXISTS", manualProvided ? "WARN" : "BLOCK", app.getCustomerNo(),
+                        manualProvided ? "客户主数据快照缺失(已按人工录入信息提交,请确认无误)" : "客户主数据快照缺失"));
             }
             if (dataWarehouseService.contribution(app.getCustomerNo()).isEmpty()) {
                 items.add(precheckItem("CONTRIBUTION_EXISTS", "WARN", app.getCustomerNo(), "客户贡献度数据缺失"));
@@ -362,6 +365,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             item.setRouteCode(route.getFinalNodeCode());
             item.setBoundaryRate(route.getBoundaryRate());
             item.setMatchedMatrixNo(route.getMatchedMatrixNo());
+            // 部门归属(矩阵透出,提交冻结;§D16a 部门分流,节点处理人按分项 dept_code 解析)
+            item.setDeptCode(route.getDeptCode());
             pricingItemMapper.updateById(item);
             itemRoutes.add(toItemRoute(item, route.getRouteChain()));
         }
@@ -744,11 +749,35 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             addSnapshotRecord(bundleId,
                     "INDIVIDUAL".equals(app.getCustomerScope()) ? "caps_indv_cust_basic_info" : "caps_corp_cust_basic_info",
                     "INDIVIDUAL".equals(app.getCustomerScope()) ? "INDIVIDUAL" : "CORPORATE", customerNo, basic);
+        } else if (StrUtil.isNotBlank(app.getCustomerInfoJson())) {
+            // 新增客户:数仓拉不出主数据,以人工录入信息(customer_info_json)构建客户主数据快照,保证快照包非空且审批详情可回溯(§用户要求②)
+            cn.hutool.json.JSONObject manual = JSONUtil.parseObj(app.getCustomerInfoJson());
+            boolean indv = "INDIVIDUAL".equals(app.getCustomerScope());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("cust_no", customerNo);
+            row.put(indv ? "cust_nm" : "cust_name", manual.getStr("customerName"));
+            row.put("cert_tp", manual.getStr("idType"));
+            row.put("cert_no", manual.getStr("idNo"));
+            if (indv) {
+                row.put("ocupn", manual.getStr("occupation"));
+                row.put("whlyr_incm", manual.getStr("annualIncome"));
+                row.put("mrrg_sittn", manual.getStr("maritalStatus"));
+                row.put("tel_no", manual.getStr("phone"));
+            } else {
+                row.put("blgd_idsty", manual.getStr("industry"));
+                row.put("crdt_grd", manual.getStr("creditLevel"));
+            }
+            row.put("ffthlv_class", manual.getStr("fiveLevelClass"));
+            row.put(indv ? "opnact_org_nm" : "openact_org_nm", manual.getStr("openOrg"));
+            row.put(indv ? "opnact_dt" : "openact_dt", manual.getStr("openDate"));
+            row.put("cust_class", "NEW");
+            row.put("etl_md5", customerNo);
+            row.put("data_dt", LocalDate.now().toString());
+            row.put("data_source", "MANUAL"); // 人工录入快照标记:审批详情识别为纯人工录入(区别于数仓带出后人工修正)
+            addSnapshotRecord(bundleId, indv ? "caps_indv_cust_basic_info" : "caps_corp_cust_basic_info",
+                    indv ? "INDIVIDUAL" : "CORPORATE", customerNo, row);
         }
-        for (Map<String, Object> financing : dataWarehouseService.ownFinancing(customerNo)) {
-            addSnapshotRecord(bundleId, "dw_own_financing_snapshot", "FINANCING",
-                    String.valueOf(financing.get("contract_no")), financing);
-        }
+        // 2026-08-11 去冗余:原 dw_own_financing 并入贷款合同,合同快照统一由下方 contractsByBorrower 存 CONTRACT 记录
         addContributionRecord(bundleId, customerNo);
         // 名下合同→借据(合同关系回填与核验数据源)
         for (Map<String, Object> contract : dataWarehouseService.contractsByBorrower(customerNo)) {

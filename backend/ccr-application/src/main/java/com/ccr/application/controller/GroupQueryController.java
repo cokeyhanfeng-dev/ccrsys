@@ -7,6 +7,7 @@ import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -22,6 +23,19 @@ public class GroupQueryController {
 
     @Resource
     private DataWarehouseService dataWarehouseService;
+
+    /** 集团联想(申请页集团号/集团名下联想选择,§13.1) */
+    @GetMapping("/ccr/groups/suggest")
+    public R<List<Map<String, Object>>> suggest(@RequestParam String keyword) {
+        if (StrUtil.isBlank(keyword)) {
+            return R.ok(new ArrayList<>());
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> row : dataWarehouseService.suggestGroups(keyword.trim())) {
+            result.add(camel(row));
+        }
+        return R.ok(result);
+    }
 
     /** 集团 + 集团授信概况 */
     @GetMapping("/ccr/groups/{groupNo}")

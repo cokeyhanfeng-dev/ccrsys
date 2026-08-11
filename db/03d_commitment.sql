@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS `ccr_commitment_plan` (
   `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
   `plan_no`             VARCHAR(64)  NOT NULL COMMENT '承诺计划编号(唯一)',
   `resolution_id`       BIGINT       NOT NULL COMMENT '来源决议主键',
+  `application_id`      BIGINT       NULL COMMENT '所属申请(承诺按申请级聚合)',
   `scope_type`          VARCHAR(16)  NOT NULL COMMENT 'INDIVIDUAL/CORPORATE_SINGLE/MEMBER/GROUP',
   `customer_no`         VARCHAR(64)  NULL COMMENT '个人或企业客户号',
   `group_no`            VARCHAR(64)  NULL COMMENT '集团号',
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS `ccr_commitment_plan` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_plan_no` (`plan_no`),
   KEY `idx_plan_resolution` (`resolution_id`),
+  KEY `idx_plan_application` (`application_id`),
   KEY `idx_plan_subject` (`scope_type`,`customer_no`,`group_no`,`member_customer_no`)
 ) ENGINE=InnoDB COMMENT='ccr_commitment_plan 承诺跟踪计划(审批通过后生成)';
 
@@ -57,10 +59,11 @@ CREATE TABLE IF NOT EXISTS `ccr_commitment_metric` (
   `metric_name`         VARCHAR(100) NULL COMMENT '指标名称',
   `target_type`         VARCHAR(24)  NOT NULL COMMENT 'INCREMENT/TARGET_BALANCE/CUMULATIVE',
   `baseline_value`      DECIMAL(20,4) NOT NULL COMMENT '基线值(万元)',
-  `target_value`        DECIMAL(20,4) NOT NULL COMMENT '目标值(万元)',
+  `target_value`        DECIMAL(20,4) NULL COMMENT '目标值(万元);承诺类型"其它"(§6.4)无数值目标可为空,改以 track_desc 手工描述',
   `unit`                VARCHAR(16)  NOT NULL COMMENT '单位',
   `calc_version`        VARCHAR(32)  NOT NULL COMMENT '计算版本',
   `metric_scope`        VARCHAR(32)  NULL COMMENT '指标范围',
+  `track_desc`          VARCHAR(1000) NULL COMMENT '跟踪描述(§6.4,"其它"承诺客户经理手工跟踪留痕,以文本替代数值对比)',
   PRIMARY KEY (`id`),
   KEY `idx_metric_plan` (`plan_id`),
   UNIQUE KEY `uk_plan_metric` (`plan_id`,`metric_code`)

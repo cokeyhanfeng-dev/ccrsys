@@ -25,6 +25,9 @@ public class CcrCommitmentPlan extends BaseEntity {
     /** 来源决议主键 */
     private Long resolutionId;
 
+    /** 所属申请(承诺按申请级聚合) */
+    private Long applicationId;
+
     /** INDIVIDUAL / CORPORATE_SINGLE / MEMBER / GROUP */
     private String scopeType;
 

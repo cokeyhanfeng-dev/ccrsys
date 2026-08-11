@@ -8,7 +8,7 @@
 USE `ccr_rate`;
 
 -- ---------- 0. 刷新既有 mock 数据日期(防 3 天时效阻断;新库随 initdb 自动生效) ----------
-UPDATE dw_own_financing_snapshot SET data_dt=CURDATE();
+-- 注:dw_own_financing_snapshot 已于 2026-08-11 去冗余删除(并入 dw_loan_contract_snapshot)
 UPDATE dw_contribution_metric SET data_dt=CURDATE();
 UPDATE dw_mortgage_snapshot SET data_dt=CURDATE();
 UPDATE dw_guarantor_snapshot SET data_dt=CURDATE();
@@ -39,19 +39,20 @@ ON DUPLICATE KEY UPDATE completion_rate=VALUES(completion_rate);
 
 -- ---------- 2. 单户存量贷款合同(存量调息测试,T1-08/09/10 等) ----------
 -- CUST001(非国企) 原利率 4.00%;CUST002(国企) 4.20%;CUST101(个人) 4.50%
-INSERT INTO dw_loan_contract_snapshot (etl_md5,data_dt,contract_no,tranche_no,borrower_customer_no,contract_amount,contract_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,contract_status,contract_version) VALUES
-(5001,CURDATE(),'LC20260001',NULL,'CUST001',5000.0000,4800.0000,'CNY',4.0000,'LPR_PLUS','1Y','2026-01-15','2027-01-15','EFFECTIVE',1),
-(5002,CURDATE(),'LC20260002',NULL,'CUST002',3000.0000,3000.0000,'CNY',4.2000,'LPR_PLUS','1Y','2026-02-10','2027-02-10','EFFECTIVE',1),
-(5003,CURDATE(),'LC20260003',NULL,'CUST101',500.0000,480.0000,'CNY',4.5000,'LPR_PLUS','1Y','2026-03-01','2027-03-01','EFFECTIVE',1)
-ON DUPLICATE KEY UPDATE contract_balance=VALUES(contract_balance);
+-- agreement_no 关联授信协议(AGR-C001-2026/AGR-C002-2026/AGR-C101-2026)
+INSERT INTO dw_loan_contract_snapshot (etl_md5,data_dt,contract_no,agreement_no,tranche_no,borrower_customer_no,contract_amount,contract_balance,guarantee_type,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,contract_status,contract_version) VALUES
+(5001,CURDATE(),'LC20260001','AGR-C001-2026',NULL,'CUST001',5000.0000,4800.0000,'MORTGAGE','CNY',4.0000,'LPR_PLUS','1Y','2026-01-15','2027-01-15','EFFECTIVE',1),
+(5002,CURDATE(),'LC20260002','AGR-C002-2026',NULL,'CUST002',3000.0000,3000.0000,'MORTGAGE','CNY',4.2000,'LPR_PLUS','1Y','2026-02-10','2027-02-10','EFFECTIVE',1),
+(5003,CURDATE(),'LC20260003','AGR-C101-2026',NULL,'CUST101',500.0000,480.0000,'GUARANTEE','CNY',4.5000,'LPR_PLUS','1Y','2026-03-01','2027-03-01','EFFECTIVE',1)
+ON DUPLICATE KEY UPDATE contract_balance=VALUES(contract_balance), guarantee_type=VALUES(guarantee_type);
 
 -- 借据:CUST001 两笔一致(正常路径);CUST002 的 NB_C202 利率 4.35≠合同 4.20(核验异常演示)
-INSERT INTO dw_loan_note_snapshot (etl_md5,data_dt,loan_note_no,contract_no,tranche_no,borrower_customer_no,loan_amount,loan_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,note_status) VALUES
-(5011,CURDATE(),'NB_C101','LC20260001',NULL,'CUST001',3000.0000,3000.0000,'CNY',4.0000,'LPR_PLUS','1Y','2026-01-20','2027-01-15','NORMAL'),
-(5012,CURDATE(),'NB_C102','LC20260001',NULL,'CUST001',2000.0000,1800.0000,'CNY',4.0000,'LPR_PLUS','1Y','2026-02-01','2027-01-15','NORMAL'),
-(5013,CURDATE(),'NB_C201','LC20260002',NULL,'CUST002',2000.0000,2000.0000,'CNY',4.2000,'LPR_PLUS','1Y','2026-02-15','2027-02-10','NORMAL'),
-(5014,CURDATE(),'NB_C202','LC20260002',NULL,'CUST002',1000.0000,1000.0000,'CNY',4.3500,'LPR_PLUS','1Y','2026-03-01','2027-02-10','NORMAL'),
-(5015,CURDATE(),'NB_C301','LC20260003',NULL,'CUST101',500.0000,480.0000,'CNY',4.5000,'LPR_PLUS','1Y','2026-03-05','2027-03-01','NORMAL')
+INSERT INTO dw_loan_note_snapshot (etl_md5,data_dt,loan_note_no,agreement_no,contract_no,tranche_no,borrower_customer_no,loan_amount,loan_balance,currency,execution_rate,rate_type,lpr_term,start_date,maturity_date,note_status) VALUES
+(5011,CURDATE(),'NB_C101','AGR-C001-2026','LC20260001',NULL,'CUST001',3000.0000,3000.0000,'CNY',4.0000,'LPR_PLUS','1Y','2026-01-20','2027-01-15','NORMAL'),
+(5012,CURDATE(),'NB_C102','AGR-C001-2026','LC20260001',NULL,'CUST001',2000.0000,1800.0000,'CNY',4.0000,'LPR_PLUS','1Y','2026-02-01','2027-01-15','NORMAL'),
+(5013,CURDATE(),'NB_C201','AGR-C002-2026','LC20260002',NULL,'CUST002',2000.0000,2000.0000,'CNY',4.2000,'LPR_PLUS','1Y','2026-02-15','2027-02-10','NORMAL'),
+(5014,CURDATE(),'NB_C202','AGR-C002-2026','LC20260002',NULL,'CUST002',1000.0000,1000.0000,'CNY',4.3500,'LPR_PLUS','1Y','2026-03-01','2027-02-10','NORMAL'),
+(5015,CURDATE(),'NB_C301','AGR-C101-2026','LC20260003',NULL,'CUST101',500.0000,480.0000,'CNY',4.5000,'LPR_PLUS','1Y','2026-03-05','2027-03-01','NORMAL')
 ON DUPLICATE KEY UPDATE loan_balance=VALUES(loan_balance);
 
 -- ---------- 3. 贡献度(勾稽口径:TOTAL=同客户同 scope 明细加总) ----------

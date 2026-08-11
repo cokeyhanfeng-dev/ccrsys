@@ -109,7 +109,7 @@ onMounted(load)
 <style scoped>
 .dc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 1200px) { .dc-grid { grid-template-columns: 1fr; } }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 
 /* 时效看板状态灯:OK 绿 / STALE 红 */
 .source-list { display: flex; flex-direction: column; gap: 10px; }

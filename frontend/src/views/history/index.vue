@@ -119,6 +119,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

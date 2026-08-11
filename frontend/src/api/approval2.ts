@@ -13,9 +13,9 @@ export function listRoundOpinions<T = any[]>(roundId: number | string): Promise<
   return get<T>(`/ccr/vote-rounds/${roundId}/opinions`)
 }
 
-/** 产品标准与业务硬边界(非 admin 可能 403,调用方需容错并隐藏) */
+/** 产品标准与业务硬边界(公开只读端点 /ccr/products/rate-limits,登录即可;原 /system/flow/thresholds/product-limit 仅 admin/config_reviewer,客户经理访问 403) */
 export function listProductLimits<T = any[]>(status?: string): Promise<T> {
-  return get<T>('/system/flow/thresholds/product-limit', status ? { status } : {})
+  return get<T>('/ccr/products/rate-limits', status ? { status } : {})
 }
 
 /** 承诺计划详情(指标完成进度+评估历史) */

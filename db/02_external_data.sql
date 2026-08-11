@@ -58,29 +58,17 @@ CREATE TABLE IF NOT EXISTS `caps_indv_cust_basic_info` (
   KEY `idx_cert_no` (`cert_no`)
 ) ENGINE=InnoDB COMMENT='对私客户主数据快照';
 
--- ---------- 本行融资(T2) ----------
-CREATE TABLE IF NOT EXISTS `dw_own_financing_snapshot` (
-  `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
-  `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
-  `cust_no`           VARCHAR(32)  NOT NULL COMMENT '客户号',
-  `contract_no`       VARCHAR(32)  NOT NULL COMMENT '授信合同号',
-  `crgant_start_dt`   DATE         NOT NULL COMMENT '授信开始日期',
-  `crgant_due_dt`     DATE         NOT NULL COMMENT '授信结束日期',
-  `crgant_matu`       INT          NOT NULL COMMENT '授信期限',
-  `guarantee_type`    VARCHAR(10)  NOT NULL COMMENT '担保类型',
-  `loan_balance`      DECIMAL(18,4) NOT NULL COMMENT '贷款余额(万元)',
-  `contract_rate`     DECIMAL(7,4)  NOT NULL COMMENT '原利率%(本行合同当前利率)',
-  PRIMARY KEY (`etl_md5`),
-  KEY `idx_cust` (`cust_no`),
-  KEY `idx_contract` (`contract_no`)
-) ENGINE=InnoDB COMMENT='本行融资合同快照(T2)';
+-- ---------- 本行融资(并入贷款合同 dw_loan_contract_snapshot,2026-08-11 去冗余) ----------
+-- 原 dw_own_financing_snapshot 已删除:原利率=loan_contract.execution_rate、
+-- 担保类型=loan_contract.guarantee_type、余额=loan_contract.contract_balance,
+-- 申请页存量贷款调息统一从贷款合同取(borrower_customer_no 匹配)
 
 -- ---------- 抵押物快照(T2-抵押,数仓加工,客户经理可补充) ----------
 CREATE TABLE IF NOT EXISTS `dw_mortgage_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
   `cust_no`           VARCHAR(32)  NOT NULL COMMENT '被担保客户号',
-  `contract_no`       VARCHAR(32)  NULL COMMENT '关联授信合同号',
+  `contract_no`       VARCHAR(32)  NULL COMMENT '关联贷款合同号(loan_contract.contract_no)',
   `mortgage_type`     VARCHAR(20)  NOT NULL COMMENT '抵押物类型:HOUSE/LAND/EQUIPMENT/VEHICLE/OTHERS',
   `mortgage_name`     VARCHAR(128) NULL COMMENT '抵押物名称',
   `owner_name`        VARCHAR(128) NULL COMMENT '权属人名称',
@@ -101,7 +89,7 @@ CREATE TABLE IF NOT EXISTS `dw_guarantor_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
   `cust_no`           VARCHAR(32)  NOT NULL COMMENT '被担保客户号',
-  `contract_no`       VARCHAR(32)  NULL COMMENT '关联授信合同号',
+  `contract_no`       VARCHAR(32)  NULL COMMENT '关联贷款合同号(loan_contract.contract_no)',
   `guarantor_name`    VARCHAR(128) NOT NULL COMMENT '担保人名称',
   `guarantor_cert_type` VARCHAR(10) NULL COMMENT '担保人证件类型',
   `guarantor_cert_no` VARCHAR(512) NULL COMMENT '担保人证件号',
@@ -311,12 +299,14 @@ CREATE TABLE IF NOT EXISTS `dw_loan_contract_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
   `contract_no`       VARCHAR(64)  NOT NULL COMMENT '贷款合同号',
+  `agreement_no`      VARCHAR(64)  NULL COMMENT '所属授信协议编号(关联 dw_credit_agreement_snapshot.agreement_no)',
   `tranche_no`        VARCHAR(64)  NULL COMMENT '所属用信分项编号',
   `borrower_customer_no` VARCHAR(64) NOT NULL COMMENT '借款人客户号',
   `contract_amount`   DECIMAL(18,4) NOT NULL COMMENT '合同金额(万元)',
   `contract_balance`  DECIMAL(18,4) NOT NULL COMMENT '合同余额(万元)',
+  `guarantee_type`    VARCHAR(16)  NULL COMMENT '担保主类型(原 dw_own_financing 迁移:MORTGAGE/CREDIT/GUARANTEE 等)',
   `currency`          VARCHAR(8)   NOT NULL DEFAULT 'CNY' COMMENT '币种',
-  `execution_rate`    DECIMAL(7,4)  NOT NULL COMMENT '合同执行利率%',
+  `execution_rate`    DECIMAL(7,4)  NOT NULL COMMENT '合同执行利率%(存量调息原利率来源)',
   `rate_type`         VARCHAR(16)  NOT NULL COMMENT 'FIXED固定/LPR_PLUS LPR加点',
   `lpr_term`          VARCHAR(8)   NULL COMMENT 'LPR期限:1Y/5Y(LPR加点时必填)',
   `start_date`        DATE         NOT NULL COMMENT '合同起始日',
@@ -325,15 +315,17 @@ CREATE TABLE IF NOT EXISTS `dw_loan_contract_snapshot` (
   `contract_version`  INT          NOT NULL DEFAULT 1 COMMENT '合同版本(补充协议递增)',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_lc_no` (`contract_no`),
+  KEY `idx_lc_agreement` (`agreement_no`),
   KEY `idx_lc_tranche` (`tranche_no`),
   KEY `idx_lc_borrower` (`borrower_customer_no`)
-) ENGINE=InnoDB COMMENT='贷款合同快照(V1.0 A.5)';
+) ENGINE=InnoDB COMMENT='贷款合同快照(V1.0 A.5);agreement_no 关联授信协议;guarantee_type 承原本行融资担保';
 
 -- ---------- 借据快照 ----------
 CREATE TABLE IF NOT EXISTS `dw_loan_note_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
   `loan_note_no`      VARCHAR(64)  NOT NULL COMMENT '借据号',
+  `agreement_no`      VARCHAR(64)  NULL COMMENT '所属授信协议编号(关联 dw_credit_agreement_snapshot.agreement_no)',
   `contract_no`       VARCHAR(64)  NOT NULL COMMENT '所属贷款合同号',
   `tranche_no`        VARCHAR(64)  NULL COMMENT '所属用信分项编号',
   `borrower_customer_no` VARCHAR(64) NOT NULL COMMENT '借款人客户号',
@@ -348,9 +340,10 @@ CREATE TABLE IF NOT EXISTS `dw_loan_note_snapshot` (
   `note_status`       VARCHAR(16)  NOT NULL COMMENT 'NORMAL正常/SETTLED结清/OVERDUE逾期',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_ln_no` (`loan_note_no`),
+  KEY `idx_ln_agreement` (`agreement_no`),
   KEY `idx_ln_contract` (`contract_no`),
   KEY `idx_ln_borrower` (`borrower_customer_no`)
-) ENGINE=InnoDB COMMENT='借据快照(V1.0 A.5;决议核验比对合同利率)';
+) ENGINE=InnoDB COMMENT='借据快照(V1.0 A.5;决议核验比对合同利率);agreement_no 关联授信协议';
 
 -- ---------- 存款账户快照 ----------
 CREATE TABLE IF NOT EXISTS `dw_deposit_account_snapshot` (

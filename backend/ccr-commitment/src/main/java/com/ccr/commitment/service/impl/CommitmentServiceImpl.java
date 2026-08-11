@@ -1,6 +1,7 @@
 package com.ccr.commitment.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.commitment.domain.CcrCommitmentMemberAlloc;
 import com.ccr.commitment.domain.CcrCommitmentMetric;
@@ -250,9 +251,29 @@ public class CommitmentServiceImpl implements CommitmentService {
         return plan;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CcrCommitmentMetric saveTrackDesc(Long metricId, String trackDesc) {
+        CcrCommitmentMetric metric = metricMapper.selectById(metricId);
+        if (metric == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "承诺指标不存在");
+        }
+        if (StrUtil.isBlank(trackDesc)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "跟踪描述必填");
+        }
+        if (trackDesc.length() > 1000) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "跟踪描述长度超限(≤1000)");
+        }
+        // §6.4:以手工描述跟踪,覆盖式更新(保留留痕的最终态);不参与数值达成评估
+        metric.setTrackDesc(trackDesc.trim());
+        metricMapper.updateById(metric);
+        log.info("指标 {} 跟踪描述已更新", metricId);
+        return metric;
+    }
+
     // ---------- 私有 ----------
 
-    /** 指标校验:INCREMENT 下 target_value 存"承诺新增值",baseline/target 均须非负 */
+    /** 指标校验:INCREMENT 下 target_value 存"承诺新增值",baseline/target 均须非负;承诺类型"其它"(§6.4)无数值目标,改以 track_desc 手工跟踪 */
     private void validateMetric(CcrCommitmentMetric m) {
         if (m.getMetricCode() == null || m.getMetricCode().isBlank()
                 || m.getTargetType() == null || m.getTargetType().isBlank()) {
@@ -260,6 +281,10 @@ public class CommitmentServiceImpl implements CommitmentService {
         }
         if (!Set.of("INCREMENT", "TARGET_BALANCE", "CUMULATIVE").contains(m.getTargetType())) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "目标类型仅支持 INCREMENT/TARGET_BALANCE/CUMULATIVE");
+        }
+        if ("OTHER".equals(m.getMetricCode())) {
+            // "其它"承诺:无数值达成评估,不校验 target_value
+            return;
         }
         BigDecimal baseline = m.getBaselineValue() == null ? BigDecimal.ZERO : m.getBaselineValue();
         if (m.getTargetValue() == null || m.getTargetValue().compareTo(BigDecimal.ZERO) < 0

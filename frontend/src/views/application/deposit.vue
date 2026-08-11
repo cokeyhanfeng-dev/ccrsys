@@ -32,19 +32,19 @@
         </div>
         <div class="form-field" style="grid-column: span 2">
           <label class="form-field__label">客户名称 <span class="req">*</span></label>
-          <div style="display:flex;gap:8px">
-            <input class="form-input" v-model="form.customerName" placeholder="输入客户名称模糊查询" @keyup.enter="searchCustomers" />
-            <button class="btn btn--secondary" @click="searchCustomers">查询</button>
-          </div>
-          <div class="customer-cands" v-if="customerCands.length">
-            <div v-for="c in customerCands" :key="c.customerNo" class="customer-cand" @click="selectCustomer(c)">
-              {{ c.customerName }} · {{ c.customerNo }} · {{ c.custType === 'CORP' ? '对公' : '个人' }}
-            </div>
-          </div>
+          <el-autocomplete
+            v-model="form.customerName"
+            :fetch-suggestions="queryCustomerSuggestions"
+            :trigger-on-focus="false"
+            clearable
+            placeholder="输入客户名称自动联想,下拉选择客户"
+            style="width:100%"
+            @select="selectCustomer"
+          />
         </div>
         <div class="form-field">
           <label class="form-field__label">客户号</label>
-          <input class="form-input" v-model="form.customerNo" disabled placeholder="查询带出" />
+          <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
         </div>
         <div class="form-field">
           <label class="form-field__label">客户性质</label>
@@ -65,43 +65,43 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
-            <input class="form-input" v-model="form.ucrCode" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
-            <input class="form-input" v-model="form.fiveLevelClass" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.fiveLevelClass" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">内部信用等级</label>
-            <input class="form-input" v-model="form.creditLevel" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
           </div>
         </template>
         <!-- 对私字段(数仓带出,只读) -->
         <template v-else>
           <div class="form-field">
             <label class="form-field__label">证件类型</label>
-            <input class="form-input" v-model="form.idType" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.idType" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">证件号码</label>
-            <input class="form-input" v-model="form.idNo" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">职业</label>
-            <input class="form-input" v-model="form.occupation" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.occupation" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">联系电话</label>
-            <input class="form-input" v-model="form.phone" disabled placeholder="数仓带出" />
+            <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
           </div>
         </template>
         <div class="form-field">
           <label class="form-field__label">开户机构</label>
-          <input class="form-input" v-model="form.openOrg" disabled placeholder="数仓带出" />
+          <input class="form-input" v-model="form.openOrg" placeholder="数仓带出,可修改" />
         </div>
         <div class="form-field">
           <label class="form-field__label">开户日期</label>
-          <input class="form-input" v-model="form.openDate" disabled placeholder="数仓带出" />
+          <input class="form-input" v-model="form.openDate" placeholder="数仓带出,可修改" />
         </div>
         <div class="form-field">
           <label class="form-field__label">申请机构</label>
@@ -274,6 +274,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
+import { listEnabledProducts } from '@/api/system'
 import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS } from '@/utils/dict'
 
 const userStore = useUserStore()
@@ -281,7 +282,20 @@ const route = useRoute()
 
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 存款产品(product_code 与产品边界/数仓账户口径对齐)
-const depositProducts = DEPOSIT_PRODUCTS
+// P2-4:以产品目录 ccr_product 为权威来源,目录为空时回退内置字典(避免新建环境缺目录不可用)
+const depositProducts = ref<Array<{ code: string; name: string }>>(
+  DEPOSIT_PRODUCTS.map((p) => ({ code: p.code, name: p.name }))
+)
+async function loadDepositProducts() {
+  try {
+    const rows = await listEnabledProducts('DEPOSIT')
+    if (rows?.length) {
+      depositProducts.value = rows.map((r) => ({ code: r.productCode, name: r.productName }))
+    }
+  } catch {
+    // 失败保持字典回退
+  }
+}
 
 interface DepositItemRow {
   accountMode: 'EXISTING' | 'PLANNED'
@@ -357,22 +371,25 @@ const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
 
 // ---------- 客户查询带出(与贷款申请同一逻辑) ----------
-const customerCands = ref<any[]>([])
-async function searchCustomers() {
-  if (!form.customerName || !form.customerName.trim()) return
+/** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
+async function queryCustomerSuggestions(queryString: string, cb: (list: any[]) => void) {
+  if (!queryString || !queryString.trim()) return cb([])
   try {
-    customerCands.value = await apiSearchCustomers(form.customerName.trim())
-    if (!customerCands.value.length) ElMessage.info('未查询到匹配客户')
+    const rows = await apiSearchCustomers(queryString.trim())
+    cb((rows || []).map(r => ({
+      value: `${r.customerName} · ${r.customerNo} · ${r.custType === 'CORP' ? '对公' : '个人'}`,
+      data: r,
+    })))
   } catch {
-    customerCands.value = []
+    cb([])
   }
 }
 
-async function selectCustomer(c: any) {
+async function selectCustomer(item: any) {
+  const c = item?.data ?? item
   form.customerNo = c.customerNo
   form.customerName = c.customerName
   form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
-  customerCands.value = []
   await loadCustomerDetail()
 }
 
@@ -490,7 +507,22 @@ function buildPayload(): ApplicationPayload {
     applicantOrgId: userStore.userInfo?.orgId,
     orgId: userStore.userInfo?.orgId,
     // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
-    applicationRemark: (form.applicationRemark || '').trim() || undefined
+    applicationRemark: (form.applicationRemark || '').trim() || undefined,
+    // 客户信息人工修正快照(数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示)
+    customerInfoJson: JSON.stringify({
+      customerNo: form.customerNo,
+      customerName: form.customerName,
+      custType: form.customerScope === 'INDIVIDUAL' ? 'INDV' : 'CORP',
+      ucrCode: form.ucrCode,
+      fiveLevelClass: form.fiveLevelClass,
+      creditLevel: form.creditLevel,
+      idType: form.idType,
+      idNo: form.idNo,
+      occupation: form.occupation,
+      phone: form.phone,
+      openOrg: form.openOrg,
+      openDate: form.openDate
+    })
   }
 }
 
@@ -572,6 +604,8 @@ async function onConfirmSubmit() {
 
 // ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
 onMounted(async () => {
+  // 产品下拉:以产品目录为权威来源(空目录回退字典)
+  loadDepositProducts()
   // 产品标准上限(生效中;非 admin 可能 403,失败则隐藏)
   try {
     productLimits.value = await listProductLimits('EFFECTIVE')
@@ -638,8 +672,8 @@ async function loadDraftIntoForm(id: number) {
 }
 .form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.table { border-radius: var(--radius); overflow: hidden; }
-.customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--color-surface); }
+.table { border-radius: var(--radius); overflow-x: auto; }
+.customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .customer-cand:last-child { border-bottom: none; }
 .customer-cand:hover { background: var(--color-primary-light); }

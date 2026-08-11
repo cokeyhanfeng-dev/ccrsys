@@ -211,5 +211,5 @@ onMounted(() => {
 .query-field { display: flex; flex-direction: column; gap: 4px; }
 .query-label { font-size: 12px; color: var(--color-text-sub); }
 .query-input { width: 220px; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 </style>

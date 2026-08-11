@@ -29,6 +29,12 @@ public class ConfigChangeLogService {
     /** 配置域:产品硬边界 */
     public static final String TYPE_PRODUCT_LIMIT = "PRODUCT_LIMIT";
 
+    /** 配置域:产品目录 */
+    public static final String TYPE_PRODUCT = "PRODUCT";
+
+    /** 配置域:产品审批链路 */
+    public static final String TYPE_PRODUCT_ROUTE = "PRODUCT_ROUTE";
+
     /** 动作:新增草稿 */
     public static final String ACTION_CREATE = "CREATE";
 

@@ -7,18 +7,31 @@
 
 
 
-    <!-- 待办卡片列表 -->
+    <!-- 待办卡片列表(按申请聚合:一个申请一张卡片,多分项在卡内展开) -->
     <div class="todo-list">
-      <div class="todo-card" v-for="c in todoCards" :key="c.id">
+      <div class="todo-card" v-for="c in todoCards" :key="c.applicationId">
         <div class="todo-card__body">
-          <div class="todo-card__customer">{{ c.customer }}</div>
-          <div class="todo-card__sub">定价分项 {{ c.pricingItemNo }} · 当前节点 {{ c.nodeText }}</div>
+          <div class="todo-card__customer">
+            {{ c.customer }}
+            <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个担保分项</span>
+          </div>
+          <div class="todo-card__sub" v-if="c.single">申请 {{ c.pricingItemNo }} · 当前节点 {{ c.nodeText }}</div>
+          <div class="todo-card__sub" v-else>当前节点 {{ c.nodeText }} · 需完成 {{ c.itemCount }} 个担保分项</div>
           <div class="todo-card__grid">
-            <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ c.rate }}%</b></div>
+            <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ c.rate }}{{ c.single ? '%' : '' }}</b></div>
             <div class="tc-item"><span class="dg-label">原执行利率</span><b>{{ c.originalRate }}</b></div>
             <div class="tc-item"><span class="dg-label">分项金额</span><b>{{ c.amount }} 万元</b></div>
             <div class="tc-item"><span class="dg-label">产品编码</span><b>{{ c.productCode }}</b></div>
             <div class="tc-item"><span class="dg-label">提交时间</span><b>{{ c.createTime }}</b></div>
+          </div>
+          <div class="todo-card__items" v-if="!c.single">
+            <div class="tc-item-row" v-for="it in c.items" :key="it.id">
+              <span class="tc-item-row__no">{{ it.pricingItemNo }}</span>
+              <span>{{ it.amount }} 万元</span>
+              <span>申请 {{ it.rate }}%</span>
+              <span>原执行 {{ it.originalRate }}%</span>
+              <span class="dg-label">{{ nodeLabel(it.nodeCode) }}</span>
+            </div>
           </div>
         </div>
         <div class="todo-card__action">
@@ -74,17 +87,42 @@ function statusText(s?: string) {
 async function load() {
   try {
     const data = await listApprovalTasks<any[]>()
-    todoCards.value = (data || []).map((p) => ({
-      id: p.id,
-      pricingItemNo: p.pricingItemNo || p.id,
-      customer: p.pricingCustomerNo || '-',
-      amount: p.pricingAmount ?? '-',
-      rate: p.requestedRate ?? '-',
-      originalRate: p.originalRate != null ? `${p.originalRate}%` : '新增业务',
-      productCode: productName(p.productCode),
-      nodeText: nodeLabel(p.currentNodeCode),
-      createTime: p.createTime ? String(p.createTime).replace('T', ' ').slice(0, 16) : '—'
-    }))
+    // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部担保分项
+    const byApp = new Map<string, any[]>()
+    for (const p of data || []) {
+      const appId = p.applicationId || p.id
+      if (!byApp.has(appId)) byApp.set(appId, [])
+      byApp.get(appId)!.push(p)
+    }
+    todoCards.value = [...byApp.entries()].map(([appId, items]) => {
+      const first = items[0]
+      const rates = items.map((x) => Number(x.requestedRate) || 0)
+      const single = items.length === 1
+      return {
+        id: first.id, // 进入申请详情用组内第一个分项
+        applicationId: appId,
+        itemCount: items.length,
+        single,
+        pricingItemNo: single ? (first.pricingItemNo || first.id) : `${items.length} 个担保分项`,
+        customer: first.pricingCustomerNo || '-',
+        amount: single ? (first.pricingAmount ?? '-') : items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0),
+        rate: single ? (first.requestedRate ?? '-') : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}` : '-'),
+        // 原执行利率按全部分项收集:有值显区间、全空显「新增业务」,不再只取第一个分项
+        originalRate: (() => {
+          const ors = items.map((x) => x.originalRate).filter((v) => v != null && v !== '').map(Number)
+          return ors.length ? (ors.length === 1 ? `${ors[0]}%` : `${Math.min(...ors)} ~ ${Math.max(...ors)}%`) : '新增业务'
+        })(),
+        productCode: productName(first.productCode),
+        nodeText: nodeLabel(first.currentNodeCode),
+        createTime: first.createTime ? String(first.createTime).replace('T', ' ').slice(0, 16) : '—',
+        items: items.map((x) => ({
+          id: x.id, pricingItemNo: x.pricingItemNo || x.id,
+          amount: x.pricingAmount ?? '-', rate: x.requestedRate ?? '-',
+          originalRate: x.originalRate != null ? x.originalRate : '新增业务',
+          nodeCode: x.currentNodeCode, status: x.status
+        }))
+      }
+    })
   } catch {
     todoCards.value = []
   }
@@ -125,11 +163,15 @@ onMounted(load)
 .stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
 .todo-card__customer { font-weight: 600; font-size: 16px; }
+.tc-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; color: #b45309; background: #fef3c7; vertical-align: middle; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
 .todo-card__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px; font-size: 14px; }
 .tc-item .dg-label { color: var(--color-text-sub); margin-right: 6px; }
+.todo-card__items { margin-top: 10px; padding: 8px 12px; border: 1px dashed var(--color-border, #ddd); border-radius: var(--radius-sm, 6px); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.tc-item-row { display: flex; gap: 18px; align-items: center; }
+.tc-item-row__no { font-weight: 600; min-width: 140px; }
 .todo-card__action { display: flex; align-items: center; gap: 8px; }
-.table { border-radius: var(--radius-sm); overflow: hidden; }
+.table { border-radius: var(--radius-sm); overflow-x: auto; }
 .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; font-size: 14px; }
 .check-item .dg-label { display: block; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }

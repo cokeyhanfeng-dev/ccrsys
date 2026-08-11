@@ -54,21 +54,23 @@
           </div>
           <table class="table" v-if="myApps.length">
             <thead>
-              <tr><th>申请号</th><th>业务类型</th><th>状态</th><th>申请时间</th><th>操作</th></tr>
+              <tr><th>申请号</th><th>业务类型</th><th>状态</th><th>当前节点</th><th>到达当前节点</th><th>申请时间</th><th>操作</th></tr>
             </thead>
             <tbody>
               <tr v-for="a in myApps" :key="a.id ?? a.applicationNo">
                 <td>{{ a.applicationNo || '—' }}</td>
                 <td>{{ businessTypeText(a.businessType) }}</td>
                 <td><span :class="appBadge(a.status)">{{ appStatusText(a.status) }}</span></td>
+                <td>{{ a.currentNodeText || '—' }}</td>
+                <td>{{ fmtTime(a.nodeReachTime) }}</td>
                 <td>{{ fmtTime(a.createTime || a.submitTime) }}</td>
                 <td>
+                  <button class="btn btn--text" @click="router.push(`/history/archive/${a.id}`)">查看档案</button>
                   <button
                     v-if="a.status === 'REJECTED'"
                     class="btn btn--text"
                     @click="router.push(`/application/loan?reapply=${a.id}`)"
                   >重新发起</button>
-                  <span v-else>—</span>
                 </td>
               </tr>
             </tbody>
@@ -210,16 +212,31 @@ function fmtTime(t?: string) {
 // ---------- 待我处理(聚合三类待办) ----------
 const todoItems = computed(() => {
   const items: any[] = []
+  // 待办以申请为粒度:同申请多分项聚合为一条待办,进入详情一次性完成
+  const byApp = new Map<string, any[]>()
   for (const p of tasks.value) {
+    const appId = p.applicationId || p.id
+    if (!byApp.has(appId)) byApp.set(appId, [])
+    byApp.get(appId)!.push(p)
+  }
+  for (const [appId, ps] of byApp) {
+    const first = ps[0]
+    const single = ps.length === 1
+    const rates = ps.map((x) => Number(x.requestedRate) || 0)
     items.push({
-      key: `task-${p.id}`, kindText: '待审批', kindBadge: 'badge--processing',
-      title: p.pricingCustomerNo || '—',
-      itemNo: p.pricingItemNo || p.id, nodeText: nodeLabel(p.currentNodeCode),
-      amount: p.pricingAmount != null ? `${p.pricingAmount} 万元` : '—',
-      rate: p.requestedRate != null ? `${p.requestedRate}%` : '—',
-      product: productName(p.productCode),
-      time: fmtTime(p.createTime), to: `/approval/${p.id}`, actionText: '去审批',
-      extra: null
+      key: `task-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
+      title: first.pricingCustomerNo || '—',
+      itemNo: single ? (first.pricingItemNo || first.id) : `${ps.length} 个担保分项`,
+      nodeText: nodeLabel(first.currentNodeCode),
+      amount: single
+        ? (first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—')
+        : `${ps.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0)} 万元`,
+      rate: single
+        ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
+        : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
+      product: productName(first.productCode),
+      time: fmtTime(first.createTime), to: `/approval/${first.id}`, actionText: '去审批',
+      extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
   }
   for (const p of voteTodos.value) {
@@ -259,11 +276,13 @@ const todoEmptyText = computed(() => {
   return map[role.value] || '暂无待审批分项,新申请提交后会出现在这里'
 })
 
-// ---------- 客户经理:我的申请动态(前 8 条) ----------
-const myApps = computed(() =>
-  [...applications.value].sort((a, b) => Number(b.id || 0) - Number(a.id || 0)).slice(0, 8))
-
 const APP_FINALS = ['DRAFT', 'APPROVED', 'REJECTED', 'CLOSED']
+
+// ---------- 客户经理:我的申请动态(仅显示在途,终态申请看历史档案) ----------
+const myApps = computed(() =>
+  [...applications.value]
+    .filter((a) => a.status && !APP_FINALS.includes(a.status))
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0)))
 const inProgressCount = computed(
   () => applications.value.filter((a) => a.status && !APP_FINALS.includes(a.status)).length
 )
@@ -467,18 +486,22 @@ onMounted(load)
 .stat-card__num--danger { color: var(--color-danger); }
 .stat-card__sub--danger { color: var(--color-danger); }
 
-/* ---------- 主区两栏(窄屏堆叠) ---------- */
+/* ---------- 主区两栏(窄屏堆叠;客户经理工作台「存款承诺/我的申请」区块留出呼吸感) ---------- */
 .workbench-grid {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
+  gap: 20px;
   align-items: start;
 }
 @media (max-width: 1100px) {
-  .workbench-grid { grid-template-columns: 1fr; }
+  .workbench-grid { grid-template-columns: 1fr; gap: 20px; }
 }
 .workbench-card { margin-bottom: 0; }
-.workbench-grid__right { display: flex; flex-direction: column; gap: 16px; }
+.workbench-grid__right { display: flex; flex-direction: column; gap: 20px; }
+
+/* 工作台内表格行高放宽(上下不再贴紧) */
+.workbench-card .table th,
+.workbench-card .table td { padding: 14px 14px; }
 
 /* ---------- 待办列表 ---------- */
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
@@ -491,7 +514,7 @@ onMounted(load)
 .btn-sm { padding: 4px 10px; font-size: 13px; }
 
 /* ---------- 贡献度分布条 ---------- */
-.dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+.dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; }
 .dist-row__label { flex: none; width: 60px; color: var(--color-text-sub); }
 .dist-row__bar {
   flex: 1; height: 8px; border-radius: 4px;
@@ -501,12 +524,13 @@ onMounted(load)
 .dist-row__num { flex: none; width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- 有风险计划 ---------- */
-.risk-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); margin: 14px 0 8px; }
+.risk-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); margin: 18px 0 10px; }
 .risk-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 8px 10px; border-radius: var(--radius-sm, 8px);
+  padding: 10px 12px; border-radius: var(--radius-sm, 8px);
   cursor: pointer; transition: background .15s;
 }
+.risk-item + .risk-item { margin-top: 4px; }
 .risk-item:hover { background: var(--color-primary-light, #eff4ff); }
 .risk-item__main { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .risk-item__main b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

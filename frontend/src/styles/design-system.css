@@ -7,8 +7,8 @@
 :root {
   /* ── 色彩 ── */
   --color-primary: #1890ff;
-  --color-primary-hover: #096dd9;
-  --color-primary-active: #1e40af;
+  --color-primary-hover: #46a6ff;
+  --color-primary-active: #1682e6;
   --color-primary-light: #eff6ff;
   --color-primary-softer: #f5f8ff;
   --color-bg: #f4f6f9;
@@ -60,9 +60,9 @@
   --space-6: 32px;
 
   /* ── 圆角 / 阴影(层次化) ── */
-  --radius-sm: 6px;
+  --radius-sm: 4px;
   --radius: 12px;
-  --radius-lg: 16px;
+  --radius-lg: 4px;
   --shadow-xs: 0 1px 2px rgba(15, 42, 92, .05);
   --shadow-sm: 0 1px 3px rgba(15, 42, 92, .07);
   --shadow: 0 1px 2px rgba(15, 42, 92, .04), 0 4px 14px rgba(15, 42, 92, .07);
@@ -100,7 +100,7 @@ body {
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: var(--space-1);
-  padding: 8px 16px;
+  padding: 10px 18px;
   font-size: var(--fs-body);
   font-weight: 500;
   border-radius: var(--radius-sm);
@@ -117,8 +117,10 @@ body {
 .btn--primary:hover { background: var(--color-primary-hover); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, .34); }
 .btn--primary:active { transform: translateY(0); box-shadow: var(--shadow-primary); }
 .btn--primary.block { width: 100%; }
+/* dist 主按钮禁用态:浅蓝底白字 */
+.btn--primary:disabled, .btn--primary:disabled:hover { background: #8cc8ff; color: #fff; }
 
-.btn--secondary { background: var(--color-surface); color: var(--color-primary); border-color: #c7d7f8; }
+.btn--secondary { background: var(--color-surface); color: var(--color-primary); border-color: #dcdfe6; }
 .btn--secondary:hover { background: var(--color-primary-light); border-color: var(--color-primary); }
 
 .btn--ghost { background: transparent; color: var(--color-primary); }
@@ -140,23 +142,27 @@ body {
 .form-input,
 .form-select {
   width: 100%;
-  padding: 8px 12px;
+  height: 40px;
+  padding: 0 12px;
   font-size: var(--fs-body);
-  border: 1px solid var(--color-border);
+  border: 1px solid #dcdfe6;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text-main);
   font-family: inherit;
   transition: border-color var(--duration), box-shadow var(--duration);
 }
-.form-input:hover, .form-select:hover { border-color: #c3cbd6; }
+/* 文本域(与输入框共用 .form-input)不套 40px 高度 */
+textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize: vertical; }
+.form-input::placeholder, .form-select::placeholder { color: #c0c4cc; }
+.form-input:hover, .form-select:hover { border-color: #c0c4cc; }
 .form-input:focus, .form-select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+  box-shadow: none;
 }
 .form-input--error { border-color: var(--color-danger); }
-.form-input--error:focus { box-shadow: 0 0 0 3px var(--color-danger-light); }
+.form-input--error:focus { box-shadow: none; }
 .form-input--amount { text-align: right; font-variant-numeric: tabular-nums; }
 
 .form-field__error { color: var(--color-danger); font-size: var(--fs-caption); margin-top: 4px; }
@@ -350,6 +356,8 @@ body {
 .table {
   width: 100%; border-collapse: separate; border-spacing: 0;
   background: var(--color-surface);
+  /* 窄屏/多列表格横向滚动(块级 + overflow-x,内部行保留表格对齐) */
+  display: block; overflow-x: auto; max-width: 100%;
 }
 .table th, .table td {
   padding: 12px 14px; text-align: left;
@@ -357,14 +365,16 @@ body {
   font-size: var(--fs-body);
 }
 .table thead th {
-  background: #f8fafc; color: var(--color-text-sub);
+  background: #f5f7fa; color: var(--color-text-sub);
   font-weight: 600; font-size: 13px;
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
 .table tbody tr { transition: background-color var(--duration); }
-.table tbody tr:nth-child(even) { background: #fbfcfe; }
-.table tbody tr:hover { background: var(--color-primary-softer); }
+.table tbody tr:nth-child(even) { background: #fafbfd; }
+.table tbody tr:hover { background: #f5f7fa; }
+/* dist 选中行(点击/当前行) */
+.table tbody tr.current-row { background: #e8f4ff; }
 .table tbody tr:last-child td { border-bottom: none; }
 .table--num td:last-child, .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .table__calc--down { color: var(--color-primary); font-weight: 600; }
@@ -432,7 +442,7 @@ body {
   color: var(--sidebar-text-active); font-weight: 600;
   box-shadow: inset 3px 0 0 #60a5fa;
 }
-.app-main { flex: 1; padding: var(--space-5); max-width: 1280px; }
+.app-main { flex: 1; min-width: 0; padding: var(--space-5); width: 100%; }
 
 /* ============================================================
    移动审批端（企微 H5）

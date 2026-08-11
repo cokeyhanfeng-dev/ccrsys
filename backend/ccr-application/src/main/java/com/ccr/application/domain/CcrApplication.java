@@ -76,6 +76,9 @@ public class CcrApplication extends BaseEntity {
     /** 草稿创建/上次预览时各数仓数据集数据日期基线(JSON:表名→data_dt,§7.1步骤9比对) */
     private String dataBaselineJson;
 
+    /** 客户信息人工修正快照(JSON;数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示) */
+    private String customerInfoJson;
+
     /** 集团场景涉及成员(非表字段,仅接收,落 ccr_application_member;逐成员金额/币种/角色) */
     @TableField(exist = false)
     private List<MemberInput> members;
@@ -102,4 +105,12 @@ public class CcrApplication extends BaseEntity {
     /** 关联人(非表字段,仅接收,落 ccr_application_related_person) */
     @TableField(exist = false)
     private List<CcrApplicationRelatedPerson> relatedPersons;
+
+    /** 在途分项当前节点文本(审批轨迹增强,非表字段:客户经理待办看申请走到哪/在哪卡着) */
+    @TableField(exist = false)
+    private String currentNodeText;
+
+    /** 到达当前节点时间(非表字段:该节点最早动作时间,首节点回退提交时间) */
+    @TableField(exist = false)
+    private String nodeReachTime;
 }

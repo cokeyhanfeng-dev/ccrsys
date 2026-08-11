@@ -42,4 +42,7 @@ public class CcrCommitmentMetric extends BaseEntity {
 
     /** 指标范围 */
     private String metricScope;
+
+    /** 跟踪描述(§6.4,"其它"承诺客户经理手工跟踪留痕,以文本替代数值对比) */
+    private String trackDesc;
 }

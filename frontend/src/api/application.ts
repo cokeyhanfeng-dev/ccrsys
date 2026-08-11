@@ -100,6 +100,8 @@ export interface ApplicationPayload {
   orgId?: number
   applicationRemark?: string
   versionNo?: number
+  /** 客户信息人工修正快照(JSON 字符串;数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示) */
+  customerInfoJson?: string | null
 }
 
 // ---------- 响应类型 ----------
@@ -286,6 +288,11 @@ export function lookupDepositAccount(customerNo: string, accountNo: string) {
 /** 集团有效成员及额度 */
 export function getGroupMembers(groupNo: string) {
   return get<any[]>(`/ccr/groups/${groupNo}/members`)
+}
+
+/** 集团联想(§13.1;按集团号/集团名模糊,申请页集团下拉) */
+export function suggestGroups<T = any[]>(keyword: string): Promise<T> {
+  return get<T>('/ccr/groups/suggest', { keyword })
 }
 
 /** 成员额度/用信分项/合同/借据/担保视图 */
