@@ -133,9 +133,13 @@ public class CommitmentController {
                 || "admin".equals(roleCode) || "auditor".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
+                           a.application_no, a.submit_time,
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
+                    JOIN ccr_resolution r ON r.id = cp.resolution_id
+                    JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                    JOIN ccr_application a ON a.id = pi.application_id
                     LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
                     LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
                               ON t.metric_id = cm.id
@@ -148,6 +152,7 @@ public class CommitmentController {
         if ("customer_manager".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
+                           a.application_no, a.submit_time,
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
@@ -166,11 +171,13 @@ public class CommitmentController {
         // 普通审批人:本人审批过的申请的客户
         sql = """
                 SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
+                       a.application_no, a.submit_time,
                        cm.metric_code, cm.metric_name, cm.target_value,
                        te.actual_value, te.achievement_ratio, te.result_status
                 FROM ccr_commitment_plan cp
                 JOIN ccr_resolution r ON r.id = cp.resolution_id
                 JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
                 LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
                 LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
                           ON t.metric_id = cm.id

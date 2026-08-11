@@ -468,6 +468,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));
             commitment.setMemberCustomerNo(c.getMemberCustomerNo());
             commitment.setCommitmentDesc(c.getCommitmentDesc());
+            commitment.setEndDate(c.getEndDate());
             commitmentMapper.insert(commitment);
         }
     }

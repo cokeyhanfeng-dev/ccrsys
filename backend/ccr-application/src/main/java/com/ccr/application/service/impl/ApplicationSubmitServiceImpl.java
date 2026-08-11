@@ -48,7 +48,9 @@ import com.ccr.rule.mapper.CcrLprVersionMapper;
 import com.ccr.rule.mapper.CcrRateRuleSetMapper;
 import com.ccr.rule.service.RateMatrixRouter;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +58,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -70,6 +73,7 @@ import java.util.Set;
  * 路由:首节点恒为 BRANCH_MANAGER,终审岗位写 route_code
  */
 @Service
+@Slf4j
 public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
     /** 分项终态(一合同一有效分项检查中不阻断) */
@@ -84,6 +88,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 数据时效容忍天数(§9.4 默认 3 个自然日,超过 BLOCK 阻断提交;与快照质量规则同一配置) */
     @Value("${ccr.snapshot.data-stale-days:3}")
     private int dataStaleDays;
+
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     @Resource
     private CcrApplicationMapper applicationMapper;
@@ -381,6 +388,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         fresh.setSnapshotBundleId(bundle.getBundleId());
         applicationMapper.updateById(fresh);
 
+        // 审计留痕(§15.2):提交核心字段快照(主单+分项要素),同事务写入
+        writeSubmitAudit(fresh, items);
+
         // j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):逐分项 FLOW_START + 提交通知 NOTIFY,异步消费
         publishSubmitEvents(fresh, items);
 
@@ -431,6 +441,48 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 JSONUtil.toJsonStr(branchNotify));
     }
 
+    /** 提交审计留痕(§15.2):主单+分项核心要素 JSON 快照;写入失败不阻断提交 */
+    private void writeSubmitAudit(CcrApplication app, List<CcrPricingItem> items) {
+        try {
+            Map<String, Object> snap = new LinkedHashMap<>();
+            snap.put("applicationNo", app.getApplicationNo());
+            snap.put("businessType", app.getBusinessType());
+            snap.put("customerScope", app.getCustomerScope());
+            snap.put("customerNo", app.getCustomerNo());
+            snap.put("groupNo", app.getGroupNo());
+            snap.put("submitTime", app.getSubmitTime() == null ? null : app.getSubmitTime().toString());
+            List<Map<String, Object>> pis = new ArrayList<>();
+            for (CcrPricingItem it : items) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("pricingItemNo", it.getPricingItemNo());
+                m.put("carrierType", it.getPricingCarrierType());
+                m.put("productCode", it.getProductCode());
+                m.put("pricingAmount", it.getPricingAmount());
+                m.put("term", it.getTermValue() + it.getTermUnit());
+                m.put("requestedRate", it.getRequestedRate());
+                m.put("originalRate", it.getOriginalRate());
+                m.put("deptCode", it.getDeptCode());
+                pis.add(m);
+            }
+            snap.put("items", pis);
+            String content = JSONUtil.toJsonStr(snap);
+            Long applicantId = app.getApplicantUserId();
+            String operatorName = applicantId == null ? null
+                    : jdbcTemplate.queryForList(
+                            "SELECT nick_name FROM ccr_sys_user WHERE id = ? AND del_flag = '0'",
+                            String.class, applicantId).stream().findFirst().orElse(null);
+            jdbcTemplate.update("""
+                            INSERT INTO ccr_audit_log
+                            (id, log_type, biz_id, content, operator_id, operator_name, operate_time)
+                            VALUES (?, 'APPLY_SUBMIT', ?, ?, ?, ?, ?)
+                            """,
+                    IdUtil.getSnowflakeNextId(), String.valueOf(app.getId()), content,
+                    applicantId == null ? 0L : applicantId, operatorName, LocalDateTime.now());
+        } catch (Exception e) {
+            log.warn("提交审计留痕写入失败(不影响提交): {}", e.getMessage());
+        }
+    }
+
     /** b) 完整性:分项非空、客户/集团字段齐、分项必填字段齐、载体关系齐 */
     private void checkCompleteness(CcrApplication app, List<CcrPricingItem> items) {
         if (items.isEmpty()) {
@@ -465,6 +517,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                             "分项[" + item.getPricingItemNo() + "]缺少贷款合同关系(现有合同号或拟签合同标识)");
                 }
+                // 存量贷款重复申请校验(§10.4 方案 A):同一贷款合同已有进行中申请时阻断提交
+                checkDuplicateContractApplication(item, app.getId());
             }
             if ("DEPOSIT_ACCOUNT".equals(item.getPricingCarrierType())) {
                 Long cnt = depositRelMapper.selectCount(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
@@ -494,6 +548,41 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         if (measureCount == null || measureCount == 0) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                     "分项[" + item.getPricingItemNo() + "]非信用类担保(" + guaranteeType + ")必须登记担保措施");
+        }
+    }
+
+    /**
+     * 存量贷款重复申请校验(§10.4 方案 A):同一真实贷款合同已有进行中申请时阻断提交。
+     * 拟签订(planned='Y' 或无正式合同号)不构成重复;重提 reapply 源申请已终态,天然豁免。
+     * 进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/RETURNED/CLOSED)。
+     */
+    private void checkDuplicateContractApplication(CcrPricingItem item, Long excludeAppId) {
+        List<CcrPricingItemContractRel> rels = contractRelMapper.selectList(new LambdaQueryWrapper<CcrPricingItemContractRel>()
+                .eq(CcrPricingItemContractRel::getPricingItemId, item.getId()));
+        for (CcrPricingItemContractRel rel : rels) {
+            String loanContractNo = rel.getLoanContractNo();
+            if (StrUtil.isBlank(loanContractNo) || "Y".equals(rel.getPlannedContractFlag())) {
+                continue;
+            }
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    """
+                    SELECT a.application_no
+                    FROM ccr_pricing_item_contract_rel cr
+                    JOIN ccr_pricing_item pi ON pi.id = cr.pricing_item_id
+                    JOIN ccr_application a ON a.id = pi.application_id
+                    WHERE cr.loan_contract_no = ?
+                      AND cr.planned_contract_flag != 'Y'
+                      AND a.id != ?
+                      AND a.del_flag = '0' AND pi.del_flag = '0'
+                      AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','RETURNED','CLOSED')
+                    """,
+                    loanContractNo, excludeAppId);
+            if (!rows.isEmpty()) {
+                String inAppNo = rows.get(0).get("application_no") == null ? ""
+                        : rows.get(0).get("application_no").toString();
+                throw new ServiceException(ErrorCode.DUPLICATE_APPLICATION.getCode(),
+                        "贷款合同[" + loanContractNo + "]已有进行中申请(" + inAppNo + "),请勿重复申请");
+            }
         }
     }
 
@@ -970,6 +1059,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             copy.setUnit(c.getUnit());
             copy.setMetricScope(c.getMetricScope());
             copy.setMemberCustomerNo(c.getMemberCustomerNo());
+            copy.setEndDate(c.getEndDate());
             commitmentMapper.insert(copy);
         }
 

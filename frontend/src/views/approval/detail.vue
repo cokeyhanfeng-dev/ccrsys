@@ -41,14 +41,17 @@
         <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
       </div>
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th>当前节点</th><th>状态</th></tr></thead>
+        <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th>担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
             <td>{{ it.pricingItemNo || '—' }}</td>
+            <td>{{ productName(it.productCode) }}</td>
             <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
             <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
             <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
+            <td>{{ guaranteesText(it.guarantees) }}</td>
+            <td>{{ deptText(it.deptCode) }}</td>
             <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
             <td>{{ itemStatusText(it.status) }}</td>
           </tr>
@@ -174,25 +177,33 @@
       <div v-else class="empty">暂无授信协议数据</div>
     </div>
 
-    <!-- 7. 授信/账户与本行融资 -->
+    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白) -->
     <div class="card">
       <div class="card__head"><span>本行融资</span><span class="badge badge--info">数仓</span></div>
       <table class="table" v-if="financing.length">
-        <thead><tr><th>合同号</th><th>贷款余额(万元)</th><th>原利率</th><th>担保类型</th></tr></thead>
+        <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
         <tbody>
           <tr v-for="f in financing" :key="f.contractNo">
-            <td>{{ f.contractNo }}</td><td class="num">{{ f.loanBalance ?? '—' }}</td>
-            <td class="num">{{ fmtRate(f.contractRate) }}</td><td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
+            <td>{{ f.contractNo }}</td>
+            <td>{{ f.agreementNo || '—' }}</td>
+            <td class="num">{{ f.contractAmount ?? '—' }}</td>
+            <td class="num">{{ f.loanBalance ?? '—' }}</td>
+            <td class="num">{{ fmtRate(f.contractRate) }}</td>
+            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${f.lprTerm}` : '' }}</td>
+            <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
+            <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
+            <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
+            <td>{{ currencyText(f.currency) }}</td>
           </tr>
         </tbody>
       </table>
       <div v-else class="empty">暂无数据</div>
     </div>
 
-    <!-- 6b. 申请材料附件 -->
-    <div class="card" v-if="attachments.length">
-      <div class="card__head"><span>申请材料附件</span></div>
-      <table class="table">
+    <!-- 6b. 申请材料附件(始终展示区块;有附件列表,无附件提示,避免审批人误以为无此功能) -->
+    <div class="card">
+      <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
+      <table class="table" v-if="attachments.length">
         <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="(a, i) in attachments" :key="i">
@@ -203,6 +214,7 @@
           </tr>
         </tbody>
       </table>
+      <div v-else class="empty">暂无附件(申请时未上传材料)</div>
     </div>
 
     <!-- 7b. 他行融资(申请人工补录/Excel 导入 + 数仓征信) -->
@@ -220,7 +232,7 @@
         <div><span class="dg-label">对外担保余额</span>{{ otherLoanSummary[0].externalGuaranteeBalance ?? '—' }} 万元</div>
       </div>
       <table class="table" v-if="otherLoans.length" style="margin-top:8px">
-        <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>来源</th></tr></thead>
+        <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
             <td>{{ d.lenderName }}</td>
@@ -228,6 +240,7 @@
             <td class="num">{{ d.usedAmount ?? '—' }}</td>
             <td class="num">{{ d.balanceAmount ?? '—' }}</td>
             <td class="num">{{ d.annualRate ?? '—' }}</td>
+            <td>{{ d.dataDt ? String(d.dataDt).slice(0, 10) : '—' }}</td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
           </tr>
         </tbody>
@@ -296,8 +309,8 @@
       </template>
     </div>
 
-    <!-- 8. 贷款合同/存款账户与担保 -->
-    <div class="card">
+    <!-- 8. 存款账户(仅存款申请:存款额度与利率优惠挂钩;贷款场景合同/借据/担保已并入审批决定区,不展示存款账户) -->
+    <div class="card" v-if="!isLoan">
       <div class="card__head"><span>存款账户</span></div>
       <template>
         <table class="table" v-if="depositAccounts.length">
@@ -323,8 +336,6 @@
           <span v-if="pi.requested_rate != null"> · 申请利率较上限 {{ ((pi.requested_rate - pi.boundary_rate) * 100).toFixed(0) }} BP</span>
         </div>
       </template>
-      <!-- 贷款场景:合同/借据/担保已并入审批决定区逐分项展示;此处仅保留存款账户 -->
-
     </div>
 
     <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示) -->
@@ -333,38 +344,68 @@
       <ContributionPanel :contribution="contribution" :commitments="commitments" />
     </div>
 
-    <!-- 10. 历史履约(tracking:该客户承诺最新评估) -->
+    <!-- 10. 历史履约:该客户每一次申请的履约比例 + 总额(按申请聚合,Σ实际/Σ目标,口径同承诺跟踪页) -->
     <div class="card">
-      <div class="card__head"><span>历史履约</span><span class="badge badge--info">承诺跟踪</span></div>
+      <div class="card__head"><span>历史履约</span><span class="badge badge--info">按申请聚合</span></div>
       <template v-if="tracking.length">
         <div v-if="unmetTracking.length" class="warn-bar">
-          {{ unmetTracking.length }} 项承诺指标未达成({{ unmetTracking.map((t) => metricName(t.metricCode)).join('、') }}),请关注履约风险。
+          {{ unmetTracking.length }} 项承诺指标未达成({{ unmetTracking.map((m) => metricName(m.metricCode)).join('、') }}),请关注履约风险。
         </div>
-        <table class="table">
-          <thead><tr><th>计划号</th><th>指标</th><th>目标值</th><th>实际值</th><th>完成率</th><th>评估结论</th><th>数据日期</th></tr></thead>
+        <!-- 总览:全部申请合计 -->
+        <div class="overall">
+          <div class="overall__sum">
+            <div class="overall__sum-item"><span class="dg-label">累计贡献总额</span><b class="metric-val__num">{{ overall.sumActual }}</b><span class="unit">万元</span></div>
+            <div class="overall__sum-item"><span class="dg-label">累计承诺目标</span><b class="metric-val__num">{{ overall.sumTarget }}</b><span class="unit">万元</span></div>
+            <div class="overall__sum-item"><span class="dg-label">整体达成率</span><b :class="ratioClass(overall.ratio)">{{ overall.ratio }}%</b></div>
+            <div class="overall__sum-item"><span class="dg-label">涉及申请</span><b class="metric-val__num">{{ tracking.length }}</b><span class="unit">笔</span></div>
+          </div>
+          <el-progress :percentage="progressPct(overall.ratio)" :color="progressColor(overall.ratio)" :format="() => `${overall.ratio}%`" :stroke-width="10" style="margin-top:10px" />
+        </div>
+        <!-- 按申请列表(点击行展开该申请指标明细) -->
+        <table class="table" style="margin-top:14px">
+          <thead><tr><th>申请号</th><th>申请时间</th><th>承诺计划</th><th>履约比例</th><th>贡献总额</th><th>指标数</th><th class="num"></th></tr></thead>
           <tbody>
-            <tr v-for="(t, i) in tracking" :key="i">
-              <td>{{ t.planNo || '—' }}</td>
-              <td>{{ metricName(t.metricCode) }}</td>
-              <td class="num">{{ t.targetValue ?? '—' }}</td>
-              <td class="num">{{ t.actualValue ?? '暂无数据' }}</td>
+            <tr v-for="(t, i) in tracking" :key="i" class="app-row" @click="t.open = !t.open">
+              <td>{{ t.applicationNo || '—' }}</td>
+              <td>{{ t.submitTime ? fmtDate(t.submitTime) : '—' }}</td>
+              <td><span class="badge badge--info">{{ t.planNo }}</span></td>
               <td class="num">
-                <span v-if="t.achievementRatio != null" :class="Number(t.achievementRatio) >= 100 ? 'rate-ok' : 'rate-bad'">
-                  {{ t.achievementRatio }}%
-                </span>
-                <span v-else>暂无数据</span>
+                <span v-if="t.ratio != null" :class="ratioClass(t.ratio)">{{ t.ratio }}%</span>
+                <span v-else class="muted">暂无评估</span>
               </td>
-              <td>
-                <span class="badge" :class="t.resultStatus === 'ACHIEVED' ? 'badge--success' : t.resultStatus === 'AT_RISK' ? 'badge--danger' : 'badge--warning'">
-                  {{ evalResultText(t.resultStatus) }}
-                </span>
-              </td>
-              <td>{{ t.dataDt || '—' }}</td>
+              <td class="num">{{ t.sumActual != null ? t.sumActual + ' 万' : '—' }}</td>
+              <td class="num">{{ (t.metrics || []).length }}</td>
+              <td class="num muted">{{ t.open ? '收起 ▲' : '展开 ▼' }}</td>
             </tr>
           </tbody>
         </table>
+        <!-- 展开的申请指标明细 -->
+        <template v-for="(t, i) in tracking.filter((x) => x.open)" :key="'d' + i">
+          <div class="sub-table">
+            <div class="sub-table__title">申请 {{ t.applicationNo }} · {{ t.planNo }} 指标明细</div>
+            <table class="table">
+              <thead><tr><th>指标</th><th>目标值</th><th>实际值</th><th>完成率</th><th>评估结论</th><th>数据日期</th></tr></thead>
+              <tbody>
+                <tr v-for="(m, j) in t.metrics" :key="j">
+                  <td>{{ metricName(m.metricCode) }}</td>
+                  <td class="num">{{ m.targetValue ?? '—' }}</td>
+                  <td class="num">{{ m.actualValue ?? '暂无数据' }}</td>
+                  <td class="num">
+                    <span v-if="m.achievementRatio != null" :class="ratioClass(m.achievementRatio)">{{ m.achievementRatio }}%</span>
+                    <span v-else>暂无数据</span>
+                  </td>
+                  <td>
+                    <span class="badge" :class="statusClass(m.resultStatus)">{{ evalResultText(m.resultStatus) }}</span>
+                  </td>
+                  <td>{{ m.dataDt || '—' }}</td>
+                </tr>
+                <tr v-if="!(t.metrics || []).length"><td colspan="6" class="empty">暂无评估数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
       </template>
-      <div v-else class="empty">暂无数据</div>
+      <div v-else class="empty">该客户暂无历史承诺申请</div>
     </div>
 
     <!-- 11. 机构达成(orgPerformance:申请机构最新批次) -->
@@ -511,90 +552,102 @@
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
-          <!-- 贷款合同信息(要审批的内容:合同号/拟签订 + 金额/期限/产品) -->
-          <div class="op-item__contract">
-            <span><span class="dg-label">贷款合同</span>{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</span>
-            <span><span class="dg-label">金额</span>{{ it.pricingAmount != null ? `${it.pricingAmount} 万元` : '—' }}</span>
-            <span><span class="dg-label">期限</span>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</span>
-            <span><span class="dg-label">产品</span>{{ productName(it.productCode) }}</span>
-          </div>
-          <!-- 合同下借据(数仓借据快照;按合同号过滤;拟签订合同无借据) -->
-          <div class="op-item__subhead">合同下借据</div>
-          <table class="table" v-if="itemNotes(it).length">
-            <thead><tr><th>借据号</th><th>余额(万元)</th><th>执行利率(%)</th><th>利率类型</th><th>放款日</th><th>到期日</th><th>状态</th></tr></thead>
+          <!-- 贷款合同信息(要审批的内容:合同号/拟签订 + 金额/期限/产品;借据仅作参考,链接弹窗查看,不占主表空间) -->
+          <div class="op-item__subhead">贷款合同</div>
+          <table class="table">
+            <thead><tr><th>贷款合同</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>借据</th></tr></thead>
             <tbody>
-              <tr v-for="(n, ni) in itemNotes(it)" :key="ni">
-                <td>{{ n.loanNoteNo || '—' }}</td>
-                <td class="num">{{ n.loanBalance ?? '—' }}</td>
-                <td class="num">{{ n.executionRate != null ? `${n.executionRate}%` : '—' }}</td>
-                <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${n.lprTerm}` : '' }}</td>
-                <td>{{ n.startDate || '—' }}</td>
-                <td>{{ n.maturityDate || '—' }}</td>
-                <td><span class="badge" :class="n.noteStatus === 'NORMAL' ? 'badge--success' : n.noteStatus === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'">{{ noteStatusText(n.noteStatus) }}</span></td>
+              <tr>
+                <td>{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
+                <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
+                <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
+                <td>{{ productName(it.productCode) }}</td>
+                <td>
+                  <template v-if="it.contractNo && itemNotes(it).length">
+                    <a class="link" href="javascript:;" @click.prevent="openNotes(it)">查看借据({{ itemNotes(it).length }} 笔)</a>
+                  </template>
+                  <template v-else-if="it.contractNo"><span class="text-sub">暂无借据</span></template>
+                  <template v-else><span class="text-sub">拟签订 · 尚未放款</span></template>
+                </td>
               </tr>
             </tbody>
           </table>
-          <div v-else class="op-item__empty-tip">{{ it.contractNo ? '暂无借据数据' : '拟签订合同,尚未放款' }}</div>
           <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容) -->
           <div class="op-item__subhead">担保信息</div>
           <table class="table" v-if="(it.guarantees || []).length">
-            <thead><tr><th>担保方式</th><th>措施编号</th><th>措施类型</th><th>担保金额(万元)</th></tr></thead>
+            <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th></tr></thead>
             <tbody>
               <template v-for="(g, gi) in it.guarantees" :key="gi">
                 <tr>
-                  <td>{{ guaranteeTypeText(g.guaranteeType) }}</td><td>{{ g.measureNo || '—' }}</td>
-                  <td>{{ measureTypeText(g.measureType) }}</td><td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
+                  <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
+                  <td>{{ measureTypeText(g.measureType) }}</td>
+                  <td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
                 </tr>
-                <!-- 担保措施明细行(抵押物坐落/面积/估值、保证人等,取快照 extJson;无则暂无数据) -->
+                <!-- 担保措施明细(抵押物/保证人/质押/保证金/存单,取快照 extJson;键值表格与贷款区风格一致) -->
                 <tr class="measure-detail" v-if="extOf(g)">
-                  <td colspan="4">
+                  <td colspan="3">
                     <template v-if="g.measureType === 'MORTGAGE'">
-                      <span class="dg-label">类型</span>{{ extOf(g).collateralType || '暂无数据' }}
-                      <span class="dg-label">名称</span>{{ extOf(g).name || '暂无数据' }}
-                      <template v-if="extOf(g).collateralType === '土地'">
-                        <span class="dg-label">坐落</span>{{ extOf(g).address || '暂无数据' }}
-                        <span class="dg-label">面积</span>{{ extOf(g).area ? extOf(g).area + '㎡' : '暂无数据' }}
-                        <span class="dg-label">使用权</span>{{ extOf(g).landUseType || '暂无数据' }}{{ extOf(g).landUseExpiry ? '至' + extOf(g).landUseExpiry : '' }}
-                      </template>
-                      <template v-else-if="extOf(g).collateralType === '设备'">
-                        <span class="dg-label">规格型号</span>{{ extOf(g).specModel || '暂无数据' }}
-                        <span class="dg-label">数量</span>{{ extOf(g).quantity || '暂无数据' }}
-                        <span class="dg-label">购置日期</span>{{ extOf(g).purchaseDate || '暂无数据' }}
-                      </template>
-                      <template v-else-if="extOf(g).collateralType === '车辆'">
-                        <span class="dg-label">车牌号</span>{{ extOf(g).plateNo || '暂无数据' }}
-                        <span class="dg-label">车架号</span>{{ extOf(g).vin || '暂无数据' }}
-                        <span class="dg-label">登记日期</span>{{ extOf(g).regDate || '暂无数据' }}
-                      </template>
-                      <template v-else>
-                        <span class="dg-label">坐落</span>{{ extOf(g).address || '暂无数据' }}
-                        <span class="dg-label">面积</span>{{ extOf(g).area ? extOf(g).area + '㎡' : '暂无数据' }}
-                        <span class="dg-label">产权证号</span>{{ extOf(g).certNo || '暂无数据' }}
-                      </template>
-                      <span class="dg-label">估值(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
-                      <span class="dg-label">权属人</span>{{ extOf(g).owner || '暂无数据' }}
-                      <span class="dg-label">抵押率</span>{{ extOf(g).mortgageRatio ? extOf(g).mortgageRatio + '%' : '暂无数据' }}
+                      <table class="measure-table">
+                        <tbody>
+                          <tr>
+                            <th>类型</th><td>{{ extOf(g).collateralType || '—' }}</td>
+                            <th>名称</th><td>{{ extOf(g).name || '—' }}</td>
+                          </tr>
+                          <template v-if="extOf(g).collateralType === '土地'">
+                            <tr><th>坐落</th><td>{{ extOf(g).address || '—' }}</td><th>面积</th><td>{{ extOf(g).area ? extOf(g).area + '㎡' : '—' }}</td></tr>
+                            <tr><th>使用权</th><td colspan="3">{{ extOf(g).landUseType || '—' }}{{ extOf(g).landUseExpiry ? '至' + extOf(g).landUseExpiry : '' }}</td></tr>
+                          </template>
+                          <template v-else-if="extOf(g).collateralType === '设备'">
+                            <tr><th>规格型号</th><td>{{ extOf(g).specModel || '—' }}</td><th>数量</th><td>{{ extOf(g).quantity || '—' }}</td></tr>
+                            <tr><th>购置日期</th><td colspan="3">{{ extOf(g).purchaseDate || '—' }}</td></tr>
+                          </template>
+                          <template v-else-if="extOf(g).collateralType === '车辆'">
+                            <tr><th>车牌号</th><td>{{ extOf(g).plateNo || '—' }}</td><th>车架号</th><td>{{ extOf(g).vin || '—' }}</td></tr>
+                            <tr><th>登记日期</th><td colspan="3">{{ extOf(g).regDate || '—' }}</td></tr>
+                          </template>
+                          <template v-else>
+                            <tr><th>坐落</th><td>{{ extOf(g).address || '—' }}</td><th>面积</th><td>{{ extOf(g).area ? extOf(g).area + '㎡' : '—' }}</td></tr>
+                            <tr><th>产权证号</th><td colspan="3">{{ extOf(g).certNo || '—' }}</td></tr>
+                          </template>
+                          <tr>
+                            <th>估值(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td>
+                            <th>权属人</th><td>{{ extOf(g).owner || '—' }}</td>
+                          </tr>
+                          <tr><th>抵押率</th><td colspan="3">{{ extOf(g).mortgageRatio ? extOf(g).mortgageRatio + '%' : '—' }}</td></tr>
+                        </tbody>
+                      </table>
                     </template>
                     <template v-else-if="g.measureType === 'GUARANTOR'">
-                      <span class="dg-label">保证人名称</span>{{ extOf(g).name || '暂无数据' }}
-                      <span class="dg-label">证件号码</span>{{ extOf(g).certNo || '暂无数据' }}
-                      <span class="dg-label">担保余额(万元)</span>{{ extOf(g).balance ?? '暂无数据' }}
+                      <table class="measure-table">
+                        <tbody>
+                          <tr><th>保证人名称</th><td colspan="3">{{ extOf(g).name || '—' }}</td></tr>
+                          <tr><th>证件号码</th><td>{{ extOf(g).certNo || '—' }}</td><th>担保余额(万元)</th><td>{{ extOf(g).balance ?? '—' }}</td></tr>
+                        </tbody>
+                      </table>
                     </template>
                     <template v-else-if="g.measureType === 'PLEDGE'">
-                      <span class="dg-label">质押物类型</span>{{ extOf(g).pledgeType || '暂无数据' }}
-                      <span class="dg-label">名称</span>{{ extOf(g).name || '暂无数据' }}
-                      <span class="dg-label">估值(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
-                      <span class="dg-label">权属人</span>{{ extOf(g).owner || '暂无数据' }}
+                      <table class="measure-table">
+                        <tbody>
+                          <tr><th>质押物类型</th><td>{{ extOf(g).pledgeType || '—' }}</td><th>名称</th><td>{{ extOf(g).name || '—' }}</td></tr>
+                          <tr><th>估值(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td><th>权属人</th><td>{{ extOf(g).owner || '—' }}</td></tr>
+                        </tbody>
+                      </table>
                     </template>
                     <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN' || g.measureType === 'MARGIN_PLEDGE'">
-                      <span class="dg-label">保证金(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
-                      <span class="dg-label">比例</span>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '暂无数据' }}
-                      <span class="dg-label">期限(月)</span>{{ extOf(g).termMonths || '暂无数据' }}
+                      <table class="measure-table">
+                        <tbody>
+                          <tr><th>保证金(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td><th>比例</th><td>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '—' }}</td></tr>
+                          <tr><th>期限(月)</th><td colspan="3">{{ extOf(g).termMonths || '—' }}</td></tr>
+                        </tbody>
+                      </table>
                     </template>
                     <template v-else-if="g.measureType === 'CERTIFICATE_DEPOSIT'">
-                      <span class="dg-label">存单号</span>{{ extOf(g).certificateNo || '暂无数据' }}
-                      <span class="dg-label">金额(万元)</span>{{ g.guaranteeAmount ?? '暂无数据' }}
-                      <span class="dg-label">到期日</span>{{ extOf(g).maturityDate || '暂无数据' }}
+                      <table class="measure-table">
+                        <tbody>
+                          <tr><th>存单号</th><td>{{ extOf(g).certificateNo || '—' }}</td><th>金额(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td></tr>
+                          <tr><th>到期日</th><td colspan="3">{{ extOf(g).maturityDate || '—' }}</td></tr>
+                        </tbody>
+                      </table>
                     </template>
                     <span v-else class="dg-label">暂无措施明细数据</span>
                   </td>
@@ -633,6 +686,27 @@
           <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
         </div>
       </div>
+
+      <!-- 借据弹窗:借据仅作参考(数仓快照,灌数未必能匹配放款状态),点击「查看借据」链接弹出 -->
+      <el-dialog v-model="notesDialog.show" title="借据信息" width="760px">
+        <div class="dlg-tip">以下借据信息来自数仓快照,仅作参考,不作为本次审批的主要依据。</div>
+        <table class="table">
+          <thead><tr><th>合同号</th><th>借据号</th><th>余额(万元)</th><th>执行利率(%)</th><th>利率类型</th><th>放款日</th><th>到期日</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr v-for="(n, ni) in notesDialog.items" :key="ni">
+              <td>{{ n.contractNo || '—' }}</td>
+              <td>{{ n.loanNoteNo || '—' }}</td>
+              <td class="num">{{ n.loanBalance ?? '—' }}</td>
+              <td class="num">{{ n.executionRate != null ? `${n.executionRate}%` : '—' }}</td>
+              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${n.lprTerm}` : '' }}</td>
+              <td>{{ n.startDate || '—' }}</td>
+              <td>{{ n.maturityDate || '—' }}</td>
+              <td><span class="badge" :class="n.noteStatus === 'NORMAL' ? 'badge--success' : n.noteStatus === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'">{{ noteStatusText(n.noteStatus) }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="!notesDialog.items.length" class="empty">暂无借据数据</div>
+      </el-dialog>
     </div>
     <div class="card" v-else-if="pi.status === 'ROUTING'">
       <div class="empty">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
@@ -654,7 +728,7 @@ import {
   execStatusText, roundStatusText, evalResultText, ruleLevelText,
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
-  customerClassText, certTypeText
+  customerClassText, certTypeText, contractStatusText, currencyText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -700,6 +774,13 @@ const voteResults = ref<any[]>([])
 const presidentDecisions = ref<any[]>([])
 
 const opComment = ref('')
+// 借据弹窗(审批决定区「合同下借据」改为链接弹出;借据仅作参考,不作为主要审批依据)
+const notesDialog = ref<{ show: boolean; items: any[] }>({ show: false, items: [] })
+
+function openNotes(it: any) {
+  notesDialog.value = { show: true, items: itemNotes(it) }
+}
+
 // 分项审批(参照 demo):同申请分项摘要、每分项审批利率、本次会话内已同意分项
 const siblingItems = ref<any[]>([])
 const opRates = ref<Record<string, number>>({})
@@ -786,6 +867,24 @@ function noteStatusText(code?: string) {
   return code === 'NORMAL' ? '正常' : code === 'SETTLED' ? '已结清' : code === 'OVERDUE' ? '逾期' : (code || '—')
 }
 
+// 本行融资合同状态徽标(数仓 contract_status)
+function contractStatusBadge(s?: string) {
+  return s === 'EFFECTIVE' ? 'badge--success' : s === 'SETTLED' ? 'badge--neutral' : s === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
+}
+
+// 部门归属文案(§D16a 矩阵透出:GSB/SXSB/LSB)
+function deptText(code?: string) {
+  const map: Record<string, string> = { GSB: '公司金融部', SXSB: '授信评审部', LSB: '零售金融部' }
+  return code ? (map[code] || code) : '—'
+}
+
+// 分项担保方式合并(多担保方式逗号分隔去重)
+function guaranteesText(list?: any[]): string {
+  if (!list || !list.length) return '—'
+  const types = Array.from(new Set(list.map((g) => g.guaranteeType).filter(Boolean)))
+  return types.map(guaranteeTypeText).join('、')
+}
+
 function extOf(g: any): any {
   const j = g?.extJson
   if (!j) return null
@@ -814,9 +913,51 @@ function memberCommitments(memberNo: string) {
   return commitments.value.filter((c) => c.memberCustomerNo === memberNo)
 }
 
-// 历史履约:未达成指标(用于警示条)
+// 历史履约:未达成指标(用于警示条;tracking 现为「按申请聚合」,展平各申请指标)
 const unmetTracking = computed(() =>
-  tracking.value.filter((t) => t.resultStatus && t.resultStatus !== 'ACHIEVED'))
+  tracking.value.flatMap((t) => t.metrics || []).filter((m) => m.resultStatus && m.resultStatus !== 'ACHIEVED'))
+
+// 历史履约总览:全部申请合计(Σ实际 / Σ目标,口径同承诺跟踪页「总体进度」)
+const overall = computed(() => {
+  let sumActual = 0
+  let sumTarget = 0
+  for (const t of tracking.value) {
+    sumActual += Number(t.sumActual || 0)
+    sumTarget += Number(t.sumTarget || 0)
+  }
+  return {
+    sumActual: Number(sumActual.toFixed(2)),
+    sumTarget: Number(sumTarget.toFixed(2)),
+    ratio: sumTarget ? Number(((sumActual / sumTarget) * 100).toFixed(1)) : 0,
+  }
+})
+
+// 达成率配色:≥100 绿 / ≥80 黄 / <80 红(与贡献度页一致)
+function ratioClass(ratio: any): string {
+  const r = Number(ratio)
+  if (!Number.isFinite(r)) return 'muted'
+  if (r >= 100) return 'rate-ok'
+  if (r >= 80) return 'rate-warn'
+  return 'rate-bad'
+}
+
+function progressPct(ratio: any): number {
+  const r = Number(ratio)
+  return Number.isFinite(r) ? Math.min(100, Math.max(0, r)) : 0
+}
+
+function progressColor(ratio: any): string {
+  const r = Number(ratio)
+  if (!Number.isFinite(r)) return '#909399'
+  if (r >= 100) return '#52c41a'
+  if (r >= 80) return '#faad14'
+  return '#f56c6c'
+}
+
+// 评估结论徽标:ACHIEVED/ON_TRACK 达标绿、AT_RISK 红、其余黄
+function statusClass(s?: string): string {
+  return s === 'ACHIEVED' || s === 'ON_TRACK' ? 'badge--success' : s === 'AT_RISK' ? 'badge--danger' : 'badge--warning'
+}
 
 function fmtDate(v: any) {
   return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
@@ -999,7 +1140,12 @@ onMounted(load)
 }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
+/* 表格铺满容器:design-system .table 为 display:block(为横向滚动),列少时表格不占满、右侧留白;
+   宽屏恢复 table 布局让列自动拉伸占满,窄屏回退 block 保持横向滚动 */
+.table { border-radius: var(--radius-sm); }
+@media (min-width: 1101px) {
+  .card .table { display: table; width: 100%; }
+}
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
@@ -1014,7 +1160,6 @@ onMounted(load)
 .op-item--lock { background: var(--color-bg); opacity: .75; }
 .op-item__head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 14px; }
 .op-item__name { font-weight: 600; }
-.op-item__contract { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; font-size: 13px; }
 .op-item__subhead { margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--color-text-sub); }
 .op-item__empty-tip { margin-top: 8px; font-size: 12px; color: var(--color-text-sub); background: var(--color-bg); border-radius: 6px; padding: 8px 12px; }
 .op-item__rates { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 10px; font-size: 13px; }
@@ -1029,11 +1174,42 @@ onMounted(load)
 .flow-step--todo { opacity: .6; }
 .flow-step__arrow { color: var(--color-border); margin: 0 2px; }
 .warn-bar { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
+/* 借据链接与弹窗提示(借据仅作参考) */
+.link { color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+.link:hover { opacity: .8; }
+.text-sub { color: var(--color-text-sub); }
+.dlg-tip { margin-bottom: 10px; font-size: 13px; color: var(--color-text-sub); }
 .rate-ok { color: var(--color-success); font-weight: 600; }
 .rate-bad { color: var(--color-danger); font-weight: 600; }
-.measure-detail > td { background: #fafbfc; font-size: 13px; color: var(--color-text-sub); }
-.measure-detail .dg-label { margin: 0 4px 0 12px; }
-.measure-detail .dg-label:first-child { margin-left: 0; }
+.rate-warn { color: #faad14; font-weight: 600; }
+.muted { color: var(--color-text-secondary, #909399); }
+
+/* 历史履约:按申请聚合总览 */
+.overall { margin-bottom: 2px; }
+.overall__sum { display: flex; flex-wrap: wrap; gap: 28px; }
+.overall__sum-item { display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--color-text-secondary, #606266); }
+.overall__sum-item .metric-val__num { font-size: 18px; font-weight: 700; color: var(--color-text-primary, #303133); }
+.overall__sum-item .unit { font-size: 12px; }
+
+/* 历史履约:按申请行(可点击展开)+ 明细表 */
+.app-row { cursor: pointer; }
+.app-row:hover td { background: var(--color-fill, #f5f7fa); }
+.sub-table { margin: 10px 0 4px; padding: 12px; background: var(--color-fill, #f8f9fa); border-radius: 6px; }
+.sub-table__title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+/* 担保措施明细:嵌套键值表格(与贷款合同/担保表同色系,圆角细边框) */
+.measure-detail > td { background: #fafbfc; padding: 4px 8px 8px; }
+.measure-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.measure-table th {
+  width: 96px; padding: 6px 10px; text-align: left; white-space: nowrap;
+  color: var(--color-text-sub); font-weight: 600; font-size: 12px;
+  background: #f5f7fa; border: 1px solid var(--color-border-light);
+}
+.measure-table td {
+  padding: 6px 12px; color: var(--color-text-main);
+  border: 1px solid var(--color-border-light); background: var(--color-surface);
+  word-break: break-word;
+}
+.measure-table td:empty { color: var(--color-text-sub); }
 /* 中间断点:中等宽度下网格降列(页面自适应增强) */
 @media (max-width: 1100px) {
   .detail-grid { grid-template-columns: repeat(2, 1fr); }

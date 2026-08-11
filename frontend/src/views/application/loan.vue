@@ -581,7 +581,7 @@
             <th>当前贡献度</th>
             <th>目标类型 <span class="req">*</span></th>
             <th>基线值</th><th>拟达成目标 <span class="req">*</span></th>
-            <th>单位</th><th>适用范围</th>
+            <th>截止日期</th><th>单位</th><th>适用范围</th>
             <th v-if="form.customerScope === 'GROUP'">成员</th>
             <th>操作</th>
           </tr>
@@ -589,7 +589,7 @@
         <tbody>
           <tr v-for="(c, i) in commitments" :key="i">
             <td>
-              <select class="form-select" v-model="c.metricCode">
+              <select class="form-select" v-model="c.metricCode" @change="onMetricChange(c)">
                 <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
             </td>
@@ -612,6 +612,9 @@
                 <div class="section-tip" style="color:var(--color-warning);margin-top:4px">手工描述跟踪,无数值达成率,不参与机构达成率</div>
               </template>
               <input v-else class="form-input form-input--amount" v-model="c.targetValue" />
+            </td>
+            <td>
+              <input type="date" class="form-input" v-model="c.endDate" placeholder="承诺截止" style="min-width:138px" />
             </td>
             <td>
               <template v-if="c.metricCode === 'OTHER'"><span class="section-tip">—</span></template>
@@ -846,6 +849,8 @@ interface CommitmentRow {
   unit: string
   metricScope: string
   memberCustomerNo: string
+  /** 承诺完成截止日期(在什么时间点内完成,审批端拟达成贡献度同步展示) */
+  endDate: string
 }
 
 function newGuarantee(): GuaranteeRow {
@@ -1289,11 +1294,19 @@ function currentOf(code: string) {
   const m = contributionCurrent.value.find((x) => x.metricCode === code)
   return m?.metricValue ?? '暂无数据'
 }
+/** 选择承诺指标时,自动把当前贡献度值带出到基线值(可手工改) */
+function onMetricChange(c: CommitmentRow) {
+  if (c.metricCode === 'OTHER') return
+  const v = currentOf(c.metricCode)
+  if (v !== '暂无数据' && v != null && v !== '') {
+    c.baselineValue = String(v)
+  }
+}
 function addCommitment() {
   commitments.value.push({
     metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'TARGET_BALANCE',
     baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
-    metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: ''
+    metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: '', endDate: ''
   })
 }
 
@@ -1560,7 +1573,8 @@ function buildPayload(): ApplicationPayload {
       commitmentDesc: c.metricCode === 'OTHER' ? c.commitmentDesc : undefined,
       unit: c.unit || 'WAN_YUAN',
       metricScope: c.metricScope || 'PUBLIC',
-      memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo
+      memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo,
+      endDate: isBlank(c.endDate) ? undefined : c.endDate
     })),
     applicantUserId: userStore.userInfo?.userId,
     applicantOrgId: userStore.userInfo?.orgId,
@@ -1810,7 +1824,8 @@ async function loadDraftIntoForm(id: number) {
     commitmentDesc: c.commitmentDesc || '',
     unit: c.unit || 'WAN_YUAN',
     metricScope: c.metricScope || 'PUBLIC',
-    memberCustomerNo: c.memberCustomerNo || ''
+    memberCustomerNo: c.memberCustomerNo || '',
+    endDate: c.endDate ? String(c.endDate).slice(0, 10) : ''
   }))
 }
 </script>

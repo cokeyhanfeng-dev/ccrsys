@@ -32,7 +32,7 @@
     <div class="contrib-dual__col" v-if="showCommitments">
       <div class="contrib-dual__title">拟达成贡献度 <span class="badge badge--warning">承诺基线</span></div>
       <table class="table contrib-table" v-if="commitments.length">
-        <thead><tr><th class="col-metric">指标</th><th>基线 → 目标</th><th>单位</th><th class="col-scope">范围</th></tr></thead>
+        <thead><tr><th class="col-metric">指标</th><th>基线 → 目标</th><th>单位</th><th>截止日期</th><th class="col-scope">范围</th></tr></thead>
         <tbody>
           <tr v-for="(c, i) in commitments" :key="i">
             <td class="col-metric">
@@ -41,7 +41,8 @@
             </td>
             <!-- 承诺类型"其它"(§6.4):无数值目标,展示 commitment_desc 手工描述 -->
             <td class="num">{{ c.metricCode === 'OTHER' ? (c.commitmentDesc || '—') : (`${c.baselineValue ?? '—'} → ${c.targetValue ?? '—'}`) }}</td>
-            <td>{{ c.unit || '—' }}</td>
+            <td>{{ commitmentUnitText(c.unit) }}</td>
+            <td>{{ c.endDate ? String(c.endDate).slice(0, 10) : '—' }}</td>
             <td class="col-scope">{{ scopeOf(c) }}</td>
           </tr>
         </tbody>
@@ -58,7 +59,7 @@
  * 勾稽 badge 依据数据可用性:已取数 / 待取数(有承诺目标但当前值缺失) / 无数据。
  * 适用于审批详情、申请单当前贡献度参考;录入场景传 show-commitments=false 仅展示左栏(整行通栏)。
  */
-import { metricName, metricScopeText } from '@/utils/dict'
+import { metricName, metricScopeText, commitmentUnitText } from '@/utils/dict'
 
 const props = withDefaults(
   defineProps<{

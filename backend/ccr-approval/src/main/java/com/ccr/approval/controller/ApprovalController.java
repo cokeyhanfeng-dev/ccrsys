@@ -105,7 +105,7 @@ public class ApprovalController {
         // 拟达成贡献度(申请承诺指标,按申请关联 §十三 13.2-6;成员级含成员客户号)
         if (appId != null) {
             result.put("commitments", jdbcTemplate.queryForList(
-                    "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", appId));
+                    "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", appId));
         } else {
             result.put("commitments", List.of());
         }
@@ -187,9 +187,11 @@ public class ApprovalController {
                             + " FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo)
                     : corp);
             result.put("financing", jdbcTemplate.queryForList(
-                    "SELECT contract_no contractNo, agreement_no agreementNo, borrower_customer_no borrowerCustomerNo,"
-                    + " contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,"
-                    + " execution_rate contractRate FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?", custNo));
+                    "SELECT contract_no contractNo, agreement_no agreementNo, tranche_no trancheNo, borrower_customer_no borrowerCustomerNo,"
+                    + " contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType, currency,"
+                    + " execution_rate contractRate, rate_type rateType, lpr_term lprTerm, start_date startDate,"
+                    + " maturity_date maturityDate, contract_status contractStatus, contract_version contractVersion"
+                    + " FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?", custNo));
             result.put("contribution", jdbcTemplate.queryForList(
                     "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType FROM dw_contribution_metric WHERE cust_no = ?", custNo));
         }
@@ -242,19 +244,51 @@ public class ApprovalController {
             }
         }
 
-        // 历史履约:该客户承诺跟踪最新评估结果(每指标取最新 data_dt)
-        result.put("tracking", jdbcTemplate.queryForList("""
-                SELECT cp.plan_no planNo, cm.metric_code metricCode, cm.target_value targetValue,
-                       te.data_dt dataDt, te.actual_value actualValue, te.achievement_ratio achievementRatio,
-                       te.result_status resultStatus, te.risk_level riskLevel
-                FROM ccr_tracking_evaluation te
-                JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
-                     ON t.metric_id = te.metric_id AND t.max_dt = te.data_dt
-                JOIN ccr_commitment_metric cm ON cm.id = te.metric_id
-                JOIN ccr_commitment_plan cp ON cp.id = te.plan_id
+        // 历史履约:该客户每次申请(有承诺计划)的总体履约比例 + 总额
+        // 口径与承诺跟踪页「总体进度」一致:Σ实际 / Σ目标(仅数值指标);每指标取最新 data_dt
+        List<Map<String, Object>> planRows = jdbcTemplate.queryForList("""
+                SELECT cp.id planId, cp.plan_no planNo, cp.status planStatus,
+                       a.application_no applicationNo, a.submit_time submitTime
+                FROM ccr_commitment_plan cp
+                JOIN ccr_resolution r ON r.id = cp.resolution_id
+                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
                 WHERE cp.del_flag = '0' AND (cp.customer_no = ? OR cp.member_customer_no = ?)
-                ORDER BY cm.metric_code
-                """, custNo, custNo));
+                ORDER BY a.submit_time DESC
+                """, custNo, custNo);
+        List<Map<String, Object>> tracking = new ArrayList<>();
+        for (Map<String, Object> p : planRows) {
+            Object planId = p.get("planId");
+            List<Map<String, Object>> metrics = jdbcTemplate.queryForList("""
+                    SELECT cm.metric_code metricCode, cm.metric_name metricName, cm.target_value targetValue,
+                           te.data_dt dataDt, te.actual_value actualValue, te.achievement_ratio achievementRatio,
+                           te.result_status resultStatus
+                    FROM ccr_tracking_evaluation te
+                    JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation WHERE plan_id = ? GROUP BY metric_id) t
+                         ON t.metric_id = te.metric_id AND t.max_dt = te.data_dt
+                    JOIN ccr_commitment_metric cm ON cm.id = te.metric_id
+                    WHERE te.plan_id = ?
+                    ORDER BY cm.metric_code
+                    """, planId, planId);
+            double sumActual = 0, sumTarget = 0;
+            for (Map<String, Object> m : metrics) {
+                if (m.get("actualValue") instanceof Number && m.get("targetValue") instanceof Number) {
+                    sumActual += ((Number) m.get("actualValue")).doubleValue();
+                    sumTarget += ((Number) m.get("targetValue")).doubleValue();
+                }
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("applicationNo", p.get("applicationNo"));
+            row.put("submitTime", p.get("submitTime"));
+            row.put("planNo", p.get("planNo"));
+            row.put("planStatus", p.get("planStatus"));
+            row.put("metrics", metrics);
+            row.put("sumActual", Math.round(sumActual * 100.0) / 100.0);
+            row.put("sumTarget", Math.round(sumTarget * 100.0) / 100.0);
+            row.put("ratio", sumTarget > 0 ? Math.round(sumActual / sumTarget * 1000.0) / 10.0 : null);
+            tracking.add(row);
+        }
+        result.put("tracking", tracking);
 
         // 机构达成:申请机构最新批次(dw_org_performance_snapshot)
         result.put("orgPerformance", orgPerformance(appId));
@@ -285,7 +319,7 @@ public class ApprovalController {
                     "SELECT pi.id, pi.pricing_item_no pricingItemNo, pi.pricing_carrier_type carrierType, pi.pricing_amount pricingAmount,"
                             + " pi.requested_rate requestedRate, pi.current_approval_rate currentApprovalRate, pi.current_node_code currentNodeCode,"
                             + " pi.status, pi.version_no versionNo, pi.original_rate originalRate,"
-                            + " pi.term_value termValue, pi.term_unit termUnit, pi.product_code productCode,"
+                            + " pi.term_value termValue, pi.term_unit termUnit, pi.product_code productCode, pi.dept_code deptCode,"
                             + " rel.loan_contract_no contractNo"
                             + " FROM ccr_pricing_item pi"
                             + " LEFT JOIN ccr_pricing_item_contract_rel rel ON rel.pricing_item_id = pi.id AND rel.del_flag = '0'"
@@ -353,7 +387,7 @@ public class ApprovalController {
         result.put("otherLoanSummary", jdbcTemplate.queryForList(
                 "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo));
         result.put("otherLoans", jdbcTemplate.queryForList(
-                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
 
         // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
         if (appId != null) {
@@ -543,29 +577,43 @@ public class ApprovalController {
             }
             Map<String, Object> core = coreOf(record);
             // 客户过滤:贷款合同快照用 borrower_customer_no,兼容旧 FINANCING 用 cust_no
-            Object coreCust = core.get("borrower_customer_no");
+            Object coreCust = jsonSafe(core.get("borrower_customer_no"));
             if (coreCust == null) {
-                coreCust = core.get("cust_no");
+                coreCust = jsonSafe(core.get("cust_no"));
             }
             if (!custNo.equals(coreCust)) {
                 continue;
             }
-            Object loanBalance = core.get("loan_balance");
+            Object loanBalance = jsonSafe(core.get("loan_balance"));
             if (loanBalance == null) {
-                loanBalance = core.get("contract_balance");
+                loanBalance = jsonSafe(core.get("contract_balance"));
             }
-            Object contractRate = core.get("contract_rate");
+            Object contractRate = jsonSafe(core.get("contract_rate"));
             if (contractRate == null) {
-                contractRate = core.get("execution_rate");
+                contractRate = jsonSafe(core.get("execution_rate"));
             }
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("contractNo", core.get("contract_no"));
+            row.put("contractNo", jsonSafe(core.get("contract_no")));
+            row.put("agreementNo", jsonSafe(core.get("agreement_no")));
+            row.put("trancheNo", jsonSafe(core.get("tranche_no")));
+            row.put("contractAmount", jsonSafe(core.get("contract_amount")));
             row.put("loanBalance", loanBalance);
             row.put("contractRate", contractRate);
-            row.put("guaranteeType", core.get("guarantee_type"));
+            row.put("rateType", jsonSafe(core.get("rate_type")));
+            row.put("lprTerm", jsonSafe(core.get("lpr_term")));
+            row.put("startDate", jsonSafe(core.get("start_date")));
+            row.put("maturityDate", jsonSafe(core.get("maturity_date")));
+            row.put("contractStatus", jsonSafe(core.get("contract_status")));
+            row.put("currency", jsonSafe(core.get("currency")));
+            row.put("guaranteeType", jsonSafe(core.get("guarantee_type")));
             rows.add(row);
         }
         return rows;
+    }
+
+    /** Hutool JSON 解析 null 值为 JSONNull 包装对象,Jackson 无法序列化,统一转 Java null */
+    private static Object jsonSafe(Object v) {
+        return (v instanceof cn.hutool.json.JSONNull) ? null : v;
     }
 
     /** 快照内贡献度(CONTRIBUTION 记录 core_json.metrics,提交时同客户同批次合并采集) */

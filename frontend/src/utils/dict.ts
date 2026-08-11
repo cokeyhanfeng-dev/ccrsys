@@ -298,6 +298,24 @@ export function rateTypeText(code?: string, fallback = '—'): string {
   return textOf(RATE_TYPE, code, fallback)
 }
 
+/** 贷款合同状态(数仓 dw_loan_contract_snapshot) */
+export const CONTRACT_STATUS: Record<string, string> = { EFFECTIVE: '有效', SETTLED: '结清', OVERDUE: '逾期' }
+export function contractStatusText(code?: string, fallback = '—'): string {
+  return textOf(CONTRACT_STATUS, code, fallback)
+}
+
+/** 币种 */
+export const CURRENCY_TEXT: Record<string, string> = { CNY: '人民币', USD: '美元', HKD: '港币' }
+export function currencyText(code?: string, fallback = '—'): string {
+  return textOf(CURRENCY_TEXT, code, fallback)
+}
+
+/** 承诺指标单位(ccr_application_commitment.unit:WAN_YUAN/COUNT) */
+export const COMMITMENT_UNIT: Record<string, string> = { WAN_YUAN: '万元', COUNT: '户/笔' }
+export function commitmentUnitText(code?: string, fallback = '—'): string {
+  return textOf(COMMITMENT_UNIT, code, fallback)
+}
+
 /** 配置域 */
 export const CONFIG_TYPE: Record<string, string> = {
   LPR: 'LPR 阈值', MATRIX: '权限矩阵', RULE_SET: '利率规则集', PRODUCT_LIMIT: '产品硬边界'
@@ -354,6 +372,8 @@ export function productName(code?: string, fallback = '—'): string {
 /** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径) */
 export const METRIC_CODES: DictItem[] = [
   { code: 'TOTAL', name: '综合贡献总额' },
+  { code: 'GM_LOAN_CONTRIBUTION', name: '贷款贡献' },
+  { code: 'GM_DEPOSIT_CONTRIBUTION', name: '存款贡献' },
   { code: 'PUBLIC_DEPOSIT_AVG', name: '存款日均' },
   { code: 'PUBLIC_LOAN_AVG', name: '流贷日均' },
   { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '项目贷日均' },

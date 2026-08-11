@@ -479,6 +479,18 @@ public class ApprovalServiceImpl implements ApprovalService {
                 "SELECT cp.id, cp.plan_no planNo, cp.resolution_id resolutionId, cp.scope_type scopeType, cp.status, cp.start_date startDate, cp.end_date endDate FROM ccr_commitment_plan cp JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cp.del_flag = '0'", applicationId));
         result.put("commitmentMetrics", jdbcTemplate.queryForList(
                 "SELECT cm.plan_id planId, cm.metric_code metricCode, cm.target_type targetType, cm.baseline_value baselineValue, cm.target_value targetValue, cm.unit, cm.metric_scope metricScope FROM ccr_commitment_metric cm JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cm.del_flag = '0'", applicationId));
+        // 承诺逐期履约评估(按指标期次:实际值/达成率/风险/结果;档案页展示"每一期指标完成情况")
+        result.put("commitmentEvaluations", jdbcTemplate.queryForList(
+                "SELECT te.plan_id planId, te.metric_id metricId, cm.metric_code metricCode,"
+                        + " te.data_dt dataDt, te.actual_value actualValue, te.achievement_ratio achievementRatio,"
+                        + " te.risk_level riskLevel, te.result_status resultStatus"
+                        + " FROM ccr_tracking_evaluation te"
+                        + " JOIN ccr_commitment_metric cm ON cm.id = te.metric_id"
+                        + " JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id"
+                        + " JOIN ccr_resolution r ON r.id = cp.resolution_id"
+                        + " JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " WHERE pi.application_id = ? AND te.del_flag = '0'"
+                        + " ORDER BY cm.id, te.data_dt", applicationId));
 
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
         List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
@@ -488,7 +500,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 拟达成贡献度(申请承诺指标,按申请关联 §十三 13.2-6;成员级含成员客户号)
         result.put("commitments", jdbcTemplate.queryForList(
-                "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", applicationId));
+                "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", applicationId));
         return result;
     }
 

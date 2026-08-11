@@ -1,6 +1,7 @@
 package com.ccr.approval.controller;
 
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.vote.read.SysUserRead;
@@ -112,6 +113,49 @@ public class AuditController {
                 """ + (applicationId == null ? "" : " AND application_id = " + applicationId)
                 + " ORDER BY export_time DESC";
         return R.ok(jdbcTemplate.queryForList(sql));
+    }
+
+    /**
+     * 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;auditor/admin)。
+     * 可按 日志类型/操作人/时间范围/关键词 过滤,时间倒序,上限 500。
+     */
+    @GetMapping("/logs")
+    public R<List<Map<String, Object>>> logs(@RequestParam(required = false) String logType,
+                                             @RequestParam(required = false) String operator,
+                                             @RequestParam(required = false) String startTime,
+                                             @RequestParam(required = false) String endTime,
+                                             @RequestParam(required = false) String keyword) {
+        currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR, CurrentLoginUser.ROLE_ADMIN);
+        StringBuilder sql = new StringBuilder("""
+                SELECT log_type logType, biz_id bizId, content, operator_id operatorId,
+                       operator_name operatorName, operate_time operateTime
+                FROM ccr_audit_log
+                WHERE del_flag = '0'
+                """);
+        List<Object> args = new ArrayList<>();
+        if (StrUtil.isNotBlank(logType)) {
+            sql.append(" AND log_type = ?");
+            args.add(logType);
+        }
+        if (StrUtil.isNotBlank(operator)) {
+            sql.append(" AND operator_name LIKE ?");
+            args.add("%" + operator + "%");
+        }
+        if (StrUtil.isNotBlank(startTime)) {
+            sql.append(" AND operate_time >= ?");
+            args.add(startTime);
+        }
+        if (StrUtil.isNotBlank(endTime)) {
+            sql.append(" AND operate_time <= ?");
+            args.add(endTime);
+        }
+        if (StrUtil.isNotBlank(keyword)) {
+            sql.append(" AND (biz_id LIKE ? OR content LIKE ?)");
+            args.add("%" + keyword + "%");
+            args.add("%" + keyword + "%");
+        }
+        sql.append(" ORDER BY operate_time DESC LIMIT 500");
+        return R.ok(jdbcTemplate.queryForList(sql.toString(), args.toArray()));
     }
 
     /** 审计留痕;表不存在(未执行 03f)时仅记日志,不阻断查询 */

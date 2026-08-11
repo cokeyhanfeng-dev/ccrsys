@@ -60,17 +60,18 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
 
     /**
      * 计划可见性过滤片段(配合 LEFT JOIN ccr_resolution r / ccr_pricing_item pi / ccr_application a 使用)
+     * 注意:返回值统一带前导空格——文本块会剥掉行尾空格,否则 `AND ` + 条件 会拼成 `AND1=1`。
      */
     private String scopeCondition(Scope scope, List<Object> params) {
         if (scope.fullView()) {
-            return "1=1";
+            return " 1=1";
         }
         if (scope.customerManager()) {
             params.add(scope.operatorId());
-            return "a.applicant_user_id = ?";
+            return " a.applicant_user_id = ?";
         }
         params.add(scope.operatorId());
-        return """
+        return " " + """
                 pi.application_id IN (
                     SELECT pi2.application_id FROM ccr_approval_action aa
                     JOIN ccr_pricing_item pi2 ON pi2.id = aa.pricing_item_id
@@ -116,9 +117,16 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                     .orderByDesc(CcrTrackingEvaluation::getDataDt)
                     .orderByDesc(CcrTrackingEvaluation::getId)
                     .last("LIMIT 1"));
+            // 逐期履约明细(每期评估按 data_dt 倒序;档案页/贡献度跟踪页展示"每一期指标完成情况")
+            List<CcrTrackingEvaluation> evaluations = evaluationMapper.selectList(
+                    new LambdaQueryWrapper<CcrTrackingEvaluation>()
+                            .eq(CcrTrackingEvaluation::getMetricId, metric.getId())
+                            .orderByDesc(CcrTrackingEvaluation::getDataDt)
+                            .orderByDesc(CcrTrackingEvaluation::getId));
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("metric", metric);
             item.put("latestEvaluation", latest);
+            item.put("evaluations", evaluations);
             items.add(item);
         }
         Map<String, Object> result = new LinkedHashMap<>();

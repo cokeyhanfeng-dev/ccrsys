@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * 拟达成贡献度承诺(ccr_application_commitment)——申请创建/提交时随单录入;
@@ -45,4 +46,7 @@ public class CcrApplicationCommitment extends BaseEntity {
 
     /** 承诺类型"其它"(§6.4)手工目标描述(金额或文本);该类型下 targetValue 可空 */
     private String commitmentDesc;
+
+    /** 承诺完成截止日期(§7.1 拟达成贡献度承诺在什么时间点内完成) */
+    private LocalDate endDate;
 }

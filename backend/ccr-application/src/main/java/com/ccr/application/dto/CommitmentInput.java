@@ -3,6 +3,7 @@ package com.ccr.application.dto;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * 拟达成贡献度承诺录入(§7.1;审批通过后由承诺模块生成正式承诺计划)
@@ -36,4 +37,7 @@ public class CommitmentInput {
 
     /** 承诺类型"其它"(§6.4)手工目标描述(金额或文本);该类型下 target_value 可空 */
     private String commitmentDesc;
+
+    /** 承诺完成截止日期(在什么时间点内完成) */
+    private LocalDate endDate;
 }

@@ -24,3 +24,12 @@ export const listExportRecords = () => get<any[]>('/ccr/audit/export-records')
 /** 配置变更日志(§8A.2 配置版本查询;可按配置域/记录主键过滤) */
 export const listConfigChangeLog = (params?: { configType?: string; configId?: number }) =>
   get<any[]>('/system/flow/thresholds/change-log', params || {})
+
+/** 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;可按类型/操作人/时间/关键词过滤) */
+export const listAuditLogs = (params?: {
+  logType?: string
+  operator?: string
+  startTime?: string
+  endTime?: string
+  keyword?: string
+}) => get<any[]>('/ccr/audit/logs', params || {})

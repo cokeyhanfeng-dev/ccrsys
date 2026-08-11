@@ -3,14 +3,7 @@
     <!-- 侧边栏导航(design-system,深藏蓝) -->
     <aside class="app-sidebar">
       <div class="brand">
-        <span class="brand-mark">
-          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="3" y="14" width="5" height="13" rx="1.5" fill="#93c5fd"/>
-            <rect x="13.5" y="8" width="5" height="19" rx="1.5" fill="#bfdbfe"/>
-            <rect x="24" y="3" width="5" height="24" rx="1.5" fill="#ffffff"/>
-          </svg>
-        </span>
-        <span class="brand-title">利率决策系统</span>
+        <img class="brand-logo-img" src="/logo.png" alt="公司标" />
       </div>
       <nav class="app-sidebar__nav">
         <router-link
@@ -306,30 +299,17 @@ function onCommand(cmd: string) {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 18px;
+  justify-content: center;
+  /* 左右 padding 与菜单项 margin(10px)对齐,logo 宽度与菜单栏保持一致 */
+  padding: 14px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   margin-bottom: 8px;
 }
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
-}
-.brand-mark svg {
-  width: 18px;
-  height: 18px;
-}
-.brand-title {
-  font-weight: 700;
-  font-size: 15px;
-  color: #fff;
-  letter-spacing: 1px;
+.brand-logo-img {
+  flex: none;
+  display: block;
+  width: 100%;
+  height: auto;
 }
 .topbar {
   display: flex;

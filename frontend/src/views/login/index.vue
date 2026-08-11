@@ -8,12 +8,8 @@
 
       <div class="login-brand__inner">
         <div class="login-brand__logo">
-          <span class="login-brand__logo-mark">
-            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="3" y="14" width="5" height="13" rx="1.5" fill="#93c5fd"/>
-              <rect x="13.5" y="8" width="5" height="19" rx="1.5" fill="#bfdbfe"/>
-              <rect x="24" y="3" width="5" height="24" rx="1.5" fill="#ffffff"/>
-            </svg>
+          <span class="login-brand__logo-badge">
+            <img class="login-brand__logo-img" src="/logo.png" alt="公司标" />
           </span>
           <span class="login-brand__logo-text">客户贡献度与利率决策系统</span>
         </div>
@@ -178,20 +174,22 @@ async function onSubmit() {
     margin-bottom: 56px;
   }
 
-  &__logo-mark {
+  /* 深色横版字标在深蓝背景上不可见:白色圆角背板承载,保证 Logo 清晰可见 */
+  &__logo-badge {
+    flex: none;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    background: #fff;
+    border-radius: 8px;
+    padding: 5px 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
 
-    svg {
-      width: 22px;
-      height: 22px;
-    }
+  &__logo-img {
+    flex: none;
+    height: 28px;
+    width: auto;
+    display: block;
   }
 
   &__logo-text {
@@ -199,6 +197,7 @@ async function onSubmit() {
     font-weight: 600;
     letter-spacing: 1px;
     color: rgba(255, 255, 255, 0.92);
+    white-space: nowrap;
   }
 
   &__slogan {
@@ -294,6 +293,7 @@ async function onSubmit() {
     font-size: 13px;
     margin-bottom: 32px;
     letter-spacing: 1px;
+    white-space: nowrap;
   }
 
   :deep(.el-input__wrapper) {
@@ -344,6 +344,11 @@ async function onSubmit() {
 
     &__logo {
       margin-bottom: 32px;
+    }
+
+    &__logo-text {
+      font-size: 13px;
+      letter-spacing: 0.5px;
     }
 
     &__desc,

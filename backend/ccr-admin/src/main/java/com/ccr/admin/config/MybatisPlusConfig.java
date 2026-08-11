@@ -8,9 +8,11 @@ import com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionIntercepto
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.ccr.common.datascope.CcrDataPermissionHandler;
+import jakarta.annotation.Resource;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
 
@@ -19,6 +21,9 @@ import java.time.LocalDateTime;
  */
 @Configuration
 public class MybatisPlusConfig {
+
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
@@ -29,6 +34,8 @@ public class MybatisPlusConfig {
         interceptor.addInnerInterceptor(new DataPermissionInterceptor(new CcrDataPermissionHandler()));
         // 分页
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        // 字段级修改留痕(§15.2):仅核心业务表,写 ccr_audit_log(FIELD_CHANGE)
+        interceptor.addInnerInterceptor(new CcrDataChangeInterceptor(jdbcTemplate));
         return interceptor;
     }
 
