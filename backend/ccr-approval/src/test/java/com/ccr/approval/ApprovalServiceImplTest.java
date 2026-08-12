@@ -109,7 +109,7 @@ class ApprovalServiceImplTest {
         application.setBusinessType("LOAN");
 
         // 缺省无节点指派配置(解析为空=不限制,保持角色匹配);selectBatchIds 用于待办指派过滤
-        org.mockito.Mockito.lenient().when(nodeAssigneeResolver.resolveUserIds(any(), any()))
+        org.mockito.Mockito.lenient().when(nodeAssigneeResolver.resolveUserIds(any(), any(), any()))
                 .thenReturn(List.of());
         org.mockito.Mockito.lenient().when(applicationMapper.selectBatchIds(any()))
                 .thenReturn(List.of(application));
@@ -550,7 +550,7 @@ class ApprovalServiceImplTest {
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(applicationMapper.selectById(30L)).thenReturn(application);
-        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null)).thenReturn(List.of(2999L));
+        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
 
         ServiceException e = assertThrows(ServiceException.class,
                 () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
@@ -563,7 +563,7 @@ class ApprovalServiceImplTest {
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(currentLoginUser.nodeOfRole(CurrentLoginUser.ROLE_BRANCH_MANAGER)).thenReturn("BRANCH_MANAGER");
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
-        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null)).thenReturn(List.of(2999L));
+        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
 
         assertTrue(approvalService.listTodo().isEmpty());
     }

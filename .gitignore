@@ -20,5 +20,9 @@ Thumbs.db
 # 内部临时脚本/工具与认证 token(不入库)
 .scratch/
 
+# 项目内隔离工具链与依赖缓存(由 ./dev setup 创建)
+.tools/
+.cache/
+
 # 部署侧生产连接配置(含真实密码,严禁入库,详设 §3.7)
 config/application-prod.yml

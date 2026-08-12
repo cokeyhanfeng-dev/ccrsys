@@ -1,11 +1,8 @@
 package com.ccr.common.cache;
 
-import com.ccr.common.enums.ErrorCode;
-import com.ccr.common.exception.ServiceException;
-
 /**
  * 缓存项内置种子元数据(详设 §3.6 v2):仅用于启动 seedIfEmpty 生成内置 3 项定义,
- * 以及文档/管理端内置项展示。运行期匹配已由 {@link CacheConfigHolder#matchDef} 按 DB 动态定义驱动。
+ * 以及文档/管理端内置项展示。运行期匹配由 {@link CacheConfigHolder#matchDef} 按 DB 动态定义驱动。
  */
 public enum CacheItem {
 
@@ -45,36 +42,5 @@ public enum CacheItem {
     /** 内置项展示描述(seed 的 description 列) */
     public String getDesc() {
         return desc;
-    }
-
-    /**
-     * @deprecated 运行期匹配已改由 {@link CacheConfigHolder#matchDef} 按 DB 动态定义驱动,不再依赖静态枚举
-     */
-    @Deprecated
-    public static CacheItem match(String cacheKey) {
-        for (CacheItem i : values()) {
-            if (i.cacheKey != null && i.cacheKey.equals(cacheKey)) {
-                return i;
-            }
-        }
-        for (CacheItem i : values()) {
-            if (i.keyPattern != null && cacheKey.startsWith(i.keyPattern)) {
-                return i;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * @deprecated 管理端校验已改为按 DB 定义存在性判断,不再依赖静态枚举
-     */
-    @Deprecated
-    public static CacheItem fromCode(String code) {
-        for (CacheItem i : values()) {
-            if (i.code.equals(code)) {
-                return i;
-            }
-        }
-        throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "未知缓存项:" + code);
     }
 }

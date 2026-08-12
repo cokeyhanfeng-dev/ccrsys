@@ -1,9 +1,8 @@
 <template>
   <div class="wizard-page">
     <div class="section-head">
-      <div class="eyebrow">RATE APPLICATION · 贷款利率申请</div>
       <div class="section-title">贷款利率申请</div>
-      <div class="section-tip">分步录入客户、融资情况、利率申请、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。</div>
+      <InfoTip content="分步录入客户、融资情况、利率申请、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。" />
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -29,13 +28,15 @@
       <span class="badge badge--info">草稿</span>
       申请号 {{ draft.applicationNo }}(版本 v{{ draft.versionNo }})
       <template v-if="inheritCount > 0">· {{ inheritCount }} 条已批准分项沿用原决议,不在本页重复编辑</template>
-      <span class="section-tip">· 草稿保存仅更新主单信息,分项/成员/承诺以创建时内容为准</span>
+      <InfoTip content="草稿保存仅更新主单信息,分项/成员/承诺以创建时内容为准" />
     </div>
 
     <!-- 第一步:客户信息(个人/企业单户/集团三选) -->
     <div v-show="step === 0" class="form-card">
-      <div class="form-card__title">客户信息</div>
-      <div class="section-tip" style="margin-bottom:12px">客户基本信息由数仓统一提供(caps_corp/indv_cust_basic_info),带出后只读展示;集团客户输入集团号查询数仓集团快照。</div>
+      <div class="form-card__title">
+        客户信息
+        <InfoTip content="客户基本信息由数仓统一提供(caps_corp/indv_cust_basic_info),带出后只读展示;集团客户输入集团号查询数仓集团快照。" />
+      </div>
       <div class="form-grid">
         <div class="form-field">
           <label class="form-field__label">客户主体 <span class="req">*</span></label>
@@ -291,9 +292,9 @@
       <div class="empty" v-else>暂无他行融资明细(可人工补录或 Excel 导入)</div>
       <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
         <button class="btn btn--secondary" @click="addOtherLoan">＋ 添加他行融资</button>
-        <button class="btn btn--secondary" @click="triggerImport">📄 Excel 导入</button>
-        <a class="btn btn--text" href="/templates/other-loans-template.xlsx" download="他行融资明细导入模板.xlsx">⬇ 模板下载</a>
-        <span class="section-tip">列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%</span>
+        <button class="btn btn--secondary" @click="triggerImport"><el-icon><Upload /></el-icon>Excel 导入</button>
+        <a class="btn btn--text" href="/templates/other-loans-template.xlsx" download="他行融资明细导入模板.xlsx"><el-icon><Download /></el-icon>模板下载</a>
+        <InfoTip content="导入列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%" />
       </div>
       <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
 
@@ -309,11 +310,11 @@
         利率申请
         <span class="badge badge--info">逐担保方式独立路由/表决</span>
         <span class="badge badge--warning">贷款利率越低越优惠</span>
-      </div>
-      <div class="section-tip" style="margin-bottom:12px">
-        <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
-        <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
-        集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
+        <InfoTip>
+          <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
+          <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
+          集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
+        </InfoTip>
       </div>
 
       <!-- 申请要素(业务类型):决定存量调息/新增授信,客户与合同带出后自动填充、可手工切换;
@@ -612,9 +613,7 @@
       <div class="form-card__title">
         贡献承诺
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
-      </div>
-      <div class="section-tip" style="margin-bottom:12px">
-        下拉选择承诺指标,参照数仓当前贡献度录入基线与拟达成目标;承诺随申请提交(commitments),审批通过后生成正式承诺计划跟踪。
+        <InfoTip content="下拉选择承诺指标,参照数仓当前贡献度录入基线与拟达成目标;承诺随申请提交(commitments),审批通过后生成正式承诺计划跟踪。" />
       </div>
 
       <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
@@ -704,8 +703,10 @@
     <div v-show="step === 4" class="form-card">
       <div class="form-card__title">材料附件</div>
 
-      <div class="sub-title">其他申请附件</div>
-      <div class="section-tip" style="margin-bottom:8px">附件随草稿保存/提交上传至申请单,审批各环节可查看;已上传附件在审批详情展示。</div>
+      <div class="sub-title">
+        其他申请附件
+        <InfoTip content="附件随草稿保存/提交上传至申请单,审批各环节可查看;已上传附件在审批详情展示。" />
+      </div>
       <button class="btn btn--secondary" @click="attachmentInput?.click()">＋ 添加附件</button>
       <input ref="attachmentInput" type="file" multiple style="display:none" @change="onAttachmentFiles" />
       <table class="table" v-if="attachments.length" style="margin-top:12px">
@@ -729,8 +730,10 @@
 
     <!-- 第六步:提交预览(路由预览 + 提交校验确认 + 正式提交) -->
     <div v-show="step === 5" class="form-card">
-      <div class="form-card__title">提交预览</div>
-      <div class="section-tip" style="margin-bottom:12px">提交前先生成/保存草稿,再逐分项预览审批路由;正式提交需通过数据批次差异与质量预校验确认(§7.1 步骤9-11)。</div>
+      <div class="form-card__title">
+        提交预览
+        <InfoTip content="提交前先生成/保存草稿,再逐分项预览审批路由;正式提交需通过数据批次差异与质量预校验确认(§7.1 步骤9-11)。" />
+      </div>
       <div class="form-field">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
@@ -1935,8 +1938,7 @@ async function loadDraftIntoForm(id: number) {
 
 <style scoped>
 .section-head { margin-bottom: 20px; }
-.eyebrow { font-size: 12px; color: var(--color-text-light); letter-spacing: 1px; margin-bottom: 4px; }
-.section-title { font-size: var(--fs-h1); font-weight: 700; margin-bottom: 6px; }
+.section-title { font-size: var(--fs-h1); font-weight: 700; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
 .form-card {
   background: var(--color-surface);
@@ -1997,7 +1999,7 @@ async function loadDraftIntoForm(id: number) {
 /* 规则来源提示(§12.4⑦) */
 .rule-notice {
   background: var(--color-primary-light); color: var(--color-primary);
-  border: 1px solid var(--color-primary); border-radius: var(--radius);
+  border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm);
   padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
 }
 

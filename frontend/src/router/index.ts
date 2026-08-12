@@ -25,13 +25,13 @@ const routes: RouteRecordRaw[] = [
         path: 'application/loan',
         name: 'ApplicationLoan',
         component: () => import('@/views/application/loan.vue'),
-        meta: { title: '贷款利率申请', icon: 'EditPen' }
+        meta: { title: '贷款利率申请', icon: 'EditPen', roles: ['customer_manager'] }
       },
       {
         path: 'application/deposit',
         name: 'ApplicationDeposit',
         component: () => import('@/views/application/deposit.vue'),
-        meta: { title: '存款利率申请', icon: 'EditPen' }
+        meta: { title: '存款利率申请', icon: 'EditPen', roles: ['customer_manager'] }
       },
       {
         path: 'approval',
@@ -76,7 +76,7 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '申请档案' }
       },
       {
-        // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,全角色可见
+        // 数据中心(§9.6 F8):技术监控数据仅 admin 可见
         path: 'datacenter',
         name: 'DataCenter',
         component: () => import('@/views/datacenter/index.vue'),

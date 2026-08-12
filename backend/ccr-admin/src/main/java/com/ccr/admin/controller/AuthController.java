@@ -8,9 +8,7 @@ import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
-import com.ccr.admin.system.support.DataScopeHelper;
 import com.ccr.common.core.domain.R;
-import com.ccr.common.datascope.DataScope;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,9 +38,6 @@ public class AuthController {
     private CcrSysDeptMapper sysDeptMapper;
 
     @Resource
-    private DataScopeHelper dataScopeHelper;
-
-    @Resource
     private JdbcTemplate jdbcTemplate;
 
     @PostMapping("/login")
@@ -64,18 +59,11 @@ public class AuthController {
             throw new ServiceException(401, "用户已停用");
         }
         StpUtil.login(user.getId());
-        // 写入当前用户机构上下文(公共字段自动填充用)与数据权限范围(§5.4)
+        // 写入当前用户机构上下文(公共字段自动填充用)
         CcrSysDept dept = user.getOrgId() == null ? null : sysDeptMapper.selectById(user.getOrgId());
         String orgCode = dept == null ? null : dept.getOrgCode();
-        DataScope dataScope = dataScopeHelper.compute(user);
+        String dataScope = dataScopeLevel(user.getRoleCode());
         StpUtil.getSession().set("orgId", user.getOrgId());
-        if (orgCode != null) {
-            StpUtil.getSession().set("orgCode", orgCode);
-        }
-        StpUtil.getSession().set("dataScopeLevel", dataScope.getLevel());
-        if (dataScope.getOrgCodePrefix() != null) {
-            StpUtil.getSession().set("dataScopeOrgCodePrefix", dataScope.getOrgCodePrefix());
-        }
         String token = StpUtil.getTokenValue();
 
         Map<String, Object> userInfo = new LinkedHashMap<>();
@@ -86,13 +74,22 @@ public class AuthController {
         userInfo.put("orgId", user.getOrgId());
         userInfo.put("orgCode", orgCode);
         userInfo.put("orgName", dept == null ? null : dept.getDeptName());
-        userInfo.put("dataScope", dataScope.getLevel());
+        userInfo.put("dataScope", dataScope);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("token", token);
         result.put("userInfo", userInfo);
         writeLoginLog("LOGIN", user.getId(), user.getNickName(), ip, "登录成功");
         return R.ok(result);
+    }
+
+    /** 登录响应展示的数据范围级别；业务对象授权由各领域服务执行。 */
+    private String dataScopeLevel(String roleCode) {
+        return switch (roleCode == null ? "" : roleCode) {
+            case "president", "auditor", "admin" -> "ALL";
+            case "branch_manager", "dept_gm", "vice_president" -> "DEPT";
+            default -> "SELF";
+        };
     }
 
     @PostMapping("/logout")

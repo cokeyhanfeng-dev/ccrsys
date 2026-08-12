@@ -40,6 +40,7 @@ import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.CcrApplicationService;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.read.SysUserRead;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
@@ -94,11 +95,15 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     private AppLoginUser appLoginUser;
 
     @Resource
+    private ApplicationAccessService applicationAccessService;
+
+    @Resource
     private JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CcrApplication createDraft(CcrApplication request) {
+        applicationAccessService.requireCustomerManager();
         // customerScope 守卫:非 GROUP 传 members 拒绝,GROUP 缺 groupNo 拒绝
         String businessType = request.getBusinessType();
         if (!"LOAN".equals(businessType) && !"DEPOSIT".equals(businessType)) {
@@ -153,7 +158,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
     /**
      * 按申请人机构解析所属支行编码(§5.4 数据权限 DEPT 级前缀过滤数据基础):
-     * ccr_sys_dept.id → org_code → sys_org.branch_code;支行/网点有 branch_code,
+     * ccr_sys_dept.id → branch_code;支行/网点有 branch_code,
      * 总行部门为 NULL(打标 NULL,前缀过滤对该类申请不命中);解析失败不阻断创建
      */
     private String resolveBranchCode(Long orgId) {
@@ -162,8 +167,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         }
         try {
             List<String> codes = jdbcTemplate.queryForList(
-                    "SELECT so.branch_code FROM ccr_sys_dept d JOIN sys_org so ON so.org_code = d.org_code "
-                            + "WHERE d.id = ? AND d.del_flag = '0' AND so.del_flag = '0' AND so.branch_code IS NOT NULL",
+                    "SELECT branch_code FROM ccr_sys_dept "
+                            + "WHERE id = ? AND del_flag = '0' AND branch_code IS NOT NULL",
                     String.class, orgId);
             return codes.isEmpty() ? null : codes.get(0);
         } catch (DataAccessException e) {
@@ -546,6 +551,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CcrApplication saveDraft(Long id, CcrApplication request) {
+        applicationAccessService.requireOwner(id);
         CcrApplication exist = applicationMapper.selectById(id);
         if (exist == null) {
             throw new ServiceException(404, "申请不存在");
@@ -649,6 +655,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
     @Override
     public CcrApplication getApplication(Long id) {
+        applicationAccessService.requireView(id);
         CcrApplication exist = applicationMapper.selectById(id);
         if (exist == null) {
             throw new ServiceException(404, "申请不存在");
@@ -706,11 +713,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         target.setCustomerScope(src.getCustomerScope());
         target.setCustomerNo(src.getCustomerNo());
         target.setGroupNo(src.getGroupNo());
-        target.setApplicantUserId(src.getApplicantUserId());
-        target.setApplicantOrgId(src.getApplicantOrgId());
-        target.setSourceApplicationId(src.getSourceApplicationId());
         target.setBusinessNo(IdUtil.getSnowflakeNextIdStr());
-        target.setOrgId(src.getOrgId());
         target.setApplicationRemark(src.getApplicationRemark());
         target.setCustomerInfoJson(src.getCustomerInfoJson());
         target.setCreditInfoJson(src.getCreditInfoJson());
@@ -721,8 +724,6 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (StrUtil.isNotBlank(src.getCustomerScope())) target.setCustomerScope(src.getCustomerScope());
         if (StrUtil.isNotBlank(src.getCustomerNo())) target.setCustomerNo(src.getCustomerNo());
         if (StrUtil.isNotBlank(src.getGroupNo())) target.setGroupNo(src.getGroupNo());
-        if (src.getApplicantUserId() != null) target.setApplicantUserId(src.getApplicantUserId());
-        if (src.getApplicantOrgId() != null) target.setApplicantOrgId(src.getApplicantOrgId());
         if (StrUtil.isNotBlank(src.getApplicationRemark())) target.setApplicationRemark(src.getApplicationRemark());
         if (StrUtil.isNotBlank(src.getCustomerInfoJson())) target.setCustomerInfoJson(src.getCustomerInfoJson());
         if (StrUtil.isNotBlank(src.getCreditInfoJson())) target.setCreditInfoJson(src.getCreditInfoJson());
@@ -740,10 +741,25 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (AppLoginUser.ROLE_PRESIDENT.equals(role) || AppLoginUser.ROLE_AUDITOR.equals(role)
                 || AppLoginUser.ROLE_ADMIN.equals(role)) {
             // 行长/审计/管理员:全量
-        } else if (AppLoginUser.ROLE_BRANCH_MANAGER.equals(role) || AppLoginUser.ROLE_DEPT_GM.equals(role)
-                || AppLoginUser.ROLE_VICE_PRESIDENT.equals(role)) {
-            // 支行行长/部门总经理/副行长:按本人机构过滤
-            wrapper.eq(CcrApplication::getOrgId, user.getOrgId());
+        } else if (AppLoginUser.ROLE_BRANCH_MANAGER.equals(role)) {
+            // 支行行长:所属支行及下辖网点申请。
+            String branchCode = resolveBranchCode(user.getOrgId());
+            if (branchCode == null) {
+                return List.of();
+            }
+            wrapper.eq(CcrApplication::getApplyBranchCode, branchCode);
+        } else if (AppLoginUser.ROLE_DEPT_GM.equals(role)
+                || AppLoginUser.ROLE_VICE_PRESIDENT.equals(role)
+                || AppLoginUser.ROLE_COMMITTEE_MEMBER.equals(role)) {
+            // 审批角色:仅本人已经参与过的申请；当前待办走审批任务接口。
+            wrapper.inSql(CcrApplication::getId,
+                    "SELECT pi.application_id FROM ccr_approval_action aa "
+                            + "JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id "
+                            + "WHERE aa.del_flag = '0' AND aa.operator_id = " + user.getId()
+                            + " UNION SELECT vr.application_id FROM ccr_vote_assignment va "
+                            + "JOIN ccr_vote_round vr ON vr.id = va.round_id "
+                            + "WHERE va.del_flag = '0' AND va.status <> 'REPLACED' "
+                            + "AND vr.del_flag = '0' AND va.voter_user_id = " + user.getId());
         } else {
             // 客户经理及其他角色:仅本人申请
             wrapper.eq(CcrApplication::getApplicantUserId, user.getId());

@@ -21,6 +21,8 @@ public class AppLoginUser {
     public static final String ROLE_BRANCH_MANAGER = "branch_manager";
     public static final String ROLE_DEPT_GM = "dept_gm";
     public static final String ROLE_VICE_PRESIDENT = "vice_president";
+    public static final String ROLE_COMMITTEE_MEMBER = "committee_member";
+    public static final String ROLE_CONTRACT_OPERATOR = "contract_operator";
     /** 行长/审计/管理员:全量 */
     public static final String ROLE_PRESIDENT = "president";
     public static final String ROLE_AUDITOR = "auditor";

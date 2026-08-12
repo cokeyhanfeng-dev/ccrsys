@@ -2,11 +2,11 @@
   <div>
     <div class="section-head">
       <div class="section-title">流程与审批人员配置</div>
-      <div class="section-tip">
+      <InfoTip>
         流程定义发布/停用 + 各审批节点实际处理人指派(§12.17:按人/角色/部门/组,支持代理人与有效期;
         解析顺序 人员级→组级→部门+角色级→角色级;配置变更仅影响新提交流程,已流转实例不受影响)。
         LPR / 权限矩阵阈值维护见「参数管理」。
-      </div>
+      </InfoTip>
     </div>
 
     <div class="segmented">

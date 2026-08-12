@@ -1,5 +1,7 @@
 package com.ccr.message.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.common.core.domain.R;
 import com.ccr.message.domain.CcrNotificationRecipient;
 import com.ccr.message.domain.CcrNotificationRule;
@@ -35,30 +37,35 @@ public class NotificationRuleController {
     private NotificationRuleService ruleService;
 
     /** 新建规则(含接收人) */
+    @SaCheckRole("admin")
     @PostMapping
     public R<CcrNotificationRule> create(@RequestBody RuleReq req) {
         return R.ok(ruleService.createRule(req.getRule(), req.getRecipients()));
     }
 
     /** 更新规则并整体替换接收人 */
+    @SaCheckRole("admin")
     @PutMapping
     public R<CcrNotificationRule> update(@RequestBody RuleReq req) {
         return R.ok(ruleService.updateRule(req.getRule(), req.getRecipients()));
     }
 
     /** 启用/停用 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/{ruleId}/status")
     public R<CcrNotificationRule> changeStatus(@PathVariable Long ruleId, @RequestParam String status) {
         return R.ok(ruleService.changeStatus(ruleId, status));
     }
 
     /** 规则列表 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping
     public R<List<CcrNotificationRule>> list(@RequestParam(required = false) String triggerLevel) {
         return R.ok(ruleService.listRules(triggerLevel));
     }
 
     /** 规则接收人 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/{ruleId}/recipients")
     public R<List<CcrNotificationRecipient>> recipients(@PathVariable Long ruleId) {
         return R.ok(ruleService.listRecipients(ruleId));

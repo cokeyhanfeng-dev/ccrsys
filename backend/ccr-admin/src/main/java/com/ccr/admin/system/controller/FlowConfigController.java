@@ -1,5 +1,7 @@
 package com.ccr.admin.system.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
@@ -79,6 +81,7 @@ public class FlowConfigController {
     private CcrCacheUtil cacheUtil;
 
     /** 流程定义列表(flow_definition) */
+    @SaCheckRole("admin")
     @GetMapping("/definitions")
     public R<List<Map<String, Object>>> definitions() {
         String sql = """
@@ -92,6 +95,7 @@ public class FlowConfigController {
     }
 
     /** 流程定义查看(节点+跳转关系,供前端只读流程图渲染) */
+    @SaCheckRole("admin")
     @GetMapping("/definitions/{id}/detail")
     public R<Map<String, Object>> definitionDetail(@PathVariable Long id) {
         List<Map<String, Object>> defs = jdbcTemplate.queryForList(
@@ -108,6 +112,7 @@ public class FlowConfigController {
     }
 
     /** 发布流程 */
+    @SaCheckRole("admin")
     @PostMapping("/definitions/{id}/publish")
     public R<Void> publish(@PathVariable Long id) {
         int updated = jdbcTemplate.update(
@@ -120,6 +125,7 @@ public class FlowConfigController {
     }
 
     /** 停用流程 */
+    @SaCheckRole("admin")
     @PostMapping("/definitions/{id}/unpublish")
     public R<Void> unpublish(@PathVariable Long id) {
         jdbcTemplate.update(
@@ -129,6 +135,7 @@ public class FlowConfigController {
     }
 
     /** LPR 阈值配置列表(计划财务部人工维护,PRD D12;status 可过滤,缺省全部) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/thresholds/lpr")
     public R<List<CcrLprVersion>> lprList(@RequestParam(required = false) String status) {
         return R.ok(lprVersionMapper.selectList(new LambdaQueryWrapper<CcrLprVersion>()
@@ -137,6 +144,7 @@ public class FlowConfigController {
     }
 
     /** 权限矩阵阈值配置列表(PRD §7.2 LPR±BP;status 可过滤,缺省仅生效) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/thresholds/matrix")
     public R<List<CcrRateMatrix>> matrixList(@RequestParam(required = false) String status) {
         return R.ok(rateMatrixMapper.selectList(new LambdaQueryWrapper<CcrRateMatrix>()
@@ -147,6 +155,7 @@ public class FlowConfigController {
     // ---------- LPR 版本生命周期(§8.4) ----------
 
     /** 新增 LPR 草稿(发布前校验 §8A.3:区间/报价步长/生效日) */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/lpr")
     public R<Long> createLpr(@RequestBody CcrLprVersion lpr) {
         if (StrUtil.isBlank(lpr.getVersionCode()) || lpr.getLpr1y() == null || lpr.getLpr5y() == null
@@ -166,6 +175,7 @@ public class FlowConfigController {
     }
 
     /** LPR 送审:DRAFT → REVIEW */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/lpr/{id}/submit")
     public R<Void> submitLpr(@PathVariable Long id) {
         CcrLprVersion lpr = lprVersionMapper.selectById(id);
@@ -185,6 +195,7 @@ public class FlowConfigController {
     }
 
     /** LPR 复核发布:REVIEW → EFFECTIVE;双人复核;发布前校验(§8A.3);旧生效版本自动停用,路由自动采用新值 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/lpr/{id}/publish")
     public R<Void> publishLpr(@PathVariable Long id) {
         CcrLprVersion lpr = lprVersionMapper.selectById(id);
@@ -226,6 +237,7 @@ public class FlowConfigController {
     }
 
     /** LPR 复核驳回:REVIEW → DRAFT(必填驳回意见,§8A.2) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/lpr/{id}/reject")
     public R<Void> rejectLpr(@PathVariable Long id, @RequestParam String opinion) {
         CcrLprVersion lpr = lprVersionMapper.selectById(id);
@@ -248,6 +260,7 @@ public class FlowConfigController {
     }
 
     /** LPR 停用:EFFECTIVE → INVALID */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/lpr/{id}/disable")
     public R<Void> disableLpr(@PathVariable Long id) {
         CcrLprVersion lpr = lprVersionMapper.selectById(id);
@@ -271,6 +284,7 @@ public class FlowConfigController {
     // ---------- 权限矩阵版本生命周期(§8.4) ----------
 
     /** 新增矩阵行草稿(生效行禁止原位修改,调整=新建行发布替换;边界互斥必填校验 §8A.4) */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/matrix")
     public R<Long> createMatrix(@RequestBody CcrRateMatrix row) {
         if (StrUtil.isBlank(row.getMatrixNo()) || StrUtil.isBlank(row.getBusinessBigType())
@@ -292,6 +306,7 @@ public class FlowConfigController {
     }
 
     /** 矩阵行送审:DRAFT → REVIEW */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/matrix/{id}/submit")
     public R<Void> submitMatrix(@PathVariable Long id) {
         CcrRateMatrix row = rateMatrixMapper.selectById(id);
@@ -311,6 +326,7 @@ public class FlowConfigController {
     }
 
     /** 矩阵行复核发布:REVIEW → EFFECTIVE;双人复核;发布前校验(§8A.4);同维度同岗位旧生效行自动停用 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/matrix/{id}/publish")
     public R<Void> publishMatrix(@PathVariable Long id) {
         CcrRateMatrix row = rateMatrixMapper.selectById(id);
@@ -356,6 +372,7 @@ public class FlowConfigController {
     }
 
     /** 矩阵行复核驳回:REVIEW → DRAFT(必填驳回意见,§8A.2) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/matrix/{id}/reject")
     public R<Void> rejectMatrix(@PathVariable Long id, @RequestParam String opinion) {
         CcrRateMatrix row = rateMatrixMapper.selectById(id);
@@ -378,6 +395,7 @@ public class FlowConfigController {
     }
 
     /** 矩阵行停用:EFFECTIVE → INVALID */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/matrix/{id}/disable")
     public R<Void> disableMatrix(@PathVariable Long id) {
         CcrRateMatrix row = rateMatrixMapper.selectById(id);
@@ -407,6 +425,7 @@ public class FlowConfigController {
     // ---------- 产品硬边界生命周期(§8A.5/§11.9,复用 LPR 双人复核模式) ----------
 
     /** 产品硬边界列表(status 可过滤,缺省全部) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/thresholds/product-limit")
     public R<List<CcrProductRateLimit>> productLimitList(@RequestParam(required = false) String status) {
         return R.ok(productRateLimitMapper.selectList(new LambdaQueryWrapper<CcrProductRateLimit>()
@@ -416,6 +435,7 @@ public class FlowConfigController {
     }
 
     /** 新增产品硬边界草稿 */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/product-limit")
     public R<Long> createProductLimit(@RequestBody CcrProductRateLimit limit) {
         if (StrUtil.isBlank(limit.getProductCode()) || StrUtil.isBlank(limit.getBusinessType())
@@ -442,6 +462,7 @@ public class FlowConfigController {
     }
 
     /** 产品硬边界送审:DRAFT → REVIEW */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/product-limit/{id}/submit")
     public R<Void> submitProductLimit(@PathVariable Long id) {
         CcrProductRateLimit limit = productRateLimitMapper.selectById(id);
@@ -461,6 +482,7 @@ public class FlowConfigController {
     }
 
     /** 产品硬边界复核发布:REVIEW → EFFECTIVE;双人复核;同产品同业务类型旧生效版本自动停用 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/product-limit/{id}/publish")
     public R<Void> publishProductLimit(@PathVariable Long id) {
         CcrProductRateLimit limit = productRateLimitMapper.selectById(id);
@@ -503,6 +525,7 @@ public class FlowConfigController {
     }
 
     /** 产品硬边界复核驳回:REVIEW → DRAFT(必填驳回意见,§8A.2) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/thresholds/product-limit/{id}/reject")
     public R<Void> rejectProductLimit(@PathVariable Long id, @RequestParam String opinion) {
         CcrProductRateLimit limit = productRateLimitMapper.selectById(id);
@@ -525,6 +548,7 @@ public class FlowConfigController {
     }
 
     /** 产品硬边界停用:EFFECTIVE → INVALID */
+    @SaCheckRole("admin")
     @PostMapping("/thresholds/product-limit/{id}/disable")
     public R<Void> disableProductLimit(@PathVariable Long id) {
         CcrProductRateLimit limit = productRateLimitMapper.selectById(id);
@@ -547,6 +571,7 @@ public class FlowConfigController {
     // ---------- 配置变更审计(§8A.2) ----------
 
     /** 配置变更日志查询(审计用;可按配置域/记录主键过滤) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/thresholds/change-log")
     public R<List<CcrConfigChangeLog>> changeLogList(@RequestParam(required = false) String configType,
                                                      @RequestParam(required = false) Long configId) {

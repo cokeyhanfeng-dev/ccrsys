@@ -1,5 +1,7 @@
 package com.ccr.rule.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
@@ -65,6 +67,7 @@ public class RuleController {
     }
 
     /** 区间连续性校验(发布前自动化测试) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/continuity")
     public R<String> continuity(@RequestParam Long ruleSetId) {
         String issue = ruleEngine.validateContinuity(ruleSetId);
@@ -102,6 +105,7 @@ public class RuleController {
     }
 
     /** 规则集列表(含各状态,版本管理用) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/set/list")
     public R<List<CcrRateRuleSet>> setList(@RequestParam(required = false) String status) {
         return R.ok(ruleSetMapper.selectList(new LambdaQueryWrapper<CcrRateRuleSet>()
@@ -110,6 +114,7 @@ public class RuleController {
     }
 
     /** 新增规则集草稿(已生效记录禁止原位修改,只能新建版本) */
+    @SaCheckRole("admin")
     @PostMapping("/set")
     public R<Long> createSet(@RequestBody CcrRateRuleSet ruleSet) {
         if (StrUtil.isBlank(ruleSet.getSetCode()) || StrUtil.isBlank(ruleSet.getSetName())) {
@@ -127,6 +132,7 @@ public class RuleController {
     }
 
     /** 送审:DRAFT → REVIEW */
+    @SaCheckRole("admin")
     @PostMapping("/set/{id}/submit")
     public R<Void> submitSet(@PathVariable Long id) {
         CcrRateRuleSet ruleSet = ruleSetMapper.selectById(id);
@@ -146,6 +152,7 @@ public class RuleController {
     }
 
     /** 复核发布:REVIEW → EFFECTIVE;强制双人复核;发布前必须通过连续性校验;同维度旧生效版本自动停用 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/set/{id}/publish")
     public R<Void> publishSet(@PathVariable Long id) {
         CcrRateRuleSet ruleSet = ruleSetMapper.selectById(id);
@@ -194,6 +201,7 @@ public class RuleController {
     }
 
     /** 复核驳回:REVIEW → DRAFT(必填驳回意见,§8A.2) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/set/{id}/reject")
     public R<Void> rejectSet(@PathVariable Long id, @RequestParam String opinion) {
         CcrRateRuleSet ruleSet = ruleSetMapper.selectById(id);
@@ -216,6 +224,7 @@ public class RuleController {
     }
 
     /** 停用:EFFECTIVE → INVALID */
+    @SaCheckRole("admin")
     @PostMapping("/set/{id}/disable")
     public R<Void> disableSet(@PathVariable Long id) {
         CcrRateRuleSet ruleSet = ruleSetMapper.selectById(id);

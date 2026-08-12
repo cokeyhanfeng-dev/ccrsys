@@ -1,5 +1,6 @@
 package com.ccr.application.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
@@ -21,6 +22,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ccr/customers")
+@SaCheckRole("customer_manager")
 public class CustomerController {
 
     @Resource

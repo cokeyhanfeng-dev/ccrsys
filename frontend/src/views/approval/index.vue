@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">利率审批</div>
-      <div class="section-tip">流转到本人当前审批节点、需要处理的申请列表(按登录人角色过滤);已办与统计见工作台。</div>
+      <InfoTip content="流转到本人当前审批节点、需要处理的申请列表(按登录人角色过滤);已办与统计见工作台。" />
     </div>
 
 

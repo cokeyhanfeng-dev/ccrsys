@@ -1,5 +1,5 @@
 import { get, post, put, request } from './request'
-import { nodeLabel, rateDirectionText } from '@/utils/dict'
+import { nodeLabel } from '@/utils/dict'
 
 /**
  * 申请向导(贷款/存款)接口封装
@@ -251,11 +251,6 @@ export interface SubmitResult {
 /** 流程节点编码 → 中文岗位名(ccr-approval RouteChains) */
 export function nodeName(code?: string): string {
   return nodeLabel(code, '暂无数据')
-}
-
-/** 利率比较方向(贷款越低越优惠/存款越高越优惠) */
-export function directionName(direction?: string): string {
-  return rateDirectionText(direction, '暂无数据')
 }
 
 // ---------- 客户/集团查询 ----------

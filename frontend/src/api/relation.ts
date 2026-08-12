@@ -7,15 +7,13 @@ export const checkRelation = (certType: string, certNo: string) =>
   get<{ bound: boolean; boundCustomerNo?: string; boundGroupNo?: string; relationName?: string }>(
     '/ccr/relations/check', { certType, certNo })
 
-/** 绑定(录入即绑定;同客户/集团幂等,已绑定其他目标由后端拒绝留痕) */
+/** 绑定(录入即绑定;绑定对象由后端按本人草稿解析) */
 export const bindRelation = (body: {
   certType: string
   certNo: string
   relationName?: string
   relationType?: string
-  customerNo?: string
-  groupNo?: string
-  applicationId?: number
+  applicationId: number
 }) => post<{ created: boolean; id: number }>('/ccr/relations/bind', body)
 
 /** 申请已绑定关联人历史(重提/编辑回显参考,§11.2 application/{id}/relations) */

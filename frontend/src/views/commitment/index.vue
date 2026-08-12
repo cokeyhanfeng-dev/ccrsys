@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">贡献度跟踪</div>
-      <div class="section-tip">承诺计划三级钻取(§12.11):客户 → 承诺记录 → 指标明细;数据范围由服务端按登录人角色确定。</div>
+      <InfoTip content="承诺计划三级钻取(§12.11):客户 → 承诺记录 → 指标明细;数据范围由服务端按登录人角色确定。" />
     </div>
 
     <!-- 返回上级导航(二级/三级) -->
@@ -126,8 +126,7 @@
       <!-- 总体跟踪进度(Σ实际 / Σ目标,按各项指标加总计算) -->
       <div class="card">
         <div class="card__head">
-          <span>总体跟踪进度</span>
-          <span class="section-tip">按各项指标实际值与目标值加总计算(不含"其它"手工承诺)</span>
+          <span>总体跟踪进度 <InfoTip content="按各项指标实际值与目标值加总计算(不含&quot;其它&quot;手工承诺)" style="margin-left:6px" /></span>
         </div>
         <div v-if="overall" class="overall">
           <div class="overall__sum">

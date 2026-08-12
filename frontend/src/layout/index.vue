@@ -138,7 +138,7 @@ const allMenus = [
   // 贡献度跟踪:所有业务角色可见(审批人看自己审批过的客户,数据权限;6人小组/行长看全部)
   { path: '/commitment', title: '贡献度跟踪', roles: ['*'] },
   { path: '/history', title: '历史', roles: ['*'] },
-  // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,全角色可见
+  // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,仅 admin 可见
   { path: '/datacenter', title: '数据中心', roles: ['admin'] },
   // 审计管理(§12.14):审计人员专用(admin 全量可见)
   { path: '/audit', title: '审计管理', roles: ['auditor'] },

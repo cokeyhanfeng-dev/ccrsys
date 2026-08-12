@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">总行行长决策工作台 · 待我决策</div>
-      <div class="section-tip">仅在六人审批完成后接收汇总结果和全链路审批流程;统一执行"行长同意"或"行长一票否决",汇总结果仅行领导可见。</div>
+      <InfoTip content="仅在六人审批完成后接收汇总结果和全链路审批流程;统一执行&quot;行长同意&quot;或&quot;行长一票否决&quot;,汇总结果仅行领导可见。" />
     </div>
 
     <!-- 统计卡片(真实数据) -->
