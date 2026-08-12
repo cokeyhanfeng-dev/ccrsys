@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CCR_DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/scripts/dev" && pwd)"
+source "${CCR_DEV_DIR}/common.sh"
+
+usage() {
+  cat <<'EOF'
+用法: ./dev <command> [args]
+
+项目工具链:
+  setup             安装项目内 JDK；复用兼容的 Maven、Node
+  versions          显示实际使用的 Java/Maven/Node/Docker 版本
+  java <args...>    使用项目 JDK 执行 java
+  mvn <args...>     使用项目 JDK 和项目 Maven 缓存执行 Maven
+
+开发与验证:
+  infra-up          启动 Docker MySQL/Redis
+  infra-down        停止 Docker MySQL/Redis，保留数据卷
+  backend-run       用项目 JDK 启动本地后端，连接 Docker 基础设施
+  frontend-run      用兼容的本机 Node 启动 Vite
+  backend-test      执行后端全部单元测试
+  frontend-test     npm ci 后执行前端生产构建
+  verify            执行后端单测和前端构建
+
+容器测试环境:
+  app-up            构建并启动 MySQL/Redis/后端/前端完整测试栈
+  app-down          停止完整测试栈，保留数据卷
+  smoke             执行容器、数据库、Redis、后端登录和前端冒烟测试
+  ps                查看测试栈状态
+  logs [service]    跟踪测试栈日志
+  reset             删除测试栈容器和专用数据卷，下次从 SQL 全量初始化
+EOF
+}
+
+command_name="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "${command_name}" in
+  setup)
+    "${CCR_DEV_DIR}/setup-tools.sh"
+    ;;
+  versions)
+    ccr_activate_java
+    echo "Java:"
+    java -version 2>&1 | sed -n '1p'
+    echo "Maven:"
+    "$(ccr_maven_bin)" -version | sed -n '1,2p'
+    echo "Node: $(node --version)"
+    echo "npm: $(npm --version)"
+    if docker info >/dev/null 2>&1; then
+      echo "Docker: $(docker version --format '{{.Server.Version}}')"
+      echo "Compose: $(docker compose version --short)"
+    else
+      echo "Docker: 未运行"
+    fi
+    ;;
+  java)
+    ccr_activate_java
+    exec java "$@"
+    ;;
+  mvn)
+    cd "${CCR_PROJECT_ROOT}/backend"
+    ccr_mvn "$@"
+    ;;
+  infra-up)
+    ccr_compose up -d --wait mysql redis
+    ccr_compose ps
+    ;;
+  infra-down)
+    ccr_compose stop mysql redis
+    ;;
+  backend-run)
+    ccr_compose up -d --wait mysql redis
+    ccr_mvn -f "${CCR_PROJECT_ROOT}/backend/pom.xml" -B -DskipTests package
+    ccr_activate_java
+    cd "${CCR_PROJECT_ROOT}"
+    exec java -jar backend/ccr-admin/target/ccr-admin.jar --spring.profiles.active=local
+    ;;
+  frontend-run)
+    cd "${CCR_PROJECT_ROOT}/frontend"
+    if [[ ! -d node_modules ]]; then
+      ccr_npm ci
+    fi
+    exec npm run dev
+    ;;
+  backend-test)
+    cd "${CCR_PROJECT_ROOT}/backend"
+    ccr_mvn -B test
+    ;;
+  frontend-test)
+    cd "${CCR_PROJECT_ROOT}/frontend"
+    ccr_npm ci
+    ccr_npm run build
+    ;;
+  verify)
+    "${CCR_PROJECT_ROOT}/dev" backend-test
+    "${CCR_PROJECT_ROOT}/dev" frontend-test
+    ;;
+  app-up)
+    ccr_compose up -d --build --wait
+    ccr_compose ps
+    ;;
+  app-down)
+    ccr_compose down --remove-orphans
+    ;;
+  smoke)
+    "${CCR_DEV_DIR}/smoke.sh"
+    ;;
+  ps)
+    ccr_compose ps
+    ;;
+  logs)
+    ccr_compose logs -f --tail=200 "$@"
+    ;;
+  reset)
+    ccr_compose down --volumes --remove-orphans
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    usage >&2
+    ccr_die "未知命令: ${command_name}"
+    ;;
+esac

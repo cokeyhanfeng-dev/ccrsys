@@ -4,10 +4,8 @@ import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
-import com.ccr.common.datascope.CcrDataPermissionHandler;
 import jakarta.annotation.Resource;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.context.annotation.Bean;
@@ -30,8 +28,6 @@ public class MybatisPlusConfig {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         // 乐观锁(version_no)
         interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());
-        // 数据权限(§5.4 受限全局:仅 @DataScope 标注接口经 DataScopeContext 注入;先过滤再分页)
-        interceptor.addInnerInterceptor(new DataPermissionInterceptor(new CcrDataPermissionHandler()));
         // 分页
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
         // 字段级修改留痕(§15.2):仅核心业务表,写 ccr_audit_log(FIELD_CHANGE)

@@ -2,6 +2,7 @@ package com.ccr.approval.controller;
 
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.HistoryArchiveExporter;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.vote.read.SysUserRead;
 import com.ccr.vote.support.CurrentLoginUser;
 import cn.hutool.core.util.IdUtil;
@@ -41,6 +42,9 @@ public class HistoryExportController {
     private CurrentLoginUser currentLoginUser;
 
     @Resource
+    private ApplicationAccessService applicationAccessService;
+
+    @Resource
     private JdbcTemplate jdbcTemplate;
 
     /** 导出申请档案 xlsx(含水印行) */
@@ -48,6 +52,7 @@ public class HistoryExportController {
     public ResponseEntity<byte[]> export(@PathVariable Long applicationId) {
         // 导出口径(§15):仅系统管理员/审计人员/总行行长
         currentLoginUser.requireAnyRole("admin", "auditor", "president");
+        applicationAccessService.requireView(applicationId);
 
         Map<String, Object> archive = approvalService.historyDetail(applicationId);
 

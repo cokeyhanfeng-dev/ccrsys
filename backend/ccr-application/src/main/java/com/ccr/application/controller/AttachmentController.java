@@ -3,6 +3,7 @@ package com.ccr.application.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.application.domain.CcrApplicationAttachment;
 import com.ccr.application.mapper.CcrApplicationAttachmentMapper;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -36,9 +37,13 @@ public class AttachmentController {
     @Resource
     private CcrApplicationAttachmentMapper attachmentMapper;
 
+    @Resource
+    private ApplicationAccessService applicationAccessService;
+
     /** 上传(多文件逐个调用) */
     @PostMapping
     public R<Map<String, Object>> upload(@PathVariable Long applicationId, @RequestParam("file") MultipartFile file) {
+        applicationAccessService.requireDraftOwner(applicationId);
         if (file == null || file.isEmpty()) {
             throw new ServiceException(400, "请选择附件文件");
         }
@@ -65,6 +70,7 @@ public class AttachmentController {
     /** 附件列表(不含内容) */
     @GetMapping
     public R<List<CcrApplicationAttachment>> list(@PathVariable Long applicationId) {
+        applicationAccessService.requireView(applicationId);
         return R.ok(attachmentMapper.selectList(new LambdaQueryWrapper<CcrApplicationAttachment>()
                 .eq(CcrApplicationAttachment::getApplicationId, applicationId)
                 .eq(CcrApplicationAttachment::getDelFlag, "0")
@@ -74,6 +80,7 @@ public class AttachmentController {
     /** 下载 */
     @GetMapping("/{attachmentId}/download")
     public ResponseEntity<byte[]> download(@PathVariable Long applicationId, @PathVariable Long attachmentId) {
+        applicationAccessService.requireView(applicationId);
         CcrApplicationAttachment att = attachmentMapper.selectOne(new LambdaQueryWrapper<CcrApplicationAttachment>()
                 .eq(CcrApplicationAttachment::getId, attachmentId)
                 .eq(CcrApplicationAttachment::getApplicationId, applicationId)

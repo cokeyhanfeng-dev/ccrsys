@@ -2,9 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">用户管理</div>
-      <div class="section-tip">
-        系统用户维护:登录名、姓名、角色、机构、启停;编辑维护「机构-岗位绑定」多行(机构+岗位+默认,限一个默认组合,停用机构不可绑定)。
-      </div>
+      <InfoTip>系统用户维护:登录名、姓名、角色、机构、启停;编辑维护「机构-岗位绑定」多行(机构+岗位+默认,限一个默认组合,停用机构不可绑定)。</InfoTip>
     </div>
 
     <div class="card">

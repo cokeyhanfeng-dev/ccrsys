@@ -1,5 +1,6 @@
 package com.ccr.application.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.poi.excel.ExcelReader;
 import cn.hutool.poi.excel.ExcelUtil;
@@ -22,6 +23,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ccr/other-loans")
+@SaCheckRole("customer_manager")
 public class OtherLoanImportController {
 
     /**

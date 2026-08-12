@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">权限管理</div>
-      <div class="section-tip">角色维护与菜单权限分配(菜单权限影响前端展示与接口访问)。</div>
+      <InfoTip content="角色维护与菜单权限分配(菜单权限影响前端展示与接口访问)。" />
     </div>
 
     <div class="card">

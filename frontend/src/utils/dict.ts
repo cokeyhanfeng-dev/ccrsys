@@ -34,12 +34,6 @@ export function guaranteeTypeText(code?: string, fallback = '—'): string {
   return NAME_MAP[code] || (LEGACY_MAP[code] ? NAME_MAP[LEGACY_MAP[code]] : code)
 }
 
-/** 中文/编码→标准编码(提交后端用) */
-export function guaranteeTypeCode(v?: string): string {
-  if (!v) return ''
-  return LEGACY_MAP[v] || v
-}
-
 /* ========================================================================
  * 全系统展示字典:后端/接口统一使用英文编码,页面展示一律经下列函数中文化。
  * 页面禁止各自再写一套映射;缺码时原样返回编码,空值返回 fallback(默认 —)。
@@ -114,22 +108,6 @@ export const CONFIG_STATUS: Record<string, string> = {
 }
 export function configStatusText(code?: string, fallback = '—'): string {
   return textOf(CONFIG_STATUS, code, fallback)
-}
-
-/** 消息发送状态 */
-export const MSG_STATUS: Record<string, string> = {
-  PENDING: '待发送', SENT: '已发送', SUCCESS: '发送成功', FAILED: '发送失败', RETRYING: '重试中'
-}
-export function msgStatusText(code?: string, fallback = '—'): string {
-  return textOf(MSG_STATUS, code, fallback)
-}
-
-/** 数仓批次落地状态 */
-export const BATCH_STATUS: Record<string, string> = {
-  SUCCESS: '成功', OK: '正常', DONE: '完成', FAILED: '失败', ERROR: '错误', RUNNING: '运行中', PROCESSING: '处理中'
-}
-export function batchStatusText(code?: string, fallback = '—'): string {
-  return textOf(BATCH_STATUS, code ? code.toUpperCase() : code, fallback)
 }
 
 // ---------- 节点 / 动作 / 票型 ----------
@@ -341,7 +319,8 @@ export function exportTypeText(code?: string, fallback = '—'): string {
 export const ROLE_TEXT: Record<string, string> = {
   customer_manager: '客户经理', branch_manager: '支行行长', dept_gm: '部门总经理',
   vice_president: '分管行长', committee_member: '审批小组成员', president: '总行行长',
-  admin: '系统管理员', auditor: '审计员', config_reviewer: '配置复核员'
+  admin: '系统管理员', auditor: '审计员', config_reviewer: '配置复核员',
+  contract_operator: '合同经办岗'
 }
 export function roleText(code?: string, fallback = '—'): string {
   return textOf(ROLE_TEXT, code, fallback)

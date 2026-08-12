@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -71,6 +73,18 @@ public class GlobalExceptionHandler {
         FieldError fe = e.getBindingResult().getFieldError();
         String msg = fe == null ? "参数绑定失败" : fe.getDefaultMessage();
         return R.fail(400, msg);
+    }
+
+    /** 缺少必填查询参数 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public R<Void> handleMissingParameter(MissingServletRequestParameterException e) {
+        return R.fail(ErrorCode.BAD_REQUEST.getCode(), "缺少必填参数:" + e.getParameterName());
+    }
+
+    /** 路径存在但 HTTP 方法不受支持 */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public R<Void> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        return R.fail(405, "请求方法不受支持:" + e.getMethod());
     }
 
     /** 未找到处理器 */

@@ -1,6 +1,7 @@
 package com.ccr.commitment.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.commitment.domain.CcrCommitmentMetric;
 import com.ccr.commitment.domain.CcrCommitmentPlan;
@@ -29,6 +30,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -100,6 +102,7 @@ public class TrackingPolicyServiceImpl implements TrackingPolicyService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public CcrTrackingPolicy changePolicyStatus(Long policyId, String status) {
         CcrTrackingPolicy policy = policyMapper.selectById(policyId);
         if (policy == null) {
@@ -107,6 +110,11 @@ public class TrackingPolicyServiceImpl implements TrackingPolicyService {
         }
         if (!POLICY_STATUS.contains(status)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "状态仅支持 DRAFT/REVIEW/EFFECTIVE/INVALID");
+        }
+        validateTransition(policy.getStatus(), status);
+        if ("EFFECTIVE".equals(status)) {
+            requireDifferentReviewer(policy.getCreateBy());
+            invalidateSameDimensionPolicies(policy);
         }
         policy.setStatus(status);
         policyMapper.updateById(policy);
@@ -123,7 +131,9 @@ public class TrackingPolicyServiceImpl implements TrackingPolicyService {
         if (!POLICY_STATUS.contains(status)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "状态仅支持 DRAFT/REVIEW/EFFECTIVE/INVALID");
         }
+        validateTransition(version.getStatus(), status);
         if ("EFFECTIVE".equals(status)) {
+            requireDifferentReviewer(version.getCreateBy());
             // 生效区间不重叠(§11.5 表注释)
             List<CcrTrackingPolicyVersion> effective = versionMapper.selectList(
                     new LambdaQueryWrapper<CcrTrackingPolicyVersion>()
@@ -283,6 +293,41 @@ public class TrackingPolicyServiceImpl implements TrackingPolicyService {
                 || policy.getMetricCode() == null || policy.getMetricCode().isBlank()) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "策略名称与指标编码必填(全行默认用 *)");
         }
+    }
+
+    private void validateTransition(String currentStatus, String targetStatus) {
+        boolean allowed = switch (currentStatus) {
+            case "DRAFT" -> "REVIEW".equals(targetStatus);
+            case "REVIEW" -> "DRAFT".equals(targetStatus) || "EFFECTIVE".equals(targetStatus);
+            case "EFFECTIVE" -> "INVALID".equals(targetStatus);
+            default -> false;
+        };
+        if (!allowed) {
+            throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(),
+                    "跟踪策略状态不允许从 " + currentStatus + " 变更为 " + targetStatus);
+        }
+    }
+
+    private void requireDifferentReviewer(Long createBy) {
+        Long reviewerId = StpUtil.getLoginIdAsLong();
+        if (Objects.equals(createBy, reviewerId)) {
+            throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "维护人与复核发布人不得相同");
+        }
+    }
+
+    private void invalidateSameDimensionPolicies(CcrTrackingPolicy publishing) {
+        List<CcrTrackingPolicy> effective = policyMapper.selectList(
+                new LambdaQueryWrapper<CcrTrackingPolicy>()
+                        .eq(CcrTrackingPolicy::getStatus, "EFFECTIVE")
+                        .ne(CcrTrackingPolicy::getId, publishing.getId()));
+        effective.stream()
+                .filter(other -> Objects.equals(other.getMetricCode(), publishing.getMetricCode()))
+                .filter(other -> Objects.equals(other.getBusinessType(), publishing.getBusinessType()))
+                .filter(other -> Objects.equals(other.getOrgCode(), publishing.getOrgCode()))
+                .forEach(other -> {
+                    other.setStatus("INVALID");
+                    policyMapper.updateById(other);
+                });
     }
 
     private void saveThresholds(Long policyVersionId, List<CcrTrackingThreshold> thresholds) {

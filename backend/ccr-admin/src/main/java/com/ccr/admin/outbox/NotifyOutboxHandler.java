@@ -30,6 +30,7 @@ public class NotifyOutboxHandler implements OutboxEventHandler {
         NotificationMessage message = new NotificationMessage();
         message.setRecipientType(payload.getStr("recipientType"));
         message.setRecipientId(payload.getStr("recipientId"));
+        message.setOrgId(payload.getLong("orgId"));
         message.setChannel(payload.getStr("channel"));
         message.setMessageKey(payload.getStr("messageKey"));
         message.setContent(payload.getStr("content"));

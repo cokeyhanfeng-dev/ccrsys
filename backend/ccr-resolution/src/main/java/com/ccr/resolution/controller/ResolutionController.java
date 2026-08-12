@@ -1,7 +1,8 @@
 package com.ccr.resolution.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.common.core.domain.R;
-import com.ccr.resolution.domain.CcrResolution;
 import com.ccr.resolution.domain.CcrResolutionExecution;
 import com.ccr.resolution.dto.ContractBindDTO;
 import com.ccr.resolution.service.ResolutionService;
@@ -13,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -27,20 +26,6 @@ public class ResolutionController {
 
     @Resource
     private ResolutionService resolutionService;
-
-    /** 生成决议 */
-    @PostMapping
-    public R<CcrResolution> create(@RequestBody Map<String, Object> body) {
-        CcrResolution r = resolutionService.createResolution(
-                Long.valueOf(body.get("pricingItemId").toString()),
-                new BigDecimal(body.get("finalRate").toString()),
-                body.get("carrierType") == null ? "LOAN_CONTRACT" : body.get("carrierType").toString(),
-                body.get("carrierBusinessKey") == null ? null : body.get("carrierBusinessKey").toString(),
-                body.get("effectiveFrom") == null ? null : LocalDate.parse(body.get("effectiveFrom").toString()),
-                body.get("effectiveTo") == null ? null : LocalDate.parse(body.get("effectiveTo").toString()),
-                body.get("decisionSource") == null ? "PRESIDENT_APPROVED" : body.get("decisionSource").toString());
-        return R.ok(r);
-    }
 
     /** 决议列表(角色数据权限:客户经理看本人申请,行长/admin/auditor 全量,其余审批角色看本人参与过的) */
     @GetMapping
@@ -55,12 +40,14 @@ public class ResolutionController {
     }
 
     /** 回填正式合同并校验一致性(§7.7 七项;绑定成功同事务自动触发两级核验) */
+    @SaCheckRole(value = {"contract_operator", "president", "admin"}, mode = SaMode.OR)
     @PostMapping("/{resolutionId}/contract-bind")
     public R<CcrResolutionExecution> bind(@PathVariable Long resolutionId, @RequestBody ContractBindDTO bindDTO) {
         return R.ok(resolutionService.bindContract(resolutionId, bindDTO));
     }
 
     /** 执行核验(两级) */
+    @SaCheckRole(value = {"contract_operator", "president", "admin"}, mode = SaMode.OR)
     @GetMapping("/{resolutionId}/execution-check")
     public R<CcrResolutionExecution> check(@PathVariable Long resolutionId) {
         return R.ok(resolutionService.executeCheck(resolutionId));

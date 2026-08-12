@@ -2,9 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">{{ isApprover ? '历史审批' : '历史申请' }}</div>
-      <div class="section-tip">
-        {{ isApprover ? '本人审批/表决/决策过的申请(审批人视角,按数据权限过滤)' : '本人历史申请(客户经理视角)' }}
-      </div>
+      <InfoTip :content="isApprover ? '本人审批/表决/决策过的申请(审批人视角,按数据权限过滤)' : '本人历史申请(客户经理视角)'" />
     </div>
 
     <div class="card">

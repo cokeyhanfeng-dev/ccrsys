@@ -1,5 +1,6 @@
 package com.ccr.snapshot.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.ccr.common.core.domain.R;
 import com.ccr.snapshot.service.DatacenterService;
 import jakarta.annotation.Resource;
@@ -11,10 +12,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 数据中心监控接口(§11.7,只读;登录即可访问,登录校验由 Sa-Token 全局拦截器承担)
+ * 数据中心监控接口(§11.7,只读;仅管理员访问)
  */
 @RestController
 @RequestMapping("/ccr/datacenter")
+@SaCheckRole("admin")
 public class DatacenterController {
 
     @Resource

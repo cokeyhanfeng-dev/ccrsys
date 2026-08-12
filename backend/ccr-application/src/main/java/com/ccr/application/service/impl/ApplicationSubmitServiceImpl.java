@@ -32,6 +32,7 @@ import com.ccr.application.mapper.CcrPricingItemContractRelMapper;
 import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.ApplicationSubmitService;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.common.cache.CcrCacheUtil;
@@ -126,11 +127,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private OutboxService outboxService;
     @Resource
     private CcrCacheUtil cacheUtil;
+    @Resource
+    private ApplicationAccessService applicationAccessService;
 
     // ==================== 路由预览(§13.1) ====================
 
     @Override
     public RoutePreviewResponse routePreview(Long id) {
+        applicationAccessService.requireOwner(id);
         CcrApplication app = requireApplication(id);
         List<CcrPricingItem> items = routableItems(id);
         BigDecimal groupCreditTotal = loadGroupCreditTotal(app);
@@ -191,6 +195,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
     @Override
     public SubmitCheckResponse submitCheck(Long id) {
+        applicationAccessService.requireOwner(id);
         CcrApplication app = requireApplication(id);
         List<CcrPricingItem> items = routableItems(id);
 
@@ -320,6 +325,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public SubmitResponse submit(Long id) {
+        applicationAccessService.requireOwner(id);
         CcrApplication app = requireApplication(id);
         // a) 状态守卫:仅 DRAFT 可提交;重复提交幂等返回既有结果
         if (!ApplicationStatus.DRAFT.getCode().equals(app.getStatus())) {
@@ -431,8 +437,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 JSONUtil.toJsonStr(applicantNotify));
 
         Map<String, Object> branchNotify = new LinkedHashMap<>();
-        branchNotify.put("recipientType", "ROLE");
-        branchNotify.put("recipientId", "branch_manager");
+        branchNotify.put("recipientType", "BRANCH_MANAGER");
+        branchNotify.put("orgId", app.getApplicantOrgId());
         branchNotify.put("channel", "SYSTEM");
         branchNotify.put("messageKey", "SUBMIT_NOTIFY:APP:" + app.getId() + ":BRANCH_MANAGER");
         branchNotify.put("content", "定价申请 " + app.getApplicationNo() + " 已提交,待支行行长审批(分项:"
@@ -949,6 +955,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CcrApplication reapply(Long id) {
+        applicationAccessService.requireOwner(id);
         CcrApplication source = requireApplication(id);
         if (!REAPPLY_SOURCE_STATUS.contains(source.getStatus())) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),

@@ -1,5 +1,7 @@
 package com.ccr.commitment.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
@@ -89,6 +91,7 @@ public class CommitmentController {
     }
 
     /** 审批通过后生成承诺计划 */
+    @SaCheckRole("admin")
     @PostMapping("/plans")
     public R<CcrCommitmentPlan> createPlan(@RequestBody CreatePlanReq req) {
         CcrCommitmentPlan plan = req.getPlan();
@@ -99,6 +102,7 @@ public class CommitmentController {
     }
 
     /** 人工状态变迁(TERMINATED/SUPERSEDED) */
+    @SaCheckRole("admin")
     @PostMapping("/plans/{planId}/status")
     public R<CcrCommitmentPlan> changeStatus(@PathVariable Long planId, @RequestBody Map<String, Object> body) {
         return R.ok(commitmentService.changeStatus(
@@ -108,6 +112,7 @@ public class CommitmentController {
     }
 
     /** 单指标履约计算 */
+    @SaCheckRole("admin")
     @PostMapping("/evaluate")
     public R<CcrTrackingEvaluation> evaluate(@RequestBody Map<String, Object> body) {
         return R.ok(commitmentService.evaluate(
@@ -118,6 +123,7 @@ public class CommitmentController {
     }
 
     /** 按计划批量履约(定时任务入口) */
+    @SaCheckRole("admin")
     @PostMapping("/plans/{planId}/evaluate")
     public R<List<CcrTrackingEvaluation>> evaluatePlan(@PathVariable Long planId, @RequestBody Map<String, Object> body) {
         return R.ok(commitmentService.evaluatePlan(
@@ -127,8 +133,23 @@ public class CommitmentController {
     }
 
     /** 保存指标跟踪描述(§6.4/§10.3.15:承诺类型"其它"手工跟踪留痕,track_desc 覆盖式更新) */
+    @SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
     @PostMapping("/metrics/{metricId}/track")
     public R<CcrCommitmentMetric> saveTrackDesc(@PathVariable Long metricId, @RequestBody Map<String, Object> body) {
+        if (!StpUtil.hasRole("admin")) {
+            Long owned = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM ccr_commitment_metric cm
+                    JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id AND cp.del_flag = '0'
+                    JOIN ccr_resolution r ON r.id = cp.resolution_id AND r.del_flag = '0'
+                    JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id AND pi.del_flag = '0'
+                    JOIN ccr_application a ON a.id = pi.application_id AND a.del_flag = '0'
+                    WHERE cm.id = ? AND cm.del_flag = '0' AND a.applicant_user_id = ?
+                    """, Long.class, metricId, StpUtil.getLoginIdAsLong());
+            if (owned == null || owned == 0) {
+                throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "无权维护该承诺指标");
+            }
+        }
         String trackDesc = body.get("trackDesc") == null ? null : body.get("trackDesc").toString();
         return R.ok(commitmentService.saveTrackDesc(metricId, trackDesc));
     }

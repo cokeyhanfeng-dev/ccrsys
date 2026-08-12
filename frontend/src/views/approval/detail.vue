@@ -5,7 +5,7 @@
         <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
         审批详情
       </div>
-      <div class="section-tip">基础信息只读,普通审批人仅可编辑审批利率与审批意见。</div>
+      <InfoTip content="基础信息只读,普通审批人仅可编辑审批利率与审批意见。" />
     </div>
 
     <!-- 0. 数据来源与快照信息(§12.16-7) -->
@@ -21,9 +21,9 @@
         <div><span class="dg-label">冻结时间</span>{{ snapshotInfo.freezeTime || '—' }}</div>
         <div><span class="dg-label">快照批次号</span>{{ snapshotInfo.bundleNo || '—' }}</div>
       </div>
-      <div class="section-tip" v-if="source === 'MANUAL'">未找到数仓/快照客户数据,客户信息由客户经理手工录入,以人工填写为准。</div>
-      <div class="section-tip" v-else-if="source === 'MANUAL_OVERRIDE'">数仓/快照客户信息已由客户经理人工修正,以人工填写为准。</div>
-      <div class="section-tip" v-else>未找到提交时冻结快照,客户/融资/贡献度为数仓实时查询结果,可能与提交时点存在差异。</div>
+      <div class="source-note" v-if="source === 'MANUAL'">未找到数仓/快照客户数据,客户信息由客户经理手工录入,以人工填写为准。</div>
+      <div class="source-note" v-else-if="source === 'MANUAL_OVERRIDE'">数仓/快照客户信息已由客户经理人工修正,以人工填写为准。</div>
+      <div class="source-note" v-else-if="source !== 'SNAPSHOT'">未找到提交时冻结快照,客户/融资/贡献度为数仓实时查询结果,可能与提交时点存在差异。</div>
     </div>
 
 
@@ -1136,6 +1136,13 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 数据来源提示(非冻结快照时的风险提示条) */
+.source-note {
+  margin-top: 12px; padding: 8px 12px;
+  font-size: 13px; line-height: 1.6;
+  color: #92400e; background: var(--color-warning-light);
+  border: 1px solid #f5d58a; border-radius: var(--radius-sm);
+}
 /* 返回列表按钮(section-title 内嵌,ghost 小按钮) */
 .btn--back {
   margin-right: 10px;

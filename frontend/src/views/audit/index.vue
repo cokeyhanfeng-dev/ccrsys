@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">审计管理</div>
-      <div class="section-tip">实际投票人反查 / 导出记录 / 配置版本查询(§12.14,仅审计人员与管理员)</div>
+      <InfoTip content="实际投票人反查 / 导出记录 / 配置版本查询(§12.14,仅审计人员与管理员)" />
     </div>
 
     <!-- ① 实际投票人反查:批次 + 分项 → 真实投票人/票型/匿名码对照 -->

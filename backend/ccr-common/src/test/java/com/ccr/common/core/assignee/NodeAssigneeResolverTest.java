@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -76,16 +77,17 @@ class NodeAssigneeResolverTest {
     }
 
     @Test
-    void resolve_tableMissing_returnsEmpty() {
-        // 未执行 03f 的环境:DataAccessException 容错,按未配置放行
+    void resolve_tableMissing_marksErrorAndRejectsRoleFallback() {
+        // 配置表缺失或查询故障时拒绝按角色放行，避免故障扩大权限。
         when(jdbcTemplate.queryForList(anyString(), any(Object.class), any(Object.class),
                 any(Object.class), any(Object.class)))
                 .thenThrow(new BadSqlGrammarException("", "", new SQLException("Table doesn't exist")));
 
         NodeAssigneeResolver.ResolveResult result = resolver.resolve("BRANCH_MANAGER", 1001L);
-        assertEquals(NodeAssigneeResolver.LEVEL_NONE, result.getHitLevel());
+        assertEquals(NodeAssigneeResolver.LEVEL_ERROR, result.getHitLevel());
         assertTrue(result.getUsers().isEmpty());
-        assertTrue(resolver.resolveUserIds("BRANCH_MANAGER", 1001L).isEmpty());
+        assertThrows(com.ccr.common.exception.ServiceException.class,
+                () -> resolver.resolveUserIds("BRANCH_MANAGER", 1001L));
     }
 
     @Test

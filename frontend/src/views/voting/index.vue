@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">利率审批小组成员工作台 · 待我表决</div>
-      <div class="section-tip">仅提交本人"赞成/反对"意见,后台自动计票;不展示其他成员票型或汇总票数,本人意见提交后不可修改。</div>
+      <InfoTip content="仅提交本人&quot;赞成/反对&quot;意见,后台自动计票;不展示其他成员票型或汇总票数,本人意见提交后不可修改。" />
     </div>
 
     <div class="card">

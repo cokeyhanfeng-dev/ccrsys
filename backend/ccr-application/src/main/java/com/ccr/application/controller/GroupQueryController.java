@@ -1,5 +1,6 @@
 package com.ccr.application.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.util.StrUtil;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.common.core.domain.R;
@@ -19,6 +20,7 @@ import java.util.Map;
  * 集团/成员查询接口(§13.1;db/02 数仓表最新批次取数,只读)
  */
 @RestController
+@SaCheckRole("customer_manager")
 public class GroupQueryController {
 
     @Resource

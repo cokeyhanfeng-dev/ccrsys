@@ -7,6 +7,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import InfoTip from './components/InfoTip.vue'
 import './styles/design-system.css'
 import './styles/index.scss'
 
@@ -16,6 +17,8 @@ const app = createApp(App)
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
+// 全局说明图标(悬停展示解释文案)
+app.component('InfoTip', InfoTip)
 
 app.use(createPinia())
 app.use(router)

@@ -20,6 +20,9 @@ public class NotificationMessage {
     /** 接收对象标识(用户id;recipientType 为 ROLE 时此处直接给角色编码亦可,走 resolver) */
     private String recipientId;
 
+    /** 接收人动态解析的机构上下文(如按申请所属支行解析支行行长) */
+    private Long orgId;
+
     /** 渠道(空=SYSTEM 站内信) */
     private String channel;
 

@@ -5,7 +5,7 @@
         申请档案
         <span v-if="archive.application" class="app-no">{{ val(archive.application, 'application_no', 'applicationNo') }}</span>
       </div>
-      <div class="section-tip">申请档案(§14.4):展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。</div>
+      <InfoTip content="申请档案(§14.4):展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
       <div class="head-actions">
         <button class="btn btn--secondary" @click="router.push('/history')">返回列表</button>
         <button v-if="canExport" class="btn btn--primary" :disabled="exporting" @click="doExport">
@@ -321,10 +321,9 @@
       <!-- 11. 历史履约(该申请承诺计划 + 逐期指标完成情况;与贡献度跟踪同源,按申请挂钩) -->
       <div class="card" v-if="commitmentGroups.length">
         <div class="card__head">
-          <span>历史履约</span>
+          <span>历史履约 <InfoTip content="该申请审批通过后形成的承诺计划履约情况(与贡献度跟踪同一数据源,按申请挂钩;每期 = 每一次申请)。" style="margin-left:6px" /></span>
           <button class="btn btn--text" @click="router.push('/commitment')">查看贡献度跟踪</button>
         </div>
-        <div class="section-tip">该申请审批通过后形成的承诺计划履约情况(与贡献度跟踪同一数据源,按申请挂钩;每期 = 每一次申请)。</div>
         <div v-for="(plan, pi) in commitmentGroups" :key="pi" class="plan-block" :style="pi ? 'margin-top:12px' : ''">
           <div class="plan-block__head">
             <span class="badge badge--info">{{ plan.planNo }}</span>
@@ -562,7 +561,7 @@ onMounted(load)
 
 <style scoped>
 .app-no { font-size: 14px; color: var(--color-text-sub); font-weight: 400; margin-left: 8px; }
-.head-actions { margin-top: 10px; display: flex; gap: 8px; }
+.head-actions { margin-left: auto; display: flex; gap: 8px; }
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .desc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 16px; font-size: 14px; }
 .desc-item { display: flex; flex-direction: column; gap: 2px; }

@@ -6,6 +6,7 @@ import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrRelation;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrRelationMapper;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
@@ -49,9 +50,13 @@ public class RelationController {
     @Resource
     private AppLoginUser appLoginUser;
 
+    @Resource
+    private ApplicationAccessService applicationAccessService;
+
     /** 判重查询(§11.2 relations/check):返回证件号是否已绑定及绑定对象 */
     @GetMapping("/check")
     public R<Map<String, Object>> check(@RequestParam String certType, @RequestParam String certNo) {
+        applicationAccessService.requireCustomerManager();
         validateCert(certType, certNo);
         CcrRelation exist = findByCert(certType, certNo);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -71,29 +76,23 @@ public class RelationController {
         String certNo = str(body.get("certNo"));
         validateCert(certType, certNo);
 
-        // 绑定对象:applicationId 提供则取申请主客户(customer_scope=GROUP 绑集团,否则绑客户);否则用入参
-        String customerNo = str(body.get("customerNo"));
-        String groupNo = str(body.get("groupNo"));
-        String applicationNo = null;
-        Long orgId = null;
+        // 绑定对象只允许从客户经理本人草稿解析，禁止直接指定任意客户号或集团号。
         Object appId = body.get("applicationId");
-        if (appId != null) {
-            CcrApplication app = applicationMapper.selectById(((Number) appId).longValue());
-            if (app == null || "1".equals(app.getDelFlag())) {
-                throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在:" + appId);
-            }
-            applicationNo = app.getApplicationNo();
-            orgId = app.getOrgId();
-            if (StrUtil.isBlank(customerNo) && StrUtil.isBlank(groupNo)) {
-                if ("GROUP".equals(app.getCustomerScope())) {
-                    groupNo = app.getGroupNo();
-                } else {
-                    customerNo = app.getCustomerNo();
-                }
-            }
+        if (!(appId instanceof Number)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "关联人绑定必须提供申请ID(applicationId)");
         }
+        Long applicationId = ((Number) appId).longValue();
+        applicationAccessService.requireDraftOwner(applicationId);
+        CcrApplication app = applicationMapper.selectById(applicationId);
+        if (app == null || "1".equals(app.getDelFlag())) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在:" + applicationId);
+        }
+        String applicationNo = app.getApplicationNo();
+        Long orgId = app.getOrgId();
+        String customerNo = "GROUP".equals(app.getCustomerScope()) ? null : app.getCustomerNo();
+        String groupNo = "GROUP".equals(app.getCustomerScope()) ? app.getGroupNo() : null;
         if (StrUtil.isBlank(customerNo) && StrUtil.isBlank(groupNo)) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "绑定对象缺失:须提供 customerNo 或 groupNo(或 applicationId)");
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "申请缺少可绑定的客户号或集团号");
         }
 
         CcrRelation exist = findByCert(certType, certNo);
@@ -140,7 +139,7 @@ public class RelationController {
     /** 申请关联人列表(§11.2 application/{id}/relations):按申请主客户反查已绑定关联人 */
     @GetMapping("/application/{applicationId}")
     public R<List<CcrRelation>> applicationRelations(@PathVariable Long applicationId) {
-        appLoginUser.requireLoginId();
+        applicationAccessService.requireView(applicationId);
         CcrApplication app = applicationMapper.selectById(applicationId);
         if (app == null || "1".equals(app.getDelFlag())) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在:" + applicationId);
