@@ -700,7 +700,8 @@ function appStatusBadge(s?: string) {
   const map: Record<string, string> = {
     DRAFT: 'badge badge--neutral', SUBMITTING: 'badge badge--warning', PROCESSING: 'badge badge--info',
     PARTIAL_APPROVED: 'badge badge--warning', APPROVED: 'badge badge--success',
-    REJECTED: 'badge badge--danger', CLOSED: 'badge badge--neutral'
+    REJECTED: 'badge badge--danger', CLOSED: 'badge badge--neutral',
+    ROUTING: 'badge badge--info', FINAL: 'badge badge--success', RETURNED: 'badge badge--warning'
   }
   return map[s || ''] || 'badge badge--neutral'
 }

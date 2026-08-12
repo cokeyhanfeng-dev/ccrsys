@@ -56,7 +56,8 @@ function textOf(map: Record<string, string>, code?: string, fallback = '—'): s
 /** 申请主单状态(历史/档案) */
 export const APP_STATUS: Record<string, string> = {
   DRAFT: '草稿', SUBMITTING: '提交中', PROCESSING: '审批中', PARTIAL_APPROVED: '部分通过',
-  APPROVED: '已通过', REJECTED: '已否决', CLOSED: '已关闭'
+  APPROVED: '已通过', REJECTED: '已否决', CLOSED: '已关闭',
+  ROUTING: '审批中', FINAL: '终态', RETURNED: '已退回'
 }
 export function appStatusText(code?: string, fallback = '—'): string {
   return textOf(APP_STATUS, code, fallback)
