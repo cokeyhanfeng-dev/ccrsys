@@ -50,14 +50,14 @@ public class CommitmentController {
             pi.requested_rate, pi.final_rate,
             """;
 
-    /** 申请摘要 JOIN 片段(数仓客户主数据/集团快照最新批次取名称:集团走 group_no、单户走 customer_no) */
+    /** 申请摘要 JOIN 片段(数仓客户主数据/集团快照按客户自身最新批次取名称:集团走 group_no、单户走 customer_no;不可用全局 MAX(data_dt),否则非最新批客户匹配不到) */
     private static final String APP_SUMMARY_JOIN = """
             LEFT JOIN caps_corp_cust_basic_info cc
-                   ON cc.cust_no = a.customer_no AND cc.data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
+                   ON cc.cust_no = a.customer_no AND cc.data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info WHERE cust_no = a.customer_no)
             LEFT JOIN caps_indv_cust_basic_info ci
-                   ON ci.cust_no = a.customer_no AND ci.data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
+                   ON ci.cust_no = a.customer_no AND ci.data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info WHERE cust_no = a.customer_no)
             LEFT JOIN dw_customer_group_snapshot gg
-                   ON gg.group_no = a.group_no AND gg.data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot)
+                   ON gg.group_no = a.group_no AND gg.data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = a.group_no)
             """;
 
     @Resource
