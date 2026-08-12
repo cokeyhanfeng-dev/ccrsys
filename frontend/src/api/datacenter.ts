@@ -2,23 +2,23 @@ import { get } from './request'
 
 // 数据中心接口封装(§9.6 F8;全角色可见)
 
-/** 批次落地监控行:各表最新批次的数据日期/行数/状态/耗时/指纹 */
+/** 批次落地监控行:各表最新批次的数据日期/行数/落地时间(后端返回 table/sourceName/latestDataDt/batchRows/landedTime) */
 export interface BatchLandingRow {
-  tableName?: string
-  batchNo?: string
-  dataDate?: string
-  rowCount?: number
-  status?: string
-  costMs?: number
-  fingerprint?: string
+  table?: string
+  sourceName?: string
+  latestDataDt?: string
+  batchRows?: number
+  landedTime?: string
   [key: string]: any
 }
 
-/** 数据源时效行:status OK/STALE */
+/** 数据源时效行:status OK/STALE(后端返回 table/sourceName/latestDataDt/delayDays/thresholdDays/status) */
 export interface SourceStatusRow {
-  sourceCode?: string
+  table?: string
   sourceName?: string
-  dataDate?: string
+  latestDataDt?: string
+  delayDays?: number
+  thresholdDays?: number
   status?: string
   [key: string]: any
 }

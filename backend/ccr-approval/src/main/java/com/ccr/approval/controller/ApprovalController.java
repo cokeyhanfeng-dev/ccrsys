@@ -69,7 +69,7 @@ public class ApprovalController {
         // 申请概要
         if (appId != null) {
             List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                    "SELECT id, application_no applicationNo, business_type businessType, customer_no customerNo, group_no groupNo, application_remark applicationRemark, snapshot_bundle_id snapshotBundleId, customer_info_json customerInfoJson, submit_time submitTime, applicant_user_id applicantUserId FROM ccr_application WHERE id = ?", appId);
+                    "SELECT id, application_no applicationNo, business_type businessType, customer_no customerNo, group_no groupNo, application_remark applicationRemark, snapshot_bundle_id snapshotBundleId, customer_info_json customerInfoJson, credit_info_json creditInfoJson, submit_time submitTime, applicant_user_id applicantUserId FROM ccr_application WHERE id = ?", appId);
             result.put("application", apps);
             if (!apps.isEmpty()) {
                 businessType = apps.get(0).get("businessType") == null ? null : apps.get(0).get("businessType").toString();
@@ -382,6 +382,41 @@ public class ApprovalController {
         // 授信协议(§12.7:授信协议编号/类型/起止/额度/已用,数仓最新批次)
         result.put("creditAgreements", jdbcTemplate.queryForList(
                 "SELECT agreement_no agreementNo, agreement_type agreementType, credit_amount creditAmount, used_amount usedAmount, available_amount availableAmount, currency, start_date startDate, end_date endDate, agreement_status agreementStatus FROM dw_credit_agreement_snapshot WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot WHERE customer_no = ?) ORDER BY agreement_no", custNo, custNo));
+
+        // 授信协议补录/修正快照(ccr_application.credit_info_json):存量=协议带出可修正,新增=手工补录(协议号可空);
+        // 补录值优先展示(source=APPLICATION),与数仓协议按协议号去重(同号数仓行不再重复展示)
+        Object creditInfoJson = appBrief == null || appBrief.isEmpty() ? null : appBrief.get(0).get("creditInfoJson");
+        if (creditInfoJson != null && !creditInfoJson.toString().isBlank()) {
+            cn.hutool.json.JSONObject ci = JSONUtil.parseObj(creditInfoJson.toString());
+            Map<String, Object> manual = new LinkedHashMap<>();
+            manual.put("agreementNo", ci.getStr("agreementNo"));
+            manual.put("agreementType", ci.getStr("agreementType"));
+            manual.put("creditAmount", ci.get("creditAmount"));
+            manual.put("usedAmount", ci.get("usedAmount"));
+            manual.put("availableAmount", ci.get("availableAmount"));
+            manual.put("currency", ci.getStr("currency"));
+            manual.put("startDate", ci.getStr("startDate"));
+            manual.put("endDate", ci.getStr("endDate"));
+            manual.put("agreementStatus", ci.getStr("agreementStatus"));
+            manual.put("source", "APPLICATION");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> agreements = (List<Map<String, Object>>) result.get("creditAgreements");
+            List<Map<String, Object>> merged = new ArrayList<>();
+            merged.add(manual);
+            String manualNo = manual.get("agreementNo") == null ? null : manual.get("agreementNo").toString();
+            for (Map<String, Object> row : agreements) {
+                Object no = row.get("agreementNo");
+                String rowNo = no == null ? null : no.toString();
+                if (manualNo == null || !manualNo.isEmpty()) {
+                    if (!manualNo.equals(rowNo)) {
+                        merged.add(row);
+                    }
+                } else {
+                    merged.add(row);
+                }
+            }
+            result.put("creditAgreements", merged);
+        }
 
         // 他行融资(申请人工补录/Excel 导入与数仓征信,最新批次)
         result.put("otherLoanSummary", jdbcTemplate.queryForList(

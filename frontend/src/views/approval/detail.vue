@@ -157,12 +157,15 @@
 
     <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用) -->
     <div class="card">
-      <div class="card__head"><span>授信信息</span><span class="badge badge--info">数仓</span></div>
+      <div class="card__head"><span>授信信息</span><span class="badge" :class="hasManualCredit ? 'badge--warning' : 'badge--info'">{{ hasManualCredit ? '申请补录 + 数仓' : '数仓' }}</span></div>
       <table class="table" v-if="creditAgreements.length">
         <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
         <tbody>
           <tr v-for="(a, i) in creditAgreements" :key="i">
-            <td>{{ a.agreementNo }}</td>
+            <td>
+              {{ a.agreementNo || '—' }}
+              <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
+            </td>
             <td>{{ agreementTypeText(a.agreementType) }}</td>
             <td>{{ a.currency || 'CNY' }}</td>
             <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
@@ -763,6 +766,8 @@ const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
 const relatedPersons = ref<any[]>([])
 const creditAgreements = ref<any[]>([])
+/** 授信信息是否含申请补录/修正值(区别于纯数仓展示) */
+const hasManualCredit = computed(() => creditAgreements.value.some((a: any) => a.source === 'APPLICATION'))
 // P1-2:合同下借据(数仓借据快照最新批次) / 集团贡献度(数仓 GROUP 口径 TOTAL)
 const loanNotes = ref<any[]>([])
 const groupContribution = ref<any>(null)

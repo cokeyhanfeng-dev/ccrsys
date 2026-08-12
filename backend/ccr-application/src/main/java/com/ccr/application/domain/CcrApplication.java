@@ -79,6 +79,9 @@ public class CcrApplication extends BaseEntity {
     /** 客户信息人工修正快照(JSON;数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示) */
     private String customerInfoJson;
 
+    /** 授信协议补录/修正快照(JSON;存量=协议带出可修正,新增=手工补录,协议号可空;审批详情授信信息区优先展示补录值) */
+    private String creditInfoJson;
+
     /** 集团场景涉及成员(非表字段,仅接收,落 ccr_application_member;逐成员金额/币种/角色) */
     @TableField(exist = false)
     private List<MemberInput> members;

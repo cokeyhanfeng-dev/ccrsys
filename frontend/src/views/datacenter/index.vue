@@ -6,25 +6,24 @@
     </div>
 
     <div class="dc-grid">
-      <!-- ① 批次落地监控:各表最新批次的数据日期/行数/状态 -->
+      <!-- ① 批次落地监控:各表最新批次的数据日期/行数/落地时间 -->
       <div class="card">
         <div class="card-title">批次落地监控</div>
         <table class="table">
           <thead>
             <tr>
-              <th>数据表</th><th>批次号</th><th>最新数据日期</th><th>行数</th><th>状态</th><th>耗时</th>
+              <th>数据表</th><th>数据源</th><th>最新数据日期</th><th>批次行数</th><th>落地时间</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, i) in batches" :key="row.batchNo || i">
-              <td>{{ row.tableName || '—' }}</td>
-              <td>{{ row.batchNo || '—' }}</td>
-              <td>{{ fmtDate(row.dataDate) }}</td>
-              <td class="num">{{ row.rowCount ?? '—' }}</td>
-              <td><span :class="batchBadge(row.status)">{{ batchStatusText(row.status) }}</span></td>
-              <td>{{ fmtCost(row.costMs) }}</td>
+            <tr v-for="(row, i) in batches" :key="row.table || i">
+              <td>{{ row.table || '—' }}</td>
+              <td>{{ row.sourceName || '—' }}</td>
+              <td>{{ fmtDate(row.latestDataDt) }}</td>
+              <td class="num">{{ row.batchRows ?? '—' }}</td>
+              <td>{{ fmtTime(row.landedTime) }}</td>
             </tr>
-            <tr v-if="!batches.length"><td colspan="6" class="empty-cell">暂无批次数据</td></tr>
+            <tr v-if="!batches.length"><td colspan="5" class="empty-cell">暂无批次数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -35,19 +34,19 @@
         <div v-if="sources.length" class="source-list">
           <div
             v-for="(row, i) in sources"
-            :key="row.sourceCode || i"
+            :key="row.table || i"
             class="source-item"
             :class="{ 'source-item--stale': isStale(row.status) }"
           >
             <span class="source-dot" :class="isStale(row.status) ? 'source-dot--stale' : 'source-dot--ok'"></span>
             <div class="source-item__body">
               <div class="source-item__name">
-                {{ row.sourceName || row.sourceCode || '—' }}
+                {{ row.sourceName || row.table || '—' }}
                 <span :class="isStale(row.status) ? 'badge badge--danger' : 'badge badge--success'">
                   {{ isStale(row.status) ? '已过期' : '正常' }}
                 </span>
               </div>
-              <div class="source-item__date">最新数据日期:{{ fmtDate(row.dataDate) }}</div>
+              <div class="source-item__date">最新数据日期:{{ fmtDate(row.latestDataDt) }}</div>
               <div v-if="isStale(row.status)" class="source-item__warn">数据已过期,请联系数据中心刷新</div>
             </div>
           </div>
@@ -66,7 +65,6 @@ import {
   type BatchLandingRow,
   type SourceStatusRow
 } from '@/api/datacenter'
-import { batchStatusText } from '@/utils/dict'
 
 const batches = ref<BatchLandingRow[]>([])
 const sources = ref<SourceStatusRow[]>([])
@@ -87,20 +85,11 @@ async function load() {
 
 const isStale = (status?: string) => (status || '').toUpperCase() === 'STALE'
 
-function batchBadge(status?: string) {
-  const s = (status || '').toUpperCase()
-  if (['SUCCESS', 'OK', 'DONE'].includes(s)) return 'badge badge--success'
-  if (['FAILED', 'ERROR'].includes(s)) return 'badge badge--danger'
-  if (['RUNNING', 'PROCESSING'].includes(s)) return 'badge badge--info'
-  return 'badge badge--neutral'
-}
-
 function fmtDate(t?: string) {
   return t ? String(t).replace('T', ' ').slice(0, 10) : '—'
 }
-function fmtCost(costMs?: number) {
-  if (costMs == null) return '—'
-  return costMs >= 1000 ? `${(costMs / 1000).toFixed(1)}s` : `${costMs}ms`
+function fmtTime(t?: string) {
+  return t ? String(t).replace('T', ' ').slice(0, 19) : '—'
 }
 
 onMounted(load)

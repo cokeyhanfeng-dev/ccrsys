@@ -1,6 +1,7 @@
 /**
  * 担保类型字典(V1.0 附录 A.3):后端/路由统一使用编码,页面展示中文
- * CREDIT信用/GUARANTEE保证/MORTGAGE抵押/PLEDGE质押/BILL_MARGIN银票保证金/CREDIT_MARGIN信用证保证金/CERTIFICATE_DEPOSIT存单质押
+ * 担保方式主类型固定 4 种:CREDIT信用/GUARANTEE保证/MORTGAGE抵押/PLEDGE质押
+ * (银票/信用证保证金、存单质押等不再作为主担保方式,仅存于担保措施层 measureType)
  */
 
 export interface DictItem {
@@ -12,14 +13,18 @@ export const GUARANTEE_TYPES: DictItem[] = [
   { code: 'MORTGAGE', name: '抵押' },
   { code: 'PLEDGE', name: '质押' },
   { code: 'GUARANTEE', name: '保证' },
-  { code: 'CREDIT', name: '信用' },
-  { code: 'BILL_MARGIN', name: '银票保证金' },
-  { code: 'CREDIT_MARGIN', name: '信用证保证金' },
-  { code: 'CERTIFICATE_DEPOSIT', name: '存单质押' },
-  { code: 'MARGIN_PLEDGE', name: '保证金质押' }
+  { code: 'CREDIT', name: '信用' }
 ]
 
-const NAME_MAP: Record<string, string> = Object.fromEntries(GUARANTEE_TYPES.map((t) => [t.code, t.name]))
+// 编码→中文展示映射(独立保留历史保证金/存单编码,保证存量分项/担保措施数据仍以中文展示;
+// 下拉选项 GUARANTEE_TYPES 只保留 4 种主类型,展示映射不受影响)
+const GUARANTEE_NAME_MAP: Record<string, string> = {
+  MORTGAGE: '抵押', PLEDGE: '质押', GUARANTEE: '保证', CREDIT: '信用',
+  BILL_MARGIN: '银票保证金', CREDIT_MARGIN: '信用证保证金',
+  CERTIFICATE_DEPOSIT: '存单质押', MARGIN_PLEDGE: '保证金质押'
+}
+
+const NAME_MAP: Record<string, string> = GUARANTEE_NAME_MAP
 // 兼容存量中文值(早期表单直存中文)
 const LEGACY_MAP: Record<string, string> = { 抵押: 'MORTGAGE', 质押: 'PLEDGE', 保证: 'GUARANTEE', 信用: 'CREDIT' }
 

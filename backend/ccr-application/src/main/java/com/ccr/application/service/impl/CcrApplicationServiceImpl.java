@@ -713,6 +713,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         target.setOrgId(src.getOrgId());
         target.setApplicationRemark(src.getApplicationRemark());
         target.setCustomerInfoJson(src.getCustomerInfoJson());
+        target.setCreditInfoJson(src.getCreditInfoJson());
     }
 
     private void copyForUpdate(CcrApplication target, CcrApplication src) {
@@ -724,6 +725,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (src.getApplicantOrgId() != null) target.setApplicantOrgId(src.getApplicantOrgId());
         if (StrUtil.isNotBlank(src.getApplicationRemark())) target.setApplicationRemark(src.getApplicationRemark());
         if (StrUtil.isNotBlank(src.getCustomerInfoJson())) target.setCustomerInfoJson(src.getCustomerInfoJson());
+        if (StrUtil.isNotBlank(src.getCreditInfoJson())) target.setCreditInfoJson(src.getCreditInfoJson());
     }
 
     @Override

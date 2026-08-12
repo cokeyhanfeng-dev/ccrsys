@@ -316,12 +316,9 @@
         集团场景按“成员 × 合同”生成分项;申请利率不得低于产品硬边界,突破将被提交校验阻断。
       </div>
 
-      <!-- 申请要素(品种/业务类型/金额档):客户与合同带出后自动填充(品种按客户类型,金额档按合同金额合计,期限按合同起止加工) -->
+      <!-- 申请要素(业务类型):决定存量调息/新增授信,客户与合同带出后自动填充、可手工切换;
+           贷款品种/金额档为自动带出的重复展示,已移除(分项产品体现客户类型、分项金额可见) -->
       <div class="form-grid" style="margin-bottom:14px">
-        <div class="form-field">
-          <label class="form-field__label">贷款品种</label>
-          <input class="form-input" :value="form.loanType === 'PERSONAL_LOAN' ? '个人经营性贷款' : '对公贷款'" disabled placeholder="客户类型自动带出" />
-        </div>
         <div class="form-field">
           <label class="form-field__label">业务类型 <span class="req">*</span></label>
           <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
@@ -329,14 +326,10 @@
             <option value="NEW">新增授信(拟签合同)</option>
           </select>
         </div>
-        <div class="form-field">
-          <label class="form-field__label">金额档</label>
-          <input class="form-input" :value="form.amountTier === 'GE_5000' ? '5000万以上(含)贷款' : '5000万以下贷款'" disabled placeholder="合同金额合计自动带出" />
-        </div>
       </div>
 
-      <!-- 授信信息:按客户带出授信协议,选择(或单条自动带出)后展示协议要素;存量总授信额度按协议自动填充,新增手工录入;
-           协议项下贷款合同不再单独列表展示,客户选定后由下方分项卡片按合同逐条填充(§用户要求) -->
+      <!-- 授信信息:存量按客户带出授信协议,选中后要素带出可修正;新增手工补录(协议号可空,拟签授信);
+           补录/修正要素随申请提交,审批详情「授信信息」区展示;协议项下合同由下方分项卡片按合同逐条填充 -->
       <div class="credit-overview">
         <div class="credit-overview__item">
           <span>授信协议</span>
@@ -347,22 +340,76 @@
             </option>
           </select>
         </div>
-        <template v-if="selectedAgreement">
-          <div class="credit-overview__item"><span>授信类型</span><b>{{ agreementTypeText(selectedAgreement.agreementType) }}</b></div>
-          <div class="credit-overview__item"><span>币种</span><b>{{ selectedAgreement.currency || 'CNY' }}</b></div>
-          <div class="credit-overview__item"><span>协议状态</span><b><span :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span></b></div>
-          <div class="credit-overview__item"><span>授信额度(万元)</span><b>{{ selectedAgreement.creditAmount }}</b></div>
-          <div class="credit-overview__item"><span>已用额度(万元)</span><b>{{ selectedAgreement.usedAmount }}</b></div>
-          <div class="credit-overview__item"><span>可用额度(万元)</span><b>{{ selectedAgreement.availableAmount }}</b></div>
-          <div class="credit-overview__item"><span>协议期限</span><b>{{ selectedAgreement.startDate }} 至 {{ selectedAgreement.endDate }}</b></div>
+        <template v-if="form.businessType === 'EXISTING' && selectedAgreement">
+          <div class="credit-overview__item"><span>授信协议号</span><b>{{ form.creditInfo.agreementNo }}</b></div>
+          <div class="credit-overview__item">
+            <span>授信类型</span>
+            <input class="form-input" style="width:140px" v-model="form.creditInfo.agreementType" placeholder="可修正" />
+          </div>
+          <div class="credit-overview__item">
+            <span>币种</span>
+            <input class="form-input" style="width:80px" v-model="form.creditInfo.currency" placeholder="CNY" />
+          </div>
+          <div class="credit-overview__item">
+            <span>协议状态</span>
+            <input class="form-input" style="width:110px" v-model="form.creditInfo.agreementStatus" placeholder="可修正" />
+          </div>
+          <div class="credit-overview__item">
+            <span>授信额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.creditAmount" />
+          </div>
+          <div class="credit-overview__item">
+            <span>已用额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.usedAmount" />
+          </div>
+          <div class="credit-overview__item">
+            <span>可用额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.availableAmount" />
+          </div>
+          <div class="credit-overview__item">
+            <span>协议期限</span>
+            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.startDate" /> 至
+            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.endDate" />
+          </div>
         </template>
-        <div class="credit-overview__item credit-overview__item--full" v-else-if="form.customerNo"><span class="section-tip">该客户无数仓授信协议,请手工录入下方总授信额度</span></div>
-        <div class="credit-overview__item" v-if="form.businessType === 'EXISTING'">
-          <span>总授信额度(万元)</span><b>{{ form.totalCredit || '—' }}</b>
-        </div>
-        <div class="credit-overview__item" v-else>
+        <template v-else>
+          <div class="credit-overview__item">
+            <span>授信协议号</span>
+            <input class="form-input" style="width:160px" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
+          </div>
+          <div class="credit-overview__item">
+            <span>授信类型</span>
+            <input class="form-input" style="width:140px" v-model="form.creditInfo.agreementType" placeholder="手工录入" />
+          </div>
+          <div class="credit-overview__item">
+            <span>币种</span>
+            <input class="form-input" style="width:80px" v-model="form.creditInfo.currency" placeholder="CNY" />
+          </div>
+          <div class="credit-overview__item">
+            <span>协议状态</span>
+            <input class="form-input" style="width:110px" v-model="form.creditInfo.agreementStatus" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item">
+            <span>授信额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.creditAmount" placeholder="手工录入" />
+          </div>
+          <div class="credit-overview__item">
+            <span>已用额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.usedAmount" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item">
+            <span>可用额度(万元)</span>
+            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.availableAmount" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item">
+            <span>协议期限</span>
+            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.startDate" /> 至
+            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.endDate" />
+          </div>
+        </template>
+        <div class="credit-overview__item">
           <span>总授信额度(万元)</span>
-          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="手工录入" />
+          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="授信额度带出或手工" />
         </div>
         <div class="credit-overview__item">
           <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
@@ -777,8 +824,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
-  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES,
-  agreementTypeText, agreementStatusText, agreementStatusBadge
+  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES, agreementTypeText
 } from '@/utils/dict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
@@ -839,6 +885,18 @@ interface GuaranteeRow {
 interface PledgeRow { type: string; name: string; value: string; owner: string }
 interface MarginRow { amount: string; ratio: string; term: string }
 interface CdRow { cdNo: string; amount: string; maturityDate: string }
+/** 授信协议补录/修正要素(存量=数仓带出可修正;新增=手工补录,协议号可空;审批详情优先展示补录值) */
+interface CreditInfo {
+  agreementNo: string
+  agreementType: string
+  currency: string
+  agreementStatus: string
+  creditAmount: string
+  usedAmount: string
+  availableAmount: string
+  startDate: string
+  endDate: string
+}
 interface CommitmentRow {
   metricCode: string
   targetType: string
@@ -851,6 +909,14 @@ interface CommitmentRow {
   memberCustomerNo: string
   /** 承诺完成截止日期(在什么时间点内完成,审批端拟达成贡献度同步展示) */
   endDate: string
+}
+
+/** 授信协议补录/修正初始值(新增授信协议号可空) */
+function initialCreditInfo(): CreditInfo {
+  return {
+    agreementNo: '', agreementType: '', currency: 'CNY', agreementStatus: '',
+    creditAmount: '', usedAmount: '', availableAmount: '', startDate: '', endDate: ''
+  }
 }
 
 function newGuarantee(): GuaranteeRow {
@@ -867,8 +933,9 @@ const form = reactive({
   customerNo: '',
   loanType: 'CORP_LOAN',
   businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
-  totalCredit: '', // 总授信额度(存量=协议带出;新增=手工录入)
+  totalCredit: '', // 总授信额度(存量=协议带出可改;新增=手工录入)
   creditAgreementNo: '', // 授信协议编号(存量)
+  creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
   customerNature: 'EXISTING',
   customerType: 'NON_SOE',
@@ -1113,7 +1180,21 @@ const selectedAgreement = computed(() =>
   creditAgreements.value.find((a) => a.agreementNo === form.creditAgreementNo) || null)
 function onAgreementSelect() {
   const a = selectedAgreement.value
-  if (a) form.totalCredit = String(a.creditAmount ?? '')
+  if (a) {
+    form.totalCredit = String(a.creditAmount ?? '')
+    // 协议要素带出到补录/修正快照(界面可调,随单提交,审批详情优先展示补录值)
+    form.creditInfo = {
+      agreementNo: a.agreementNo ?? '',
+      agreementType: a.agreementType ?? '',
+      currency: a.currency || 'CNY',
+      agreementStatus: a.agreementStatus ?? '',
+      creditAmount: a.creditAmount != null ? String(a.creditAmount) : '',
+      usedAmount: a.usedAmount != null ? String(a.usedAmount) : '',
+      availableAmount: a.availableAmount != null ? String(a.availableAmount) : '',
+      startDate: a.startDate ?? '',
+      endDate: a.endDate ?? ''
+    }
+  }
   // 带出协议项下贷款合同与关联抵押物/保证人(数仓,按客户)
   if (form.customerNo) {
     getCustomerBusinessView(form.customerNo).then((view: any) => {
@@ -1195,6 +1276,10 @@ function onBusinessTypeChange() {
         .then((view: any) => autoItemsFromContracts(view.contracts || []))
         .catch(() => {})
     }
+  } else {
+    // 新增授信:无存量协议可带出,授信信息留待手工补录(协议号可空)
+    form.creditAgreementNo = ''
+    form.creditInfo = initialCreditInfo()
   }
 }
 
@@ -1599,8 +1684,26 @@ function buildPayload(): ApplicationPayload {
       phone: form.phone,
       openOrg: form.openOrg,
       openDate: form.openDate
-    })
+    }),
+    // 授信协议补录/修正快照(存量=协议带出可修正;新增=手工补录,协议号可空;审批详情优先展示补录值)
+    creditInfoJson: serializeCreditInfo() ? JSON.stringify(serializeCreditInfo()) : undefined
   }
+}
+
+/** 授信协议补录/修正快照序列化(任一要素非空才随单提交;全空返回 undefined 不落库) */
+function serializeCreditInfo(): Record<string, unknown> | undefined {
+  const c = form.creditInfo
+  const out: Record<string, unknown> = {}
+  if (c.agreementNo) out.agreementNo = c.agreementNo
+  if (c.agreementType) out.agreementType = c.agreementType
+  if (c.currency) out.currency = c.currency
+  if (c.agreementStatus) out.agreementStatus = c.agreementStatus
+  if (c.creditAmount) out.creditAmount = c.creditAmount
+  if (c.usedAmount) out.usedAmount = c.usedAmount
+  if (c.availableAmount) out.availableAmount = c.availableAmount
+  if (c.startDate) out.startDate = c.startDate
+  if (c.endDate) out.endDate = c.endDate
+  return Object.keys(out).length ? out : undefined
 }
 
 /** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
