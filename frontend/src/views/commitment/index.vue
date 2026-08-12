@@ -69,11 +69,16 @@
         <div class="card__head"><span>申请承诺</span><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></div>
         <table class="table" v-if="applicationRows.length">
           <thead>
-            <tr><th>申请号</th><th>申请时间</th><th>承诺计划</th><th>范围</th><th>状态</th><th>平均达成率</th><th>操作</th></tr>
+            <tr><th>客户</th><th>申请号</th><th>业务类型</th><th>申请金额(万元)</th><th>申请利率</th><th>申请状态</th><th>申请时间</th><th>承诺计划</th><th>范围</th><th>计划状态</th><th>平均达成率</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="app in applicationRows" :key="app.applicationNo">
+              <td>{{ app.customer_name || app.customer_no || '—' }}</td>
               <td>{{ app.applicationNo || '—' }}</td>
+              <td>{{ businessTypeText(app.business_type) }}</td>
+              <td class="num">{{ fmtAmount(app.application_amount) }}</td>
+              <td class="num">{{ fmtRate(app.requested_rate, app.final_rate) }}</td>
+              <td><span class="badge" :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span></td>
               <td>{{ app.submitTime ? String(app.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
               <td><span class="badge badge--info">{{ app.plan_no }}</span></td>
               <td>{{ scopeText(app.scope_type) }}</td>
@@ -98,7 +103,11 @@
           <span :class="statusBadge(currentPlan?.status)">{{ statusText(currentPlan?.status) }}</span>
         </div>
         <div class="detail-grid">
+          <div><span class="dg-label">客户名称</span>{{ currentPlan?.customer_name || currentPlan?.customer_no || '—' }}</div>
           <div><span class="dg-label">客户号</span>{{ currentPlan?.customer_no || '—' }}</div>
+          <div><span class="dg-label">所属申请</span>{{ currentPlan?.application_no || '—' }}</div>
+          <div><span class="dg-label">业务类型</span>{{ businessTypeText(currentPlan?.business_type) }}</div>
+          <div><span class="dg-label">申请状态</span><span class="badge" :class="appStatusBadge(currentPlan?.application_status)">{{ appStatusText(currentPlan?.application_status) }}</span></div>
           <div><span class="dg-label">范围</span>{{ scopeText(currentPlan?.scope_type) }}</div>
           <div><span class="dg-label">指标数</span>{{ planMetrics.length }} 项</div>
           <div>
@@ -311,7 +320,7 @@ import { ElMessage } from 'element-plus'
 import { listCommitmentPlans, listTrackingPolicies, simulatePolicy, saveMetricTrackDesc } from '@/api/commitment'
 import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
 import {
-  planStatusText, configStatusText, evalResultText,
+  planStatusText, configStatusText, evalResultText, appStatusText,
   customerScopeText, metricName, businessTypeText, commitmentUnitText
 } from '@/utils/dict'
 
@@ -370,7 +379,12 @@ const planList = computed(() => {
     if (!map.has(r.id)) {
       map.set(r.id, {
         id: r.id, plan_no: r.plan_no, scope_type: r.scope_type,
-        customer_no: r.customer_no, status: r.status, metrics: [] as any[]
+        customer_no: r.customer_no, status: r.status, metrics: [] as any[],
+        // 所属申请摘要(贡献度跟踪页展示"跟着哪个申请",后端 listPlans 随行返回)
+        application_no: r.application_no, submit_time: r.submit_time,
+        business_type: r.business_type, application_status: r.application_status,
+        customer_name: r.customer_name, application_amount: r.application_amount,
+        requested_rate: r.requested_rate, final_rate: r.final_rate
       })
     }
     if (r.metric_code) map.get(r.id)!.metrics.push(r)
@@ -403,6 +417,12 @@ const applicationRows = computed(() => {
         status: p.status,
         id: p.id,
         customer_no: p.customer_no,
+        business_type: p.business_type,
+        application_status: p.application_status,
+        customer_name: p.customer_name,
+        application_amount: p.application_amount,
+        requested_rate: p.requested_rate,
+        final_rate: p.final_rate,
         metrics: [],
       })
     }
@@ -674,6 +694,28 @@ function statusBadge(s?: string) {
     DATA_PENDING: 'badge badge--warning', DRAFT: 'badge badge--neutral', REVIEW: 'badge badge--warning'
   }
   return map[s || ''] || 'badge badge--neutral'
+}
+// 申请状态徽标(ccr_application.status:草稿/审批中/已通过/已否决等,承诺跟踪页展示所属申请)
+function appStatusBadge(s?: string) {
+  const map: Record<string, string> = {
+    DRAFT: 'badge badge--neutral', SUBMITTING: 'badge badge--warning', PROCESSING: 'badge badge--info',
+    PARTIAL_APPROVED: 'badge badge--warning', APPROVED: 'badge badge--success',
+    REJECTED: 'badge badge--danger', CLOSED: 'badge badge--neutral'
+  }
+  return map[s || ''] || 'badge badge--neutral'
+}
+// 申请金额(万元)展示:千分位,空值显示 —
+function fmtAmount(v: any): string {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '—'
+}
+// 申请利率展示:优先最终利率,无则申请利率(库中为数值如 3.5)
+function fmtRate(requested: any, final: any): string {
+  const v = final ?? requested
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  return Number.isFinite(n) ? `${n.toFixed(2)}%` : String(v)
 }
 function resultText(s?: string) {
   return evalResultText(s)

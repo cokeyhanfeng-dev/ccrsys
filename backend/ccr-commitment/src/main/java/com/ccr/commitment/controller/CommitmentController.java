@@ -42,6 +42,24 @@ class CreatePlanReq {
 @RequestMapping("/ccr/commitments")
 public class CommitmentController {
 
+    /** 承诺列表随行返回的申请简要信息 SELECT 片段(承诺跟踪页展示"跟着哪个申请") */
+    private static final String APP_SUMMARY_SELECT = """
+            a.business_type, a.status AS application_status,
+            COALESCE(cc.cust_name, ci.cust_nm, gg.group_name) AS customer_name,
+            (SELECT SUM(pi2.pricing_amount) FROM ccr_pricing_item pi2 WHERE pi2.application_id = a.id) AS application_amount,
+            pi.requested_rate, pi.final_rate,
+            """;
+
+    /** 申请摘要 JOIN 片段(数仓客户主数据/集团快照最新批次取名称:集团走 group_no、单户走 customer_no) */
+    private static final String APP_SUMMARY_JOIN = """
+            LEFT JOIN caps_corp_cust_basic_info cc
+                   ON cc.cust_no = a.customer_no AND cc.data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
+            LEFT JOIN caps_indv_cust_basic_info ci
+                   ON ci.cust_no = a.customer_no AND ci.data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
+            LEFT JOIN dw_customer_group_snapshot gg
+                   ON gg.group_no = a.group_no AND gg.data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot)
+            """;
+
     @Resource
     private CommitmentService commitmentService;
 
@@ -134,12 +152,14 @@ public class CommitmentController {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                            a.application_no, a.submit_time,
+                           """ + APP_SUMMARY_SELECT + """
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     JOIN ccr_resolution r ON r.id = cp.resolution_id
                     JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                     JOIN ccr_application a ON a.id = pi.application_id
+                    """ + APP_SUMMARY_JOIN + """
                     LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
                     LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
                               ON t.metric_id = cm.id
@@ -153,12 +173,14 @@ public class CommitmentController {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                            a.application_no, a.submit_time,
+                           """ + APP_SUMMARY_SELECT + """
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     JOIN ccr_resolution r ON r.id = cp.resolution_id
                     JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                     JOIN ccr_application a ON a.id = pi.application_id
+                    """ + APP_SUMMARY_JOIN + """
                     LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
                     LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
                               ON t.metric_id = cm.id
@@ -172,12 +194,14 @@ public class CommitmentController {
         sql = """
                 SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                        a.application_no, a.submit_time,
+                       """ + APP_SUMMARY_SELECT + """
                        cm.metric_code, cm.metric_name, cm.target_value,
                        te.actual_value, te.achievement_ratio, te.result_status
                 FROM ccr_commitment_plan cp
                 JOIN ccr_resolution r ON r.id = cp.resolution_id
                 JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                 JOIN ccr_application a ON a.id = pi.application_id
+                """ + APP_SUMMARY_JOIN + """
                 LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
                 LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
                           ON t.metric_id = cm.id
