@@ -139,7 +139,7 @@
             <tr v-for="(r, i) in archive.relatedPersons" :key="i">
               <td>{{ val(r, 'personName') }}</td>
               <td>{{ val(r, 'certNo') }}</td>
-              <td>{{ val(r, 'relationType') }}</td>
+              <td>{{ relationTypeText(val(r, 'relationType')) }}</td>
               <td>{{ val(r, 'relatedCustomerNo') }}</td>
               <td v-if="r.custType === 'CORP'">{{ val(r, 'entpCharic') }}</td>
               <td v-else>—</td>
@@ -369,7 +369,7 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { getArchive, exportArchive } from '@/api/history'
 import {
-  appStatusText, itemStatusText,
+  appStatusText, itemStatusText, relationTypeText,
   businessTypeText, customerScopeText, nodeLabel, roleText, actionText,
   productName, metricName, memberRoleText, termUnitText, commitmentUnitText,
   targetTypeText, metricScopeText, currencyText, decisionText,

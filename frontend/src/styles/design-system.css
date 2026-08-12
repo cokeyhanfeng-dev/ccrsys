@@ -354,10 +354,11 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
    表格
    ============================================================ */
 .table {
-  width: 100%; border-collapse: separate; border-spacing: 0;
+  /* 列少时按内容收缩贴合(避免 width:100% 把列拉宽、右侧大片空白);内容超宽时横向滚动 */
+  width: fit-content; max-width: 100%;
+  border-collapse: separate; border-spacing: 0;
   background: var(--color-surface);
-  /* 窄屏/多列表格横向滚动(块级 + overflow-x,内部行保留表格对齐) */
-  display: block; overflow-x: auto; max-width: 100%;
+  display: block; overflow-x: auto;
 }
 .table th, .table td {
   padding: 12px 14px; text-align: left;

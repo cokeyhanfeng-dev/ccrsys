@@ -569,10 +569,7 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
-  if (missingRel.length) {
-    ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
-    return
-  }
+  // 存款申请无关联人录入,不存在关联人校验(勿从 loan.vue 拷入 missingRel 校验,该变量未定义会抛 ReferenceError)
   if (!(await ensureDraft()) || !draft.id) return
   try {
     checkResult.value = await submitCheck(draft.id)
