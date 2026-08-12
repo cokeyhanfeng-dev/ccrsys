@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -125,8 +126,9 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
 
         // DIRECT_VOTE(§8A.5②/D16b):必经支行行长后直接进入六人小组(+行长决策),不参与链式优先级
         if (route != null && DIRECT_VOTE.equals(route.getRouteMode())) {
-            return buildVoteResult(matched, route, hardBoundary, isLoan,
-                    "产品链路 DIRECT_VOTE(直接上会):必经支行行长后进入六人小组表决(≥4票)");
+            return freezeExecutionPlan(buildVoteResult(matched, route, hardBoundary, isLoan,
+                            "产品链路 DIRECT_VOTE(直接上会):必经支行行长后进入六人小组表决(≥4票)"),
+                    route, matched, input, hardBoundary, isLoan, null);
         }
 
         // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于上限才上会小组;
@@ -136,16 +138,19 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal upper = calcBoundary(row, input, null);
             // 强制上会(§8A.5② mandatory_vote):与利率是否越界无关
             if (route != null && "Y".equals(route.getMandatoryVote())) {
-                return buildVoteResult(matched, route, hardBoundary, false,
-                        "产品链路强制上会:存款/保证金必经六人小组表决(≥4票)");
+                return freezeExecutionPlan(buildVoteResult(matched, route, hardBoundary, false,
+                                "产品链路强制上会:存款/保证金必经六人小组表决(≥4票)"),
+                        route, matched, input, hardBoundary, false, null);
             }
             if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
-                return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
-                        "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
+                return freezeExecutionPlan(buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
+                                "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审"),
+                        route, matched, input, hardBoundary, false, null);
             }
-            return applyPresident(buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
-                    upper == null ? "存款/保证金一律直接上会小组(D16b)"
-                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)"), route);
+            return freezeExecutionPlan(applyPresident(buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
+                            upper == null ? "存款/保证金一律直接上会小组(D16b)"
+                                    : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)"), route),
+                    route, matched, input, hardBoundary, false, null);
         }
 
         // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底;
@@ -162,15 +167,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal boundary = calcBoundary(row, input, lprMap);
             if (boundary == null) {
                 // 无边界 = 权限内即终审(D3)
-                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
-                        "该岗位权限内即终审(D3)"), route, input, matched);
+                return freezeExecutionPlan(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null,
+                                hardBoundary, lpr, "该岗位权限内即终审(D3)"), route, input, matched),
+                        route, matched, input, hardBoundary, true, lprMap);
             }
             if (rate != null && rate.compareTo(boundary) >= 0) {
                 String msg = FIRST_NODE.equals(row.getStartNodeCode())
                         ? "申请利率" + rate + "% ≥ 支行行长终审边界(部门总经理线)" + boundary + "%,支行行长终审"
                         : "申请利率" + rate + "% ≥ 岗位下限" + boundary + "%," + row.getStartNodeCode() + "终审";
-                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
-                        route, input, matched);
+                return freezeExecutionPlan(applyProductRoute(
+                                buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
+                                route, input, matched),
+                        route, matched, input, hardBoundary, true, lprMap);
             }
         }
         // 无岗位可终审 → 上会小组(≥4票);配置行长决策时必经总行行长(applyPresident)
@@ -180,7 +188,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                 .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), hardBoundary, lpr,
                         "利率低于全部岗位下限,提交小组表决(≥4票)"))
                 .orElseThrow(() -> new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(), "未配置上会兜底行"));
-        return applyPresident(vote, route);
+        return freezeExecutionPlan(applyPresident(vote, route), route, matched, input,
+                hardBoundary, true, lprMap);
     }
 
     // ---------- 私有 ----------
@@ -277,6 +286,72 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                 result.setRouteChain(chain);
             }
         }
+        return result;
+    }
+
+    /**
+     * 冻结后续执行所需的完整产品链路、各节点权限边界和产品硬边界。
+     * routeChain 保留本次利率计算得到的预计终审路径，executionChain 覆盖调价后可能到达的全部节点。
+     */
+    private RouteResult freezeExecutionPlan(RouteResult result, CcrProductRoute route,
+                                            List<CcrRateMatrix> matched, MatrixRouteInput input,
+                                            BigDecimal hardBoundary, boolean isLoan,
+                                            Map<String, BigDecimal> lprMap) {
+        result.setHardBoundaryRate(hardBoundary);
+        result.setProductRouteId(route == null ? null : route.getId());
+        result.setProductRouteVersion(route == null ? null : route.getVersionNo());
+        result.setRouteMode(route == null || StrUtil.isBlank(route.getRouteMode())
+                ? "CHAINED" : route.getRouteMode());
+        result.setFlowKey(route == null || StrUtil.isBlank(route.getFlowKey())
+                ? "rate_approval" : route.getFlowKey());
+
+        boolean forceVote = route != null && (DIRECT_VOTE.equals(route.getRouteMode())
+                || "Y".equals(route.getMandatoryVote()) || voteConditionHit(route, input));
+        LinkedHashSet<String> execution = new LinkedHashSet<>();
+        execution.add(FIRST_NODE);
+        if (route != null && DIRECT_VOTE.equals(route.getRouteMode())) {
+            execution.add(GROUP_NODE);
+        } else {
+            matched.stream()
+                    .sorted(Comparator.comparing(r -> r.getPriority() == null ? 0 : r.getPriority()))
+                    .map(CcrRateMatrix::getStartNodeCode)
+                    .filter(StrUtil::isNotBlank)
+                    .forEach(execution::add);
+            if (GROUP_NODE.equals(result.getFinalNodeCode())) {
+                execution.add(GROUP_NODE);
+            }
+        }
+
+        // 未配置产品链路的历史口径中，表决通过后继续进入行长决策。
+        String presidentRequired = route == null
+                ? (execution.contains(GROUP_NODE) ? "Y" : "N")
+                : ("Y".equals(route.getPresidentDecision()) ? "Y" : "N");
+        result.setPresidentRequired(presidentRequired);
+        if ("Y".equals(presidentRequired) && execution.contains(GROUP_NODE)) {
+            execution.add(PRESIDENT_NODE);
+        }
+        result.setExecutionChain(new ArrayList<>(execution));
+
+        Map<String, String> nodePermissions = new LinkedHashMap<>();
+        if (!forceVote) {
+            if (!isLoan) {
+                BigDecimal upper = calcBoundary(matched.get(0), input, null);
+                BigDecimal effective = intersectBoundary(upper, hardBoundary, false);
+                nodePermissions.put(FIRST_NODE, effective == null ? "ANY" : effective.toPlainString());
+            } else {
+                for (CcrRateMatrix row : matched) {
+                    String nodeCode = row.getStartNodeCode();
+                    if (GROUP_NODE.equals(nodeCode) || PRESIDENT_NODE.equals(nodeCode)
+                            || StrUtil.isBlank(nodeCode)) {
+                        continue;
+                    }
+                    BigDecimal boundary = intersectBoundary(calcBoundary(row, input, lprMap), hardBoundary, true);
+                    nodePermissions.putIfAbsent(nodeCode,
+                            boundary == null ? "ANY" : boundary.toPlainString());
+                }
+            }
+        }
+        result.setNodePermissions(nodePermissions);
         return result;
     }
 

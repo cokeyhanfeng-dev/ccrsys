@@ -279,6 +279,35 @@ class VoteServiceImplTest {
     }
 
     @Test
+    void submitBallot_passWithoutPresident_goesFinalAndFinalizes() {
+        CcrVoteRoundItem roundItem = new CcrVoteRoundItem();
+        roundItem.setRoundId(100L);
+        roundItem.setPricingItemId(10L);
+        pricingItem.setRouteChainJson("[\"BRANCH_MANAGER\",\"SIX_PEOPLE_GROUP\"]");
+        pricingItem.setPresidentRequired("N");
+
+        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(roundItem));
+        when(currentLoginUser.requireLoginId()).thenReturn(2001L);
+        when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 6L, 5L);
+        when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+        CcrVoteResult counted = new CcrVoteResult();
+        counted.setResult("PASS");
+        when(voteResultMapper.selectList(any(Wrapper.class))).thenReturn(List.of(counted));
+
+        voteService.submitBallot(100L, 10L, "APPROVE", null, null);
+
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem value) ->
+                PricingItemStatus.FINAL.getCode().equals(value.getStatus())
+                        && new BigDecimal("3.500000").compareTo(value.getFinalRate()) == 0));
+        verify(itemFinalizationService).afterItemTerminal(10L, "COMMITTEE_APPROVED");
+    }
+
+    @Test
     void submitBallot_itemFail_goesRejected_andAggregates() {
         CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
         ri1.setRoundId(100L);

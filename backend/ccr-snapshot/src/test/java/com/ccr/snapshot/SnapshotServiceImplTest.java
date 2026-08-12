@@ -89,6 +89,16 @@ class SnapshotServiceImplTest {
         when(bundleMapper.selectById(1L)).thenReturn(bundle(1L, "FREEZING"));
     }
 
+    @Test
+    void createBundleBindsApplicationForDatabaseUniqueness() {
+        service.createBundle(100L);
+
+        ArgumentCaptor<CcrSnapshotBundle> captor = ArgumentCaptor.forClass(CcrSnapshotBundle.class);
+        verify(bundleMapper).insert(captor.capture());
+        assertEquals(100L, captor.getValue().getApplicationId());
+        assertEquals("FREEZING", captor.getValue().getStatus());
+    }
+
     /** 问题3:core_json 为 null 时抛业务校验异常而不是数据库 NOT NULL 异常 */
     @Test
     void addRecordRejectsNullCoreJson() {

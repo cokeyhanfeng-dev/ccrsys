@@ -82,6 +82,9 @@ public class CcrPricingItem extends BaseEntity {
     /** 终审节点边界利率(矩阵∩产品硬边界交集,提交路由后冻结,§8.6) */
     private BigDecimal boundaryRate;
 
+    /** 产品硬边界利率(提交时冻结,后续调价沿用) */
+    private BigDecimal hardBoundaryRate;
+
     /** 命中的权限矩阵行编号(提交路由后冻结,审计溯源,§8.6) */
     private String matchedMatrixNo;
 
@@ -96,4 +99,25 @@ public class CcrPricingItem extends BaseEntity {
 
     /** 部门归属编码(矩阵透出并提交冻结,§D16a 部门分流:GSB/SXSB/LSB;节点处理人按此解析) */
     private String deptCode;
+
+    /** 冻结的产品审批链路主键;兼容未配置产品链路的矩阵路由时为空 */
+    private Long productRouteId;
+
+    /** 冻结的产品审批链路业务版本号 */
+    private Integer productRouteVersion;
+
+    /** 冻结路由模式:CHAINED / DIRECT_VOTE */
+    private String routeMode;
+
+    /** 完整执行链路 JSON:提交后审批推进只读取该字段 */
+    private String routeChainJson;
+
+    /** 节点权限边界 JSON:数值字符串/ANY;节点缺失表示无终审权限 */
+    private String nodePermissionJson;
+
+    /** 是否需要行长决策 Y/N */
+    private String presidentRequired;
+
+    /** 冻结流程定义编码 */
+    private String flowKey;
 }

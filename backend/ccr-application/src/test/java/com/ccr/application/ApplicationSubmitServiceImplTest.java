@@ -60,6 +60,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -278,6 +279,7 @@ class ApplicationSubmitServiceImplTest {
         item.setPricingCustomerNo("CORP001");
 
         when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(applicationMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
         lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
         when(contractRelMapper.selectList(any()))
@@ -303,9 +305,17 @@ class ApplicationSubmitServiceImplTest {
         route.setStartNodeCode("BRANCH_MANAGER");
         route.setFinalNodeCode("SIX_PEOPLE_GROUP");
         route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setExecutionChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"));
         route.setRateDirection("LOWER_BETTER");
         route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setHardBoundaryRate(new BigDecimal("2.80"));
         route.setMatchedMatrixNo("MX-001");
+        route.setProductRouteId(8801L);
+        route.setProductRouteVersion(7);
+        route.setRouteMode("CHAINED");
+        route.setNodePermissions(Map.of("BRANCH_MANAGER", "3.40", "VICE_PRESIDENT", "3.20"));
+        route.setPresidentRequired("Y");
+        route.setFlowKey("rate_approval_v2");
         route.setLprVersionId(9601L);
         when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
 
@@ -325,14 +335,29 @@ class ApplicationSubmitServiceImplTest {
         assertEquals("BRANCH_MANAGER", updated.getCurrentNodeCode());
         assertEquals("SIX_PEOPLE_GROUP", updated.getRouteCode());
         assertEquals(new BigDecimal("3.20"), updated.getBoundaryRate());
+        assertEquals(new BigDecimal("2.80"), updated.getHardBoundaryRate());
         assertEquals("MX-001", updated.getMatchedMatrixNo());
+        assertEquals(8801L, updated.getProductRouteId());
+        assertEquals(7, updated.getProductRouteVersion());
+        assertEquals("CHAINED", updated.getRouteMode());
+        assertEquals("[\"BRANCH_MANAGER\",\"SIX_PEOPLE_GROUP\",\"PRESIDENT\"]", updated.getRouteChainJson());
+        assertTrue(updated.getNodePermissionJson().contains("BRANCH_MANAGER"));
+        assertEquals("Y", updated.getPresidentRequired());
+        assertEquals("rate_approval_v2", updated.getFlowKey());
 
         // 中间态:主申请先置 SUBMITTED(§7.2 步骤6),再置 ROUTING
         ArgumentCaptor<LambdaUpdateWrapper<CcrApplication>> wrapperCaptor =
                 ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
         verify(applicationMapper).update(isNull(), wrapperCaptor.capture());
-        assertTrue(wrapperCaptor.getValue().getSqlSet().contains("status"));
-        assertTrue(wrapperCaptor.getValue().getParamNameValuePairs().containsValue("SUBMITTED"));
+        LambdaUpdateWrapper<CcrApplication> claimWrapper = wrapperCaptor.getValue();
+        assertTrue(claimWrapper.getSqlSet().contains("status"));
+        assertTrue(claimWrapper.getSqlSet().contains("version_no = version_no + 1"));
+        String claimCondition = claimWrapper.getCustomSqlSegment();
+        assertTrue(claimCondition.contains("status"));
+        assertTrue(claimCondition.contains("version_no"));
+        assertTrue(claimWrapper.getParamNameValuePairs().containsValue("SUBMITTED"));
+        assertTrue(claimWrapper.getParamNameValuePairs().containsValue("DRAFT"));
+        assertTrue(claimWrapper.getParamNameValuePairs().containsValue(1));
 
         // 主单:ROUTING + 冻结 LPR 版本 + 快照包 + 提交时间
         ArgumentCaptor<CcrApplication> appCaptor = ArgumentCaptor.forClass(CcrApplication.class);
@@ -346,11 +371,12 @@ class ApplicationSubmitServiceImplTest {
 
         assertTrue(response.getSubmitted());
         assertEquals(1, response.getItems().size());
-        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"), response.getItems().get(0).getRouteChain());
+        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"),
+                response.getItems().get(0).getRouteChain());
 
         // Outbox(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义) + 申请人/支行行长 NOTIFY
         verify(outboxService).publish(eq("FLOW_START"), eq("PI-11"),
-                argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval")
+                argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval_v2")
                         && p.contains("PI-11")));
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:APPLICANT"), anyString());
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"),
@@ -379,6 +405,84 @@ class ApplicationSubmitServiceImplTest {
         assertEquals(Boolean.FALSE, response.getSubmitted());
         assertEquals(7001L, response.getSnapshotBundleId());
         assertEquals("BRANCH_MANAGER", response.getItems().get(0).getCurrentNodeCode());
+    }
+
+    @Test
+    void submitReturnsCommittedResultWhenConcurrentClaimIsLost() {
+        CcrApplication draft = new CcrApplication();
+        draft.setId(1L);
+        draft.setApplicationNo("CCR20260806ABCD");
+        draft.setBusinessType("LOAN");
+        draft.setCustomerScope("CORPORATE_SINGLE");
+        draft.setCustomerNo("CORP001");
+        draft.setApplicantUserId(1000L);
+        draft.setApplicantOrgId(1001L);
+        draft.setStatus("DRAFT");
+        draft.setVersionNo(1);
+        CcrPricingItem item = loanItem(11L, null);
+        item.setPricingCustomerNo("CORP001");
+
+        CcrApplication committed = new CcrApplication();
+        committed.setId(1L);
+        committed.setApplicationNo(draft.getApplicationNo());
+        committed.setStatus("ROUTING");
+        committed.setVersionNo(3);
+        committed.setSubmitTime(LocalDateTime.now());
+        committed.setSnapshotBundleId(7001L);
+        CcrPricingItem routed = loanItem(11L, null);
+        routed.setStatus("ROUTING");
+        routed.setCurrentNodeCode("BRANCH_MANAGER");
+
+        when(applicationMapper.selectById(1L)).thenReturn(draft);
+        when(applicationMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+        when(applicationMapper.selectByIdForUpdate(1L)).thenReturn(committed);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item), List.of(routed));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of());
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+
+        SubmitResponse response = service.submit(1L);
+
+        assertEquals(Boolean.FALSE, response.getSubmitted());
+        assertEquals(7001L, response.getSnapshotBundleId());
+        assertEquals("ROUTING", response.getStatus());
+        verify(applicationMapper).selectByIdForUpdate(1L);
+        verifyNoInteractions(snapshotGateway, rateMatrixRouter, lprVersionMapper, outboxService);
+    }
+
+    @Test
+    void submitReportsVersionConflictWhenClaimLostToDraftEdit() {
+        CcrApplication draft = new CcrApplication();
+        draft.setId(1L);
+        draft.setApplicationNo("CCR20260806ABCD");
+        draft.setBusinessType("LOAN");
+        draft.setCustomerScope("CORPORATE_SINGLE");
+        draft.setCustomerNo("CORP001");
+        draft.setStatus("DRAFT");
+        draft.setVersionNo(1);
+        CcrPricingItem item = loanItem(11L, null);
+        item.setPricingCustomerNo("CORP001");
+        CcrApplication edited = new CcrApplication();
+        edited.setId(1L);
+        edited.setStatus("DRAFT");
+        edited.setVersionNo(2);
+
+        when(applicationMapper.selectById(1L)).thenReturn(draft);
+        when(applicationMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+        when(applicationMapper.selectByIdForUpdate(1L)).thenReturn(edited);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of());
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+
+        ServiceException error = assertThrows(ServiceException.class, () -> service.submit(1L));
+
+        assertEquals(ErrorCode.DATA_VERSION_CONFLICT.getCode(), error.getCode());
+        verifyNoInteractions(snapshotGateway, rateMatrixRouter, lprVersionMapper, outboxService);
     }
 
     // ---------- 关联重提:已批准分项沿用标记 ----------

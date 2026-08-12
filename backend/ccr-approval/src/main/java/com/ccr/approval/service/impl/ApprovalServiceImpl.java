@@ -12,6 +12,7 @@ import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.application.support.FrozenRoutePlan;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
 import com.ccr.approval.domain.DwLoanNoteSnapshot;
@@ -54,7 +55,7 @@ import java.util.Set;
 /**
  * 普通节点审批实现(§7.2 贷款 / §7.3 存款)
  * 安全口径:操作人取 Sa-Token 登录人;nodeCode 必须等于分项当前节点且登录人具备该节点角色。
- * 权限内判定:贷款 审批利率≥节点下限;存款 审批利率≤期限上限(冻结 boundary_rate,含等于)。
+ * 权限内判定:贷款 审批利率≥冻结节点下限;存款 审批利率≤冻结节点上限(含等于)。
  * 整单流转口径(用户拍板,替代分项独立终审/上送):审批人仍逐项审批(approve 粒度不变),
  * 但分项不再各自独立终审/上送——
  *   权限内通过 → 该分项记「本节点已同意」但仍 ROUTING 在当前节点,暂不终审;
@@ -164,10 +165,12 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
         }
 
-        CcrNodePermission perm = nodePermissionMapper.selectOne(new LambdaQueryWrapper<CcrNodePermission>()
-                .eq(CcrNodePermission::getNodeCode, nodeCode)
-                .eq(CcrNodePermission::getBusinessType, businessType)
-                .last("limit 1"));
+        FrozenRoutePlan.NodePermission frozenPermission = FrozenRoutePlan.nodePermission(item, nodeCode);
+        CcrNodePermission perm = frozenPermission.frozen() ? null
+                : nodePermissionMapper.selectOne(new LambdaQueryWrapper<CcrNodePermission>()
+                        .eq(CcrNodePermission::getNodeCode, nodeCode)
+                        .eq(CcrNodePermission::getBusinessType, businessType)
+                        .last("limit 1"));
 
         // B07 调价边界:主动调价不得突破本节点权限边界(超权限利率只能保留上送,不能由本节点调价产生),
         // 且不得突破产品硬边界(RuleEngine 校验,越界抛 HARD_BOUNDARY)
@@ -175,11 +178,11 @@ public class ApprovalServiceImpl implements ApprovalService {
         boolean adjusted = adjustRate != null && (beforeRate == null || adjustRate.compareTo(beforeRate) != 0);
         BigDecimal effectiveRate = adjusted ? adjustRate : beforeRate;
         if (adjusted) {
-            if (!inNodePermission(businessType, adjustRate, perm)) {
+            if (!inEffectiveNodePermission(businessType, adjustRate, frozenPermission, perm)) {
                 throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                         "调价突破本节点权限边界:节点[" + nodeCode + "] 调价利率 " + adjustRate);
             }
-            ruleEngine.checkHardBoundary(businessType, item.getProductCode(), adjustRate);
+            checkFrozenHardBoundary(item, businessType, adjustRate);
         }
 
         // ===== 整单流转口径(用户拍板):分项不独立终审/上送,以申请为单位推进 =====
@@ -192,15 +195,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
 
         // 权限内判定:贷款 审批利率≥节点下限;存款/保证金 审批利率≤期限上限(冻结 boundary_rate,含等于)
-        boolean withinPermission;
-        if (deposit) {
-            BigDecimal upper = item.getBoundaryRate();
-            withinPermission = upper != null && effectiveRate != null && effectiveRate.compareTo(upper) <= 0;
-        } else {
-            withinPermission = inNodePermission(businessType, effectiveRate, perm);
+        boolean withinPermission = !frozenPermission.frozen() && deposit
+                ? item.getBoundaryRate() != null && effectiveRate != null
+                    && effectiveRate.compareTo(item.getBoundaryRate()) <= 0
+                : inEffectiveNodePermission(businessType, effectiveRate, frozenPermission, perm);
+        // 下一节点只从提交冻结的完整执行链读取；历史分项由 FrozenRoutePlan 提供旧链路兼容。
+        String next = FrozenRoutePlan.nextNode(item, nodeCode, businessType);
+        if (frozenPermission.frozen() && !withinPermission && next == null) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "冻结路由计划缺少节点[" + nodeCode + "]的后续节点");
         }
-        // 下一节点:存款链支行过手后直上小组;贷款链按 RouteChains 上送;链终点(正常不可达)按权限内终审兜底
-        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP : RouteChains.nextNode(nodeCode);
         boolean escalate = !withinPermission && next != null;
 
         if (!escalate) {
@@ -225,7 +229,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
                         adjusted ? effectiveRate : null, effectiveRate, versionNo);
                 if (adjusted) {
-                    saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+                    saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate,
+                            businessType, frozenPermission, perm);
                 }
                 insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
                         comment, beforeRate, effectiveRate, idempotencyKey,
@@ -255,7 +260,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.ROUTING.getCode(),
                         adjusted ? effectiveRate : null, null, versionNo);
                 if (adjusted) {
-                    saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+                    saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate,
+                            businessType, frozenPermission, perm);
                 }
                 // §14.7 流转留痕:ROUTING→ROUTING 表示本节点已同意、待整单齐套
                 insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
@@ -274,7 +280,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         updateItemWithStateAndVersion(item, next, PricingItemStatus.ROUTING.getCode(),
                 adjusted ? effectiveRate : null, null, versionNo);
         if (adjusted) {
-            saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+            saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate,
+                    businessType, frozenPermission, perm);
         }
         // §14.7 流转留痕:动作前 ROUTING,动作后 上送→ROUTING / 上送小组→VOTING
         insertAction(buildAction(item.getId(), "ESCALATE", nodeCode, operator.getId(),
@@ -833,15 +840,58 @@ public class ApprovalServiceImpl implements ApprovalService {
         return perm.getBoundaryMaxRate() == null || rate.compareTo(perm.getBoundaryMaxRate()) <= 0;
     }
 
+    /** 新分项按冻结节点权限判断；历史分项继续读取旧节点权限表。 */
+    private boolean inEffectiveNodePermission(String businessType, BigDecimal rate,
+                                              FrozenRoutePlan.NodePermission frozen,
+                                              CcrNodePermission legacyPermission) {
+        if (!frozen.frozen()) {
+            return inNodePermission(businessType, rate, legacyPermission);
+        }
+        if (!frozen.terminalAllowed() || rate == null) {
+            return false;
+        }
+        if (frozen.boundary() == null) {
+            return true;
+        }
+        return "LOAN".equals(businessType)
+                ? rate.compareTo(frozen.boundary()) >= 0
+                : rate.compareTo(frozen.boundary()) <= 0;
+    }
+
+    /** 调价校验使用提交冻结的产品硬边界；历史分项继续走规则引擎兼容。 */
+    private void checkFrozenHardBoundary(CcrPricingItem item, String businessType, BigDecimal rate) {
+        if (StrUtil.isBlank(item.getNodePermissionJson())) {
+            ruleEngine.checkHardBoundary(businessType, item.getProductCode(), rate);
+            return;
+        }
+        BigDecimal boundary = item.getHardBoundaryRate();
+        if (boundary == null || rate == null) {
+            return;
+        }
+        boolean breached = "LOAN".equals(businessType)
+                ? rate.compareTo(boundary) < 0
+                : rate.compareTo(boundary) > 0;
+        if (breached) {
+            throw new ServiceException(ErrorCode.HARD_BOUNDARY.getCode(),
+                    "调价利率 " + rate + "% 突破提交冻结的产品硬边界 " + boundary + "%");
+        }
+    }
+
     private void saveAdjustment(CcrPricingItem item, String nodeCode, Long operatorId,
-                                BigDecimal before, BigDecimal after, CcrNodePermission perm) {
+                                BigDecimal before, BigDecimal after, String businessType,
+                                FrozenRoutePlan.NodePermission frozen, CcrNodePermission perm) {
         CcrRateAdjustment adj = new CcrRateAdjustment();
         adj.setPricingItemId(item.getId());
         adj.setNodeCode(nodeCode);
         adj.setBeforeRate(before);
         adj.setAfterRate(after);
-        adj.setBoundaryMinRate(perm == null ? null : perm.getBoundaryMinRate());
-        adj.setBoundaryMaxRate(perm == null ? null : perm.getBoundaryMaxRate());
+        if (frozen.frozen()) {
+            adj.setBoundaryMinRate("LOAN".equals(businessType) ? frozen.boundary() : null);
+            adj.setBoundaryMaxRate("LOAN".equals(businessType) ? null : frozen.boundary());
+        } else {
+            adj.setBoundaryMinRate(perm == null ? null : perm.getBoundaryMinRate());
+            adj.setBoundaryMaxRate(perm == null ? null : perm.getBoundaryMaxRate());
+        }
         adj.setAdjustReason("节点调价");
         adj.setOperatorId(operatorId);
         adj.setOperationChannel("PC");
