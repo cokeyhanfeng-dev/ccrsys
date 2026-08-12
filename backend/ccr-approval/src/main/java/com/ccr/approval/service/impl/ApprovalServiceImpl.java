@@ -526,12 +526,12 @@ public class ApprovalServiceImpl implements ApprovalService {
         Map<String, Map<String, Object>> basics = new HashMap<>();
         for (Map<String, Object> iv : jdbcTemplate.queryForList(
                 "SELECT cust_no custNo, ocupn occupation, whlyr_incm annualIncome FROM caps_indv_cust_basic_info"
-                        + " WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)", args)) {
+                        + " WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)", args)) {
             basics.put(String.valueOf(iv.get("custNo")), iv);
         }
         for (Map<String, Object> c : jdbcTemplate.queryForList(
                 "SELECT cust_no custNo, entp_charic entpCharic, entp_scale entpScale, blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass"
-                        + " FROM caps_corp_cust_basic_info WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)", args)) {
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no IN (" + in + ") AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)", args)) {
             basics.put(String.valueOf(c.get("custNo")), c);
         }
 

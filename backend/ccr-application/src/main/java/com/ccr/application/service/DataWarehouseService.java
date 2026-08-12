@@ -45,14 +45,14 @@ public class DataWarehouseService {
     public Map<String, Object> findCorpCustomer(String customerNo) {
         return queryOne("""
                 SELECT * FROM caps_corp_cust_basic_info
-                WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)""", customerNo);
+                WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)""", customerNo);
     }
 
     /** 对私客户(最新批次) */
     public Map<String, Object> findIndvCustomer(String customerNo) {
         return queryOne("""
                 SELECT * FROM caps_indv_cust_basic_info
-                WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)""", customerNo);
+                WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)""", customerNo);
     }
 
     /** 本行融资/存量贷款(贷款合同,最新批次;2026-08-11 去冗余:原 dw_own_financing 并入贷款合同) */

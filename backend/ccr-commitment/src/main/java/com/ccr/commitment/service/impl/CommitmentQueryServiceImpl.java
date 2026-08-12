@@ -187,7 +187,7 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
         String orgName;
         List<Map<String, Object>> corp = jdbcTemplate.queryForList("""
                 SELECT openact_org_no, openact_org_nm FROM caps_corp_cust_basic_info
-                WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
+                WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)
                 LIMIT 1""", customerNo);
         if (!corp.isEmpty()) {
             orgCode = toStr(corp.get(0).get("openact_org_no"));
@@ -195,7 +195,7 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
         } else {
             List<Map<String, Object>> indv = jdbcTemplate.queryForList("""
                     SELECT opnact_org_no, opnact_org_nm FROM caps_indv_cust_basic_info
-                    WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
+                    WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)
                     LIMIT 1""", customerNo);
             if (indv.isEmpty()) {
                 throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "客户主数据不存在: " + customerNo);

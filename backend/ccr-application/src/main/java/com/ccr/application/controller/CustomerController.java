@@ -39,11 +39,11 @@ public class CustomerController {
         String sql = """
                 SELECT cust_no AS customerNo, cust_name AS customerName, 'CORP' AS custType, cust_class AS customerClass
                 FROM caps_corp_cust_basic_info
-                WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info)
+                WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)
                 UNION ALL
                 SELECT cust_no AS customerNo, cust_nm AS customerName, 'INDV' AS custType, cust_class AS customerClass
                 FROM caps_indv_cust_basic_info
-                WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info)
+                WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)
                 """;
         return R.ok(jdbcTemplate.queryForList(sql, like, like, like, like));
     }
