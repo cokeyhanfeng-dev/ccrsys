@@ -53,7 +53,7 @@ public class ResolutionServiceImpl implements ResolutionService {
     /** 核验异常通知消息键前缀(分辨率唯一,防重复发送) */
     private static final String NOTIFY_KEY_PREFIX = "RECONCILE_EXCEPTION:";
     /** 预留合同经办岗角色编码(待消息模块按岗位路由到实际经办人) */
-    private static final String ROLE_CONTRACT_OPERATOR = "CONTRACT_OPERATOR";
+    private static final String ROLE_CONTRACT_OPERATOR = "contract_operator";
 
     @Resource
     private CcrResolutionMapper resolutionMapper;
@@ -333,7 +333,8 @@ public class ResolutionServiceImpl implements ResolutionService {
 
     /** 全量数据权限角色:行长/管理员/审计 */
     private boolean isFullViewRole(String roleCode) {
-        return "president".equals(roleCode) || "admin".equals(roleCode) || "auditor".equals(roleCode);
+        return "president".equals(roleCode) || "admin".equals(roleCode) || "auditor".equals(roleCode)
+                || "contract_operator".equals(roleCode);
     }
 
     /** 登录人角色编码(用户表为准,不接受传参) */

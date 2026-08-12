@@ -81,10 +81,11 @@ class OutboxHandlersTest {
 
         handler.handle(event("NOTIFY",
                 "{\"recipientType\":\"USER\",\"recipientId\":\"1001\",\"channel\":\"SYSTEM\","
-                        + "\"messageKey\":\"RES_ISSUED:500\",\"content\":\"决议已签发\"}"));
+                        + "\"orgId\":1007,\"messageKey\":\"RES_ISSUED:500\",\"content\":\"决议已签发\"}"));
 
         verify(notificationService).sendNotification(argThat((NotificationMessage m) ->
                 "USER".equals(m.getRecipientType()) && "1001".equals(m.getRecipientId())
+                        && Long.valueOf(1007L).equals(m.getOrgId())
                         && "RES_ISSUED:500".equals(m.getMessageKey()) && "决议已签发".equals(m.getContent())));
     }
 

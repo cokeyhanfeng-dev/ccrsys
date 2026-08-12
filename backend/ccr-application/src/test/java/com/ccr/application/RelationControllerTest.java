@@ -5,6 +5,7 @@ import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrRelation;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrRelationMapper;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.exception.ServiceException;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,9 @@ class RelationControllerTest {
     @Mock
     private AppLoginUser appLoginUser;
 
+    @Mock
+    private ApplicationAccessService applicationAccessService;
+
     @InjectMocks
     private RelationController controller;
 
@@ -71,7 +75,16 @@ class RelationControllerTest {
         body.put("relationName", "张三");
         if (customerNo != null) body.put("customerNo", customerNo);
         if (groupNo != null) body.put("groupNo", groupNo);
+        body.put("applicationId", 9L);
         return body;
+    }
+
+    private void stubApplication(String customerNo, String groupNo) {
+        CcrApplication app = appWith(customerNo, groupNo);
+        app.setApplicationNo("APP20260801-0001");
+        app.setCustomerScope(groupNo == null ? "CORPORATE_SINGLE" : "GROUP");
+        app.setOrgId(1001L);
+        when(applicationMapper.selectById(9L)).thenReturn(app);
     }
 
     @Test
@@ -98,6 +111,7 @@ class RelationControllerTest {
 
     @Test
     void bind_未绑定_新建成功() {
+        stubApplication("CUST001", null);
         when(relationMapper.selectOne(any())).thenReturn(null);
         @SuppressWarnings("unchecked")
         Map<String, Object> r = (Map<String, Object>) controller.bind(bindBody("CUST001", null)).getData();
@@ -107,7 +121,7 @@ class RelationControllerTest {
 
     @Test
     void bind_无绑定对象_阻断() {
-        // 绑定对象缺失判定先于判重查询,selectOne 不被调用
+        stubApplication(null, null);
         Map<String, Object> body = bindBody(null, null);
         assertThrows(ServiceException.class, () -> controller.bind(body));
         verify(relationMapper, never()).insert(any(CcrRelation.class));
@@ -115,6 +129,7 @@ class RelationControllerTest {
 
     @Test
     void bind_已绑定其他客户_冲突阻断() {
+        stubApplication("CUST001", null);
         when(relationMapper.selectOne(any())).thenReturn(relation("CUST002", null));
         ServiceException ex = assertThrows(ServiceException.class, () -> controller.bind(bindBody("CUST001", null)));
         assertTrue(ex.getMessage().contains("已绑定其他客户"));
@@ -123,6 +138,7 @@ class RelationControllerTest {
 
     @Test
     void bind_同客户_幂等不重复插入() {
+        stubApplication("CUST001", null);
         when(relationMapper.selectOne(any())).thenReturn(relation("CUST001", null));
         @SuppressWarnings("unchecked")
         Map<String, Object> r = (Map<String, Object>) controller.bind(bindBody("CUST001", null)).getData();
@@ -132,6 +148,7 @@ class RelationControllerTest {
 
     @Test
     void bind_并发唯一键冲突_同目标幂等() {
+        stubApplication("CUST001", null);
         // 判重查询(null)→insert 撞唯一键→并发复查(同目标) → 幂等返回,不抛异常
         when(relationMapper.selectOne(any())).thenReturn(null, relation("CUST001", null));
         org.mockito.Mockito.doThrow(new DuplicateKeyException("uk_relation_cert"))
@@ -143,6 +160,7 @@ class RelationControllerTest {
 
     @Test
     void bind_并发唯一键冲突_不同目标阻断() {
+        stubApplication("CUST001", null);
         when(relationMapper.selectOne(any())).thenReturn(null, relation("CUST002", null));
         org.mockito.Mockito.doThrow(new DuplicateKeyException("uk_relation_cert"))
                 .when(relationMapper).insert(any(CcrRelation.class));
@@ -151,6 +169,7 @@ class RelationControllerTest {
 
     @Test
     void bind_集团场景_绑groupNo() {
+        stubApplication(null, "GROUP001");
         when(relationMapper.selectOne(any())).thenReturn(null);
         @SuppressWarnings("unchecked")
         Map<String, Object> r = (Map<String, Object>) controller.bind(bindBody(null, "GROUP001")).getData();
@@ -173,6 +192,15 @@ class RelationControllerTest {
         body.put("applicationId", 9L);
         controller.bind(body);
         verify(relationMapper).insert(any(CcrRelation.class));
+    }
+
+    @Test
+    void bind_缺少applicationId_阻断() {
+        Map<String, Object> body = bindBody("CUST001", null);
+        body.remove("applicationId");
+        ServiceException ex = assertThrows(ServiceException.class, () -> controller.bind(body));
+        assertEquals(400, ex.getCode());
+        verify(relationMapper, never()).insert(any(CcrRelation.class));
     }
 
     @Test

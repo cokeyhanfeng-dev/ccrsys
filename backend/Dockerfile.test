@@ -1,0 +1,12 @@
+# 测试环境后端镜像：构建过程完全位于 Docker，不依赖宿主机 JDK/Maven。
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY . .
+RUN --mount=type=cache,target=/root/.m2 mvn -B -DskipTests package
+
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=build /workspace/ccr-admin/target/ccr-admin.jar app.jar
+EXPOSE 8080
+ENV TZ=Asia/Taipei
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]

@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * Sa-Token 权限数据源(§4.1):角色来源于 ccr_sys_user.role_code
- * 角色编码以 seeds 为准:customer_manager/branch_manager/committee_member/president/admin
+ * 角色编码以种子为准，包含业务审批、配置复核、合同经办、审计和系统管理角色。
  */
 @Component
 public class StpInterfaceImpl implements StpInterface {

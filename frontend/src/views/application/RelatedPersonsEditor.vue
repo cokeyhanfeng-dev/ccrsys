@@ -3,10 +3,10 @@
     <div class="sub-title">
       关联人员(§12.4④)
       <span class="badge badge--neutral">随申请备注结构附带提交</span>
-    </div>
-    <div class="section-tip" style="margin-bottom:8px">
-      录入与本笔业务相关的配偶/直系亲属/担保人等;姓名行内自动匹配客户号,匹配不到可手工补录。
-      证件号(对公 USCC/对私身份证)必填,失焦全行判重并**录入即绑定**:已绑定其他客户/集团将标红阻断(§6.2/§10.3.21)。
+      <InfoTip>
+        录入与本笔业务相关的配偶/直系亲属/担保人等;姓名行内自动匹配客户号,匹配不到可手工补录。
+        证件号(对公 USCC/对私身份证)必填,失焦全行判重并<strong>录入即绑定</strong>:已绑定其他客户/集团将标红阻断(§6.2/§10.3.21)。
+      </InfoTip>
     </div>
 
     <!-- 已绑定关联人历史(申请已建档时展示,§11.2 application/{id}/relations) -->
@@ -236,18 +236,20 @@ async function onCertBlur(r: RelatedPersonRow, index: number) {
   }
 }
 
-// 绑定(录入即绑定留痕):绑定对象=申请主客户(applicationId 优先,后端自动解析;否则 groupNo/customerNo)
+// 绑定(录入即绑定留痕):后端仅按本人草稿 applicationId 解析绑定对象
 async function doBind(r: RelatedPersonRow) {
-  const hasTarget = !!(props.applicationId || props.groupNo || props.customerNo)
-  if (!hasTarget) {
+  if (!props.applicationId) {
     mark(r, 'available') // 尚未确定绑定对象(未选客户),仅判重可绑定
     return
   }
   try {
-    const body: Record<string, unknown> = { certType: r.certType, certNo: r.certNo, relationName: r.name?.trim(), relationType: r.relationType }
-    if (props.applicationId) body.applicationId = props.applicationId
-    else if (props.groupNo) body.groupNo = props.groupNo
-    else if (props.customerNo) body.customerNo = props.customerNo
+    const body: Record<string, unknown> = {
+      certType: r.certType,
+      certNo: r.certNo,
+      relationName: r.name?.trim(),
+      relationType: r.relationType,
+      applicationId: props.applicationId,
+    }
     await bindRelation(body as any)
     mark(r, 'bound')
   } catch (e: any) {
@@ -293,7 +295,6 @@ onMounted(loadHistory)
 
 <style scoped>
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .req { color: var(--color-danger); }
 .empty { text-align: center; color: var(--color-text-light); }

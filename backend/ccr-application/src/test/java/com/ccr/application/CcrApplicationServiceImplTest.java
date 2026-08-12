@@ -24,6 +24,7 @@ import com.ccr.application.mapper.CcrPricingItemContractRelMapper;
 import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.impl.CcrApplicationServiceImpl;
 import com.ccr.common.exception.ServiceException;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -46,6 +47,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,6 +78,8 @@ class CcrApplicationServiceImplTest {
     private CcrApplicationCommitmentMapper commitmentMapper;
     @Mock
     private DataWarehouseService dataWarehouseService;
+    @Mock
+    private ApplicationAccessService applicationAccessService;
     @Mock
     private com.ccr.application.mapper.CcrApplicationOtherLoanMapper otherLoanMapper;
     @Mock
@@ -123,6 +128,10 @@ class CcrApplicationServiceImplTest {
         request.setBusinessType("DEPOSIT");
         request.setCustomerScope("CORPORATE_SINGLE");
         request.setCustomerNo("CORP001");
+        request.setApplicantUserId(999L);
+        request.setApplicantOrgId(999L);
+        request.setOrgId(999L);
+        request.setSourceApplicationId(999L);
 
         DepositItemInput deposit = new DepositItemInput();
         deposit.setProductCode("CORP_TIME_DEPOSIT");
@@ -133,7 +142,12 @@ class CcrApplicationServiceImplTest {
         deposit.setDepositAccountNo("ACCT001");
         request.setDepositItems(List.of(deposit));
 
-        service.createDraft(request);
+        CcrApplication created = service.createDraft(request);
+
+        assertEquals(7L, created.getApplicantUserId());
+        assertEquals(1001L, created.getApplicantOrgId());
+        assertEquals(null, created.getOrgId());
+        assertEquals(null, created.getSourceApplicationId());
 
         ArgumentCaptor<CcrPricingItem> itemCaptor = ArgumentCaptor.forClass(CcrPricingItem.class);
         verify(pricingItemMapper).insert(itemCaptor.capture());
@@ -324,6 +338,8 @@ class CcrApplicationServiceImplTest {
         exist.setBusinessType("DEPOSIT");
         exist.setCustomerScope("CORPORATE_SINGLE");
         exist.setCustomerNo("CORP001");
+        exist.setApplicantUserId(7L);
+        exist.setApplicantOrgId(1001L);
         when(applicationMapper.selectById(100L)).thenReturn(exist);
         when(applicationMapper.updateById(any(CcrApplication.class))).thenReturn(1);
 
@@ -341,10 +357,16 @@ class CcrApplicationServiceImplTest {
         commitment.setTargetValue(new BigDecimal("500"));
         CcrApplication request = new CcrApplication();
         request.setVersionNo(3);
+        request.setApplicantUserId(9999L);
+        request.setApplicantOrgId(9999L);
         request.setDepositItems(List.of(deposit));
         request.setCommitments(List.of(commitment));
 
         service.saveDraft(100L, request);
+
+        // 前端即使伪造申请人/机构字段，服务端也保持原归属不变。
+        assertEquals(7L, exist.getApplicantUserId());
+        assertEquals(1001L, exist.getApplicantOrgId());
 
         // 旧子表(分项/承诺/成员/账户关系)按申请全量删除
         verify(pricingItemMapper).delete(any());
@@ -473,16 +495,18 @@ class CcrApplicationServiceImplTest {
     }
 
     @Test
-    void listApplicationsBranchManagerFiltersByOwnOrg() {
+    void listApplicationsBranchManagerFiltersByBranchCode() {
         when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(8L, "branch_manager", 1001L));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(1001L)))
+                .thenReturn(List.of("100201"));
 
         service.listApplications("ROUTING");
 
         ArgumentCaptor<LambdaQueryWrapper<CcrApplication>> captor =
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(applicationMapper).selectList(captor.capture());
-        assertTrue(captor.getValue().getSqlSegment().contains("org_id"));
-        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(1001L));
+        assertTrue(captor.getValue().getSqlSegment().contains("apply_branch_code"));
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("100201"));
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ROUTING"));
         assertFalse(captor.getValue().getSqlSegment().contains("applicant_user_id"));
     }

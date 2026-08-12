@@ -3,6 +3,7 @@ package com.ccr.approval.controller;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.ccr.application.domain.CcrPricingItem;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
@@ -42,6 +43,9 @@ public class ApprovalController {
     private ApprovalService approvalService;
 
     @Resource
+    private ApplicationAccessService applicationAccessService;
+
+    @Resource
     private JdbcTemplate jdbcTemplate;
 
     /**
@@ -52,6 +56,7 @@ public class ApprovalController {
      */
     @GetMapping("/{pricingItemId}/detail")
     public R<Map<String, Object>> detail(@PathVariable Long pricingItemId) {
+        applicationAccessService.requirePricingItemView(pricingItemId);
         List<Map<String, Object>> items = jdbcTemplate.queryForList(
                 "SELECT * FROM ccr_pricing_item WHERE id = ? AND del_flag = '0'", pricingItemId);
         if (items.isEmpty()) {
@@ -832,6 +837,7 @@ public class ApprovalController {
     /** 申请审批档案(§14.4) */
     @GetMapping("/history/{applicationId}")
     public R<Map<String, Object>> historyDetail(@PathVariable Long applicationId) {
+        applicationAccessService.requireView(applicationId);
         return R.ok(approvalService.historyDetail(applicationId));
     }
 }

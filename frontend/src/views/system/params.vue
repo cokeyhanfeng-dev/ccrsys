@@ -2,10 +2,10 @@
   <div>
     <div class="section-head">
       <div class="section-title">参数管理</div>
-      <div class="section-tip">
+      <InfoTip>
         LPR / 权限矩阵 / 产品边界 / 利率规则集版本管理(草稿→送审→复核发布→停用,发布强制双人复核:发布人≠创建人)。
         /system/** 接口仅系统管理员可访问(复核发布放行配置复核人),其他角色操作将提示无权限。
-      </div>
+      </InfoTip>
     </div>
 
     <div class="tabs">
@@ -30,7 +30,7 @@
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
           </select>
         </div>
-        <button class="btn btn--primary" @click="openLprCreate">＋ 新增 LPR 草稿</button>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openLprCreate">＋ 新增 LPR 草稿</button>
       </div>
       <table class="table">
         <thead>
@@ -51,10 +51,10 @@
             <td>{{ l.publishBy ?? '—' }}</td>
             <td>{{ fmtTime(l.publishTime) }}</td>
             <td>
-              <button v-if="l.status === 'DRAFT'" class="btn btn--text" @click="openLprConfig(l)">维护明细</button>
-              <button v-if="l.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('lpr', l.id)">送审</button>
-              <button v-if="l.status === 'REVIEW'" class="btn btn--text" @click="doPublish('lpr', l.id)">复核发布</button>
-              <button v-if="l.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('lpr', l.id)">停用</button>
+              <button v-if="canMaintain && l.status === 'DRAFT'" class="btn btn--text" @click="openLprConfig(l)">维护明细</button>
+              <button v-if="canMaintain && l.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('lpr', l.id)">送审</button>
+              <button v-if="canReview && l.status === 'REVIEW'" class="btn btn--text" @click="doPublish('lpr', l.id)">复核发布</button>
+              <button v-if="canMaintain && l.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('lpr', l.id)">停用</button>
             </td>
           </tr>
           <tr v-if="!lprList.length"><td colspan="10" class="empty-cell">暂无数据</td></tr>
@@ -72,7 +72,7 @@
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
           </select>
         </div>
-        <button class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
       </div>
       <table class="table">
         <thead>
@@ -97,9 +97,9 @@
             <td class="num">{{ m.priority }}</td>
             <td><span :class="statusBadge(m.status)">{{ statusText(m.status) }}</span></td>
             <td>
-              <button v-if="m.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('matrix', m.id)">送审</button>
-              <button v-if="m.status === 'REVIEW'" class="btn btn--text" @click="doPublish('matrix', m.id)">复核发布</button>
-              <button v-if="m.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('matrix', m.id)">停用</button>
+              <button v-if="canMaintain && m.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('matrix', m.id)">送审</button>
+              <button v-if="canReview && m.status === 'REVIEW'" class="btn btn--text" @click="doPublish('matrix', m.id)">复核发布</button>
+              <button v-if="canMaintain && m.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('matrix', m.id)">停用</button>
             </td>
           </tr>
           <tr v-if="!matrixList.length"><td colspan="13" class="empty-cell">暂无数据</td></tr>
@@ -117,7 +117,7 @@
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
           </select>
         </div>
-        <button class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
       </div>
       <table class="table">
         <thead>
@@ -139,10 +139,10 @@
             <td>{{ p.publishBy ?? '—' }}</td>
             <td>{{ fmtTime(p.publishTime) }}</td>
             <td>
-              <button v-if="p.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('product', p.id)">送审</button>
-              <button v-if="p.status === 'REVIEW'" class="btn btn--text" @click="doPublish('product', p.id)">复核发布</button>
-              <button v-if="p.status === 'REVIEW'" class="btn btn--text" @click="openReject(p.id)">驳回</button>
-              <button v-if="p.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('product', p.id)">停用</button>
+              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('product', p.id)">送审</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="doPublish('product', p.id)">复核发布</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="openReject(p.id)">驳回</button>
+              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('product', p.id)">停用</button>
             </td>
           </tr>
           <tr v-if="!productList.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -173,7 +173,7 @@
               <option value="DISABLED">停用</option>
             </select>
           </div>
-          <button class="btn btn--primary" @click="openProductCreate">＋ 新增产品</button>
+          <button v-if="canMaintain" class="btn btn--primary" @click="openProductCreate">＋ 新增产品</button>
         </div>
         <table class="table">
           <thead>
@@ -195,10 +195,10 @@
               <td>{{ fmtTime(p.effectiveDate) }}</td>
               <td><span :class="productStatusBadge(p.status)">{{ productStatusText(p.status) }}</span></td>
               <td>
-                <button class="btn btn--text" @click="openProductEdit(p)">编辑</button>
-                <button v-if="p.status === 'ENABLED'" class="btn btn--text" @click="doProductStatus(p, 'DISABLED')">停用</button>
-                <button v-else class="btn btn--text" @click="doProductStatus(p, 'ENABLED')">启用</button>
-                <button v-if="p.status === 'DISABLED'" class="btn btn--text" @click="doProductDelete(p)">删除</button>
+                <button v-if="canMaintain" class="btn btn--text" @click="openProductEdit(p)">编辑</button>
+                <button v-if="canMaintain && p.status === 'ENABLED'" class="btn btn--text" @click="doProductStatus(p, 'DISABLED')">停用</button>
+                <button v-if="canMaintain && p.status !== 'ENABLED'" class="btn btn--text" @click="doProductStatus(p, 'ENABLED')">启用</button>
+                <button v-if="canMaintain && p.status === 'DISABLED'" class="btn btn--text" @click="doProductDelete(p)">删除</button>
               </td>
             </tr>
             <tr v-if="!productCatalog.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -223,7 +223,7 @@
               <option value="OBSOLETE">已停用</option>
             </select>
           </div>
-          <button class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
+          <button v-if="canMaintain" class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
         </div>
         <table class="table">
           <thead>
@@ -249,11 +249,11 @@
               <td><span :class="routeStatusBadge(r.status)">{{ routeStatusText(r.status) }}</span></td>
               <td>
                 <button class="btn btn--text" @click="openRouteSimulate(r)">模拟路由</button>
-                <button v-if="r.status === 'DRAFT'" class="btn btn--text" @click="doRouteSubmit(r)">送审</button>
-                <button v-if="r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="doRoutePublish(r)">复核发布</button>
-                <button v-if="r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="openRouteReject(r)">驳回</button>
-                <button v-if="r.status === 'PUBLISHED'" class="btn btn--text" @click="doRouteDisable(r)">停用</button>
-                <button v-if="r.status !== 'PUBLISHED'" class="btn btn--text" @click="doRouteDelete(r)">删除</button>
+                <button v-if="canMaintain && r.status === 'DRAFT'" class="btn btn--text" @click="doRouteSubmit(r)">送审</button>
+                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="doRoutePublish(r)">复核发布</button>
+                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="openRouteReject(r)">驳回</button>
+                <button v-if="canMaintain && r.status === 'PUBLISHED'" class="btn btn--text" @click="doRouteDisable(r)">停用</button>
+                <button v-if="canMaintain && r.status !== 'PUBLISHED'" class="btn btn--text" @click="doRouteDelete(r)">删除</button>
               </td>
             </tr>
             <tr v-if="!productRoutes.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -266,7 +266,7 @@
     <div v-if="activeTab === 'ruleset'" class="card">
       <div class="card__head">
         <span>利率规则集(发布前自动连续性校验:区间连续、无空档、无重叠)</span>
-        <button class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
       </div>
       <table class="table">
         <thead>
@@ -286,9 +286,9 @@
             <td>{{ fmtTime(s.publishTime) }}</td>
             <td>{{ s.remark || '—' }}</td>
             <td>
-              <button v-if="s.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('ruleset', s.id)">送审</button>
-              <button v-if="s.status === 'REVIEW'" class="btn btn--text" @click="doPublish('ruleset', s.id)">复核发布</button>
-              <button v-if="s.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('ruleset', s.id)">停用</button>
+              <button v-if="canMaintain && s.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('ruleset', s.id)">送审</button>
+              <button v-if="canReview && s.status === 'REVIEW'" class="btn btn--text" @click="doPublish('ruleset', s.id)">复核发布</button>
+              <button v-if="canMaintain && s.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('ruleset', s.id)">停用</button>
             </td>
           </tr>
           <tr v-if="!ruleSets.length"><td colspan="9" class="empty-cell">暂无数据</td></tr>
@@ -307,7 +307,7 @@
             <option v-for="m in METRIC_CODES" :key="m.code" :value="m.code">{{ m.name }}</option>
           </select>
         </div>
-        <button class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
       </div>
       <table class="table">
         <thead>
@@ -327,9 +327,9 @@
             <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
             <td>
               <button class="btn btn--text" @click="openVersionMgr(p)">版本管理</button>
-              <button v-if="p.status === 'DRAFT'" class="btn btn--text" @click="doPolicyStatus(p, 'REVIEW')">送审</button>
-              <button v-if="p.status === 'REVIEW'" class="btn btn--text" @click="doPolicyStatus(p, 'EFFECTIVE')">复核发布</button>
-              <button v-if="p.status === 'EFFECTIVE'" class="btn btn--text" @click="doPolicyStatus(p, 'INVALID')">停用</button>
+              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" @click="doPolicyStatus(p, 'REVIEW')">送审</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="doPolicyStatus(p, 'EFFECTIVE')">复核发布</button>
+              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" @click="doPolicyStatus(p, 'INVALID')">停用</button>
             </td>
           </tr>
           <tr v-if="!policyList.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
@@ -633,9 +633,9 @@
                 <td><span :class="statusBadge(v.status)">{{ statusText(v.status) }}</span></td>
                 <td>
                   <button class="btn btn--text" @click="openVersionThresholds(v)">阈值</button>
-                  <button v-if="v.status === 'DRAFT'" class="btn btn--text" @click="doVersionStatus(v, 'REVIEW')">送审</button>
-                  <button v-if="v.status === 'REVIEW'" class="btn btn--text" @click="doVersionStatus(v, 'EFFECTIVE')">复核发布</button>
-                  <button v-if="v.status === 'EFFECTIVE'" class="btn btn--text" @click="doVersionStatus(v, 'INVALID')">停用</button>
+                  <button v-if="canMaintain && v.status === 'DRAFT'" class="btn btn--text" @click="doVersionStatus(v, 'REVIEW')">送审</button>
+                  <button v-if="canReview && v.status === 'REVIEW'" class="btn btn--text" @click="doVersionStatus(v, 'EFFECTIVE')">复核发布</button>
+                  <button v-if="canMaintain && v.status === 'EFFECTIVE'" class="btn btn--text" @click="doVersionStatus(v, 'INVALID')">停用</button>
                 </td>
               </tr>
               <tr v-if="!versionMgr.versions.length"><td colspan="7" class="empty-cell">暂无版本</td></tr>
@@ -731,7 +731,7 @@
         </div>
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="versionMgr.show = false">关闭</button>
-          <button class="btn btn--primary" v-if="!versionMgr.addShow" @click="openAddVersion">＋ 新增版本</button>
+          <button class="btn btn--primary" v-if="canMaintain && !versionMgr.addShow" @click="openAddVersion">＋ 新增版本</button>
         </div>
       </div>
     </div>
@@ -1304,7 +1304,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listLpr, createLpr, submitLpr, publishLpr, disableLpr,
@@ -1333,6 +1333,12 @@ import {
   listPolicyVersions, listPolicyThresholds,
   simulatePolicy, listCommitmentPlans
 } from '@/api/commitment'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
+const currentRoles = computed(() => userStore.userInfo?.roles || [])
+const canMaintain = computed(() => currentRoles.value.includes('admin'))
+const canReview = computed(() => canMaintain.value || currentRoles.value.includes('config_reviewer'))
 
 const tabs = [
   { key: 'lpr', label: 'LPR 维护' },

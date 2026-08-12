@@ -2,17 +2,21 @@
   <div>
     <div class="section-head">
       <div class="section-title">缓存配置</div>
-      <div class="section-tip">
+      <InfoTip>
         Redis 缓存项定义管理(详设 §3.6 v2):缓存项可<strong>动态增删改</strong>(精确 key / key 前缀、
         TTL、写入开关、描述),并可配置<strong>数据加载器</strong>把数仓等数据手动/定时写入 Redis。
         内置项(lpr/matrix/rate-limit)由业务代码写入,不可删除、不可改 key;修改后<strong>立即生效不重启</strong>。
-      </div>
+      </InfoTip>
     </div>
 
     <div class="card">
-      <div class="card__head">
+      <div class="card__head" style="justify-content:flex-start;gap:8px">
         <button class="btn btn--primary" @click="openCreate">新增缓存项</button>
         <button class="btn btn--secondary" @click="load">刷新</button>
+        <InfoTip style="margin-left:auto">
+          TTL 修改后自下一次缓存写入生效;Redis 不可用时自动降级直查库,不影响业务。
+          "刷新数据"调用所选数据加载器把最新数据写入该缓存项(带 loader 的项须为精确 key 类型)。
+        </InfoTip>
       </div>
       <table class="table">
         <thead>
@@ -96,10 +100,6 @@
           <tr v-if="!items.length"><td colspan="6" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
-      <div class="section-tip" style="margin-top: 10px">
-        说明:TTL 修改后自下一次缓存写入生效;Redis 不可用时自动降级直查库,不影响业务。
-        "刷新数据"调用所选数据加载器把最新数据写入该缓存项(带 loader 的项须为精确 key 类型)。
-      </div>
     </div>
 
     <!-- 新增/编辑弹窗 -->

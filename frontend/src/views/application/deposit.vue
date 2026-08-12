@@ -1,9 +1,8 @@
 <template>
   <div>
     <div class="section-head">
-      <div class="eyebrow">DEPOSIT APPLICATION · 存款利率申请</div>
       <div class="section-title">存款利率提升申请</div>
-      <div class="section-tip">存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(存款越高越优惠)。</div>
+      <InfoTip content="存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(存款越高越优惠)。" />
     </div>
 
     <!-- 规则来源提示(§12.4⑦) -->
@@ -15,13 +14,15 @@
     <div v-if="draft.id" class="form-card draft-banner">
       <span class="badge badge--info">草稿</span>
       申请号 {{ draft.applicationNo }}(版本 v{{ draft.versionNo }})
-      <span class="section-tip">· 草稿保存仅更新主单信息,存款分项以创建时内容为准</span>
+      <InfoTip content="草稿保存仅更新主单信息,存款分项以创建时内容为准" />
     </div>
 
     <!-- 1. 客户信息(复用贷款申请的客户查询带出逻辑) -->
     <div class="form-card">
-      <div class="form-card__title">客户信息</div>
-      <div class="section-tip" style="margin-bottom:12px">客户基本信息由数仓统一提供,按客户姓名模糊查询带出后只读展示。</div>
+      <div class="form-card__title">
+        客户信息
+        <InfoTip content="客户基本信息由数仓统一提供,按客户姓名模糊查询带出后只读展示。" />
+      </div>
       <div class="form-grid">
         <div class="form-field">
           <label class="form-field__label">客户主体 <span class="req">*</span></label>
@@ -116,9 +117,7 @@
       <div class="form-card__title">
         存款分项
         <span class="badge badge--warning">存款利率越高越优惠</span>
-      </div>
-      <div class="section-tip" style="margin-bottom:12px">
-        每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。
+        <InfoTip>每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。</InfoTip>
       </div>
       <table class="table" v-if="items.length">
         <thead>
@@ -194,8 +193,10 @@
 
     <!-- 3. 提交预览(路由预览 + 提交校验 + 正式提交) -->
     <div class="form-card">
-      <div class="form-card__title">提交预览</div>
-      <div class="section-tip" style="margin-bottom:12px">提交前先生成/保存草稿,再预览审批路由;正式提交需通过数据批次差异与质量预校验确认。</div>
+      <div class="form-card__title">
+        提交预览
+        <InfoTip content="提交前先生成/保存草稿,再预览审批路由;正式提交需通过数据批次差异与质量预校验确认。" />
+      </div>
       <div class="form-field">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
@@ -656,8 +657,7 @@ async function loadDraftIntoForm(id: number) {
 
 <style scoped>
 .section-head { margin-bottom: 20px; }
-.eyebrow { font-size: 12px; color: var(--color-text-light); letter-spacing: 1px; margin-bottom: 4px; }
-.section-title { font-size: var(--fs-h1); font-weight: 700; margin-bottom: 6px; }
+.section-title { font-size: var(--fs-h1); font-weight: 700; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
 .form-card {
   background: var(--color-surface);
@@ -680,7 +680,7 @@ async function loadDraftIntoForm(id: number) {
 /* 规则来源提示(§12.4⑦) */
 .rule-notice {
   background: var(--color-primary-light); color: var(--color-primary);
-  border: 1px solid var(--color-primary); border-radius: var(--radius);
+  border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm);
   padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
 }
 /* 产品标准上限提示(§12.4) */

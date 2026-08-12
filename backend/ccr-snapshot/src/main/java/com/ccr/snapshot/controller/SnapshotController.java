@@ -1,5 +1,6 @@
 package com.ccr.snapshot.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
@@ -27,6 +28,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ccr/snapshots")
+@SaCheckRole("admin")
 public class SnapshotController {
 
     @Resource

@@ -22,40 +22,45 @@ ccr/
 │   └── 05_seed.sql           # 业务字典种子
 ├── backend/                  # Spring Boot 3 多模块(ccr-common / ccr-admin)
 ├── frontend/                 # Vue 3 + Vite + Element Plus(参照 v3.3-html-demo 页面)
-└── docker-compose.yml        # 一键部署(MySQL + 后端 + 前端)
+├── compose.test.yml          # 隔离测试栈(MySQL + Redis + 后端 + 前端)
+├── dev                       # 项目环境、开发、测试统一入口
+└── docker-compose.yml        # 原有部署编排
 ```
 
-## 一键启动(Docker)
+## 隔离环境快速开始
 
 ```bash
-docker compose up -d --build
+./dev setup
+./dev versions
+./dev app-up
+./dev smoke
 ```
 
 | 组件 | 地址 |
 |---|---|
-| 前端 | http://localhost:3000 |
-| 后端健康检查 | http://localhost:8080/health |
-| MySQL | localhost:3306(库 ccr_rate,root/root123) |
+| 测试前端 | http://127.0.0.1:13000 |
+| 测试后端 | http://127.0.0.1:18080 |
+| 测试 MySQL | 127.0.0.1:23306(库 ccr_rate,root/root123) |
+| 测试 Redis | 127.0.0.1:26379 |
 
-首次启动 MySQL 会自动执行 `db/` 下全部 DDL(69 张表 + 字典种子)。
+测试栈由 Compose 项目 `ccrsys-test` 独立管理，端口只绑定本机回环地址。首次启动 MySQL 会按文件名顺序执行 `db/*.sql`。完整说明见 [`docs/11_开发与测试环境.md`](docs/11_开发与测试环境.md)。
 
 ## 本地开发
 
-**后端**(需 JDK 17 + Maven,或复用 Docker):
+只启动容器内 MySQL、Redis：
 
 ```bash
-cd backend
-mvn -B -DskipTests package
-java -jar ccr-admin/target/ccr-admin.jar
+./dev infra-up
 ```
 
-**前端**:
+分别启动本地后端和前端：
 
 ```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:3000,代理 /api → localhost:8080
+./dev backend-run
+./dev frontend-run
 ```
+
+JDK 17 位于项目 `.tools/`；Maven、npm 缓存位于项目 `.cache/`；兼容的宿主机 Node/Maven 会直接复用。MySQL、Redis 只在 Docker 中运行。
 
 ## 数据库验证结果
 

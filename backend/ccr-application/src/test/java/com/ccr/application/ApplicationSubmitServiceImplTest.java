@@ -23,6 +23,7 @@ import com.ccr.application.mapper.CcrPricingItemContractRelMapper;
 import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.application.service.impl.ApplicationSubmitServiceImpl;
 import com.ccr.common.exception.ServiceException;
@@ -103,6 +104,8 @@ class ApplicationSubmitServiceImplTest {
     private com.ccr.common.outbox.OutboxService outboxService;
     @Mock
     private CcrCacheUtil cacheUtil;
+    @Mock
+    private ApplicationAccessService applicationAccessService;
 
     @InjectMocks
     private ApplicationSubmitServiceImpl service;
@@ -124,6 +127,8 @@ class ApplicationSubmitServiceImplTest {
         app.setBusinessType("LOAN");
         app.setCustomerScope("GROUP");
         app.setGroupNo("GROUP001");
+        app.setApplicantUserId(1000L);
+        app.setApplicantOrgId(1001L);
         app.setStatus("DRAFT");
         app.setVersionNo(1);
         return app;
@@ -265,6 +270,8 @@ class ApplicationSubmitServiceImplTest {
         app.setBusinessType("LOAN");
         app.setCustomerScope("CORPORATE_SINGLE");
         app.setCustomerNo("CORP001");
+        app.setApplicantUserId(1000L);
+        app.setApplicantOrgId(1001L);
         app.setStatus("DRAFT");
         app.setVersionNo(1);
         CcrPricingItem item = loanItem(11L, null);
@@ -346,7 +353,9 @@ class ApplicationSubmitServiceImplTest {
                 argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval")
                         && p.contains("PI-11")));
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:APPLICANT"), anyString());
-        verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"), anyString());
+        verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"),
+                argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("\"orgId\":1001")
+                        && !p.contains("\"recipientType\":\"ROLE\"")));
     }
 
     // ---------- 幂等:重复提交返回既有结果 ----------

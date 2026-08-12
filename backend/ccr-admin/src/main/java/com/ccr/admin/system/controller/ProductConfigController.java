@@ -1,5 +1,7 @@
 package com.ccr.admin.system.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
@@ -53,6 +55,7 @@ public class ProductConfigController {
     // ---------- 产品目录 ccr_product ----------
 
     /** 产品目录列表(可按业务大类/状态过滤;启用产品供申请页下拉,公开只读) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/catalog")
     public R<List<CcrProduct>> catalog(@RequestParam(required = false) String businessBigType,
                                        @RequestParam(required = false) String status) {
@@ -63,6 +66,7 @@ public class ProductConfigController {
     }
 
     /** 启用产品下拉(申请页权威来源:产品下拉/LPR明细产品类型/权限矩阵/产品边界一致) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/catalog/enabled")
     public R<List<CcrProduct>> enabledCatalog(@RequestParam(required = false) String businessBigType) {
         return R.ok(productMapper.selectList(new LambdaQueryWrapper<CcrProduct>()
@@ -72,6 +76,7 @@ public class ProductConfigController {
     }
 
     /** 新增产品(状态 ENABLED;product_code 唯一,一经启用禁改编码) */
+    @SaCheckRole("admin")
     @PostMapping("/catalog")
     public R<Long> createProduct(@RequestBody CcrProduct product) {
         if (StrUtil.isBlank(product.getProductCode()) || StrUtil.isBlank(product.getProductName())
@@ -106,6 +111,7 @@ public class ProductConfigController {
     }
 
     /** 修改产品(仅名称/类别/客户类型/利率区间/期限范围/备注可改;编码与业务大类禁改) */
+    @SaCheckRole("admin")
     @PutMapping("/catalog/{id}")
     public R<Void> updateProduct(@PathVariable Long id, @RequestBody CcrProduct product) {
         CcrProduct old = productMapper.selectById(id);
@@ -135,6 +141,7 @@ public class ProductConfigController {
     }
 
     /** 启停产品(停用后新申请不可选,在途审批不受影响 D11) */
+    @SaCheckRole("admin")
     @PostMapping("/catalog/{id}/status")
     public R<Void> changeProductStatus(@PathVariable Long id, @RequestParam String status) {
         if (!"ENABLED".equals(status) && !"DISABLED".equals(status)) {
@@ -159,6 +166,7 @@ public class ProductConfigController {
     }
 
     /** 删除产品(未被申请/矩阵/LPR/边界引用时允许逻辑删除,否则仅可停用) */
+    @SaCheckRole("admin")
     @DeleteMapping("/catalog/{id}")
     public R<Void> deleteProduct(@PathVariable Long id) {
         CcrProduct product = productMapper.selectById(id);
@@ -177,6 +185,7 @@ public class ProductConfigController {
     // ---------- 产品审批链路 ccr_product_route ----------
 
     /** 产品链路列表(可按产品/状态过滤) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/routes")
     public R<List<CcrProductRoute>> routes(@RequestParam(required = false) String productCode,
                                            @RequestParam(required = false) String status) {
@@ -187,6 +196,7 @@ public class ProductConfigController {
     }
 
     /** 新增产品链路草稿 */
+    @SaCheckRole("admin")
     @PostMapping("/routes")
     public R<Long> createRoute(@RequestBody CcrProductRoute route) {
         if (StrUtil.isBlank(route.getProductCode()) || StrUtil.isBlank(route.getBusinessBigType())
@@ -226,6 +236,7 @@ public class ProductConfigController {
     }
 
     /** 链路送审:DRAFT → PENDING_REVIEW */
+    @SaCheckRole("admin")
     @PostMapping("/routes/{id}/submit")
     public R<Void> submitRoute(@PathVariable Long id) {
         CcrProductRoute route = productRouteMapper.selectById(id);
@@ -245,6 +256,7 @@ public class ProductConfigController {
     }
 
     /** 链路复核发布:PENDING_REVIEW → PUBLISHED;双人复核;同产品同生效日旧 PUBLISHED 自动停用 */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/routes/{id}/publish")
     public R<Void> publishRoute(@PathVariable Long id) {
         CcrProductRoute route = productRouteMapper.selectById(id);
@@ -286,6 +298,7 @@ public class ProductConfigController {
     }
 
     /** 链路复核驳回:PENDING_REVIEW → DRAFT(必填驳回意见) */
+    @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @PostMapping("/routes/{id}/reject")
     public R<Void> rejectRoute(@PathVariable Long id, @RequestParam String opinion) {
         CcrProductRoute route = productRouteMapper.selectById(id);
@@ -308,6 +321,7 @@ public class ProductConfigController {
     }
 
     /** 链路停用:PUBLISHED → OBSOLETE */
+    @SaCheckRole("admin")
     @PostMapping("/routes/{id}/disable")
     public R<Void> disableRoute(@PathVariable Long id) {
         CcrProductRoute route = productRouteMapper.selectById(id);
@@ -328,6 +342,7 @@ public class ProductConfigController {
     }
 
     /** 链路删除(仅草稿/停用态可物理删除) */
+    @SaCheckRole("admin")
     @DeleteMapping("/routes/{id}")
     public R<Void> deleteRoute(@PathVariable Long id) {
         CcrProductRoute route = productRouteMapper.selectById(id);

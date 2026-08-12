@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">工作台</div>
-      <div class="section-tip">{{ roleHint }}</div>
+      <InfoTip :content="roleHint" />
     </div>
 
     <!-- 欢迎区:问候语(按时段) + 姓名/角色/机构 + 日期 -->

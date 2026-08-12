@@ -3,6 +3,8 @@ package com.ccr.common.core.assignee;
 import jakarta.annotation.Resource;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import com.ccr.common.enums.ErrorCode;
+import com.ccr.common.exception.ServiceException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -20,7 +22,7 @@ import java.util.Map;
  * 该机构下启用用户,且仅在申请人机构归属于配置机构时生效) → ROLE(角色兜底)。
  * delegate_to 在代理有效期内替换原处理人;配置有效期(valid_from/valid_to)外不参与解析。
  * 空结果语义:节点无任何有效配置(或配置未解析出启用用户)时返回空列表 = 不限制,
- * 调用方保持现有角色匹配(向后兼容,未执行 03f 的环境由 DataAccessException 容错返回空)。
+ * 调用方保持现有角色匹配；配置查询失败返回 ERROR，业务入口拒绝按角色兜底。
  */
 @Slf4j
 @Component
@@ -28,6 +30,9 @@ public class NodeAssigneeResolver {
 
     /** 命中层级:无配置/未解析出处理人(=不限制) */
     public static final String LEVEL_NONE = "NONE";
+
+    /** 指派配置解析失败；业务操作与对象授权必须拒绝继续执行。 */
+    public static final String LEVEL_ERROR = "ERROR";
 
     /** 命中层级:部门-分管行长映射(§D16a,一人可分管多部门) */
     public static final String LEVEL_DEPT_VP = "DEPT_VP";
@@ -86,20 +91,27 @@ public class NodeAssigneeResolver {
             }
             return ResolveResult.empty(nodeCode);
         } catch (DataAccessException e) {
-            // 表不存在(未执行 03f)或查询失败:按未配置放行,不影响现有角色匹配
-            log.warn("节点审批人配置解析失败,按未配置放行: nodeCode={}, 原因={}", nodeCode, e.getMessage());
-            return ResolveResult.empty(nodeCode);
+            log.error("节点审批人配置解析失败,拒绝按角色兜底: nodeCode={}, 原因={}", nodeCode, e.getMessage());
+            return ResolveResult.failed(nodeCode);
         }
     }
 
     /** 解析节点处理人用户id列表(空=不限制) */
     public List<Long> resolveUserIds(String nodeCode, Long orgId) {
-        return resolve(nodeCode, orgId).userIds();
+        return requireResolved(resolve(nodeCode, orgId));
     }
 
     /** 带分项部门归属编码的解析(§D16a:部门总经理/分管行长按分项 dept_code 解析处理人) */
     public List<Long> resolveUserIds(String nodeCode, Long orgId, String deptCode) {
-        return resolve(nodeCode, orgId, null, deptCode).userIds();
+        return requireResolved(resolve(nodeCode, orgId, null, deptCode));
+    }
+
+    private List<Long> requireResolved(ResolveResult result) {
+        if (LEVEL_ERROR.equals(result.getHitLevel())) {
+            throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
+                    "节点审批人配置暂不可用,请稍后重试");
+        }
+        return result.userIds();
     }
 
     // ---------- 私有 ----------
@@ -279,12 +291,16 @@ public class NodeAssigneeResolver {
     @Data
     public static class ResolveResult {
         private final String nodeCode;
-        /** 命中层级:PERSON/GROUP/DEPT/ROLE;NONE=未配置或未解析出处理人 */
+        /** 命中层级:PERSON/GROUP/DEPT/ROLE;NONE=未配置或未解析出处理人;ERROR=解析失败 */
         private final String hitLevel;
         private final List<AssigneeUser> users;
 
         static ResolveResult empty(String nodeCode) {
             return new ResolveResult(nodeCode, LEVEL_NONE, List.of());
+        }
+
+        static ResolveResult failed(String nodeCode) {
+            return new ResolveResult(nodeCode, LEVEL_ERROR, List.of());
         }
 
         public List<Long> userIds() {

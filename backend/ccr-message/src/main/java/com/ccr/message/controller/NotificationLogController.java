@@ -1,7 +1,11 @@
 package com.ccr.message.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.enums.ErrorCode;
+import com.ccr.common.exception.ServiceException;
 import com.ccr.message.domain.CcrNotificationLog;
 import com.ccr.message.mapper.CcrNotificationLogMapper;
 import com.ccr.message.service.NotificationService;
@@ -30,6 +34,7 @@ public class NotificationLogController {
     private CcrNotificationLogMapper logMapper;
 
     /** 手工发送通知(临时消息) */
+    @SaCheckRole("admin")
     @PostMapping("/send")
     public R<CcrNotificationLog> send(@RequestBody NotificationMessage message) {
         return R.ok(notificationService.sendNotification(message));
@@ -39,14 +44,18 @@ public class NotificationLogController {
     @GetMapping
     public R<List<CcrNotificationLog>> list(@RequestParam(required = false) String recipientId,
                                             @RequestParam(required = false) String sendStatus) {
+        boolean fullView = StpUtil.hasRole("admin") || StpUtil.hasRole("auditor");
+        String effectiveRecipientId = fullView ? recipientId : StpUtil.getLoginIdAsString();
         return R.ok(logMapper.selectList(new LambdaQueryWrapper<CcrNotificationLog>()
-                .eq(recipientId != null && !recipientId.isBlank(), CcrNotificationLog::getRecipientId, recipientId)
+                .eq(effectiveRecipientId != null && !effectiveRecipientId.isBlank(),
+                        CcrNotificationLog::getRecipientId, effectiveRecipientId)
                 .eq(sendStatus != null && !sendStatus.isBlank(), CcrNotificationLog::getSendStatus, sendStatus)
                 .orderByDesc(CcrNotificationLog::getCreateTime)
                 .last("LIMIT 200")));
     }
 
     /** 手工触发一次重试/消费 */
+    @SaCheckRole("admin")
     @PostMapping("/process")
     public R<Integer> process() {
         return R.ok(notificationService.processPendingAndRetry());
@@ -55,6 +64,14 @@ public class NotificationLogController {
     /** 登记回执 */
     @PostMapping("/{logId}/receipt")
     public R<CcrNotificationLog> receipt(@PathVariable Long logId) {
+        CcrNotificationLog log = logMapper.selectById(logId);
+        if (log == null || "1".equals(log.getDelFlag())) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "通知记录不存在");
+        }
+        if (!StpUtil.hasRole("admin")
+                && !StpUtil.getLoginIdAsString().equals(log.getRecipientId())) {
+            throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "无权登记该通知回执");
+        }
         return R.ok(notificationService.markReceipt(logId));
     }
 }

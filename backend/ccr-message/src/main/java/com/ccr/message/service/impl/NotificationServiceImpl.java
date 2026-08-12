@@ -127,15 +127,22 @@ public class NotificationServiceImpl implements NotificationService {
         if (message.getRecipientType() == null || message.getRecipientType().isBlank()) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "接收对象类型必填");
         }
-        // ROLE 且 recipientId 给的是角色编码时,先解析为用户列表逐个发送
-        if ("ROLE".equals(message.getRecipientType()) && message.getRecipientId() != null
-                && !message.getRecipientId().chars().allMatch(Character::isDigit)) {
-            List<String> ids = resolveRecipients(message.getRecipientId(), "ROLE", new RecipientContext());
+        // 动态接收对象先解析为具体用户，逐人生成稳定幂等键并落站内信。
+        if (requiresRecipientResolution(message)) {
+            RecipientContext context = new RecipientContext();
+            context.setOrgId(message.getOrgId());
+            List<String> ids = resolveRecipients(message.getRecipientId(), message.getRecipientType(), context);
+            if (ids.isEmpty()) {
+                throw new ServiceException(ErrorCode.MESSAGE_SEND_FAIL.getCode(),
+                        "未解析到通知接收人:" + message.getRecipientType());
+            }
             CcrNotificationLog last = null;
             for (String id : ids) {
                 NotificationMessage copy = copyOf(message);
+                copy.setRecipientType("USER");
                 copy.setRecipientId(id);
-                copy.setMessageKey(null);
+                copy.setMessageKey(message.getMessageKey() == null || message.getMessageKey().isBlank()
+                        ? null : message.getMessageKey() + ":" + id);
                 last = sendNotification(copy);
             }
             return last;
@@ -309,6 +316,16 @@ public class NotificationServiceImpl implements NotificationService {
                 });
     }
 
+    private boolean requiresRecipientResolution(NotificationMessage message) {
+        if ("BRANCH_MANAGER".equals(message.getRecipientType())
+                || "ORG_POST".equals(message.getRecipientType())) {
+            return message.getOrgId() != null || message.getRecipientId() == null
+                    || message.getRecipientId().isBlank();
+        }
+        return "ROLE".equals(message.getRecipientType()) && message.getRecipientId() != null
+                && !message.getRecipientId().chars().allMatch(Character::isDigit);
+    }
+
     /** 冷却期:同规则同接收人在 cool_down_hours 内已成功发送则跳过 */
     private boolean inCoolDown(CcrNotificationRule rule, String recipientType, String recipientId) {
         if (rule.getCoolDownHours() == null || rule.getCoolDownHours() <= 0) {
@@ -362,6 +379,7 @@ public class NotificationServiceImpl implements NotificationService {
         copy.setRuleVersionId(source.getRuleVersionId());
         copy.setRecipientType(source.getRecipientType());
         copy.setRecipientId(source.getRecipientId());
+        copy.setOrgId(source.getOrgId());
         copy.setChannel(source.getChannel());
         copy.setMessageKey(source.getMessageKey());
         copy.setContent(source.getContent());
