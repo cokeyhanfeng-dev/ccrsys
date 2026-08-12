@@ -8,6 +8,7 @@ import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.application.support.FrozenRoutePlan;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -285,6 +286,10 @@ public class VoteServiceImpl implements VoteService {
                 && !PricingItemStatus.PRESIDENT_DECISION.getCode().equals(item.getStatus())) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "只接收六人表决通过的分项(§7.5)");
         }
+        if (FrozenRoutePlan.hasFrozenPlan(item) && !FrozenRoutePlan.requiresPresident(item)) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "该分项冻结路由无需行长决策");
+        }
         // 节点审批人配置限制(§5.5.1):PRESIDENT 节点配置有效指派时,仅解析出的处理人可决策
         List<Long> presidentAssignees = nodeAssigneeResolver.resolveUserIds("PRESIDENT",
                 applicantOrgId(item.getApplicationId()));
@@ -542,7 +547,7 @@ public class VoteServiceImpl implements VoteService {
         return count != null && count > 0;
     }
 
-    /** 分项粒度计票:该项收齐全部委员票后一次性生成结果;通过→PRESIDENT_DECISION,未过→REJECTED */
+    /** 分项粒度计票:该项收齐全部委员票后一次性生成结果;通过后按冻结路由进入行长决策或直接终审 */
     private void countItemIfReady(CcrVoteRound round, Long pricingItemId) {
         countItem(round, pricingItemId, false);
     }
@@ -550,7 +555,7 @@ public class VoteServiceImpl implements VoteService {
     /**
      * 分项计票(§7.5):partial=false 需收齐全部委员票(正常路径);
      * partial=true 为超时强制计票(§7.5.5),按已投票数计,赞成≥requiredCount 通过否则不通过。
-     * 计票结果同事务写 ccr_approval_action 留痕(from VOTING,to PRESIDENT_DECISION/REJECTED)
+     * 计票结果同事务写 ccr_approval_action 留痕(from VOTING,to PRESIDENT_DECISION/FINAL/REJECTED)
      */
     private void countItem(CcrVoteRound round, Long pricingItemId, boolean partial) {
         Long submitted = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
@@ -592,14 +597,23 @@ public class VoteServiceImpl implements VoteService {
             return;
         }
 
-        // 通过→行长决策(补齐 PRESIDENT_DECISION 状态使用);未通过→否决(终态,不恢复草稿 §B14)
+        // 通过后消费提交冻结的 president_required；未通过直接否决(终态,不恢复草稿 §B14)。
         CcrPricingItem item = pricingItemMapper.selectById(pricingItemId);
         if (item != null) {
             String countNote = (partial ? "超时计票:" : "计票:") + "赞成 " + result.getApproveCount()
                     + "/" + result.getSubmittedCount();
             if (pass) {
-                item.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
+                boolean requiresPresident = FrozenRoutePlan.requiresPresident(item);
+                item.setStatus(requiresPresident
+                        ? PricingItemStatus.PRESIDENT_DECISION.getCode()
+                        : PricingItemStatus.FINAL.getCode());
+                if (!requiresPresident && item.getFinalRate() == null) {
+                    item.setFinalRate(item.getCurrentApprovalRate());
+                }
                 updateItemWithLock(item);
+                if (!requiresPresident) {
+                    itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_APPROVED");
+                }
             } else {
                 item.setStatus(PricingItemStatus.REJECTED.getCode());
                 item.setFinalReason("六人小组表决未通过(" + countNote + ")");

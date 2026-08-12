@@ -555,8 +555,11 @@ class RateMatrixRouterImplTest {
     private CcrProductRoute productRoute(String productCode, String mode, String mandatoryVote,
                                          String president, String voteCondition) {
         CcrProductRoute r = new CcrProductRoute();
+        r.setId(8801L);
+        r.setVersionNo(7);
         r.setProductCode(productCode);
         r.setBusinessBigType("LOAN_PUBLIC");
+        r.setFlowKey("rate_approval_v2");
         r.setRouteMode(mode);
         r.setMandatoryVote(mandatoryVote);
         r.setPresidentDecision(president);
@@ -585,6 +588,13 @@ class RateMatrixRouterImplTest {
         RouteResult result = router.calcRoute(in);
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
         assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getRouteChain());
+        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getExecutionChain());
+        assertEquals(8801L, result.getProductRouteId());
+        assertEquals(7, result.getProductRouteVersion());
+        assertEquals("DIRECT_VOTE", result.getRouteMode());
+        assertEquals("rate_approval_v2", result.getFlowKey());
+        assertEquals("Y", result.getPresidentRequired());
+        assertTrue(result.getNodePermissions().isEmpty());
     }
 
     @Test
@@ -649,6 +659,11 @@ class RateMatrixRouterImplTest {
         in.setProductCode("PUB_LOAN_01");
         RouteResult result = router.calcRoute(in);
         assertEquals("BRANCH_MANAGER", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT",
+                "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getExecutionChain());
+        assertEquals("3.40", result.getNodePermissions().get("BRANCH_MANAGER"));
+        assertEquals("3.20", result.getNodePermissions().get("VICE_PRESIDENT"));
+        assertEquals("Y", result.getPresidentRequired());
     }
 
     // ---------- §8A.3 LPR 明细按 (lpr_term, product_type) 取值 ----------

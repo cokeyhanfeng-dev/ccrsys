@@ -254,6 +254,62 @@ class ApprovalServiceImplTest {
     }
 
     @Test
+    void approve_directVote_consumesFrozenPlanAndGoesGroup() {
+        item.setRouteMode("DIRECT_VOTE");
+        item.setRouteChainJson("[\"BRANCH_MANAGER\",\"SIX_PEOPLE_GROUP\",\"PRESIDENT\"]");
+        item.setNodePermissionJson("{}");
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "按冻结计划直接上会", 3, null);
+
+        verify(nodePermissionMapper, never()).selectOne(any(Wrapper.class));
+        verify(voteService).createGroupRound(30L);
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction action) ->
+                "ESCALATE".equals(action.getActionType())));
+    }
+
+    @Test
+    void approve_chainedPlan_skipsUnconfiguredNode() {
+        item.setCurrentApprovalRate(new BigDecimal("3.500000"));
+        item.setRouteChainJson("[\"BRANCH_MANAGER\",\"VICE_PRESIDENT\",\"SIX_PEOPLE_GROUP\"]");
+        item.setNodePermissionJson("{\"BRANCH_MANAGER\":\"3.600000\"}");
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "沿冻结链路上送", 3, null);
+
+        verify(pricingItemMapper).update(isNull(), argThat((Wrapper<CcrPricingItem> wrapper) ->
+                ((com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CcrPricingItem>) wrapper)
+                        .getParamNameValuePairs().containsValue("VICE_PRESIDENT")));
+        verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
+    void approve_usesFrozenBoundaryAfterLiveConfigurationChanges() {
+        item.setRouteChainJson("[\"BRANCH_MANAGER\",\"SIX_PEOPLE_GROUP\"]");
+        item.setNodePermissionJson("{\"BRANCH_MANAGER\":\"3.000000\"}");
+        item.setCurrentApprovalRate(new BigDecimal("3.200000"));
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "按提交时边界终审", 3, null);
+
+        verify(nodePermissionMapper, never()).selectOne(any(Wrapper.class));
+        verify(itemFinalizationService).afterItemTerminal(10L, "LEVEL_APPROVED");
+        verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
     void approve_loan_escalateToGroup_createsRound() {
         item.setCurrentNodeCode("VICE_PRESIDENT");
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_VICE_PRESIDENT));

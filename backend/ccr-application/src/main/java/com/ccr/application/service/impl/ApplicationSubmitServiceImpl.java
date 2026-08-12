@@ -35,6 +35,7 @@ import com.ccr.application.service.ApplicationSubmitService;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.SnapshotGateway;
+import com.ccr.application.support.FrozenRoutePlan;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -71,7 +72,7 @@ import java.util.Set;
  * 申请提交编排实现(§7.1 步骤7-11)
  * 快照采集:按主体从数仓最新批次采集,集团链 集团→成员→额度→分项→合同→借据(§A.6);
  * 冻结:LPR 版本 + 规则集版本 + 路由生效日期(§8.4);
- * 路由:首节点恒为 BRANCH_MANAGER,终审岗位写 route_code
+ * 路由:首节点恒为 BRANCH_MANAGER,预计终审岗位写 route_code,完整执行计划冻结到分项
  */
 @Service
 @Slf4j
@@ -168,7 +169,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 preview.setRateDirection(route.getRateDirection());
                 preview.setStartNodeCode(route.getStartNodeCode());
                 preview.setFinalNodeCode(route.getFinalNodeCode());
-                preview.setRouteChain(route.getRouteChain());
+                preview.setRouteChain(executionChain(route));
                 preview.setLprVersionId(route.getLprVersionId());
                 preview.setLprVersionCode(route.getLprVersionCode());
                 preview.setMessage(route.getMessage());
@@ -347,10 +348,17 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (CcrPricingItem item : items) {
             ruleEngine.checkHardBoundary(businessBigType(app), item.getProductCode(), item.getRequestedRate());
         }
-        // 主申请先置 SUBMITTED(§7.2 步骤6 中间态:校验通过、快照采集/路由前),路由完成后置 ROUTING
-        applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+        // 以 DRAFT+version_no 条件更新抢占提交所有权。CAS 是首个业务写入，失败者不得创建快照/路由/Outbox。
+        int claimed = applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
                 .eq(CcrApplication::getId, id)
-                .set(CcrApplication::getStatus, ApplicationStatus.SUBMITTED.getCode()));
+                .eq(CcrApplication::getStatus, ApplicationStatus.DRAFT.getCode())
+                .eq(CcrApplication::getVersionNo, app.getVersionNo())
+                .set(CcrApplication::getStatus, ApplicationStatus.SUBMITTED.getCode())
+                .set(CcrApplication::getUpdateTime, LocalDateTime.now())
+                .setSql("version_no = version_no + 1"));
+        if (claimed == 0) {
+            return submitResultAfterClaimLost(id);
+        }
         // g) 冻结 LPR 版本/规则集版本/路由生效日期(§8.4)
         CcrLprVersion lpr = currentLpr();
         CcrRateRuleSet ruleSet = currentRuleSet();
@@ -367,7 +375,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         SnapshotBundleResult bundle = snapshotGateway.freeze(bundleId);
 
-        // h) 逐分项算路由:置 ROUTING + 首节点 BRANCH_MANAGER + 终审岗位 + 冻结边界/矩阵行号(§8.6)
+        // h) 逐分项算路由:置 ROUTING + 首节点 + 预计终审岗位 + 完整执行链/逐节点边界/产品链路版本(§8.6)
         Map<String, Map<String, Object>> corpCache = new HashMap<>();
         List<SubmitResponse.ItemRoute> itemRoutes = new ArrayList<>();
         for (CcrPricingItem item : items) {
@@ -377,11 +385,20 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             item.setCurrentNodeCode(route.getStartNodeCode());
             item.setRouteCode(route.getFinalNodeCode());
             item.setBoundaryRate(route.getBoundaryRate());
+            item.setHardBoundaryRate(route.getHardBoundaryRate());
             item.setMatchedMatrixNo(route.getMatchedMatrixNo());
+            item.setProductRouteId(route.getProductRouteId());
+            item.setProductRouteVersion(route.getProductRouteVersion());
+            item.setRouteMode(route.getRouteMode());
+            List<String> executionChain = executionChain(route);
+            item.setRouteChainJson(JSONUtil.toJsonStr(executionChain));
+            item.setNodePermissionJson(JSONUtil.toJsonStr(route.getNodePermissions()));
+            item.setPresidentRequired(route.getPresidentRequired());
+            item.setFlowKey(route.getFlowKey());
             // 部门归属(矩阵透出,提交冻结;§D16a 部门分流,节点处理人按分项 dept_code 解析)
             item.setDeptCode(route.getDeptCode());
             pricingItemMapper.updateById(item);
-            itemRoutes.add(toItemRoute(item, route.getRouteChain()));
+            itemRoutes.add(toItemRoute(item, executionChain));
         }
 
         // i) 主申请置 ROUTING、冻结版本、写提交时间(freeze 已绑定快照包,重取避免乐观锁过期)
@@ -406,6 +423,26 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
+     * 并发提交抢占失败后的结果判定。必须使用 FOR UPDATE 当前读：本事务在 CAS 前已经读取过草稿，
+     * 普通 selectById 在 MySQL REPEATABLE READ 下可能继续看到旧版本。
+     */
+    private SubmitResponse submitResultAfterClaimLost(Long applicationId) {
+        CcrApplication latest = applicationMapper.selectByIdForUpdate(applicationId);
+        if (latest == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在:" + applicationId);
+        }
+        if (latest.getSubmitTime() != null) {
+            return buildSubmitResponse(latest, pricingItems(applicationId), false);
+        }
+        if (ApplicationStatus.DRAFT.getCode().equals(latest.getStatus())) {
+            throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(),
+                    "申请已被修改,请刷新后重新提交");
+        }
+        throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                "申请正在提交或当前状态不可提交(" + latest.getStatus() + ")");
+    }
+
+    /**
      * j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义),
      * 以及提交通知 NOTIFY(申请人 + 首节点支行行长);事件写入失败随提交事务整体回滚,不出现半成品
      */
@@ -420,7 +457,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             payload.put("nodeCode", item.getStartNodeCode());
             payload.put("routeCode", item.getRouteCode());
             // 流程定义版本:利率审批标准流程(Warm-Flow 轨迹载体)
-            payload.put("flowCode", "rate_approval");
+            payload.put("flowCode", StrUtil.blankToDefault(item.getFlowKey(), "rate_approval"));
             payload.put("createBy", createBy);
             outboxService.publish(OutboxEventType.FLOW_START, item.getPricingItemNo(), JSONUtil.toJsonStr(payload));
         }
@@ -468,6 +505,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 m.put("requestedRate", it.getRequestedRate());
                 m.put("originalRate", it.getOriginalRate());
                 m.put("deptCode", it.getDeptCode());
+                m.put("productRouteId", it.getProductRouteId());
+                m.put("productRouteVersion", it.getProductRouteVersion());
+                m.put("routeMode", it.getRouteMode());
+                m.put("routeChain", it.getRouteChainJson());
+                m.put("nodePermissions", it.getNodePermissionJson());
+                m.put("presidentRequired", it.getPresidentRequired());
                 pis.add(m);
             }
             snap.put("items", pis);
@@ -1029,6 +1072,19 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 copy.setRequestedRate(src.getFinalRate() != null ? src.getFinalRate() : src.getRequestedRate());
                 copy.setCurrentApprovalRate(copy.getRequestedRate());
                 copy.setRouteCode(src.getRouteCode());
+                copy.setStartNodeCode(src.getStartNodeCode());
+                copy.setCurrentNodeCode(src.getCurrentNodeCode());
+                copy.setBoundaryRate(src.getBoundaryRate());
+                copy.setHardBoundaryRate(src.getHardBoundaryRate());
+                copy.setMatchedMatrixNo(src.getMatchedMatrixNo());
+                copy.setDeptCode(src.getDeptCode());
+                copy.setProductRouteId(src.getProductRouteId());
+                copy.setProductRouteVersion(src.getProductRouteVersion());
+                copy.setRouteMode(src.getRouteMode());
+                copy.setRouteChainJson(src.getRouteChainJson());
+                copy.setNodePermissionJson(src.getNodePermissionJson());
+                copy.setPresidentRequired(src.getPresidentRequired());
+                copy.setFlowKey(src.getFlowKey());
                 inheritCount++;
             } else {
                 copy.setInheritFlag("N");
@@ -1308,7 +1364,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         response.setSubmitted(submitted);
         List<SubmitResponse.ItemRoute> itemRoutes = new ArrayList<>();
         for (CcrPricingItem item : items) {
-            itemRoutes.add(toItemRoute(item, null));
+            itemRoutes.add(toItemRoute(item,
+                    FrozenRoutePlan.hasFrozenPlan(item) ? FrozenRoutePlan.executionChain(item, null) : null));
         }
         response.setItems(itemRoutes);
         return response;
@@ -1323,6 +1380,11 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         route.setRouteCode(item.getRouteCode());
         route.setRouteChain(routeChain);
         return route;
+    }
+
+    /** 兼容测试桩和升级期旧路由实现；正式路由结果优先使用完整执行链。 */
+    private List<String> executionChain(RouteResult route) {
+        return route.getExecutionChain() == null ? route.getRouteChain() : route.getExecutionChain();
     }
 
     private static BigDecimal toBigDecimal(Object v) {
