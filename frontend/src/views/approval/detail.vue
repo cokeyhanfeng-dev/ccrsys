@@ -57,7 +57,7 @@
             <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
             <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
             <td>{{ guaranteesText(it.guarantees) }}</td>
-            <td>{{ deptText(it.deptCode) }}</td>
+            <td>{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</td>
             <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
             <td>{{ itemStatusText(it.status) }}</td>
           </tr>
@@ -949,6 +949,17 @@ function rateChanged(it: any): boolean {
   return opRates.value[it.id] != null && base != null && Number(opRates.value[it.id]) !== Number(base)
 }
 
+// 收集本次提交所有相对基线变化的分项调价(含触发分项:后端触发分项以 adjustRate 为准、sibling 以 rateAdjustments 为准,
+// 触发分项不在 sibling 循环内,不会重复处理)。修复合单上送时非触发分项利率修改被丢弃的问题。
+function collectRateAdjustments(): Record<string, number | string> | undefined {
+  const adj: Record<string, number | string> = {}
+  for (const it of siblingItems.value) {
+    if (itemPassed(it) || !rateChanged(it)) continue
+    adj[String(it.id)] = opRates.value[it.id] as number
+  }
+  return Object.keys(adj).length ? adj : undefined
+}
+
 
 const groupTotalAmount = computed(() =>
   groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
@@ -1151,6 +1162,7 @@ async function doApproveItem(it: any) {
       pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
       nodeCode: it.currentNodeCode,
       adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
+      rateAdjustments: collectRateAdjustments(),
       comment: opComment.value || undefined,
       versionNo: it.versionNo
     }, newIdempotencyKey())
@@ -1185,6 +1197,7 @@ async function doApproveAll() {
       pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
       nodeCode: it.currentNodeCode,
       adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
+      rateAdjustments: collectRateAdjustments(),
       comment: opComment.value || undefined,
       versionNo: it.versionNo
     }, newIdempotencyKey())

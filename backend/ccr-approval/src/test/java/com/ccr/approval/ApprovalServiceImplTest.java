@@ -160,7 +160,7 @@ class ApprovalServiceImplTest {
     void approve_reject_whenGroupNodeNotReachable() {
         // 六人小组从普通审批通道移除(小组绕过不可达)
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "SIX_PEOPLE_GROUP", null, null, 3, null));
+                () -> approvalService.approve(10L, "SIX_PEOPLE_GROUP", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
     }
 
@@ -171,7 +171,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
     }
@@ -183,7 +183,7 @@ class ApprovalServiceImplTest {
                 .when(currentLoginUser).requireNodeRole("BRANCH_MANAGER");
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
     }
@@ -200,7 +200,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
         // 存款期限上限未冻结(boundaryRate 为空)视为超上限 → 整单上会,触发建表决批次
         verify(voteService).createGroupRound(30L);
@@ -216,7 +216,7 @@ class ApprovalServiceImplTest {
         when(applicationMapper.selectById(30L)).thenReturn(application);
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "DEPT_GENERAL_MANAGER", null, null, 3, null));
+                () -> approvalService.approve(10L, "DEPT_GENERAL_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
     }
 
@@ -229,7 +229,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
         // 整单齐套终审 → 决议/承诺/主申请聚合
         verify(itemFinalizationService).afterItemTerminal(10L, "LEVEL_APPROVED");
@@ -245,7 +245,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率上送", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率上送", 3, null, null);
 
         // 超权限保留利率通过 → 整单上送部门总经理,不终审、不合批
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
@@ -267,7 +267,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "VICE_PRESIDENT", null, null, 3, null);
+        approvalService.approve(10L, "VICE_PRESIDENT", null, null, 3, null, null);
 
         // 整单上送终点为六人小组 → 自动合批
         verify(voteService).createGroupRound(30L);
@@ -283,7 +283,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
         verify(voteService, never()).createGroupRound(any());
@@ -306,7 +306,7 @@ class ApprovalServiceImplTest {
         when(approvalActionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(prior));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 1, null);
+        approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 1, null, null);
 
         // 两项一起置 APPROVED_LEVEL(触发分项+随行分项各更新一次),逐项触发终态串联
         verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
@@ -327,7 +327,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率通过", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率通过", 3, null, null);
 
         // 两项一起更新(推进部门总经理),不终审、不合批;随行分项留痕注明整单上送
         verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
@@ -353,7 +353,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null);
+        approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
         verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
         verify(voteService).createGroupRound(30L);
@@ -367,7 +367,7 @@ class ApprovalServiceImplTest {
         stubBranchManagerLoan();
         // 调价到 2.5 低于支行下限 3.0:主动调价不得越权
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", new BigDecimal("2.500000"), null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", new BigDecimal("2.500000"), null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
         verify(ruleEngine, never()).checkHardBoundary(any(), any(), any());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
@@ -381,7 +381,7 @@ class ApprovalServiceImplTest {
                 .thenThrow(new ServiceException(ErrorCode.HARD_BOUNDARY.getCode(), "突破业务硬边界"));
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", adjustRate, null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", adjustRate, null, 3, null, null));
         assertEquals(ErrorCode.HARD_BOUNDARY.getCode(), e.getCode());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
     }
@@ -392,7 +392,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.approve(10L, "BRANCH_MANAGER", new BigDecimal("3.200000"), "让利", 3, "K-1");
+        approvalService.approve(10L, "BRANCH_MANAGER", new BigDecimal("3.200000"), "让利", 3, "K-1", null);
 
         verify(ruleEngine).checkHardBoundary("LOAN", "P001", new BigDecimal("3.200000"));
         verify(rateAdjustmentMapper).insert(argThat((CcrRateAdjustment adj) ->
@@ -409,7 +409,7 @@ class ApprovalServiceImplTest {
         when(approvalActionMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, "K-1"));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, "K-1", null));
         assertEquals(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), e.getCode());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
     }
@@ -422,7 +422,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectById(10L)).thenReturn(item, item);
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 2, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 2, null, null));
         assertEquals(ErrorCode.DATA_VERSION_CONFLICT.getCode(), e.getCode());
     }
 
@@ -436,7 +436,7 @@ class ApprovalServiceImplTest {
         when(pricingItemMapper.selectById(10L)).thenReturn(item, moved);
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.TASK_PROCESSED.getCode(), e.getCode());
     }
 
@@ -445,7 +445,7 @@ class ApprovalServiceImplTest {
         stubBranchManagerLoan();
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, null, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, null, null, null));
         assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
     }
 
@@ -553,7 +553,7 @@ class ApprovalServiceImplTest {
         when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
 
         ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null));
+                () -> approvalService.approve(10L, "BRANCH_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
     }
 

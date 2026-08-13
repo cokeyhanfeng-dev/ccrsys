@@ -1,5 +1,6 @@
 package com.ccr.approval.service.impl;
 
+import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
@@ -8,10 +9,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ccr.application.domain.CcrApplication;
+import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.mapper.CcrGuaranteePackageMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.application.service.DataWarehouseService;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
 import com.ccr.approval.domain.DwLoanNoteSnapshot;
@@ -24,8 +28,11 @@ import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
+import com.ccr.rule.dto.MatrixRouteInput;
+import com.ccr.rule.dto.RouteResult;
 import com.ccr.rule.engine.RuleEngine;
 import com.ccr.rule.mapper.CcrNodePermissionMapper;
+import com.ccr.rule.service.RateMatrixRouter;
 import com.ccr.vote.read.SysUserRead;
 import com.ccr.vote.service.ItemFinalizationService;
 import com.ccr.vote.service.VoteService;
@@ -85,6 +92,12 @@ public class ApprovalServiceImpl implements ApprovalService {
     @Resource
     private RuleEngine ruleEngine;
     @Resource
+    private RateMatrixRouter rateMatrixRouter;
+    @Resource
+    private CcrGuaranteePackageMapper guaranteePackageMapper;
+    @Resource
+    private DataWarehouseService dataWarehouseService;
+    @Resource
     private VoteService voteService;
     @Resource
     private ItemFinalizationService itemFinalizationService;
@@ -139,7 +152,7 @@ public class ApprovalServiceImpl implements ApprovalService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
-                        Integer versionNo, String idempotencyKey) {
+                        Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments) {
         SysUserRead operator = checkOperatorAndNode(nodeCode);
         guardIdempotency(idempotencyKey);
         CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
@@ -183,6 +196,12 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
             ruleEngine.checkHardBoundary(businessType, item.getProductCode(), adjustRate);
         }
+        // 调价后按新利率重算矩阵路由(§8.6):跨上会线(如 3.9→3.7)时终审岗位/链路随之变化,
+        // 刷新冻结的 route_code/route_chain/dept_code 等,推进按新链取下一节点;存款链固定不重算
+        RouteResult reroute = (adjusted && !deposit) ? recalcRoute(application, item, adjustRate) : null;
+        if (reroute != null) {
+            applyReroute(item, reroute);
+        }
 
         // ===== 整单流转口径(用户拍板):分项不独立终审/上送,以申请为单位推进 =====
         // 同申请全部分项(create_time 升序保证轨迹顺序稳定);兜底含触发分项自身
@@ -204,7 +223,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         // 下一节点:存款链支行过手后直上小组;贷款链优先沿分项冻结链路(矩阵驱动,可跳过无权限节点如GM),
         // 回退固定链;链终点(正常不可达)按权限内终审兜底
         List<String> frozenChain = parseRouteChain(item.getRouteChain());
-        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP : RouteChains.nextNode(nodeCode, frozenChain);
+        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP
+                : (reroute != null ? nextAfterReroute(nodeCode, reroute.getRouteChain())
+                                   : RouteChains.nextNode(nodeCode, frozenChain));
         // 终审节点判定:仅当前节点 = 矩阵冻结的终审岗位(route_code)才具备权限内终审资格;
         // 链路中间节点(如强制上会场景的支行/分管行长)即使利率在权限内也只有知晓/过手权,须沿链上送,
         // 避免在此截胡终审——预览为「上会+行长决策」,实际却被中间节点直接终审,前后口径不一致
@@ -297,53 +318,96 @@ public class ApprovalServiceImpl implements ApprovalService {
                     || !nodeCode.equals(sibling.getCurrentNodeCode())) {
                 continue;
             }
+            // 本次提交带利率调整的分项(rateAdjustments):存款链固定不重算,但调整利率需保存并留痕
+            BigDecimal siblingAdjust = rateAdjustments == null ? null : rateAdjustments.get(sibling.getId());
+            boolean siblingAdjusted = siblingAdjust != null
+                    && (sibling.getCurrentApprovalRate() == null
+                        || siblingAdjust.compareTo(sibling.getCurrentApprovalRate()) != 0);
             // 存款双轨消除(§7.3):任一超上限整单上会,全部分项无条件推进小组,与 D16b 一致
             if (deposit) {
+                if (siblingAdjusted) {
+                    ruleEngine.checkHardBoundary(businessType, sibling.getProductCode(), siblingAdjust);
+                }
                 updateSiblingWholeOrder(sibling, RouteChains.SIX_PEOPLE_GROUP,
-                        PricingItemStatus.ROUTING.getCode(), null, null);
+                        PricingItemStatus.ROUTING.getCode(), siblingAdjusted ? siblingAdjust : null, null, null);
                 insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
-                        "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[SIX_PEOPLE_GROUP]",
-                        sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                        "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[SIX_PEOPLE_GROUP]"
+                                + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
+                        sibling.getCurrentApprovalRate(),
+                        siblingAdjusted ? siblingAdjust : sibling.getCurrentApprovalRate(), null,
                         PricingItemStatus.ROUTING.getCode(), PricingItemStatus.VOTING.getCode()));
+                if (siblingAdjusted) {
+                    saveAdjustment(sibling, nodeCode, operator.getId(),
+                            sibling.getCurrentApprovalRate(), siblingAdjust, perm);
+                }
                 continue;
             }
             // 贷款按 sibling 自身 route_code 分流(用户拍板:小组只审批自身权限内的分项):
             // 当前节点即该 sibling 冻结终审岗位(route_code==当前节点)且利率权限内 → 就地终审,
             // 不随触发分项连带进小组、不建表决轮次;其余 sibling 沿自身 route_chain 推进
-            String siblingRouteCode = sibling.getRouteCode();
+            // 本次提交带利率调整的 sibling(rateAdjustments):先按调整后利率重算矩阵路由并刷新冻结链路
+            // (跨上会线如 3.9→3.7 时终审岗位随之变为小组),再按新路由判定分流,修复合单上送时
+            // 非触发分项利率修改被丢弃的问题
+            RouteResult siblingReroute = null;
+            if (siblingAdjusted) {
+                ruleEngine.checkHardBoundary(businessType, sibling.getProductCode(), siblingAdjust);
+                siblingReroute = recalcRoute(application, sibling, siblingAdjust);
+                applyReroute(sibling, siblingReroute);
+            }
+            BigDecimal siblingEffective = siblingAdjusted ? siblingAdjust : sibling.getCurrentApprovalRate();
+            String siblingRouteCode = siblingReroute != null ? siblingReroute.getFinalNodeCode() : sibling.getRouteCode();
             boolean siblingFinal = StrUtil.isBlank(siblingRouteCode) || siblingRouteCode.equals(nodeCode);
-            boolean siblingWithin = inNodePermission(businessType, sibling.getCurrentApprovalRate(), perm);
+            boolean siblingWithin = inNodePermission(businessType, siblingEffective, perm);
             if (siblingFinal && siblingWithin) {
                 updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                        sibling.getCurrentApprovalRate(), null);
+                        siblingAdjusted ? siblingAdjust : null, siblingEffective, null);
                 insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
                         "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项在节点["
-                                + nodeCode + "]权限内通过就地终审",
-                        sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                                + nodeCode + "]权限内通过就地终审"
+                                + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
+                        sibling.getCurrentApprovalRate(), siblingEffective, null,
                         PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
+                if (siblingAdjusted) {
+                    saveAdjustment(sibling, nodeCode, operator.getId(),
+                            sibling.getCurrentApprovalRate(), siblingAdjust, perm);
+                }
                 // 终态串联(决议+承诺计划+主申请聚合,异常不阻断主流程)
                 itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
             } else {
-                List<String> siblingChain = parseRouteChain(sibling.getRouteChain());
-                String siblingNext = RouteChains.nextNode(nodeCode, siblingChain);
+                List<String> siblingChain = siblingReroute != null ? siblingReroute.getRouteChain()
+                        : parseRouteChain(sibling.getRouteChain());
+                String siblingNext = siblingReroute != null
+                        ? nextAfterReroute(nodeCode, siblingChain)
+                        : RouteChains.nextNode(nodeCode, siblingChain);
                 if (siblingNext == null) {
                     // 链路已尽且当前节点非终审岗位的异常口径:按权限内就地终审兜底,避免分项悬挂
                     updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                            sibling.getCurrentApprovalRate(), null);
+                            siblingAdjusted ? siblingAdjust : null, siblingEffective, null);
                     insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
-                            "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项链路已尽就地终审兜底",
-                            sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                            "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项链路已尽就地终审兜底"
+                                    + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
+                            sibling.getCurrentApprovalRate(), siblingEffective, null,
                             PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
+                    if (siblingAdjusted) {
+                        saveAdjustment(sibling, nodeCode, operator.getId(),
+                                sibling.getCurrentApprovalRate(), siblingAdjust, perm);
+                    }
                     itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
                 } else {
                     boolean siblingToGroup = RouteChains.SIX_PEOPLE_GROUP.equals(siblingNext);
-                    updateSiblingWholeOrder(sibling, siblingNext, PricingItemStatus.ROUTING.getCode(), null, null);
+                    updateSiblingWholeOrder(sibling, siblingNext, PricingItemStatus.ROUTING.getCode(),
+                            siblingAdjusted ? siblingAdjust : null, null, null);
                     insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
                             "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至["
-                                    + siblingNext + "]",
-                            sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                                    + siblingNext + "]"
+                                    + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
+                            sibling.getCurrentApprovalRate(), siblingEffective, null,
                             PricingItemStatus.ROUTING.getCode(),
                             siblingToGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
+                    if (siblingAdjusted) {
+                        saveAdjustment(sibling, nodeCode, operator.getId(),
+                                sibling.getCurrentApprovalRate(), siblingAdjust, perm);
+                    }
                 }
             }
         }
@@ -1340,11 +1404,18 @@ public class ApprovalServiceImpl implements ApprovalService {
      */
     private void updateSiblingWholeOrder(CcrPricingItem sibling, String targetNode, String targetStatus,
                                          BigDecimal finalRate, String finalReason) {
+        updateSiblingWholeOrder(sibling, targetNode, targetStatus, null, finalRate, finalReason);
+    }
+
+    /** 整单流转随行分项更新(带调价:currentApprovalRate 非空时同步保存调整后利率;5 参重载不传调价) */
+    private void updateSiblingWholeOrder(CcrPricingItem sibling, String targetNode, String targetStatus,
+                                         BigDecimal currentApprovalRate, BigDecimal finalRate, String finalReason) {
         LambdaUpdateWrapper<CcrPricingItem> wrapper = new LambdaUpdateWrapper<CcrPricingItem>()
                 .eq(CcrPricingItem::getId, sibling.getId())
                 .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
                 .set(CcrPricingItem::getCurrentNodeCode, targetNode)
                 .set(CcrPricingItem::getStatus, targetStatus)
+                .set(currentApprovalRate != null, CcrPricingItem::getCurrentApprovalRate, currentApprovalRate)
                 .set(finalRate != null, CcrPricingItem::getFinalRate, finalRate)
                 .set(finalReason != null, CcrPricingItem::getFinalReason, finalReason)
                 .setSql("version_no = version_no + 1")
@@ -1355,6 +1426,124 @@ public class ApprovalServiceImpl implements ApprovalService {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
                     "分项 " + sibling.getId() + " 状态已变迁,整单流转中止");
         }
+    }
+
+    // ==================== 调价后矩阵路由重算(§8.6 用户拍板:改利率流程链路随之调整) ====================
+
+    /**
+     * 调价后按调整后利率重算矩阵路由:业务大类/存量新增/客户类型/金额/期限/担保维度与提交时一致,
+     * 仅利率用调整后值匹配矩阵行;沿用提交冻结的 LPR 版本与生效日期(§8.4),保证口径与提交预览一致。
+     * 跨上会线(如 3.9→3.7 命中小组行)时终审岗位/链路/部门归属随之变化,由调用方 applyReroute 刷新冻结字段。
+     */
+    private RouteResult recalcRoute(CcrApplication app, CcrPricingItem item, BigDecimal adjustedRate) {
+        MatrixRouteInput input = new MatrixRouteInput();
+        input.setBusinessBigType(routeBusinessBigType(app));
+        input.setNewOrExisting(routeNewOrExisting(app, item));
+        input.setCustomerType(routeCustomerType(app, item));
+        input.setProductCode(item.getProductCode());
+        input.setAmount(item.getPricingAmount());
+        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_GROUP_TOTAL_CREDIT);
+        input.setGroupCreditTotal(routeGroupCreditTotal(app));
+        input.setTermValue(item.getTermValue());
+        input.setTermUnit(item.getTermUnit());
+        input.setGuaranteeType(routeGuaranteeType(item));
+        input.setRequestedRate(adjustedRate);
+        input.setOriginalRate(item.getOriginalRate());
+        input.setLprVersionId(app.getLprVersionId());
+        input.setAsOfDate(app.getRouteAsOfDate());
+        try {
+            return rateMatrixRouter.calcRoute(input);
+        } catch (ServiceException e) {
+            throw new ServiceException(e.getCode(),
+                    "调整后利率 " + adjustedRate + "% 无矩阵路由匹配(" + e.getMessage() + "),请重新确认利率");
+        }
+    }
+
+    /** 刷新调价后分项的冻结路由字段(route_code/route_chain/dept_code/boundary/matched_matrix_no),同步 DB 与内存。
+     * 用 wrapper 形式更新,避免 updateById 触发 BaseEntity.versionNo 乐观锁自增,
+     * 否则后续带版本条件的 updateItemWithStateAndVersion(eq version_no)会 0 行抛版本冲突。 */
+    private void applyReroute(CcrPricingItem item, RouteResult nr) {
+        item.setRouteCode(nr.getFinalNodeCode());
+        item.setRouteChain(JSONUtil.toJsonStr(nr.getRouteChain()));
+        item.setDeptCode(nr.getDeptCode());
+        item.setBoundaryRate(nr.getBoundaryRate());
+        item.setMatchedMatrixNo(nr.getMatchedMatrixNo());
+        pricingItemMapper.update(null, new LambdaUpdateWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getId, item.getId())
+                .set(CcrPricingItem::getRouteCode, item.getRouteCode())
+                .set(CcrPricingItem::getRouteChain, item.getRouteChain())
+                .set(CcrPricingItem::getDeptCode, item.getDeptCode())
+                .set(CcrPricingItem::getBoundaryRate, item.getBoundaryRate())
+                .set(CcrPricingItem::getMatchedMatrixNo, item.getMatchedMatrixNo()));
+    }
+
+    /** 调价重算后的推进目标:当前节点在新链 → 下一节点(终点 null);不在新链(链路已变,start 已过) → 从首节点下一站进入 */
+    private String nextAfterReroute(String nodeCode, List<String> chain) {
+        if (StrUtil.isBlank(nodeCode) || chain == null || chain.isEmpty()) {
+            return null;
+        }
+        int idx = chain.indexOf(nodeCode);
+        if (idx >= 0) {
+            return idx == chain.size() - 1 ? null : chain.get(idx + 1);
+        }
+        return chain.size() > 1 ? chain.get(1) : null;
+    }
+
+    /** 业务大类:DEPOSIT / LOAN_PERSONAL(对私) / LOAN_PUBLIC(对公),与提交路由口径一致 */
+    private String routeBusinessBigType(CcrApplication app) {
+        if ("DEPOSIT".equals(app.getBusinessType())) {
+            return "DEPOSIT";
+        }
+        return "INDIVIDUAL".equals(app.getCustomerScope()) ? "LOAN_PERSONAL" : "LOAN_PUBLIC";
+    }
+
+    /** 存量/新增判定:优先申请授信快照 businessType(NEW/EXISTING),回退原执行利率非空即存量 */
+    private String routeNewOrExisting(CcrApplication app, CcrPricingItem item) {
+        if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
+            try {
+                String bt = JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType");
+                if ("NEW".equals(bt) || "EXISTING".equals(bt)) {
+                    return bt;
+                }
+            } catch (Exception ignore) {
+                // 快照解析失败回退原利率判定
+            }
+        }
+        return item.getOriginalRate() != null ? "EXISTING" : "NEW";
+    }
+
+    /** 客户类型:PERSONAL 个人;对公取数仓企业性质(SOE/NON_SOE),缺省 NON_SOE */
+    private String routeCustomerType(CcrApplication app, CcrPricingItem item) {
+        if ("INDIVIDUAL".equals(app.getCustomerScope())) {
+            return "PERSONAL";
+        }
+        String customerNo = "GROUP".equals(app.getCustomerScope()) ? item.getMemberCustomerNo() : app.getCustomerNo();
+        if (StrUtil.isBlank(customerNo)) {
+            return "NON_SOE";
+        }
+        Map<String, Object> corp = dataWarehouseService.findCorpCustomer(customerNo);
+        if (corp == null || corp.get("entp_charic") == null) {
+            return "NON_SOE";
+        }
+        return "SOE".equals(String.valueOf(corp.get("entp_charic"))) ? "SOE" : "NON_SOE";
+    }
+
+    /** 担保主类型(取分项冻结担保组合) */
+    private String routeGuaranteeType(CcrPricingItem item) {
+        if (item.getGuaranteePackageId() == null) {
+            return null;
+        }
+        CcrGuaranteePackage pkg = guaranteePackageMapper.selectById(item.getGuaranteePackageId());
+        return pkg == null ? null : pkg.getMainGuaranteeType();
+    }
+
+    /** 集团批复总额度(§B18 路由金额定档基准;非集团或无授信快照返回 null,calcRoute 回退本笔金额) */
+    private BigDecimal routeGroupCreditTotal(CcrApplication app) {
+        if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupNo())) {
+            return null;
+        }
+        Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
+        return credit == null ? null : Convert.toBigDecimal(credit.get("approved_total_amount"));
     }
 
     /** 权限内判定(§8.2):贷款审批利率≥节点下界;存款审批利率≤节点上界 */

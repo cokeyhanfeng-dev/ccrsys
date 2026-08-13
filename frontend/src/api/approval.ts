@@ -17,6 +17,9 @@ export interface ApprovalActionBody {
   pricingItemId: number | string
   nodeCode: string
   adjustRate?: number | string | null
+  // 同申请其余分项(随整单推进的 sibling)调价利率:分项id→调整后利率,仅收录相对当前利率有变化的分项;
+  // 后端按调整后利率重算矩阵路由并按新链路推进,修复合单上送时非触发分项利率修改被丢弃的问题
+  rateAdjustments?: Record<string, number | string>
   comment?: string
   versionNo: number | string
 }

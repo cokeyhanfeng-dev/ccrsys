@@ -25,13 +25,15 @@ public interface ApprovalService {
      *
      * @param pricingItemId  定价分项
      * @param nodeCode       当前节点(必须等于分项当前节点且登录人具备该节点角色)
-     * @param adjustRate     调价后利率(可为空=不调价;调价不得突破本节点权限边界与产品硬边界)
+     * @param adjustRate     触发分项调价后利率(可为空=不调价;调价不得突破本节点权限边界与产品硬边界)
      * @param comment        意见
      * @param versionNo      分项乐观锁版本号(必传,防并发覆盖)
      * @param idempotencyKey 幂等键(可空,重复抛 IDEMPOTENCY_REPEAT)
+     * @param rateAdjustments 同申请其余分项(随整单推进的 sibling)调价利率:分项id→调整后利率,
+     *                        仅收录相对当前利率有变化的分项;调价分项按新利率重算矩阵路由并按新链路推进
      */
     void approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
-                 Integer versionNo, String idempotencyKey);
+                 Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments);
 
     /**
      * 普通节点否决(§7.3 否决原因必填)

@@ -1092,7 +1092,7 @@ public class ApprovalController {
         return R.ok(approvalService.listTodo());
     }
 
-    /** 普通节点通过(可携带分项审批利率);versionNo 必传,Idempotency-Key 头可选 */
+    /** 普通节点通过(可携带分项审批利率;同申请其余分项利率调整经 rateAdjustments 一并生效);versionNo 必传,Idempotency-Key 头可选 */
     @PostMapping("/tasks/approve")
     public R<Void> approve(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                            @RequestBody Map<String, Object> body) {
@@ -1102,8 +1102,23 @@ public class ApprovalController {
                 body.get("adjustRate") == null ? null : new BigDecimal(body.get("adjustRate").toString()),
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 body.get("versionNo") == null ? null : Integer.valueOf(body.get("versionNo").toString()),
-                idempotencyKey);
+                idempotencyKey, parseRateAdjustments(body.get("rateAdjustments")));
         return R.ok();
+    }
+
+    /** 解析同申请其余分项调价利率(分项id→调整后利率,仅收录有变化的分项;空/非对象返回 null) */
+    private Map<Long, BigDecimal> parseRateAdjustments(Object raw) {
+        if (!(raw instanceof Map<?, ?> map) || map.isEmpty()) {
+            return null;
+        }
+        Map<Long, BigDecimal> result = new HashMap<>();
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) {
+                continue;
+            }
+            result.put(Long.valueOf(e.getKey().toString()), new BigDecimal(e.getValue().toString()));
+        }
+        return result.isEmpty() ? null : result;
     }
 
     /** 普通节点否决;versionNo 必传,Idempotency-Key 头可选 */
