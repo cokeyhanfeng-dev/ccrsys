@@ -521,8 +521,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (CurrentLoginUser.ROLE_CUSTOMER_MANAGER.equals(role)) {
             // 客户经理:本人申请
             wrapper.eq(CcrApplication::getApplicantUserId, user.getId());
-        } else if (!CurrentLoginUser.ROLE_PRESIDENT.equals(role) && !CurrentLoginUser.ROLE_ADMIN.equals(role)) {
-            // 审批人(含委员):本人审批/表决/决策过的申请;行长与审计(admin)看全部
+        } else if (!CurrentLoginUser.ROLE_ADMIN.equals(role)) {
+            // 审批人(含行长/委员/部门总经理/支行行长/副行长):仅本人审批/表决/决策过的申请;
+            // 审计(admin)为全局监管视角,保留查看全部
             wrapper.inSql(CcrApplication::getId, participatedApplicationSql(user.getId()));
         }
         wrapper.orderByDesc(CcrApplication::getCreateTime);
@@ -1621,10 +1622,10 @@ public class ApprovalServiceImpl implements ApprovalService {
                 + " WHERE pd.del_flag = '0' AND pd.president_user_id = " + userId;
     }
 
-    /** 档案数据权限:客户经理看本人申请、审批人看本人审批过、行长/审计看全部 */
+    /** 档案数据权限:客户经理看本人申请、审批人/行长看本人审批过、审计(admin)看全部 */
     private void checkHistoryPermission(SysUserRead user, Map<String, Object> application) {
         String role = user.getRoleCode();
-        if (CurrentLoginUser.ROLE_PRESIDENT.equals(role) || CurrentLoginUser.ROLE_ADMIN.equals(role)) {
+        if (CurrentLoginUser.ROLE_ADMIN.equals(role)) {
             return;
         }
         Object applicant = application.get("applicant_user_id");
