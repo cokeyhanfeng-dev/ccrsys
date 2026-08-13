@@ -75,7 +75,7 @@
               </tr>
             </tbody>
           </table>
-          <div class="empty" v-else>暂无申请记录,点击右上角"发起新申请"开始</div>
+          <div class="empty" v-else>暂无进行中的申请,已完成申请请在"历史申请"中查看</div>
         </div>
 
         <!-- 其他角色:待我处理(审批/表决/决策聚合) -->
@@ -292,15 +292,17 @@ const todoEmptyText = computed(() => {
   return map[role.value] || '暂无待审批分项,新申请提交后会出现在这里'
 })
 
-const APP_FINALS = ['DRAFT', 'APPROVED', 'REJECTED', 'CLOSED']
+// 动态列表隐藏状态:草稿(未提交,可继续编辑) + 终态(已完成:FINAL/VETOED/APPROVED/REJECTED/CLOSED),
+// 已完成申请进历史档案查看/重提(§12.10),不再占用申请动态列表
+const APP_DYNAMIC_HIDDEN = ['DRAFT', 'FINAL', 'VETOED', 'APPROVED', 'REJECTED', 'CLOSED']
 
-// ---------- 客户经理:我的申请动态(仅显示在途,终态申请看历史档案) ----------
+// ---------- 客户经理:我的申请动态(仅显示未完成,终态申请看历史档案) ----------
 const myApps = computed(() =>
   [...applications.value]
-    .filter((a) => a.status && !APP_FINALS.includes(a.status))
+    .filter((a) => a.status && !APP_DYNAMIC_HIDDEN.includes(a.status))
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0)))
 const inProgressCount = computed(
-  () => applications.value.filter((a) => a.status && !APP_FINALS.includes(a.status)).length
+  () => applications.value.filter((a) => a.status && !APP_DYNAMIC_HIDDEN.includes(a.status)).length
 )
 const rejectedCount = computed(
   () => applications.value.filter((a) => a.status === 'REJECTED').length
