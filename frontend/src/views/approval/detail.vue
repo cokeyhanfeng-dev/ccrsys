@@ -511,7 +511,7 @@
         <span class="badge badge--success">{{ presidentVote.approveCount }} 票赞成</span>
         <span class="badge badge--danger">{{ presidentVote.rejectCount }} 票反对</span>
         <span class="badge badge--info">通过线 ≥{{ presidentVote.requiredCount }} · 已收 {{ presidentVote.submittedCount }} 票</span>
-        <span class="badge badge--info">申请利率 {{ fmtRate(presidentDecisionItems[0]?.requestedRate) }}%</span>
+        <span class="badge badge--info">申请利率 {{ fmtRate(presidentDecisionItems[0]?.requestedRate) }}</span>
         <span v-if="presidentDecisionItems.length > 1" class="badge badge--info">共 {{ presidentDecisionItems.length }} 个分项</span>
       </div>
       <div class="stat-card__sub" v-if="presidentDecisionItems.length > 1" style="margin:8px 0">
@@ -525,7 +525,7 @@
             <span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteResultOfItem(it).approveCount }}:{{ voteResultOfItem(it).rejectCount }} 通过</span>
           </template>
           <div class="stat-card__sub" style="margin-bottom:6px">
-            申请利率 {{ fmtRate(it.requestedRate) }}% · 审批利率 {{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}%
+            申请利率 {{ fmtRate(it.requestedRate) }} · 审批利率 {{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}
             · 六人表决 {{ voteResultOfItem(it) ? `${voteResultOfItem(it).approveCount}:${voteResultOfItem(it).rejectCount}` : '—' }}
           </div>
           <table class="table">
@@ -621,12 +621,12 @@
             <span class="op-item__name">{{ itemName(it) }}</span>
             <strong>
               <template v-if="itemPassed(it)"><span class="badge badge--info">上级节点已通过 · 仅展示</span></template>
-              <template v-else-if="isVotableItem(it) && itemApproved(it)">
+              <template v-else-if="isCommitteeVoting && itemApproved(it)">
                 <span class="badge badge--success">已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }}</span>
               </template>
               <template v-else-if="itemApproved(it)"><span class="badge badge--success">已同意 · {{ fmtRate(opRates[it.id]) }}</span></template>
               <template v-else-if="canOperate(it)"><span class="badge badge--warning">{{ isCommitteeVoting ? '待投票' : '待处理' }}</span></template>
-              <template v-else-if="isCommitteeVoting"><span class="badge badge--neutral">仅展示</span></template>
+              <template v-else-if="isCommitteeVoting"><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
@@ -768,6 +768,7 @@
               <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doRejectItem(it)">否决本项</button>
             </template>
           </div>
+          <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && itemApproved(it)">本人已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }},提交后不可修改。</div>
           <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && !itemPassed(it) && !itemApproved(it)">该分项不在本节点表决范围,仅展示。</div>
           <div class="op-item__passed-tip" v-else>该分项已由上级节点审批通过,当前节点仅展示,无需重复审批。</div>
         </div>
@@ -956,7 +957,11 @@ const actionable = computed(() => {
   const role = userStore.userInfo?.roles?.[0] || ''
   const node = pi.value.current_node_code
   if (!node || ROLE_NODE[role] !== node) return false
-  if (node === 'SIX_PEOPLE_GROUP') return pi.value.status === 'VOTING' || pi.value.status === 'ROUTING'
+  if (node === 'SIX_PEOPLE_GROUP') {
+    // 委员在小组节点全程可见表决操作区:即使最后一人投完分项翻出 VOTING(PRESIDENT_DECISION/REJECTED),
+    // 也保留卡片展示已投状态与进度,避免"最后一人投完后页面效果与其他委员不一致"(卡片整卡消失)
+    return true
+  }
   return pi.value.status === 'ROUTING'
 })
 
@@ -999,9 +1004,10 @@ function isVotableItem(it: any): boolean {
 
 function itemApproved(it: any): boolean {
   if (locallyApproved.value.has(it.id)) return true
-  // 六人小组节点:本人已投视为已处理(委员一人一票,投后不可改)
+  // 六人小组节点:本人已投即视为已处理(委员一人一票,投后不可改;
+  // 最后一人投完分项翻出 VOTING 仍保持"已投"展示,不因状态翻转丢失已投标识)
   if (isCommitteeVoting.value) {
-    return it.status === 'VOTING' && !!myBallotChoice(it)
+    return !!myBallotChoice(it)
   }
   // 终态分项(上送/终审/否决)视为已处理;仍 ROUTING 时以后端 agreed(本节点已同意待齐套)为准
   return it.status !== 'ROUTING' || it.agreed === true
@@ -1238,7 +1244,7 @@ async function doPresidentDecision(decision: 'APPROVE' | 'VETO') {
     return
   }
   const confirmText = decision === 'APPROVE'
-    ? `确认同意利率 ${fmtRate(presidentDecisionItems.value[0]?.requestedRate)}%?同意后整单签发决议,不可撤销。`
+    ? `确认同意利率 ${fmtRate(presidentDecisionItems.value[0]?.requestedRate)}?同意后整单签发决议,不可撤销。`
     : '确认一票否决该申请?否决后为终态,同申请全部分项一并否决。'
   try {
     await ElMessageBox.confirm(confirmText, decision === 'APPROVE' ? '同意利率' : '一票否决', {
