@@ -5,7 +5,7 @@
         <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
         审批详情
       </div>
-      <InfoTip content="基础信息只读,普通审批人仅可编辑审批利率与审批意见。" />
+      <InfoTip :content="isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
     </div>
 
     <!-- 0. 数据来源与快照信息(§12.16-7) -->
@@ -39,6 +39,12 @@
         <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
         <div><span class="dg-label">客户号</span>{{ application.customerNo || pi.pricing_customer_no || '—' }}</div>
         <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
+      </div>
+      <!-- 本次申请补录/新增授信(§用户要求:与存量授信分开展示,不在"本行授信情况"里以空值混排) -->
+      <div v-if="appliedCredit" class="detail-grid applied-credit" style="margin-top:8px">
+        <div><span class="dg-label">申请授信协议号</span>{{ appliedCredit.agreementNo || '—' }}</div>
+        <div><span class="dg-label">申请授信类型</span>{{ agreementTypeText(appliedCredit.agreementType) }}</div>
+        <div><span class="dg-label">申请授信总额(万元)</span>{{ appliedCredit.creditAmount != null ? appliedCredit.creditAmount : '—' }}</div>
       </div>
       <table class="table" style="margin-top:12px">
         <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th>担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
@@ -157,7 +163,7 @@
 
     <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用) -->
     <div class="card">
-      <div class="card__head"><span>授信信息</span><span class="badge" :class="hasManualCredit ? 'badge--warning' : 'badge--info'">{{ hasManualCredit ? '申请补录 + 数仓' : '数仓' }}</span></div>
+      <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
       <table class="table" v-if="creditAgreements.length">
         <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
         <tbody>
@@ -364,49 +370,53 @@
           </div>
           <el-progress :percentage="progressPct(overall.ratio)" :color="progressColor(overall.ratio)" :format="() => `${overall.ratio}%`" :stroke-width="10" style="margin-top:10px" />
         </div>
-        <!-- 按申请列表(点击行展开该申请指标明细) -->
+        <!-- 按申请列表(点击行展开该申请指标明细,明细紧跟当前行下方) -->
         <table class="table" style="margin-top:14px">
           <thead><tr><th>申请号</th><th>申请时间</th><th>承诺计划</th><th>履约比例</th><th>贡献总额</th><th>指标数</th><th class="num"></th></tr></thead>
           <tbody>
-            <tr v-for="(t, i) in tracking" :key="i" class="app-row" @click="t.open = !t.open">
-              <td>{{ t.applicationNo || '—' }}</td>
-              <td>{{ t.submitTime ? fmtDate(t.submitTime) : '—' }}</td>
-              <td><span class="badge badge--info">{{ t.planNo }}</span></td>
-              <td class="num">
-                <span v-if="t.ratio != null" :class="ratioClass(t.ratio)">{{ t.ratio }}%</span>
-                <span v-else class="muted">暂无评估</span>
-              </td>
-              <td class="num">{{ t.sumActual != null ? t.sumActual + ' 万' : '—' }}</td>
-              <td class="num">{{ (t.metrics || []).length }}</td>
-              <td class="num muted">{{ t.open ? '收起 ▲' : '展开 ▼' }}</td>
-            </tr>
+            <template v-for="(t, i) in tracking" :key="i">
+              <tr class="app-row" @click="t.open = !t.open">
+                <td>{{ t.applicationNo || '—' }}</td>
+                <td>{{ t.submitTime ? fmtDate(t.submitTime) : '—' }}</td>
+                <td><span class="badge badge--info">{{ t.planNo }}</span></td>
+                <td class="num">
+                  <span v-if="t.ratio != null" :class="ratioClass(t.ratio)">{{ t.ratio }}%</span>
+                  <span v-else class="muted">暂无评估</span>
+                </td>
+                <td class="num">{{ t.sumActual != null ? t.sumActual + ' 万' : '—' }}</td>
+                <td class="num">{{ (t.metrics || []).length }}</td>
+                <td class="num muted">{{ t.open ? '收起 ▲' : '展开 ▼' }}</td>
+              </tr>
+              <!-- 该申请指标明细:紧跟当前行下方展开 -->
+              <tr v-if="t.open" class="detail-row">
+                <td colspan="7" style="padding: 4px 8px 8px; background: var(--color-fill, #f8f9fa)">
+                  <div class="sub-table">
+                    <div class="sub-table__title">申请 {{ t.applicationNo }} · {{ t.planNo }} 指标明细</div>
+                    <table class="table">
+                      <thead><tr><th>指标</th><th>目标值</th><th>实际值</th><th>完成率</th><th>评估结论</th><th>数据日期</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(m, j) in t.metrics" :key="j">
+                          <td>{{ metricName(m.metricCode) }}</td>
+                          <td class="num">{{ m.targetValue ?? '—' }}</td>
+                          <td class="num">{{ m.actualValue ?? '暂无数据' }}</td>
+                          <td class="num">
+                            <span v-if="m.achievementRatio != null" :class="ratioClass(m.achievementRatio)">{{ m.achievementRatio }}%</span>
+                            <span v-else>暂无数据</span>
+                          </td>
+                          <td>
+                            <span class="badge" :class="statusClass(m.resultStatus)">{{ evalResultText(m.resultStatus) }}</span>
+                          </td>
+                          <td>{{ m.dataDt || '—' }}</td>
+                        </tr>
+                        <tr v-if="!(t.metrics || []).length"><td colspan="6" class="empty">暂无评估数据</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
-        <!-- 展开的申请指标明细 -->
-        <template v-for="(t, i) in tracking.filter((x) => x.open)" :key="'d' + i">
-          <div class="sub-table">
-            <div class="sub-table__title">申请 {{ t.applicationNo }} · {{ t.planNo }} 指标明细</div>
-            <table class="table">
-              <thead><tr><th>指标</th><th>目标值</th><th>实际值</th><th>完成率</th><th>评估结论</th><th>数据日期</th></tr></thead>
-              <tbody>
-                <tr v-for="(m, j) in t.metrics" :key="j">
-                  <td>{{ metricName(m.metricCode) }}</td>
-                  <td class="num">{{ m.targetValue ?? '—' }}</td>
-                  <td class="num">{{ m.actualValue ?? '暂无数据' }}</td>
-                  <td class="num">
-                    <span v-if="m.achievementRatio != null" :class="ratioClass(m.achievementRatio)">{{ m.achievementRatio }}%</span>
-                    <span v-else>暂无数据</span>
-                  </td>
-                  <td>
-                    <span class="badge" :class="statusClass(m.resultStatus)">{{ evalResultText(m.resultStatus) }}</span>
-                  </td>
-                  <td>{{ m.dataDt || '—' }}</td>
-                </tr>
-                <tr v-if="!(t.metrics || []).length"><td colspan="6" class="empty">暂无评估数据</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
       </template>
       <div v-else class="empty">该客户暂无历史承诺申请</div>
     </div>
@@ -465,8 +475,8 @@
       </table>
     </div>
 
-    <!-- 11c. 表决与行长决策(§12.7:小组表决计票汇总 + 行长决策) -->
-    <div class="card" v-if="voteRounds.length || presidentDecisions.length">
+    <!-- 11c. 表决与行长决策(§12.7:小组表决计票汇总 + 行长决策;仅行长·审计·超管可见) -->
+    <div class="card" v-if="canViewVote && (voteRounds.length || presidentDecisions.length)">
       <div class="card__head"><span>表决与行长决策</span></div>
       <table class="table" v-if="voteRounds.length">
         <thead><tr><th>轮次</th><th>状态</th><th>计票(通过/否决)</th><th>开始时间</th><th>结束时间</th></tr></thead>
@@ -498,7 +508,7 @@
       <!-- 当前执行状态:卡在哪个节点、什么状态、什么时候到达(客户经理/审批人一眼看到进度) -->
       <div class="flow-status" v-if="flowStatus">
         <div class="flow-status__item"><span class="dg-label">当前节点</span><b>{{ nodeLabel(flowStatus.currentNodeCode) }}</b></div>
-        <div class="flow-status__item"><span class="dg-label">执行状态</span><b>{{ itemStatusText(flowStatus.currentStatus) }}</b></div>
+        <div class="flow-status__item"><span class="dg-label">执行状态</span><b>{{ flowStatusText }}</b></div>
         <div class="flow-status__item"><span class="dg-label">到达时间</span><b>{{ fmtDate(flowStatus.nodeReachTime) }}</b></div>
       </div>
       <!-- 流程路由链:首节点→当前节点(高亮)→终审,已过=完成/当前=处理中/后续=待办 -->
@@ -510,6 +520,12 @@
             'flow-step--todo': idx > currentNodeIndex
           }">
             <span class="flow-step__label">{{ nodeLabel(code) }}</span>
+            <span v-if="idx < currentNodeIndex" class="flow-step__tag">已经审批完成</span>
+            <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound" class="flow-step__tag">
+              {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 同意 {{ voteRound.approveCount }} 票(通过线 ≥{{ voteRound.requiredCount }})
+            </span>
+            <span v-else-if="idx === currentNodeIndex" class="flow-step__tag">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
+            <span v-else class="flow-step__tag">待办</span>
           </div>
           <span v-if="idx < routeChain.length - 1" class="flow-step__arrow">→</span>
         </template>
@@ -541,7 +557,8 @@
     <div class="card" v-if="actionable">
       <div class="card__head">
         <span>审批决定(按担保分项)</span>
-        <span class="badge badge--processing">当前节点:{{ nodeLabel(pi.current_node_code) }} · 已处理 {{ approvedCount + passedCount }} / {{ opItems.length }} 项</span>
+        <span class="badge badge--processing" v-if="!isCommitteeVoting">当前节点:{{ nodeLabel(pi.current_node_code) }} · 已处理 {{ approvedCount + passedCount }} / {{ opItems.length }} 项</span>
+        <span class="badge badge--processing" v-else>申请共 {{ siblingItems.length }} 个分项 · 本节点待表决 {{ pendingItems.length }} 项</span>
       </div>
       <div class="op-form">
         <div v-for="it in opItems" :key="it.id" class="op-item"
@@ -550,8 +567,12 @@
             <span class="op-item__name">{{ itemName(it) }}</span>
             <strong>
               <template v-if="itemPassed(it)"><span class="badge badge--info">上级节点已通过 · 仅展示</span></template>
+              <template v-else-if="isVotableItem(it) && itemApproved(it)">
+                <span class="badge badge--success">已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }}</span>
+              </template>
               <template v-else-if="itemApproved(it)"><span class="badge badge--success">已同意 · {{ fmtRate(opRates[it.id]) }}</span></template>
-              <template v-else-if="canOperate(it)"><span class="badge badge--warning">待处理</span></template>
+              <template v-else-if="canOperate(it)"><span class="badge badge--warning">{{ isCommitteeVoting ? '待投票' : '待处理' }}</span></template>
+              <template v-else-if="isCommitteeVoting"><span class="badge badge--neutral">仅展示</span></template>
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
@@ -665,18 +686,35 @@
             <span class="op-rate"><span class="dg-label">申请利率</span><b>{{ fmtRate(it.requestedRate) }}</b></span>
             <span class="op-rate" v-if="!itemPassed(it)">
               <span class="dg-label">审批后利率</span>
-              <el-input-number v-model="opRates[it.id]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" :disabled="itemApproved(it) || !canOperate(it)" style="width:140px" />
+              <template v-if="isCommitteeVoting">
+                <!-- 六人小组无利率修改权限:只读展示当前审批利率,仅同意/否决 -->
+                <b>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</b>
+              </template>
+              <template v-else>
+                <el-input-number v-model="opRates[it.id]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" :disabled="itemApproved(it) || !canOperate(it)" style="width:140px" />
+              </template>
             </span>
           </div>
-          <div class="stat-card__sub" v-if="!itemPassed(it) && canOperate(it)">
+          <!-- 小组节点:委员不调整利率,只读展示且提示匿名投同意/否决 -->
+          <div class="stat-card__sub" v-if="isCommitteeVoting">
+            仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决出决议书。
+          </div>
+          <div class="stat-card__sub" v-else-if="!itemPassed(it) && canOperate(it)">
             {{ isLoan
               ? '审批利率不低于本节点下限方可权限内通过;低于下限将保留利率随整单上送下一节点。'
               : '审批利率不高于本节点上限方可权限内通过;超出将保留利率上送小组表决。' }}
           </div>
-          <div class="op-item__actions" v-if="!itemPassed(it)">
-            <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doApproveItem(it)">同意本项</button>
-            <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doRejectItem(it)">否决本项</button>
+          <div class="op-item__actions" v-if="!itemPassed(it) && (isVotableItem(it) || !isCommitteeVoting)">
+            <template v-if="isVotableItem(it)">
+              <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doVoteItem(it, 'APPROVE')">同意</button>
+              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doVoteItem(it, 'REJECT')">否决</button>
+            </template>
+            <template v-else>
+              <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doApproveItem(it)">同意本项</button>
+              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doRejectItem(it)">否决本项</button>
+            </template>
           </div>
+          <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && !itemPassed(it) && !itemApproved(it)">该分项不在本节点表决范围,仅展示。</div>
           <div class="op-item__passed-tip" v-else>该分项已由上级节点审批通过,当前节点仅展示,无需重复审批。</div>
         </div>
         <div class="op-form__row">
@@ -684,8 +722,17 @@
           <el-input v-model="opComment" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="请输入审批意见(否决时建议说明原因)" />
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doApproveAll">一键通过审批</button>
-          <button class="btn btn--danger" :disabled="submitting" @click="doRejectAll">一键否决</button>
+          <template v-if="isCommitteeVoting">
+            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll('APPROVE')">提交本人全部同意票</button>
+            <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAll('REJECT')">一键否决(整单)</button>
+            <span class="stat-card__sub" style="align-self:center">
+              已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
+            </span>
+          </template>
+          <template v-else>
+            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doApproveAll">一键通过审批</button>
+            <button class="btn btn--danger" :disabled="submitting" @click="doRejectAll">一键否决</button>
+          </template>
           <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
         </div>
       </div>
@@ -723,6 +770,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
+import { submitBallot } from '@/api/vote'
 import { download } from '@/api/request'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
@@ -756,6 +804,18 @@ const routeChain = ref<string[]>([])
 const flowTrace = ref<any[]>([])
 // 当前执行状态(流程轨迹增强):当前节点/状态/到达时间
 const flowStatus = ref<any>(null)
+// 当前节点是否已审批处理过(存在该节点的审批动作:通过/上送/否决/行长否决)
+function nodeHandled(nodeCode: string): boolean {
+  if (!nodeCode) return false
+  return flowTrace.value.some(t => t.nodeCode === nodeCode
+    && ['APPROVE', 'ESCALATE', 'REJECT', 'VETO'].includes(t.actionType))
+}
+// 执行状态文案:当前节点已审批结束 → 显示"已经审批完成",否则按分项状态显示
+const flowStatusText = computed(() => {
+  const node = flowStatus.value?.currentNodeCode
+  if (nodeHandled(node)) return '已经审批完成'
+  return itemStatusText(flowStatus.value?.currentStatus)
+})
 const source = ref('')
 const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
@@ -765,9 +825,10 @@ const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
 const relatedPersons = ref<any[]>([])
-const creditAgreements = ref<any[]>([])
-/** 授信信息是否含申请补录/修正值(区别于纯数仓展示) */
-const hasManualCredit = computed(() => creditAgreements.value.some((a: any) => a.source === 'APPLICATION'))
+const rawCreditAgreements = ref<any[]>([])
+/** 授信信息只展示存量已有授信(数仓);本次申请补录/新增授信不进"本行授信情况"(§用户要求) */
+const creditAgreements = computed(() =>
+  (rawCreditAgreements.value || []).filter((a: any) => a.source !== 'APPLICATION'))
 // P1-2:合同下借据(数仓借据快照最新批次) / 集团贡献度(数仓 GROUP 口径 TOTAL)
 const loanNotes = ref<any[]>([])
 const groupContribution = ref<any>(null)
@@ -777,6 +838,8 @@ const resolutionExecutions = ref<any[]>([])
 const voteRounds = ref<any[]>([])
 const voteResults = ref<any[]>([])
 const presidentDecisions = ref<any[]>([])
+// 小组节点当前轮次(匿名汇总 + 本人票;普通节点为 null)
+const voteRound = ref<any>(null)
 
 const opComment = ref('')
 // 借据弹窗(审批决定区「合同下借据」改为链接弹出;借据仅作参考,不作为主要审批依据)
@@ -792,8 +855,14 @@ const opRates = ref<Record<string, number>>({})
 const locallyApproved = ref<Set<string>>(new Set())
 
 const ROLE_NODE: Record<string, string> = {
-  branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT'
+  branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT',
+  committee_member: 'SIX_PEOPLE_GROUP'
 }
+
+// 六人小组节点(委员内联审批):当前分项在小组节点且登录人角色为委员
+const isCommitteeVoting = computed(() =>
+  pi.value.current_node_code === 'SIX_PEOPLE_GROUP'
+  && (userStore.userInfo?.roles?.[0] || '') === 'committee_member')
 
 const isLoan = computed(() => application.value.businessType !== 'DEPOSIT')
 const businessTypeText = computed(() => application.value.businessType === 'DEPOSIT' ? '存款' : '贷款')
@@ -812,10 +881,13 @@ const currentNodeIndex = computed(() => {
 })
 
 // 仅当分项在审批中且当前节点与登录人角色节点一致时可操作
+// 六人小组节点:委员可操作(VOTING 即小组轮次中),与普通节点 ROUTING 语义对齐
 const actionable = computed(() => {
-  if (pi.value.status !== 'ROUTING') return false
   const role = userStore.userInfo?.roles?.[0] || ''
-  return pi.value.current_node_code && ROLE_NODE[role] === pi.value.current_node_code
+  const node = pi.value.current_node_code
+  if (!node || ROLE_NODE[role] !== node) return false
+  if (node === 'SIX_PEOPLE_GROUP') return pi.value.status === 'VOTING' || pi.value.status === 'ROUTING'
+  return pi.value.status === 'ROUTING'
 })
 
 // 分项审批决定区(参照 demo):同申请分项逐项同意/否决 + 一键通过/一键否决
@@ -834,12 +906,33 @@ function itemPassed(it: any): boolean {
 // 登录人当前角色节点
 const currentRoleNode = computed(() => ROLE_NODE[userStore.userInfo?.roles?.[0] || ''])
 
+// 表决统计可见性(§12.7/T4-02/T4-10):表决计票/轮次/行长决策仅行长·审计·超管可见,委员与审批人隐藏
+const canViewVote = computed(() => ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || ''))
+
 function canOperate(it: any): boolean {
+  // 六人小组节点:委员对小组轮次内分项(VOTING 本人未投)可操作;普通节点沿用 ROUTING 口径
+  if (isCommitteeVoting.value) {
+    return it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP' && !myBallotChoice(it)
+  }
   return it.status === 'ROUTING' && !!it.currentNodeCode && currentRoleNode.value === it.currentNodeCode
+}
+
+// 委员本人票型(已投分项显示"已投:同意/否决"并禁用)
+function myBallotChoice(it: any): string | undefined {
+  return it.myChoice || undefined
+}
+
+// 六人小组待表决分项(委员:仅小组节点 VOTING 分项显示同意/否决按钮;上级已通过/不在小组的分项只读)
+function isVotableItem(it: any): boolean {
+  return isCommitteeVoting.value && it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP'
 }
 
 function itemApproved(it: any): boolean {
   if (locallyApproved.value.has(it.id)) return true
+  // 六人小组节点:本人已投视为已处理(委员一人一票,投后不可改)
+  if (isCommitteeVoting.value) {
+    return it.status === 'VOTING' && !!myBallotChoice(it)
+  }
   // 终态分项(上送/终审/否决)视为已处理;仍 ROUTING 时以后端 agreed(本节点已同意待齐套)为准
   return it.status !== 'ROUTING' || it.agreed === true
 }
@@ -1008,7 +1101,7 @@ async function load() {
     otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
     relations.value = data.relations || []
     relatedPersons.value = data.relatedPersons || []
-    creditAgreements.value = data.creditAgreements || []
+    rawCreditAgreements.value = data.creditAgreements || []
     loanNotes.value = data.loanNotes || []
     groupContribution.value = data.groupContribution || null
     attachments.value = data.attachments || []
@@ -1017,6 +1110,8 @@ async function load() {
     voteRounds.value = data.voteRounds || []
     voteResults.value = data.voteResults || []
     presidentDecisions.value = data.presidentDecisions || []
+    // 小组节点当前表决轮次(匿名汇总 + 本人票),内联审批/链路进度数据源
+    voteRound.value = data.voteRound || null
     // 分项审批决定区:同申请分项摘要(后端未返回时回退为当前分项单元素),每分项预填审批利率
     siblingItems.value = (data.siblingItems && data.siblingItems.length) ? data.siblingItems : [data.pricingItem || {}]
     const rates: Record<string, number> = {}
@@ -1060,8 +1155,9 @@ async function doApproveItem(it: any) {
       versionNo: it.versionNo
     }, newIdempotencyKey())
     locallyApproved.value.add(it.id)
-    ElMessage.success(`已同意分项 ${it.pricingItemNo || it.id}`)
-    await load() // 整单齐套终审/上送后刷新最新状态
+    // 整单推进后本节点全部分项已一并上送/终审,直接返回列表;不可停留本页再点其余分项(会报 1007)
+    ElMessage.success(`已同意分项 ${it.pricingItemNo || it.id},整单推进`)
+    goBack()
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态
   } finally {
@@ -1069,36 +1165,103 @@ async function doApproveItem(it: any) {
   }
 }
 
-// 一键通过审批:一次性同意所有未处理分项(参照 demo),随后按整单办结规则处理
+// 一键通过审批:后端整单推进——一次 approve 即把同申请全部 ROUTING 分项一起上送/终审(§14.7 整单流转),
+// 故只需对任一待办分项发起一次;不能对每个分项循环调用,否则首调推进后其余分项 current_node 已变,
+// 第二次调用会报 1007"分项当前不在节点[旧节点],实际节点[新节点]"
 async function doApproveAll() {
   const pending = pendingItems.value
-  if (!pending.length) {
+  const it = pending[0]
+  if (!it) {
     ElMessage.warning('没有待审批的分项')
     return
   }
-  for (const it of pending) {
-    if (opRates.value[it.id] == null) {
-      ElMessage.warning(`请填写分项 ${it.pricingItemNo || it.id} 的审批利率`)
-      return
-    }
+  if (opRates.value[it.id] == null) {
+    ElMessage.warning(`请填写分项 ${it.pricingItemNo || it.id} 的审批利率`)
+    return
   }
   submitting.value = true
   try {
-    for (const it of pending) {
-      await approveTask({
-        pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
-        nodeCode: it.currentNodeCode,
-        adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
-        comment: opComment.value || undefined,
-        versionNo: it.versionNo
-      }, newIdempotencyKey())
-    }
-    ElMessage.success('已一键通过全部待审分项')
+    await approveTask({
+      pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
+      nodeCode: it.currentNodeCode,
+      adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
+      comment: opComment.value || undefined,
+      versionNo: it.versionNo
+    }, newIdempotencyKey())
+    ElMessage.success('已通过,整单推进')
     goBack()
   } catch {
-    load()
+    load() // 版本冲突/已处理等:刷新最新状态
   } finally {
     submitting.value = false
+  }
+}
+
+// 委员逐项投票(六人小组内联审批):调 submitBallot,一人一票投后不可改
+async function doVoteItem(it: any, choice: string) {
+  const roundId = it.roundId ?? voteRound.value?.roundId
+  if (!roundId) {
+    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
+    return
+  }
+  submitting.value = true
+  try {
+    await submitBallot(roundId, {
+      pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
+      choice,
+      comment: opComment.value || undefined
+    }, newIdempotencyKey())
+    locallyApproved.value.add(it.id)
+    ElMessage.success(choice === 'APPROVE' ? '已提交同意票' : '已提交否决票')
+    await load() // 刷新本人票与匿名汇总
+  } catch {
+    load() // 已投/轮次关闭等:刷新最新状态
+  } finally {
+    submitting.value = false
+  }
+}
+
+// 委员一键提交本人全部选票(对未投分项逐项 submitBallot)
+// 否决=整单否决:确认后对整个申请单投否决票;6 人表决否决过半时,申请单(含不需小组表决的分项)整体否决并出否决决议
+async function doVoteAll(choice: string) {
+  const roundId = voteRound.value?.roundId
+  if (!roundId) {
+    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
+    return
+  }
+  const pending = pendingItems.value
+  if (!pending.length) {
+    ElMessage.warning('没有待投票的分项')
+    return
+  }
+  const submit = async () => {
+    submitting.value = true
+    try {
+      for (const it of pending) {
+        await submitBallot(roundId, {
+          pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
+          choice,
+          comment: opComment.value || undefined
+        }, newIdempotencyKey())
+        locallyApproved.value.add(it.id)
+      }
+      ElMessage.success(choice === 'APPROVE'
+        ? `已提交 ${pending.length} 项同意票,等待其他委员投票`
+        : '已提交整单否决票,等待其他委员投票')
+      await load()
+    } catch {
+      load()
+    } finally {
+      submitting.value = false
+    }
+  }
+  if (choice === 'REJECT') {
+    ElMessageBox.confirm(
+      '确认对整个申请单投否决票?若 6 人表决否决过半,该申请(含不需小组表决的分项)将整体否决,并出具否决决议书。',
+      '一键否决(整单)', { type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消' }
+    ).then(submit).catch(() => {})
+  } else {
+    await submit()
   }
 }
 
@@ -1185,6 +1348,10 @@ onMounted(load)
 .flow-step--current { border-color: var(--color-warning); color: var(--color-warning); background: var(--color-warning-light, #fef3c7); font-weight: 600; }
 .flow-step--todo { opacity: .6; }
 .flow-step__arrow { color: var(--color-border); margin: 0 2px; }
+.flow-step__tag { margin-left: 6px; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.flow-step--done .flow-step__tag { color: var(--color-success); }
+.flow-step--current .flow-step__tag { color: var(--color-warning); }
+.flow-step--todo .flow-step__tag { color: var(--color-text-sub); }
 .warn-bar { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 /* 借据链接与弹窗提示(借据仅作参考) */
 .link { color: var(--color-primary); cursor: pointer; text-decoration: underline; }

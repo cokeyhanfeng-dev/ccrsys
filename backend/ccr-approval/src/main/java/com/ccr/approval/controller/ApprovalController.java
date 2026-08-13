@@ -1,9 +1,11 @@
 package com.ccr.approval.controller;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.service.ApplicationAccessService;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
@@ -46,7 +48,193 @@ public class ApprovalController {
     private ApplicationAccessService applicationAccessService;
 
     @Resource
+    private AppLoginUser appLoginUser;
+
+    @Resource
     private JdbcTemplate jdbcTemplate;
+
+    /** 节点中文名(审批进度可视化) */
+    private static final Map<String, String> NODE_LABEL = Map.of(
+            "BRANCH_MANAGER", "支行行长",
+            "DEPT_GENERAL_MANAGER", "部门总经理",
+            "VICE_PRESIDENT", "总行分管行长",
+            "SIX_PEOPLE_GROUP", "审批小组成员",
+            "PRESIDENT", "总行行长");
+
+    /**
+     * 审批进度(§用户要求,链路可视化):按申请聚合链路各节点流转状态,admin/申请人/审批人均可查看。
+     * 每节点 status: DONE(已审,含操作人/时间)/ CURRENT(当前)/ SKIPPED(矩阵跳过未走)/ PENDING(待办);
+     * 表决节点(SIX_PEOPLE_GROUP)额外返回应投/已投/通过线(匿名,不暴露具体票数);
+     * 行长决策节点(PRESIDENT)按当前节点或已决策判定。
+     */
+    @GetMapping("/progress")
+    public R<Map<String, Object>> progress(@RequestParam Long applicationId) {
+        applicationAccessService.requireView(applicationId);
+        List<Map<String, Object>> apps = jdbcTemplate.queryForList(
+                "SELECT id, application_no applicationNo, business_type businessType, status, submit_time submitTime"
+                        + " FROM ccr_application WHERE id = ? AND del_flag = '0'", applicationId);
+        if (apps.isEmpty()) {
+            throw new ServiceException(404, "申请不存在");
+        }
+        Map<String, Object> app = apps.get(0);
+        List<Map<String, Object>> items = jdbcTemplate.queryForList(
+                "SELECT id, pricing_item_no pricingItemNo, route_chain routeChain, current_node_code currentNodeCode, status"
+                        + " FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+
+        // 链路并集(保持冻结顺序;多分项链路不一致时取并集)
+        List<String> chain = new ArrayList<>();
+        for (Map<String, Object> it : items) {
+            Object rc = it.get("routeChain");
+            if (rc != null && StrUtil.isNotBlank(rc.toString())) {
+                for (String n : JSONUtil.parseArray(rc.toString()).toList(String.class)) {
+                    if (!chain.contains(n)) {
+                        chain.add(n);
+                    }
+                }
+            }
+        }
+        // 当前节点:任一分项流转中(ROUTING/VOTING)时取链上最靠后的 current_node_code;全终态则链路全部 DONE
+        int curIdx = -1;
+        String curNode = null;
+        boolean anyRouting = false;
+        for (Map<String, Object> it : items) {
+            if ("ROUTING".equals(it.get("status")) || "VOTING".equals(it.get("status"))) {
+                anyRouting = true;
+            }
+            String c = it.get("currentNodeCode") == null ? null : it.get("currentNodeCode").toString();
+            if (c != null) {
+                int idx = chain.indexOf(c);
+                if (idx > curIdx) {
+                    curIdx = idx;
+                    curNode = c;
+                }
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applicationId", applicationId);
+        result.put("applicationNo", app.get("applicationNo"));
+        result.put("businessType", app.get("businessType"));
+        result.put("currentStatus", app.get("status"));
+        result.put("currentNodeCode", anyRouting ? curNode : null);
+        result.put("routeChain", chain);
+        if (items.isEmpty()) {
+            result.put("nodes", List.of());
+            return R.ok(result);
+        }
+
+        StringBuilder inSb = new StringBuilder();
+        for (Map<String, Object> it : items) {
+            if (inSb.length() > 0) {
+                inSb.append(',');
+            }
+            inSb.append(it.get("id"));
+        }
+        String in = inSb.toString();
+        // 普通节点审批动作(节点 → 最后动作操作人/时间)
+        Map<String, Map<String, Object>> lastByNode = new HashMap<>();
+        Set<String> handledNodes = new LinkedHashSet<>();
+        for (Map<String, Object> a : jdbcTemplate.queryForList(
+                "SELECT a.node_code nodeCode, a.operation_time operationTime, u.nick_name operatorName"
+                        + " FROM ccr_approval_action a LEFT JOIN ccr_sys_user u ON u.id = a.operator_id"
+                        + " WHERE a.pricing_item_id IN (" + in + ") AND a.action_type IN ('APPROVE','REJECT','VETO','ESCALATE')"
+                        + " AND a.del_flag = '0' ORDER BY a.operation_time")) {
+            lastByNode.put(String.valueOf(a.get("nodeCode")), a);
+            handledNodes.add(String.valueOf(a.get("nodeCode")));
+        }
+        // 表决节点:是否已计票 + 最新轮次(进行中:应投/已投/通过线)
+        Integer votedResultCnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
+                        + " WHERE pi.application_id = ? AND vr.del_flag = '0'", Integer.class, applicationId);
+        boolean voteCounted = votedResultCnt != null && votedResultCnt > 0;
+        String voteResult = null;
+        if (voteCounted) {
+            List<Map<String, Object>> vr = jdbcTemplate.queryForList(
+                    "SELECT vr.result FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
+                            + " WHERE pi.application_id = ? AND vr.del_flag = '0' ORDER BY vr.count_time DESC LIMIT 1",
+                    applicationId);
+            if (!vr.isEmpty()) {
+                voteResult = String.valueOf(vr.get(0).get("result"));
+            }
+        }
+        Map<String, Object> round = null;
+        List<Map<String, Object>> rounds = jdbcTemplate.queryForList(
+                "SELECT id, round_no roundNo, round_name roundName, status, voter_count voterCount, required_count requiredCount"
+                        + " FROM ccr_vote_round WHERE application_id = ? AND del_flag = '0' ORDER BY round_no DESC LIMIT 1",
+                applicationId);
+        if (!rounds.isEmpty()) {
+            round = rounds.get(0);
+        }
+        // 行长决策
+        Integer presCnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
+                        + " WHERE pi.application_id = ? AND pd.del_flag = '0'", Integer.class, applicationId);
+        boolean presidentDecided = presCnt != null && presCnt > 0;
+        String presDecision = null;
+        if (presidentDecided) {
+            List<Map<String, Object>> pd = jdbcTemplate.queryForList(
+                    "SELECT pd.decision FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
+                            + " WHERE pi.application_id = ? AND pd.del_flag = '0' ORDER BY pd.decision_time DESC LIMIT 1",
+                    applicationId);
+            if (!pd.isEmpty()) {
+                presDecision = String.valueOf(pd.get(0).get("decision"));
+            }
+        }
+
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (int i = 0; i < chain.size(); i++) {
+            String n = chain.get(i);
+            Map<String, Object> node = new LinkedHashMap<>();
+            node.put("nodeCode", n);
+            node.put("label", NODE_LABEL.getOrDefault(n, n));
+            if (RouteChains.SIX_PEOPLE_GROUP.equals(n)) {
+                if (voteCounted) {
+                    node.put("status", "DONE");
+                    node.put("result", voteResult);
+                } else if (round != null && "VOTING".equals(round.get("status"))) {
+                    node.put("status", "CURRENT");
+                    node.put("roundNo", round.get("roundNo"));
+                    node.put("roundName", round.get("roundName"));
+                    node.put("voterCount", round.get("voterCount"));
+                    node.put("requiredCount", round.get("requiredCount"));
+                    node.put("submittedCount", jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM ccr_vote_assignment WHERE round_id = ? AND status = 'SUBMITTED'",
+                            Integer.class, round.get("id")));
+                    // 匿名同意票数(只给汇总,不暴露委员身份)
+                    node.put("approveCount", jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM ccr_ballot WHERE round_id = ? AND vote_choice = 'APPROVE'",
+                            Integer.class, round.get("id")));
+                } else {
+                    node.put("status", i == curIdx && anyRouting ? "CURRENT" : "PENDING");
+                }
+            } else if ("PRESIDENT".equals(n)) {
+                if (presidentDecided) {
+                    node.put("status", "DONE");
+                    node.put("decision", presDecision);
+                } else if (i == curIdx && anyRouting) {
+                    node.put("status", "CURRENT");
+                } else {
+                    node.put("status", "PENDING");
+                }
+            } else if (handledNodes.contains(n)) {
+                node.put("status", "DONE");
+                Map<String, Object> last = lastByNode.get(n);
+                if (last != null) {
+                    node.put("operatorName", last.get("operatorName"));
+                    node.put("operationTime", last.get("operationTime"));
+                }
+            } else if (i == curIdx && anyRouting) {
+                node.put("status", "CURRENT");
+            } else if (i < curIdx) {
+                node.put("status", "SKIPPED");
+            } else {
+                node.put("status", "PENDING");
+            }
+            nodes.add(node);
+        }
+        result.put("nodes", nodes);
+        return R.ok(result);
+    }
 
     /**
      * 审批详情:定价分项+申请+客户+融资+贡献度+担保+流程路由(routeChain)+资料校验结果(质量 PASS/WARN/BLOCK)
@@ -104,13 +292,25 @@ public class ApprovalController {
                 }
             }
         }
-        // 流程路由链:首节点至终审岗位(route_code)
+        // 流程路由链:优先用提交冻结的完整链路(矩阵驱动,与审批推进一致,可跳过无权限节点如GM),回退固定链按 route_code 截断
         Object routeCode = item.get("route_code");
-        result.put("routeChain", RouteChains.of(businessType, routeCode == null ? null : routeCode.toString()));
+        Object routeChainObj = item.get("route_chain");
+        String routeCodeStr = routeCode == null ? null : routeCode.toString();
+        List<String> routeChain;
+        if (routeChainObj != null && StrUtil.isNotBlank(routeChainObj.toString())) {
+            try {
+                routeChain = JSONUtil.parseArray(routeChainObj.toString()).toList(String.class);
+            } catch (Exception e) {
+                routeChain = RouteChains.of(businessType, routeCodeStr);
+            }
+        } else {
+            routeChain = RouteChains.of(businessType, routeCodeStr);
+        }
+        result.put("routeChain", routeChain);
         // 拟达成贡献度(申请承诺指标,按申请关联 §十三 13.2-6;成员级含成员客户号)
         if (appId != null) {
             result.put("commitments", jdbcTemplate.queryForList(
-                    "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", appId));
+                    "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
         } else {
             result.put("commitments", List.of());
         }
@@ -377,6 +577,10 @@ public class ApprovalController {
                     s.put("agreed", agreed.contains(s.get("id")));
                     s.put("passed", passed.contains(s.get("id")));
                     s.put("guarantees", guaranteeByItem.getOrDefault(s.get("id"), Collections.emptyList()));
+                    // 六人小组节点:分项挂轮次时附加委员本人票状态(审批页内联同意/否决,一人一票)
+                    if (RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
+                        attachMyBallot(s);
+                    }
                 }
             }
             result.put("siblingItems", siblings);
@@ -412,11 +616,10 @@ public class ApprovalController {
             for (Map<String, Object> row : agreements) {
                 Object no = row.get("agreementNo");
                 String rowNo = no == null ? null : no.toString();
-                if (manualNo == null || !manualNo.isEmpty()) {
-                    if (!manualNo.equals(rowNo)) {
-                        merged.add(row);
-                    }
-                } else {
+                // 补录协议号为空(新增授信手工补录)时不去重,直接保留数仓协议行,避免 manualNo 为 null 触发 NPE
+                if (manualNo == null || manualNo.isEmpty()) {
+                    merged.add(row);
+                } else if (!manualNo.equals(rowNo)) {
                     merged.add(row);
                 }
             }
@@ -449,7 +652,102 @@ public class ApprovalController {
                 "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", custNo, custNo);
         enrichRelated(relations);
         result.put("relations", relations);
+
+        // 决议与执行核验(§12.7 ⑪:审批终态后签发;决议日期=issue_time,无有效期周期)
+        result.put("resolutions", jdbcTemplate.queryForList(
+                "SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId, r.final_rate finalRate,"
+                        + " r.effective_from effectiveFrom, r.effective_to effectiveTo, r.decision_source decisionSource,"
+                        + " r.status, r.issue_time issueTime"
+                        + " FROM ccr_resolution r WHERE r.pricing_item_id = ? AND r.del_flag = '0' ORDER BY r.issue_time", pricingItemId));
+        result.put("resolutionExecutions", jdbcTemplate.queryForList(
+                "SELECT re.resolution_id resolutionId, re.loan_contract_no loanContractNo, re.supplement_agreement_no supplementAgreementNo,"
+                        + " re.execution_rate executionRate, re.execution_status executionStatus, re.reconcile_result reconcileResult, re.reconcile_time reconcileTime"
+                        + " FROM ccr_resolution_execution re JOIN ccr_resolution r ON r.id = re.resolution_id"
+                        + " WHERE r.pricing_item_id = ? AND re.del_flag = '0'", pricingItemId));
+
+        // 六人小组节点:返回当前表决轮次匿名汇总 + 登录人本人票(审批页内联同意/否决 + 链路进度)
+        result.put("voteRound", buildVoteRound(pricingItemId));
         return R.ok(result);
+    }
+
+    /**
+     * 小组节点当前表决轮次匿名汇总 + 登录人本人票(§六人小组内联审批)。
+     * 返回: roundId/roundStatus/roundName + submittedCount/voterCount/requiredCount/approveCount/rejectCount(匿名)
+     * + myChoice/myComment/submitted(仅本人);非小组节点或无轮次返回 null。
+     */
+    private Map<String, Object> buildVoteRound(Long pricingItemId) {
+        List<Map<String, Object>> rounds = jdbcTemplate.queryForList(
+                "SELECT r.id roundId, r.round_name roundName, r.status roundStatus,"
+                        + " r.voter_count voterCount, r.required_count requiredCount"
+                        + " FROM ccr_vote_round r JOIN ccr_vote_round_item ri ON ri.round_id = r.id"
+                        + " WHERE ri.pricing_item_id = ? AND r.del_flag = '0' ORDER BY r.id DESC LIMIT 1",
+                pricingItemId);
+        if (rounds.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> round = rounds.get(0);
+        Number roundId = (Number) round.get("roundId");
+        int submittedCount = count("SELECT COUNT(*) FROM ccr_ballot"
+                + " WHERE round_id = ? AND pricing_item_id = ?", roundId, pricingItemId);
+        int approveCount = count("SELECT COUNT(*) FROM ccr_ballot"
+                + " WHERE round_id = ? AND pricing_item_id = ? AND vote_choice = 'APPROVE'", roundId, pricingItemId);
+        int rejectCount = count("SELECT COUNT(*) FROM ccr_ballot"
+                + " WHERE round_id = ? AND pricing_item_id = ? AND vote_choice = 'REJECT'", roundId, pricingItemId);
+        Map<String, Object> voteRound = new LinkedHashMap<>(round);
+        voteRound.put("submittedCount", submittedCount);
+        voteRound.put("approveCount", approveCount);
+        voteRound.put("rejectCount", rejectCount);
+        // 登录人本人票(匿名口径:仅本人可见,不泄露他人)
+        try {
+            Long loginUserId = appLoginUser.requireLoginId();
+            List<Map<String, Object>> mine = jdbcTemplate.queryForList(
+                    "SELECT vote_choice myChoice, vote_comment myComment FROM ccr_ballot"
+                            + " WHERE round_id = ? AND pricing_item_id = ? AND voter_user_hash = ?",
+                    roundId, pricingItemId, DigestUtil.sha256Hex(String.valueOf(loginUserId)));
+            if (!mine.isEmpty()) {
+                voteRound.put("myChoice", mine.get(0).get("myChoice"));
+                voteRound.put("myComment", mine.get(0).get("myComment"));
+            }
+        } catch (Exception e) {
+            // 未登录/登录异常:仅返回匿名汇总,不阻断详情
+        }
+        return voteRound;
+    }
+
+    /** 简单 COUNT 查询(返回 0 而非 null) */
+    private int count(String sql, Object... args) {
+        Integer n = jdbcTemplate.queryForObject(sql, Integer.class, args);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * 委员本人票附加(六人小组内联审批):sibling 挂在进行中轮次时,
+     * 按登录人 hash 查本人票型(myChoice),已投分项前端显示"已投:同意/反对"并禁用。
+     */
+    private void attachMyBallot(Map<String, Object> sibling) {
+        try {
+            List<Map<String, Object>> rounds = jdbcTemplate.queryForList(
+                    "SELECT r.id roundId, r.status roundStatus FROM ccr_vote_round r"
+                            + " JOIN ccr_vote_round_item ri ON ri.round_id = r.id"
+                            + " WHERE ri.pricing_item_id = ? AND r.del_flag = '0' ORDER BY r.id DESC LIMIT 1",
+                    sibling.get("id"));
+            if (rounds.isEmpty()) {
+                return;
+            }
+            Object roundId = rounds.get(0).get("roundId");
+            sibling.put("roundId", roundId);
+            Long loginUserId = appLoginUser.requireLoginId();
+            List<Map<String, Object>> mine = jdbcTemplate.queryForList(
+                    "SELECT vote_choice myChoice, vote_comment myComment FROM ccr_ballot"
+                            + " WHERE round_id = ? AND pricing_item_id = ? AND voter_user_hash = ?",
+                    roundId, sibling.get("id"), DigestUtil.sha256Hex(String.valueOf(loginUserId)));
+            if (!mine.isEmpty()) {
+                sibling.put("myChoice", mine.get(0).get("myChoice"));
+                sibling.put("myComment", mine.get(0).get("myComment"));
+            }
+        } catch (Exception e) {
+            // 未登录/登录异常:仅返回匿名汇总,不阻断详情
+        }
     }
 
     /** 关联人信息补全(§12.4④):按 relatedCustomerNo 批量反查基本信息(caps_corp/indv)+授信信息(授信协议数/本行贷款余额) */

@@ -8,6 +8,9 @@
       <InfoTip content="申请档案(§14.4):展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
       <div class="head-actions">
         <button class="btn btn--secondary" @click="router.push('/history')">返回列表</button>
+        <button v-if="hasResolution" class="btn btn--secondary" :disabled="resolving" @click="doResolutionDoc">
+          {{ resolving ? '生成中…' : '下载决议书' }}
+        </button>
         <button v-if="canExport" class="btn btn--primary" :disabled="exporting" @click="doExport">
           {{ exporting ? '导出中…' : '导出档案' }}
         </button>
@@ -16,6 +19,20 @@
 
     <div v-if="loading" class="card empty-block">加载中…</div>
     <template v-else-if="archive.application">
+      <!-- 0. 数据来源与快照信息(§12.16-7):档案展示提交冻结快照/人工录入/人工修正/实时取数来源 -->
+      <div class="card" v-if="source">
+        <div class="card__head">
+          <span>数据来源</span>
+          <span class="badge" :class="source === 'SNAPSHOT' ? 'badge--success' : source === 'MANUAL' ? 'badge--danger' : 'badge--warning'">{{ sourceText }}</span>
+        </div>
+        <div class="desc-grid" v-if="source === 'SNAPSHOT'">
+          <div class="desc-item"><span class="desc-label">数据日期</span>{{ snapshotInfo.dataDt || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">冻结时间</span>{{ fmtTime(snapshotInfo.freezeTime) }}</div>
+          <div class="desc-item"><span class="desc-label">快照批次号</span>{{ snapshotInfo.bundleNo || '—' }}</div>
+        </div>
+        <div v-else class="empty-block">{{ sourceNote }}</div>
+      </div>
+
       <!-- 1. 申请内容 -->
       <div class="card">
         <div class="card__head"><span>申请内容</span><span :class="badgeClass(val(archive.application, 'status'))">{{ appStatusText(val(archive.application, 'status')) }}</span></div>
@@ -32,6 +49,37 @@
         </div>
       </div>
 
+      <!-- 1b. 客户基本信息(提交快照优先 + 人工修正/手工录入) -->
+      <div class="card">
+        <div class="card__head"><span>客户基本信息</span></div>
+        <div class="desc-grid" v-if="hasCustomer">
+          <div class="desc-item"><span class="desc-label">客户名称</span>{{ customerName }}</div>
+          <div class="desc-item"><span class="desc-label">行内客户号</span>{{ customer.customerNo || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">客户类型</span>{{ isCorpCustomer ? '对公' : isIndivCustomer ? '个人' : '—' }}</div>
+          <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ customer.certNo || '—' }}</div>
+          <div v-if="isIndivCustomer" class="desc-item"><span class="desc-label">证件号码</span>{{ customer.certNo || '—' }}</div>
+          <div v-if="customer.entpCharic" class="desc-item"><span class="desc-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
+          <div v-if="customer.entpScale" class="desc-item"><span class="desc-label">企业规模</span>{{ customer.entpScale }}</div>
+          <div v-if="customer.industry" class="desc-item"><span class="desc-label">所属行业</span>{{ customer.industry }}</div>
+          <div v-if="customer.creditLevel" class="desc-item"><span class="desc-label">内部信用等级</span>{{ customer.creditLevel }}</div>
+          <div v-if="customer.fiveLevelClass" class="desc-item"><span class="desc-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.empeNum != null" class="desc-item"><span class="desc-label">员工人数</span>{{ customer.empeNum }}</div>
+          <div v-if="customer.totalAssets != null" class="desc-item"><span class="desc-label">总资产(万元)</span>{{ customer.totalAssets }}</div>
+          <div v-if="customer.registeredCapital != null" class="desc-item"><span class="desc-label">注册资本(万元)</span>{{ customer.registeredCapital }}</div>
+          <div v-if="customer.estbDate" class="desc-item"><span class="desc-label">成立日期</span>{{ customer.estbDate }}</div>
+          <div v-if="customer.restAddr" class="desc-item"><span class="desc-label">注册地址</span>{{ customer.restAddr }}</div>
+          <div v-if="customer.occupation" class="desc-item"><span class="desc-label">职业</span>{{ customer.occupation }}</div>
+          <div v-if="customer.annualIncome != null" class="desc-item"><span class="desc-label">年收入(万元)</span>{{ customer.annualIncome }}</div>
+          <div v-if="customer.maritalStatus" class="desc-item"><span class="desc-label">婚姻状况</span>{{ customer.maritalStatus }}</div>
+          <div v-if="customer.address" class="desc-item"><span class="desc-label">居住地址</span>{{ customer.address }}</div>
+          <div v-if="customer.phone" class="desc-item"><span class="desc-label">联系电话</span>{{ customer.phone }}</div>
+          <div v-if="customer.openOrgName" class="desc-item"><span class="desc-label">开户机构</span>{{ customer.openOrgName }}</div>
+          <div v-if="customer.openDate" class="desc-item"><span class="desc-label">开户日期</span>{{ customer.openDate }}</div>
+          <div v-if="customer.customerClass" class="desc-item"><span class="desc-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
+        </div>
+        <div v-else class="empty-block">暂无数据</div>
+      </div>
+
       <!-- 2. 集团与成员 -->
       <div class="card" v-if="isGroup">
         <div class="card__head"><span>集团成员</span></div>
@@ -46,6 +94,112 @@
           </tbody>
         </table>
         <div v-else class="empty-block">暂无数据</div>
+        <!-- 集团授信与贡献度(§12.4 集团场景) -->
+        <div class="desc-grid" v-if="groupCredit.length" style="margin-top:12px">
+          <div class="desc-item"><span class="desc-label">集团授信总额(万元)</span>{{ groupCredit[0].approvedTotalAmount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">已分配额度</span>{{ groupCredit[0].allocatedAmount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">已用额度</span>{{ groupCredit[0].usedAmount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">可用额度</span>{{ groupCredit[0].availableAmount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">授信到期日</span>{{ groupCredit[0].creditEnd || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">授信状态</span>{{ groupCredit[0].creditStatus || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">集团贡献度</span>{{ groupContributionText }}</div>
+        </div>
+      </div>
+
+      <!-- 2b. 授信信息(补录 + 数仓协议合并去重) -->
+      <div class="card">
+        <div class="card__head"><span>授信信息</span></div>
+        <table class="table" v-if="creditAgreements.length">
+          <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
+          <tbody>
+            <tr v-for="(a, i) in creditAgreements" :key="i">
+              <td>
+                {{ a.agreementNo || '—' }}
+                <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
+              </td>
+              <td>{{ agreementTypeText(a.agreementType) }}</td>
+              <td>{{ a.currency || 'CNY' }}</td>
+              <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+              <td>{{ a.startDate || '—' }}</td>
+              <td>{{ a.endDate || '—' }}</td>
+              <td class="num">{{ a.creditAmount ?? '—' }}</td>
+              <td class="num">{{ a.usedAmount ?? '—' }}</td>
+              <td class="num">{{ a.availableAmount ?? '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-block">暂无授信协议数据</div>
+      </div>
+
+      <!-- 2c. 本行融资(提交快照/数仓贷款合同) -->
+      <div class="card">
+        <div class="card__head"><span>本行融资</span></div>
+        <table class="table" v-if="financing.length">
+          <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
+          <tbody>
+            <tr v-for="f in financing" :key="f.contractNo">
+              <td>{{ f.contractNo }}</td>
+              <td>{{ f.agreementNo || '—' }}</td>
+              <td class="num">{{ f.contractAmount ?? '—' }}</td>
+              <td class="num">{{ f.loanBalance ?? '—' }}</td>
+              <td class="num">{{ rateText(f.contractRate) }}</td>
+              <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${f.lprTerm}` : '' }}</td>
+              <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
+              <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
+              <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
+              <td>{{ currencyText(f.currency) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-block">暂无数据</div>
+      </div>
+
+      <!-- 2d. 申请材料附件(申请时上传材料元数据,下载走附件下载接口) -->
+      <div class="card">
+        <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
+        <table class="table" v-if="attachments.length">
+          <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="(a, i) in attachments" :key="i">
+              <td>{{ a.fileName }}</td>
+              <td class="num">{{ (a.fileSize / 1024).toFixed(1) }} KB</td>
+              <td>{{ fmtTime(a.createTime) }}</td>
+              <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-block">暂无附件(申请时未上传材料)</div>
+      </div>
+
+      <!-- 2e. 他行融资(申请人工补录/Excel 导入 + 数仓征信) -->
+      <div class="card" v-if="isLoan">
+        <div class="card__head"><span>他行融资</span></div>
+        <div class="desc-grid" v-if="otherLoanSummary.length">
+          <div class="desc-item"><span class="desc-label">他行机构数</span>{{ otherLoanSummary[0].lenderCount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">授信总额</span>{{ otherLoanSummary[0].creditAmountTotal ?? '—' }} 万元</div>
+          <div class="desc-item"><span class="desc-label">已用总额</span>{{ otherLoanSummary[0].usedAmountTotal ?? '—' }} 万元</div>
+          <div class="desc-item"><span class="desc-label">未结清笔数</span>{{ otherLoanSummary[0].loanAccountCount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">逾期账户</span>{{ otherLoanSummary[0].overdueAccountCount ?? '—' }}</div>
+          <div class="desc-item"><span class="desc-label">逾期余额</span>{{ otherLoanSummary[0].overdueBalance ?? '—' }} 万元</div>
+          <div class="desc-item"><span class="desc-label">不良余额</span>{{ otherLoanSummary[0].nplBalance ?? '—' }} 万元</div>
+          <div class="desc-item"><span class="desc-label">关注类余额</span>{{ otherLoanSummary[0].specialMentionBalance ?? '—' }} 万元</div>
+          <div class="desc-item"><span class="desc-label">对外担保余额</span>{{ otherLoanSummary[0].externalGuaranteeBalance ?? '—' }} 万元</div>
+        </div>
+        <table class="table" v-if="otherLoans.length" style="margin-top:8px">
+          <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
+          <tbody>
+            <tr v-for="(d, i) in otherLoans" :key="i">
+              <td>{{ d.lenderName }}</td>
+              <td class="num">{{ d.creditAmount ?? '—' }}</td>
+              <td class="num">{{ d.usedAmount ?? '—' }}</td>
+              <td class="num">{{ d.balanceAmount ?? '—' }}</td>
+              <td class="num">{{ d.annualRate ?? '—' }}</td>
+              <td>{{ d.dataDt ? String(d.dataDt).slice(0, 10) : '—' }}</td>
+              <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="!otherLoans.length" class="empty-block">暂无他行融资记录</div>
       </div>
 
       <!-- 3. 贷款合同/存款账户 -->
@@ -128,6 +282,54 @@
         <div v-else class="empty-block">暂无数据</div>
       </div>
 
+      <!-- 5a. 担保分项明细(申请录入,按分项挂载;含担保措施扩展明细) -->
+      <div class="card" v-if="hasGuarantees">
+        <div class="card__head"><span>担保分项</span></div>
+        <div v-for="(p, pi) in archive.pricingItems" :key="val(p, 'id')">
+          <div v-if="guaranteesOf(p).length" class="plan-block" :style="pi ? 'margin-top:12px' : ''">
+            <div class="plan-block__head">
+              <span class="badge badge--info">{{ val(p, 'pricing_item_no', 'pricingItemNo') }}</span>
+              <span class="section-tip">申请担保明细</span>
+            </div>
+            <table class="table">
+              <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th><th>措施明细</th></tr></thead>
+              <tbody>
+                <tr v-for="(g, gi) in guaranteesOf(p)" :key="gi">
+                  <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
+                  <td>{{ measureTypeText(g.measureType) }}</td>
+                  <td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
+                  <td class="hash-cell">{{ extText(g) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5d. 贡献度参考(当前与拟达成贡献度并排;G3 定价依据,贷款场景) -->
+      <div class="card" v-if="isLoan">
+        <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
+        <ContributionPanel :contribution="contribution" :commitments="commitments" />
+      </div>
+
+      <!-- 5e. 机构达成(申请机构最新批次) -->
+      <div class="card" v-if="orgPerformance.length">
+        <div class="card__head"><span>机构达成</span></div>
+        <table class="table">
+          <thead><tr><th>机构</th><th>统计月份</th><th>达成金额(万元)</th><th>目标金额(万元)</th><th>达成率</th><th>数据日期</th></tr></thead>
+          <tbody>
+            <tr v-for="o in orgPerformance" :key="o.orgCode">
+              <td>{{ o.orgCode || '—' }}</td>
+              <td>{{ o.statMonth }}</td>
+              <td class="num">{{ o.achievedAmount ?? '—' }}</td>
+              <td class="num">{{ o.expectedAmount ?? '—' }}</td>
+              <td class="num">{{ o.completionRate != null ? `${o.completionRate}%` : '—' }}</td>
+              <td>{{ fmtDate(o.dataDt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- 5b. 关联人(申请录入,按关联客户号补全基本信息/授信信息) -->
       <div class="card" v-if="archive.relatedPersons?.length">
         <div class="card__head"><span>关联人</span></div>
@@ -160,24 +362,20 @@
         </table>
       </div>
 
-      <!-- 5c. 拟达成贡献度(申请承诺指标) -->
+      <!-- 5c. 拟达成贡献度(申请承诺指标;精简为与左边 5d 贡献度参考一致的信息) -->
       <div class="card" v-if="archive.commitments?.length">
         <div class="card__head"><span>拟达成贡献度</span></div>
         <table class="table">
           <thead>
-            <tr><th>指标</th><th>目标类型</th><th>基线值</th><th>目标值</th><th>单位</th><th>截止日期</th><th>范围</th><th>成员客户号</th><th>承诺描述</th></tr>
+            <tr><th>指标</th><th>基线 → 目标</th><th>单位</th><th>截止日期</th><th>范围</th></tr>
           </thead>
           <tbody>
             <tr v-for="(c, i) in archive.commitments" :key="i">
               <td>{{ metricName(val(c, 'metricCode')) }}</td>
-              <td>{{ targetTypeText(val(c, 'targetType')) }}</td>
-              <td class="num">{{ val(c, 'baselineValue') }}</td>
-              <td class="num">{{ val(c, 'targetValue') }}</td>
+              <td class="num">{{ val(c, 'metricCode') === 'OTHER' ? (val(c, 'commitmentDesc') || '—') : (`${val(c, 'baselineValue') ?? '—'} → ${val(c, 'targetValue') ?? '—'}`) }}</td>
               <td>{{ commitmentUnitText(val(c, 'unit')) }}</td>
               <td>{{ val(c, 'endDate') ? String(val(c, 'endDate')).slice(0, 10) : '—' }}</td>
-              <td>{{ metricScopeText(val(c, 'metricScope')) }}</td>
-              <td>{{ val(c, 'memberCustomerNo') }}</td>
-              <td>{{ val(c, 'commitmentDesc') }}</td>
+              <td>{{ val(c, 'memberCustomerNo') ? `成员 ${val(c, 'memberCustomerNo')}` : (val(c, 'metricScope') ? metricScopeText(val(c, 'metricScope')) : '整体') }}</td>
             </tr>
           </tbody>
         </table>
@@ -226,12 +424,13 @@
         <div class="card__head"><span>审批轨迹</span></div>
         <table class="table" v-if="archive.approvalActions?.length">
           <thead>
-            <tr><th>节点</th><th>动作</th><th>操作角色</th><th>调整前利率</th><th>调整后利率</th><th>意见</th><th>时间</th></tr>
+            <tr><th>节点</th><th>动作</th><th>操作人</th><th>操作角色</th><th>调整前利率</th><th>调整后利率</th><th>意见</th><th>时间</th></tr>
           </thead>
           <tbody>
             <tr v-for="(a, i) in archive.approvalActions" :key="i">
               <td>{{ nodeLabel(val(a, 'node_code', 'nodeCode')) }}</td>
               <td><span :class="actionBadge(val(a, 'action_type', 'actionType'))">{{ actionText(val(a, 'action_type', 'actionType')) }}</span></td>
+              <td>{{ val(a, 'operator_name', 'operatorName') }}</td>
               <td>{{ roleText(val(a, 'operator_role', 'operatorRole')) }}</td>
               <td class="num">{{ rateText(val(a, 'before_rate', 'beforeRate')) }}</td>
               <td class="num">{{ rateText(val(a, 'after_rate', 'afterRate')) }}</td>
@@ -261,8 +460,8 @@
         </table>
       </div>
 
-      <!-- 9. 表决与行长决策(小组表决计票汇总 + 行长决策) -->
-      <div class="card" v-if="archive.voteRounds?.length || archive.presidentDecisions?.length">
+      <!-- 9. 表决与行长决策(小组表决计票汇总 + 行长决策;仅行长·审计·超管可见) -->
+      <div class="card" v-if="canViewVote && (archive.voteRounds?.length || archive.presidentDecisions?.length)">
         <div class="card__head"><span>表决与行长决策</span></div>
         <table class="table" v-if="archive.voteRounds?.length">
           <thead><tr><th>轮次</th><th>状态</th><th>计票(通过/否决)</th><th>开始时间</th><th>结束时间</th></tr></thead>
@@ -366,14 +565,18 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { getArchive, exportArchive } from '@/api/history'
+import { getArchive, exportArchive, downloadResolutionDoc } from '@/api/history'
+import { download } from '@/api/request'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 import {
   appStatusText, itemStatusText, relationTypeText,
   businessTypeText, customerScopeText, nodeLabel, roleText, actionText,
   productName, metricName, memberRoleText, termUnitText, commitmentUnitText,
-  targetTypeText, metricScopeText, currencyText, decisionText,
+  metricScopeText, currencyText, decisionText,
   roundStatusText, execStatusText, ruleLevelText,
-  evalResultText, planStatusText
+  evalResultText, planStatusText,
+  guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
+  rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText
 } from '@/utils/dict'
 
 const route = useRoute()
@@ -384,9 +587,19 @@ const applicationId = route.params.id as string
 const archive = ref<Record<string, any>>({})
 const loading = ref(true)
 const exporting = ref(false)
+const resolving = ref(false)
+
+// 决议书可用性:仅已签发决议(archive.resolutions 非空)的申请提供下载
+const hasResolution = computed(() => !!(archive.value.resolutions && archive.value.resolutions.length))
 
 // 导出口径(§15):仅 admin/auditor/president 可见
 const canExport = computed(() => {
+  const role = userStore.userInfo?.roles?.[0] || ''
+  return ['admin', 'auditor', 'president'].includes(role)
+})
+
+// 表决统计可见性(§12.7/T4-02/T4-10):表决计票/轮次/行长决策仅行长·审计·超管可见,委员与审批人隐藏
+const canViewVote = computed(() => {
   const role = userStore.userInfo?.roles?.[0] || ''
   return ['admin', 'auditor', 'president'].includes(role)
 })
@@ -395,6 +608,72 @@ const isGroup = computed(() => {
   const scope = val(archive.value.application || {}, 'customer_scope', 'customerScope')
   return scope === 'GROUP'
 })
+
+// ===== 申请内容留痕(§14.4):数据来源 / 客户 / 授信 / 融资 / 附件 / 担保 / 贡献度 / 机构达成 =====
+const source = computed(() => archive.value.source || '')
+const sourceText = computed(() =>
+  source.value === 'SNAPSHOT' ? '冻结快照'
+    : source.value === 'MANUAL' ? '人工录入'
+    : source.value === 'MANUAL_OVERRIDE' ? '人工修正'
+    : source.value === 'REALTIME' ? '实时取数' : '—')
+const sourceNote = computed(() =>
+  source.value === 'MANUAL' ? '未找到数仓/快照客户数据,客户信息由客户经理手工录入,以人工填写为准。'
+    : source.value === 'MANUAL_OVERRIDE' ? '数仓/快照客户信息已由客户经理人工修正,以人工填写为准。'
+    : source.value === 'REALTIME' ? '未找到提交时冻结快照,客户/融资/贡献度为数仓实时查询结果,可能与提交时点存在差异。'
+    : '—')
+const snapshotInfo = computed(() => archive.value.snapshotInfo || {})
+const customer = computed(() => (archive.value.customer && archive.value.customer.length) ? archive.value.customer[0] : {})
+const hasCustomer = computed(() => !!customer.value.customerName)
+const customerName = computed(() => customer.value.customerName || val(archive.value.application || {}, 'customer_no', 'customerNo') || '—')
+const isCorpCustomer = computed(() => customer.value.custType === 'CORP')
+const isIndivCustomer = computed(() => customer.value.custType === 'INDIV')
+const isLoan = computed(() => val(archive.value.application || {}, 'business_type', 'businessType') !== 'DEPOSIT')
+const creditAgreements = computed(() => archive.value.creditAgreements || [])
+const financing = computed(() => archive.value.financing || [])
+const attachments = computed(() => archive.value.attachments || [])
+const otherLoanSummary = computed(() => archive.value.otherLoanSummary || [])
+const otherLoans = computed(() => archive.value.otherLoans || [])
+const contribution = computed(() => archive.value.contribution || [])
+const orgPerformance = computed(() => archive.value.orgPerformance || [])
+const groupCredit = computed(() => archive.value.groupCredit || [])
+const groupContributionText = computed(() => {
+  const g = (archive.value.groupContribution || [])[0]
+  if (!g || g.metricValue == null) return '暂无数据'
+  return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
+})
+// 担保分项明细(后端按 pricing_item_id 聚合)
+const hasGuarantees = computed(() => {
+  const map = archive.value.guaranteesByItem || {}
+  return Object.values(map).some((list: any) => list && list.length)
+})
+function guaranteesOf(p: any): any[] {
+  const map = archive.value.guaranteesByItem || {}
+  return map[String(val(p, 'id'))] || []
+}
+function extOf(g: any): any {
+  const j = g?.extJson
+  if (!j) return null
+  if (typeof j === 'object') return j
+  try { return JSON.parse(j) } catch { return null }
+}
+// 担保措施扩展明细转可读文本(抵押物/保证人/质押/保证金/存单等关键字段)
+function extText(g: any): string {
+  const ext = extOf(g)
+  if (!ext) return '—'
+  const labels: Record<string, string> = {
+    name: '名称', collateralType: '类型', specModel: '规格型号', quantity: '数量',
+    plateNo: '车牌号', vin: '车架号', address: '坐落', area: '面积',
+    certNo: '产权证号', owner: '权属人', pledgeType: '质押物类型',
+    marginRatio: '比例', termMonths: '期限(月)', certificateNo: '存单号', maturityDate: '到期日'
+  }
+  const parts = Object.keys(labels)
+    .filter((k) => ext[k] != null && ext[k] !== '')
+    .map((k) => `${labels[k]}:${ext[k]}`)
+  return parts.length ? parts.join('；') : '见明细'
+}
+function downloadAttachment(a: any) {
+  download(`/ccr/applications/${applicationId}/attachments/${a.id}/download`)
+}
 
 const qualityOverall = computed(() => {
   const list: any[] = archive.value.qualityResults || []
@@ -553,6 +832,18 @@ async function doExport() {
     // 错误提示由 download 封装统一处理
   } finally {
     exporting.value = false
+  }
+}
+
+async function doResolutionDoc() {
+  resolving.value = true
+  try {
+    await downloadResolutionDoc(applicationId)
+    ElMessage.success('决议书已生成')
+  } catch {
+    // 错误提示由 download 封装统一处理
+  } finally {
+    resolving.value = false
   }
 }
 

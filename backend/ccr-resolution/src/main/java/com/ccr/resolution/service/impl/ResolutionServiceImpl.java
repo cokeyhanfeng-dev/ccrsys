@@ -77,20 +77,28 @@ public class ResolutionServiceImpl implements ResolutionService {
     public CcrResolution createResolution(Long pricingItemId, BigDecimal finalRate, String carrierType,
                                           String carrierBusinessKey, LocalDate effectiveFrom,
                                           LocalDate effectiveTo, String decisionSource) {
-        if (pricingItemId == null || finalRate == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "分项与最终利率必填");
+        // 否决决议(COMMITTEE_REJECT)无最终利率,finalRate 可空;批准决议最终利率必填
+        boolean committeeReject = "COMMITTEE_REJECT".equals(decisionSource);
+        if (pricingItemId == null || (finalRate == null && !committeeReject)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    committeeReject ? "分项必填" : "分项与最终利率必填");
         }
         Long dup = resolutionMapper.selectCount(new LambdaQueryWrapper<CcrResolution>()
                 .eq(CcrResolution::getPricingItemId, pricingItemId));
         if (dup != null && dup > 0) {
             throw new ServiceException(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), "该分项已存在决议");
         }
-        // 校验分项状态为权限内已批或终态(PRD V2 §7.6:APPROVED_LEVEL→FINAL)
+        // 校验分项状态:批准决议为权限内已批或终态(PRD V2 §7.6:APPROVED_LEVEL→FINAL);
+        // 否决决议(COMMITTEE_REJECT)放行分项 REJECTED(小组表决未通过出否决决议书)
         CcrPricingItem item = pricingItemReadMapper.selectById(pricingItemId);
-        if (item != null && !"APPROVED_LEVEL".equals(item.getStatus())
-                && !"FINAL".equals(item.getStatus())) {
-            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
-                    "分项状态未通过,不能生成决议");
+        if (item != null) {
+            boolean approvedStatus = "APPROVED_LEVEL".equals(item.getStatus())
+                    || "FINAL".equals(item.getStatus());
+            boolean rejectedStatus = committeeReject && "REJECTED".equals(item.getStatus());
+            if (!approvedStatus && !rejectedStatus) {
+                throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                        "分项状态未通过,不能生成决议");
+            }
         }
 
         CcrResolution resolution = new CcrResolution();
@@ -108,12 +116,14 @@ public class ResolutionServiceImpl implements ResolutionService {
         resolution.setStatus("ISSUED");
         resolutionMapper.insert(resolution);
 
-        // 决议签发仅 ISSUED,待合同回填(§12.4)
-        CcrResolutionExecution exec = new CcrResolutionExecution();
-        exec.setResolutionId(resolution.getId());
-        exec.setContractBusinessKey(carrierBusinessKey);
-        exec.setExecutionStatus("CONTRACT_PENDING");
-        executionMapper.insert(exec);
+        // 决议签发仅 ISSUED,待合同回填(§12.4);否决决议无执行核验(无合同可回填,不建 CONTRACT_PENDING)
+        if (!committeeReject) {
+            CcrResolutionExecution exec = new CcrResolutionExecution();
+            exec.setResolutionId(resolution.getId());
+            exec.setContractBusinessKey(carrierBusinessKey);
+            exec.setExecutionStatus("CONTRACT_PENDING");
+            executionMapper.insert(exec);
+        }
         return resolution;
     }
 

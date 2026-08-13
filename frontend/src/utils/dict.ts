@@ -191,10 +191,11 @@ export function customerClassText(code?: string, fallback = '—'): string {
   return textOf(CUSTOMER_CLASS, code, fallback)
 }
 
-/** 证件类型(caps 数仓 cert_tp,对公统一社会信用代码/对私身份证) */
+/** 证件类型(caps 数仓 cert_tp:USCC 对公统一社会信用代码 / IDC 对私身份证;ID_CARD 业务库编码) */
 export const CERT_TYPE: Record<string, string> = {
   UNIFIED: '统一社会信用代码', ID: '身份证',
-  UNIFIED_SOCIAL: '统一社会信用代码', ID_CARD: '身份证'
+  UNIFIED_SOCIAL: '统一社会信用代码', ID_CARD: '身份证',
+  IDC: '身份证'
 }
 export function certTypeText(code?: string, fallback = '—'): string {
   return textOf(CERT_TYPE, code, fallback)
@@ -286,6 +287,13 @@ export function rateTypeText(code?: string, fallback = '—'): string {
 export const CONTRACT_STATUS: Record<string, string> = { EFFECTIVE: '有效', SETTLED: '结清', OVERDUE: '逾期' }
 export function contractStatusText(code?: string, fallback = '—'): string {
   return textOf(CONTRACT_STATUS, code, fallback)
+}
+
+/** 本行融资合同状态徽标变体(配 <span class="badge"> 基类,数仓 contract_status) */
+export function contractStatusBadge(code?: string): string {
+  return code === 'EFFECTIVE' ? 'badge--success'
+    : code === 'SETTLED' ? 'badge--neutral'
+    : code === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 
 /** 币种 */
@@ -408,6 +416,13 @@ export function relationTypeText(code?: string): string {
   }
   return code ? (map[code] || code) : '—'
 }
+
+/** 授信协议类型下拉选项(新增授信手工录入,与 agreementTypeText 对齐) */
+export const AGREEMENT_TYPES: DictItem[] = [
+  { code: 'COMPREHENSIVE', name: '综合授信' },
+  { code: 'SINGLE', name: '单笔单批' },
+  { code: 'REVOLVING', name: '循环授信' }
+]
 
 /** 授信协议类型(dw_credit_agreement.agreement_type) */
 export function agreementTypeText(code?: string): string {

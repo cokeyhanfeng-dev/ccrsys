@@ -604,7 +604,10 @@ public class VoteServiceImpl implements VoteService {
                 item.setStatus(PricingItemStatus.REJECTED.getCode());
                 item.setFinalReason("六人小组表决未通过(" + countNote + ")");
                 updateItemWithLock(item);
-                itemFinalizationService.afterItemTerminal(pricingItemId, null);
+                // 小组否决 → 生成否决决议(决议书,不建承诺计划)
+                itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_REJECT");
+                // 整单否决(§用户拍板):同申请其余未终态分项(含不经过小组、仍在其他节点审批的分项)一并否决
+                rejectSiblingItemsOnCommitteeFail(item, countNote);
             }
             // §14.7 流转留痕:计票动作(系统动作,operator_id 记 0)
             insertTrail(pricingItemId, pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
@@ -622,6 +625,40 @@ public class VoteServiceImpl implements VoteService {
                         + ",结果 " + result.getResult());
 
         closeRoundIfAllCounted(round);
+    }
+
+    /**
+     * 整单否决(§用户拍板):小组否决时同申请其余未终态分项一并置 REJECTED。
+     * 含"不需要小组审批、仍在其他节点审批"的分项——整单结论一致,不因分项分流而产生部分通过。
+     * 已出终态的分项(批准/否决/关闭/退回)不回退。
+     */
+    private void rejectSiblingItemsOnCommitteeFail(CcrPricingItem trigger, String countNote) {
+        List<CcrPricingItem> appItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, trigger.getApplicationId()));
+        for (CcrPricingItem sibling : appItems) {
+            if (sibling.getId().equals(trigger.getId()) || isTerminalItemStatus(sibling.getStatus())) {
+                continue; // 触发分项已在上方处理;已终态不回退
+            }
+            String fromStatus = sibling.getStatus();
+            sibling.setStatus(PricingItemStatus.REJECTED.getCode());
+            sibling.setFinalReason("整单否决:小组表决未通过,触发分项[" + trigger.getPricingItemNo() + "]");
+            updateItemWithLock(sibling);
+            insertTrail(sibling.getId(), "COUNT_REJECT", "SIX_PEOPLE_GROUP", 0L,
+                    countNote + ",结果 FAIL(整单否决)", fromStatus, PricingItemStatus.REJECTED.getCode());
+            // 小组否决 → 生成否决决议(决议书,不建承诺计划);幂等防重
+            itemFinalizationService.afterItemTerminal(sibling.getId(), "COMMITTEE_REJECT");
+            log.info("分项 {} 整单否决(小组否决触发),申请 {}", sibling.getId(), trigger.getApplicationId());
+        }
+    }
+
+    /** 终态判定:批准/否决/关闭/退回均视为已出终态,整单否决不回退 */
+    private boolean isTerminalItemStatus(String status) {
+        return List.of(PricingItemStatus.FINAL.getCode(),
+                PricingItemStatus.APPROVED_LEVEL.getCode(),
+                PricingItemStatus.VETOED.getCode(),
+                PricingItemStatus.REJECTED.getCode(),
+                PricingItemStatus.CLOSED.getCode(),
+                PricingItemStatus.RETURNED.getCode()).contains(status);
     }
 
     /** ccr_approval_action 流转留痕(§14.7):仅插入,失败不阻断主流程 */

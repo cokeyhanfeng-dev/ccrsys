@@ -380,6 +380,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             item.setMatchedMatrixNo(route.getMatchedMatrixNo());
             // 部门归属(矩阵透出,提交冻结;§D16a 部门分流,节点处理人按分项 dept_code 解析)
             item.setDeptCode(route.getDeptCode());
+            // 完整审批链路冻结(§8.6):审批推进沿此链,保证与提交预览一致(矩阵驱动,可跳过无权限节点如GM)
+            item.setRouteChain(JSONUtil.toJsonStr(route.getRouteChain()));
             pricingItemMapper.updateById(item);
             itemRoutes.add(toItemRoute(item, route.getRouteChain()));
         }
@@ -536,6 +538,21 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             }
             checkGuaranteeCompleteness(item);
         }
+        // 拟达成贡献度承诺:截止日期必填(§7.1 提交校验;草稿保存 saveCommitments 不强制,仅提交时把关)
+        checkCommitmentCompleteness(app);
+    }
+
+    /** 拟达成贡献度承诺完整性(§7.1):已录承诺的截止日期(end_date)必填,缺失阻断提交 */
+    private void checkCommitmentCompleteness(CcrApplication app) {
+        List<CcrApplicationCommitment> commitments = commitmentMapper.selectList(
+                new LambdaQueryWrapper<CcrApplicationCommitment>()
+                        .eq(CcrApplicationCommitment::getApplicationId, app.getId()));
+        for (CcrApplicationCommitment c : commitments) {
+            if (c.getEndDate() == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "拟达成贡献度承诺缺少截止日期,请补录承诺截止日期后提交");
+            }
+        }
     }
 
     /** 担保完整性(§9.3-5):非信用类(guaranteeType≠CREDIT)分项必须有担保组合且担保措施非空 */
@@ -687,6 +704,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         List<CcrPricingItem> others = pricingItemMapper.selectBatchIds(conflictItemIds);
         for (CcrPricingItem other : others) {
+            // DRAFT(草稿未提交)未进入审批,不算在途,不阻断(§7.1 一合同/账户一有效分项仅约束已提交在途)
+            if (PricingItemStatus.DRAFT.getCode().equals(other.getStatus())) {
+                continue;
+            }
             if (!ITEM_TERMINAL_STATUS.contains(other.getStatus())) {
                 throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
                         carrierDesc + "已存在在途定价分项[" + other.getPricingItemNo() + "](状态 "
@@ -1191,7 +1212,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                                              Map<String, Map<String, Object>> corpCache) {
         MatrixRouteInput input = new MatrixRouteInput();
         input.setBusinessBigType(businessBigType(app));
-        input.setNewOrExisting(item.getOriginalRate() != null ? "EXISTING" : "NEW");
+        input.setNewOrExisting(resolveNewOrExisting(app, item));
         input.setCustomerType(resolveCustomerType(app, item, corpCache));
         input.setProductCode(item.getProductCode());
         input.setAmount(item.getPricingAmount());
@@ -1205,6 +1226,22 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         input.setLprVersionId(app.getLprVersionId());
         input.setAsOfDate(app.getRouteAsOfDate());
         return input;
+    }
+
+    /** 存量/新增判定:优先以申请授信快照中的授信业务类型(credit_info_json.businessType,NEW=新增授信/EXISTING=存量调息)为准;
+     *  该字段由前端申请页业务类型显式提交(§用户要求),不以分项原利率推断——原利率属存量贷款合同带出,不能代表授信新增/存量的判定口径 */
+    private String resolveNewOrExisting(CcrApplication app, CcrPricingItem item) {
+        if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
+            try {
+                String bt = JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType");
+                if ("NEW".equals(bt) || "EXISTING".equals(bt)) {
+                    return bt;
+                }
+            } catch (Exception ignore) {
+                // 快照解析失败回退原利率判定
+            }
+        }
+        return item.getOriginalRate() != null ? "EXISTING" : "NEW";
     }
 
     /** 客户类型:PERSONAL/SOE/NON_SOE(对公取数仓企业性质,缺省 NON_SOE) */

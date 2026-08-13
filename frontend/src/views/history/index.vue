@@ -23,7 +23,10 @@
             <td>{{ fmtTime(row.finalTime) }}</td>
             <td>
               <button class="btn btn--text" @click="goArchive(row)">档案</button>
+              <button class="btn btn--text" @click="openProgress(row)">进度</button>
+              <button v-if="row.status === 'DRAFT'" class="btn btn--text" @click="goEdit(row)">继续编辑</button>
               <button v-if="canReapply(row)" class="btn btn--text" @click="goReapply(row)">重新发起</button>
+              <button v-if="row.hasResolution" class="btn btn--text" @click="downloadResolution(row)">决议书</button>
             </td>
           </tr>
           <tr v-if="!records.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
@@ -41,6 +44,43 @@
         />
       </div>
     </div>
+
+    <!-- 审批进度(§链路可视化):各节点流转状态 + 表决 n/6 -->
+    <el-dialog v-model="progressVisible" title="审批进度" width="560px" append-to-body>
+      <div v-loading="progressLoading">
+        <template v-if="progress">
+          <div class="progress-head">
+            <span class="progress-no">{{ progress.applicationNo }}</span>
+            <span :class="badgeClass(progress.currentStatus)">{{ statusText(progress.currentStatus) }}</span>
+          </div>
+          <div v-if="progress.nodes && progress.nodes.length" class="progress-nodes">
+            <div v-for="(n, i) in progress.nodes" :key="n.nodeCode" class="progress-node" :class="'node--' + n.status">
+              <div class="node-rail">
+                <span class="node-dot"></span>
+                <span v-if="i < progress.nodes.length - 1" class="node-line"></span>
+              </div>
+              <div class="node-body">
+                <div class="node-title">
+                  <span>{{ n.label }}</span>
+                  <span class="node-state" :class="'state--' + n.status">{{ nodeStatusText(n) }}</span>
+                </div>
+                <div v-if="n.status === 'DONE' && (n.operatorName || n.operationTime || n.result || n.decision)" class="node-meta">
+                  <span v-if="n.operatorName">{{ n.operatorName }}</span>
+                  <span v-if="n.operationTime">{{ fmtTime(n.operationTime) }}</span>
+                  <span v-if="n.result">计票 {{ n.result }}</span>
+                  <span v-if="n.decision">决策 {{ n.decision }}</span>
+                </div>
+                <div v-else-if="n.submittedCount != null" class="node-meta vote">
+                  <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'#409EFF'" />
+                  <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-cell">暂无进度数据</div>
+        </template>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -48,7 +88,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import { pageHistory } from '@/api/history'
+import { pageHistory, getApprovalProgress, downloadResolutionDoc } from '@/api/history'
 import { appStatusText, businessTypeText } from '@/utils/dict'
 
 const router = useRouter()
@@ -99,6 +139,33 @@ function badgeClass(s: string) {
   return map[s] || 'badge badge--neutral'
 }
 
+// 审批进度(§链路可视化):弹窗展示链路各节点流转状态 + 表决 n/6
+const progressVisible = ref(false)
+const progressLoading = ref(false)
+const progress = ref<any>(null)
+async function openProgress(row: any) {
+  progress.value = null
+  progressVisible.value = true
+  progressLoading.value = true
+  try {
+    progress.value = await getApprovalProgress(row.id)
+  } catch {
+    progress.value = { applicationNo: row.applicationNo, nodes: [] }
+  } finally {
+    progressLoading.value = false
+  }
+}
+function nodeStatusText(n: any) {
+  if (n.status === 'DONE') return '已处理'
+  if (n.status === 'CURRENT') return '进行中'
+  if (n.status === 'SKIPPED') return '跳过'
+  return '待处理'
+}
+function votePct(n: any) {
+  if (!n.voterCount) return 0
+  return Math.round(((n.submittedCount || 0) / n.voterCount) * 100)
+}
+
 // 档案:进入单笔申请档案(§14.4)
 function goArchive(row: any) {
   router.push(`/history/archive/${row.id}`)
@@ -112,6 +179,15 @@ function goReapply(row: any) {
   const path = row.businessType === 'DEPOSIT' ? '/application/deposit' : '/application/loan'
   router.push({ path, query: { reapply: row.id } })
 }
+// 继续编辑(草稿重新发起):跳转申请页并携带 edit 参数,加载草稿继续调整后提交
+function goEdit(row: any) {
+  const path = row.businessType === 'DEPOSIT' ? '/application/deposit' : '/application/loan'
+  router.push({ path, query: { edit: row.id } })
+}
+// 决议书(仅已签发决议的申请显示):下载 Word 决议书
+function downloadResolution(row: any) {
+  downloadResolutionDoc(row.id)
+}
 
 onMounted(load)
 </script>
@@ -119,4 +195,22 @@ onMounted(load)
 <style scoped>
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
+.progress-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.progress-no { font-weight: 600; }
+.progress-nodes { padding-left: 4px; }
+.progress-node { display: flex; }
+.node-rail { display: flex; flex-direction: column; align-items: center; width: 20px; margin-right: 12px; }
+.node-dot { width: 12px; height: 12px; border-radius: 50%; background: #d9d9d9; flex-shrink: 0; margin-top: 2px; }
+.node-line { width: 2px; flex: 1; min-height: 28px; background: #e8e8e8; }
+.node--DONE .node-dot { background: #52c41a; }
+.node--CURRENT .node-dot { background: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2); }
+.node-body { flex: 1; padding-bottom: 22px; }
+.node-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+.node-state { font-size: 12px; font-weight: 400; padding: 1px 8px; border-radius: 10px; }
+.state--DONE { color: #52c41a; background: rgba(82, 196, 26, 0.12); }
+.state--CURRENT { color: #409eff; background: rgba(64, 158, 255, 0.12); }
+.state--PENDING, .state--SKIPPED { color: #909399; background: rgba(144, 147, 153, 0.12); }
+.node-meta { margin-top: 4px; font-size: 12px; color: #909399; display: flex; gap: 12px; }
+.node-meta.vote { display: block; margin-top: 8px; }
+.vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 </style>

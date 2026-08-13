@@ -2,7 +2,10 @@ package com.ccr.approval.controller;
 
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.HistoryArchiveExporter;
+import com.ccr.approval.support.ResolutionPdfExporter;
 import com.ccr.application.service.ApplicationAccessService;
+import com.ccr.common.enums.ErrorCode;
+import com.ccr.common.exception.ServiceException;
 import com.ccr.vote.read.SysUserRead;
 import com.ccr.vote.support.CurrentLoginUser;
 import cn.hutool.core.util.IdUtil;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -77,6 +81,29 @@ public class HistoryExportController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
+    }
+
+    /** 决议书下载(§决议):按申请生成只读 PDF 决议书,供客户经理/审批人在历史申请中下载/打印。
+     *  权限保护:PDF 加密(256位),禁编辑/复制/提取/组装,仅可打印——下载后不可修改;
+     *  数据权限复用 historyDetail(checkHistoryPermission:客户经理本人/审批参与/行长全量);
+     *  仅已签发决议(ccr_resolution)的申请可下载,无决议返回 404 提示。 */
+    @GetMapping("/{applicationId}/resolution-doc")
+    public ResponseEntity<byte[]> resolutionDoc(@PathVariable Long applicationId) throws IOException {
+        Map<String, Object> archive = approvalService.historyDetail(applicationId);
+        List<?> resolutions = (List<?>) archive.get("resolutions");
+        if (resolutions == null || resolutions.isEmpty()) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "该申请暂无已通过的决议,无法生成决议书");
+        }
+        byte[] bytes = ResolutionPdfExporter.build(archive);
+        Object appNo = archive.get("application") instanceof Map<?, ?> app
+                ? app.get("application_no") : null;
+        String filename = "利率定价决议书_" + (appNo == null ? applicationId : appNo) + "_"
+                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + ".pdf";
+        String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(MediaType.parseMediaType("application/pdf"))
                 .body(bytes);
     }
 

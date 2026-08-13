@@ -55,22 +55,22 @@ VALUES
    NULL,NULL,0,5000,0,12,'MONTH','CREDIT',NULL,NULL,'CNY',
    'SIX_PEOPLE_GROUP','LOWER_BETTER',1,NULL,'信用方式直接上会表决');
 
--- ---------- 产品硬边界:LOAN_A 贷款不得低于 3.0% ----------
+-- ---------- 产品硬边界:LOAN_A 贷款不得低于 2.8%(全行绝对底线;矩阵对公小组 <3.0% 上会可批 2.8%~3.0%,低于 2.8% 阻断) ----------
 INSERT INTO `ccr_product_rate_limit`
   (`id`,`tenant_id`,`business_no`,`org_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`,
    `product_code`,`product_name`,`business_type`,`hard_boundary_rate`,`rate_direction`,
    `effective_from`,`effective_to`,`publish_by`,`review_by`,`publish_time`)
 VALUES
   (9201,'000000','PLR20260805001',1001,'EFFECTIVE',1,1000,NOW(),'0',
-   'LOAN_A','对公贷款','LOAN',3.000000,'LOWER_BETTER',
+   'LOAN_A','对公贷款','LOAN',2.800000,'LOWER_BETTER',
    '2026-08-01 00:00:00',NULL,1000,1000,NOW());
 
--- ---------- 产品硬边界:个人经营性贷款不得低于 3.8%(PRD 表7.2.3;新增不设矩阵绝对下限,走产品硬边界表) ----------
+-- ---------- 产品硬边界:个人经营性贷款不得低于 3.0%(全行绝对底线;3.8% 为矩阵小组上会分界,小组可批 3.0%~3.8%,低于 3.0% 阻断) ----------
 INSERT INTO `ccr_product_rate_limit`
   (`id`,`tenant_id`,`business_no`,`org_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`,
    `product_code`,`product_name`,`business_type`,`hard_boundary_rate`,`rate_direction`,
    `effective_from`,`effective_to`,`publish_by`,`review_by`,`publish_time`)
 VALUES
   (9202,'000000','PLR20260805002',1001,'EFFECTIVE',1,1000,NOW(),'0',
-   'LOAN_P','个人经营性贷款','LOAN',3.800000,'LOWER_BETTER',
+   'LOAN_P','个人经营性贷款','LOAN',3.000000,'LOWER_BETTER',
    '2026-08-01 00:00:00',NULL,1000,1000,NOW());

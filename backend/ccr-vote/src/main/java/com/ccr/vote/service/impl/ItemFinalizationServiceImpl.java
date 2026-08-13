@@ -88,8 +88,12 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         if (item == null) {
             return;
         }
+        // 小组否决(COMMITTEE_REJECT)也是终态,同样签发否决决议(决议书,不建承诺计划)
+        boolean committeeReject = "COMMITTEE_REJECT".equals(decisionSource)
+                && PricingItemStatus.REJECTED.getCode().equals(item.getStatus());
         if (PricingItemStatus.FINAL.getCode().equals(item.getStatus())
-                || PricingItemStatus.APPROVED_LEVEL.getCode().equals(item.getStatus())) {
+                || PricingItemStatus.APPROVED_LEVEL.getCode().equals(item.getStatus())
+                || committeeReject) {
             Map<String, Object> payload = buildResolutionPayload(item, decisionSource);
             try {
                 // 同事务写事件:event_no=RESOLUTION_CREATE:item:{id} 幂等,消费者异步生成决议
@@ -106,7 +110,9 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
 
     /** 决议事件载荷(日期/利率以字符串固化,消费重试口径不变) */
     private Map<String, Object> buildResolutionPayload(CcrPricingItem item, String decisionSource) {
-        BigDecimal finalRate = item.getFinalRate() != null ? item.getFinalRate() : item.getCurrentApprovalRate();
+        // 否决决议无最终利率(finalRate 为空);批准决议取终态利率,缺失时回退当前审批利率
+        BigDecimal finalRate = "COMMITTEE_REJECT".equals(decisionSource) ? null
+                : (item.getFinalRate() != null ? item.getFinalRate() : item.getCurrentApprovalRate());
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("pricingItemId", item.getId());
         payload.put("pricingItemNo", item.getPricingItemNo());
@@ -134,16 +140,20 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
                     "决议生成结果为空,等待重试: 分项 " + pricingItemId);
         }
-        // 链式承诺计划事件(业务关键:写入失败降级同步建计划)
-        Map<String, Object> commitmentPayload = new LinkedHashMap<>();
-        commitmentPayload.put("pricingItemId", item.getId());
-        commitmentPayload.put("resolutionId", resolution.getId());
-        try {
-            outboxService.publish(OutboxEventType.COMMITMENT_CREATE,
-                    "item:" + item.getId(), JSONUtil.toJsonStr(commitmentPayload));
-        } catch (Exception e) {
-            log.error("分项 {} COMMITMENT_CREATE 事件写入失败,降级同步建计划", item.getId(), e);
-            createCommitmentPlanSafely(item, resolution);
+        // 否决决议(COMMITTEE_REJECT)不建承诺跟踪计划(§7.7 承诺计划仅对批准决议);批准决议才链式承诺计划
+        if (!"COMMITTEE_REJECT".equals(StrUtil.blankToDefault(
+                toStr(payload.get("decisionSource")), "LEVEL_APPROVED"))) {
+            // 链式承诺计划事件(业务关键:写入失败降级同步建计划)
+            Map<String, Object> commitmentPayload = new LinkedHashMap<>();
+            commitmentPayload.put("pricingItemId", item.getId());
+            commitmentPayload.put("resolutionId", resolution.getId());
+            try {
+                outboxService.publish(OutboxEventType.COMMITMENT_CREATE,
+                        "item:" + item.getId(), JSONUtil.toJsonStr(commitmentPayload));
+            } catch (Exception e) {
+                log.error("分项 {} COMMITMENT_CREATE 事件写入失败,降级同步建计划", item.getId(), e);
+                createCommitmentPlanSafely(item, resolution);
+            }
         }
         // 决议签发通知申请人(通知为尽力而为:事件写失败仅记日志)
         publishResolutionIssuedNotify(item, resolution);
@@ -197,12 +207,17 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             if (applicantId == null) {
                 return;
             }
+            // 否决决议(COMMITTEE_REJECT)文案按"未通过"签发
+            boolean committeeReject = "COMMITTEE_REJECT".equals(resolution.getDecisionSource());
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("recipientType", "USER");
             payload.put("recipientId", applicantId.toString());
             payload.put("channel", "SYSTEM");
             payload.put("messageKey", "RES_ISSUED:" + resolution.getId());
-            payload.put("content", "定价分项 " + item.getPricingItemNo() + " 审批通过,决议 "
+            payload.put("content", committeeReject
+                    ? "定价分项 " + item.getPricingItemNo() + " 未通过审批,决议 "
+                    + resolution.getResolutionNo() + " 已签发"
+                    : "定价分项 " + item.getPricingItemNo() + " 审批通过,决议 "
                     + resolution.getResolutionNo() + " 已签发");
             outboxService.publish(OutboxEventType.NOTIFY,
                     "RES_ISSUED:" + resolution.getId(), JSONUtil.toJsonStr(payload));
@@ -246,7 +261,8 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
     private void createCommitmentPlan(CcrPricingItem item, CcrResolution resolution) {
         List<ApplicationCommitmentRead> rows = commitmentReadMapper.selectList(
                 new LambdaQueryWrapper<ApplicationCommitmentRead>()
-                        .eq(ApplicationCommitmentRead::getApplicationId, item.getApplicationId()));
+                        .eq(ApplicationCommitmentRead::getApplicationId, item.getApplicationId())
+                        .eq(ApplicationCommitmentRead::getDelFlag, "0"));
         if (rows.isEmpty()) {
             log.info("分项 {} 无承诺指标,跳过承诺计划创建", item.getId());
             return;

@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -139,6 +140,17 @@ class RateMatrixRouterImplTest {
                 loanRow("M-EX-VP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "LT_5000", null,
                         "VICE_PRESIDENT", "RATE", "3.0", null, null, null, 3),
                 loanRow("M-EX-GROUP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "LT_5000", null,
+                        "SIX_PEOPLE_GROUP", "RATE", "3.0", null, null, null, 4));
+    }
+
+    /** 国企存量链(按金额档):GM=orig-30BP floor3.0 → VP=floor3.0 → 小组(<3.0) */
+    private List<CcrRateMatrix> soeExistingChain(String amtTier) {
+        return List.of(
+                loanRow("M-EX-SOE-GM", "LOAN_PUBLIC", "EXISTING", "SOE", amtTier, null,
+                        "DEPT_GENERAL_MANAGER", "SPREAD", "3.0", 30, null, null, 2),
+                loanRow("M-EX-SOE-VP", "LOAN_PUBLIC", "EXISTING", "SOE", amtTier, null,
+                        "VICE_PRESIDENT", "RATE", "3.0", null, null, null, 3),
+                loanRow("M-EX-SOE-GROUP", "LOAN_PUBLIC", "EXISTING", "SOE", amtTier, null,
                         "SIX_PEOPLE_GROUP", "RATE", "3.0", null, null, null, 4));
     }
 
@@ -608,6 +620,38 @@ class RateMatrixRouterImplTest {
         stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"amount_tier\":\"LT_5000\"}"));
         MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
         in.setProductCode("PUB_LOAN_01");
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertTrue(result.getMessage().contains("命中上会条件"));
+    }
+
+    @Test
+    void 贷款_多键上会条件_金额档不命中不上会_矩阵GM终审() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(soeExistingChain("LT_5000"));
+        // 上会条件 GE_5000+SOE(AND):金额 2000万(LT_5000)不命中金额档 → 不强制上会,按矩阵分层
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N",
+                "{\"amount_tier\":\"GE_5000\",\"enterprise_type\":\"SOE\"}"));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "EXISTING", "SOE", "2000", 12, "3.9");
+        in.setProductCode("PUB_LOAN_01");
+        in.setOriginalRate(new BigDecimal("4.2"));
+        RouteResult result = router.calcRoute(in);
+        assertEquals("DEPT_GENERAL_MANAGER", result.getFinalNodeCode());
+        assertEquals("M-EX-SOE-GM", result.getMatchedMatrixNo());
+        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER"), result.getRouteChain());
+        assertFalse(result.getMessage().contains("命中上会条件"));
+    }
+
+    @Test
+    void 贷款_多键上会条件_金额档与企业类型同时命中_强制上会() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(soeExistingChain("GE_5000"));
+        // GE_5000+SOE 全部命中(AND)→ 强制必经六人小组(本应 VP 终审)
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N",
+                "{\"amount_tier\":\"GE_5000\",\"enterprise_type\":\"SOE\"}"));
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "EXISTING", "SOE", "6000", 12, "3.3");
+        in.setProductCode("PUB_LOAN_01");
+        in.setOriginalRate(new BigDecimal("4.0"));
         RouteResult result = router.calcRoute(in);
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
         assertTrue(result.getMessage().contains("命中上会条件"));

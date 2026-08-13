@@ -10,6 +10,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -171,6 +173,108 @@ public final class HistoryArchiveExporter {
                     new Col("目标值", "targetValue", "target_value"),
                     new Col("单位", "unit"),
                     new Col("指标范围", "metricScope", "metric_scope")));
+
+            // ---- 申请内容留痕(§14.4 完整保留,与审批详情同口径) ----
+            writeTable(wb, "客户基本信息", watermark, (List<Map<String, Object>>) archive.get("customer"), List.of(
+                    new Col("客户名称", "customerName", "cust_nm"),
+                    new Col("客户号", "customerNo", "cust_no"),
+                    new Col("客户类型", "custType"),
+                    new Col("证件号码", "certNo"),
+                    new Col("企业性质", "entpCharic"),
+                    new Col("企业规模", "entpScale"),
+                    new Col("所属行业", "industry", "blgd_idsty"),
+                    new Col("信用等级", "creditLevel"),
+                    new Col("五级分类", "fiveLevelClass"),
+                    new Col("员工人数", "empeNum"),
+                    new Col("总资产(万元)", "totalAssets"),
+                    new Col("注册资本(万元)", "registeredCapital"),
+                    new Col("成立日期", "estbDate"),
+                    new Col("注册地址", "restAddr"),
+                    new Col("职业", "occupation"),
+                    new Col("年收入(万元)", "annualIncome"),
+                    new Col("婚姻状况", "maritalStatus"),
+                    new Col("居住地址", "address"),
+                    new Col("联系电话", "phone"),
+                    new Col("开户机构", "openOrgName"),
+                    new Col("开户日期", "openDate"),
+                    new Col("客户分类", "customerClass")));
+
+            writeTable(wb, "授信协议", watermark, (List<Map<String, Object>>) archive.get("creditAgreements"), List.of(
+                    new Col("协议编号", "agreementNo"),
+                    new Col("授信类型", "agreementType"),
+                    new Col("币种", "currency"),
+                    new Col("状态", "agreementStatus"),
+                    new Col("开始日期", "startDate"),
+                    new Col("结束日期", "endDate"),
+                    new Col("授信额度(万元)", "creditAmount"),
+                    new Col("已用额度(万元)", "usedAmount"),
+                    new Col("可用额度(万元)", "availableAmount"),
+                    new Col("来源", "source")));
+
+            writeTable(wb, "本行融资", watermark, (List<Map<String, Object>>) archive.get("financing"), List.of(
+                    new Col("合同号", "contractNo"),
+                    new Col("授信协议号", "agreementNo"),
+                    new Col("合同金额(万元)", "contractAmount"),
+                    new Col("余额(万元)", "loanBalance"),
+                    new Col("执行利率(%)", "contractRate"),
+                    new Col("利率类型", "rateType"),
+                    new Col("LPR期限", "lprTerm"),
+                    new Col("开始日期", "startDate"),
+                    new Col("到期日期", "maturityDate"),
+                    new Col("合同状态", "contractStatus"),
+                    new Col("担保类型", "guaranteeType"),
+                    new Col("币种", "currency")));
+
+            writeTable(wb, "他行融资", watermark, (List<Map<String, Object>>) archive.get("appOtherLoans"), List.of(
+                    new Col("融资机构", "lenderName"),
+                    new Col("授信额(万元)", "creditAmount"),
+                    new Col("已用额(万元)", "usedAmount"),
+                    new Col("余额(万元)", "balanceAmount"),
+                    new Col("年化利率(%)", "annualRate"),
+                    new Col("来源", "inputMode")));
+
+            writeTable(wb, "申请附件", watermark, (List<Map<String, Object>>) archive.get("attachments"), List.of(
+                    new Col("文件名", "fileName"),
+                    new Col("大小(字节)", "fileSize"),
+                    new Col("上传时间", "createTime")));
+
+            writeTable(wb, "机构达成", watermark, (List<Map<String, Object>>) archive.get("orgPerformance"), List.of(
+                    new Col("机构", "orgCode"),
+                    new Col("统计月份", "statMonth"),
+                    new Col("达成金额(万元)", "achievedAmount"),
+                    new Col("目标金额(万元)", "expectedAmount"),
+                    new Col("达成率", "completionRate"),
+                    new Col("数据日期", "dataDt")));
+
+            writeTable(wb, "集团授信", watermark, (List<Map<String, Object>>) archive.get("groupCredit"), List.of(
+                    new Col("授信总额(万元)", "approvedTotalAmount"),
+                    new Col("已分配额度", "allocatedAmount"),
+                    new Col("已用额度", "usedAmount"),
+                    new Col("可用额度", "availableAmount"),
+                    new Col("授信开始", "creditStart"),
+                    new Col("授信到期", "creditEnd"),
+                    new Col("授信状态", "creditStatus")));
+
+            // 担保分项:按分项平铺(Map<分项ID, 担保行[]> → 行序列)
+            List<Map<String, Object>> guaranteeRows = new ArrayList<>();
+            Map<?, ?> byItem = (Map<?, ?>) archive.get("guaranteesByItem");
+            if (byItem != null) {
+                for (Map.Entry<?, ?> e : byItem.entrySet()) {
+                    for (Object g : (List<?>) e.getValue()) {
+                        if (g instanceof Map<?, ?> gMap) {
+                            Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) gMap);
+                            row.put("pricingItemId", String.valueOf(e.getKey()));
+                            guaranteeRows.add(row);
+                        }
+                    }
+                }
+            }
+            writeTable(wb, "担保分项", watermark, guaranteeRows, List.of(
+                    new Col("分项", "pricingItemId"),
+                    new Col("担保方式", "guaranteeType"),
+                    new Col("措施类型", "measureType"),
+                    new Col("担保金额(万元)", "guaranteeAmount"),
+                    new Col("措施扩展", "extJson")));
 
             wb.write(out);
             return out.toByteArray();

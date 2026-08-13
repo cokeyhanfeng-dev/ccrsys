@@ -26,3 +26,6 @@ Thumbs.db
 
 # 部署侧生产连接配置(含真实密码,严禁入库,详设 §3.7)
 config/application-prod.yml
+
+# 决议书 PDF 嵌入中文字体(约 20MB,不入库,部署前由本地 fonts 提供)
+backend/ccr-approval/src/main/resources/fonts/

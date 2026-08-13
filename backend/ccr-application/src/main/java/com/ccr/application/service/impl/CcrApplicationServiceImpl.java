@@ -620,23 +620,16 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (inheritedIds.isEmpty()) {
             commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
                     .eq(CcrApplicationCommitment::getApplicationId, applicationId));
-            contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
-                    .eq(CcrPricingItemContractRel::getApplicationId, applicationId));
-            depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
-                    .eq(CcrPricingItemDepositRel::getApplicationId, applicationId));
         } else {
             // 承诺:保留绑定沿用分项的记录(申请级承诺 pricing_item_id 为空,随载荷重建)
             commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
                     .eq(CcrApplicationCommitment::getApplicationId, applicationId)
                     .and(w -> w.isNull(CcrApplicationCommitment::getPricingItemId)
                             .or().notIn(CcrApplicationCommitment::getPricingItemId, inheritedIds)));
-            contractRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemContractRel>()
-                    .eq(CcrPricingItemContractRel::getApplicationId, applicationId)
-                    .notIn(CcrPricingItemContractRel::getPricingItemId, inheritedIds));
-            depositRelMapper.delete(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
-                    .eq(CcrPricingItemDepositRel::getApplicationId, applicationId)
-                    .notIn(CcrPricingItemDepositRel::getPricingItemId, inheritedIds));
         }
+        // 合同/账户关系:物理删除(MP 逻辑删除 del_flag 0→1 会撞含 del_flag 的唯一键 uk_app_contract/uk_app_deposit,草稿重建无历史价值)
+        contractRelMapper.deletePhysical(applicationId, inheritedIds);
+        depositRelMapper.deletePhysical(applicationId, inheritedIds);
         if (!removableIds.isEmpty()) {
             List<Long> packageIds = guaranteePackageMapper.selectList(new LambdaQueryWrapper<CcrGuaranteePackage>()
                             .in(CcrGuaranteePackage::getPricingItemId, removableIds))

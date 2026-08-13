@@ -43,4 +43,7 @@ public class ApplicationCommitmentRead {
 
     /** 成员客户号(成员级指标) */
     private String memberCustomerNo;
+
+    /** 逻辑删除:0 有效/1 已删(申请版本更新时旧指标逻辑删除,查询须过滤) */
+    private String delFlag;
 }

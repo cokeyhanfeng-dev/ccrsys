@@ -49,10 +49,7 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">客户性质</label>
-          <select class="form-select" v-model="form.customerNature">
-            <option value="EXISTING">存量客户</option>
-            <option value="NEW">新增客户</option>
-          </select>
+          <input class="form-input" :value="customerNatureText" readonly placeholder="选客户后自动判定" />
         </div>
 
         <!-- 对公字段(数仓带出,只读) -->
@@ -81,7 +78,7 @@
         <template v-else>
           <div class="form-field">
             <label class="form-field__label">证件类型</label>
-            <input class="form-input" v-model="form.idType" placeholder="数仓带出,可修改" />
+            <input class="form-input" :value="certTypeText(form.idType)" placeholder="数仓带出" readonly />
           </div>
           <div class="form-field">
             <label class="form-field__label">证件号码</label>
@@ -276,7 +273,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -330,7 +327,7 @@ const form = reactive({
   customerScope: 'CORPORATE',
   customerName: '',
   customerNo: '',
-  customerNature: 'EXISTING',
+  customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '',
@@ -362,6 +359,13 @@ function exceedOf(d: DepositItemRow): boolean {
 }
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
+
+// 客户性质只读展示(§用户要求):由数仓 customerClass 自动判定,不允许手选;未选客户显示占位
+const customerNatureText = computed(() => {
+  if (form.customerNature === 'EXISTING') return '存量客户'
+  if (form.customerNature === 'NEW') return '新增客户'
+  return '—'
+})
 
 // 草稿与提交闭环状态
 const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
@@ -408,10 +412,13 @@ async function loadCustomerDetail() {
     form.idNo = basic.certNo || ''
     form.occupation = basic.occupation || ''
     form.phone = basic.phone || ''
-    form.customerNature = basic.customerClass === 'NEW' ? 'NEW' : 'EXISTING'
+    form.customerNature = basic.customerClass === 'EXISTING' ? 'EXISTING' : 'NEW'
+    // 企业性质带出(数仓 entp_charic 仅 SOE 判国企,其余非国企,与后端 resolveCustomerType 同口径)
+    form.customerType = basic.entpCharic === 'SOE' ? 'SOE' : 'NON_SOE'
     contribution.value = detail.contribution || []
   } catch {
-    // 拦截器已提示
+    // 数仓无该客户记录(新增客户手工填写)按新户判定;其余错误由拦截器提示
+    form.customerNature = 'NEW'
   }
 }
 
@@ -610,26 +617,44 @@ onMounted(async () => {
   } catch {
     productLimits.value = []
   }
+  // 关联重提(?reapply={applicationId}:生成新草稿并加载内容)
   const src = route.query.reapply
-  if (!src) return
-  try {
-    const newDraft = await reapplyApplication(String(src))
-    draft.id = newDraft.id
-    draft.versionNo = newDraft.versionNo ?? 1
-    draft.applicationNo = newDraft.applicationNo
-    await loadDraftIntoForm(newDraft.id)
-    ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)
-  } catch {
-    // 拦截器已提示
+  if (src) {
+    try {
+      const newDraft = await reapplyApplication(String(src))
+      draft.id = newDraft.id
+      draft.versionNo = newDraft.versionNo ?? 1
+      draft.applicationNo = newDraft.applicationNo
+      await loadDraftIntoForm(newDraft.id)
+      ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)
+    } catch {
+      // 拦截器已提示
+    }
+  }
+  // ?edit={draftId}:从历史页"继续编辑"加载草稿(草稿重新发起流程;雪花主键超 JS 安全整数,按字符串传递防精度丢失)
+  const editId = route.query.edit
+  if (editId) {
+    draft.id = String(editId)
+    try {
+      await loadDraftIntoForm(editId)
+    } catch {
+      // 拦截器已提示
+    }
   }
 })
 
-async function loadDraftIntoForm(id: number) {
+async function loadDraftIntoForm(id: number | string) {
   const d = await getApplicationDetail(id)
   const app = d.application
+  // 同步数据版本号:保存草稿(PUT)必须携带 versionNo(乐观锁),缺失会导致"保存草稿必须携带数据版本号"报错
+  draft.versionNo = app.versionNo != null ? app.versionNo : (draft.versionNo ?? 1)
   form.customerScope = app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
   form.applicationRemark = app.applicationRemark || ''
+  // 客户信息人工快照回填(继续编辑/重提):数仓重查可能缺客户名称等字段,以提交时快照为准
+  let custInfo: any = null
+  try { custInfo = app.customerInfoJson ? JSON.parse(app.customerInfoJson) : null } catch { custInfo = null }
+  if (custInfo?.customerName) form.customerName = custInfo.customerName
   if (app.customerNo) {
     await loadCustomerDetail()
   }

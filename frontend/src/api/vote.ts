@@ -13,10 +13,10 @@ export function fetchMyBallot<T = any>(roundId: number | string, pricingItemId: 
   return get<T>(`/ccr/vote-rounds/${roundId}/ballots/my`, { pricingItemId })
 }
 
-/** 提交本人票:choice 仅 APPROVE/REJECT;Idempotency-Key 头可选 */
+/** 提交本人票:choice 仅 APPROVE/REJECT;pricingItemId 雪花 id 传字符串(避免 JS 精度丢失);Idempotency-Key 头可选 */
 export function submitBallot(
   roundId: number | string,
-  body: { pricingItemId: number; choice: string; comment?: string },
+  body: { pricingItemId: number | string; choice: string; comment?: string },
   idempotencyKey?: string
 ): Promise<void> {
   return request<void>({

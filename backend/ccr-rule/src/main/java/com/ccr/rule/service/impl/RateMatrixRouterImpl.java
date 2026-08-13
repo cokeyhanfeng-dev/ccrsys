@@ -219,9 +219,11 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     }
 
     /**
-     * 上会条件命中判定(§8A.5② vote_condition JSON,命中即上会):
+     * 上会条件命中判定(§8A.5② vote_condition JSON,AND 语义:全部配置键同时命中才上会):
      * amount_tier(金额档,与矩阵定档口径一致 §B18)、enterprise_type(SOE/NON_SOE);
-     * JSON 解析失败按不命中处理(配置错误由配置中心校验)。
+     * 任一配置键不命中即整体不命中——避免单维度过宽(如仅 enterprise_type=SOE)把矩阵分层
+     * (支行/GM/VP 权限内终审)对整类客户全部拉上会,与"恢复权限内分层终审"配置意图一致;
+     * 未配置任何键返回 false;JSON 解析失败按不命中处理(配置错误由配置中心校验)。
      */
     private boolean voteConditionHit(CcrProductRoute route, MatrixRouteInput input) {
         if (StrUtil.isBlank(route.getVoteCondition())) {
@@ -229,19 +231,29 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         }
         try {
             JSONObject cond = JSONUtil.parseObj(route.getVoteCondition());
+            boolean anyCondition = false;
+            // 金额档(§B18 定档口径):配置了则必须命中
             String amountTier = cond.getStr("amount_tier");
             if (StrUtil.isNotBlank(amountTier)) {
+                anyCondition = true;
                 BigDecimal basis = input.getGroupCreditTotal() != null
                         && !MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT.equals(input.getAmountBasis())
                         ? input.getGroupCreditTotal()
                         : (input.getAmount() == null ? BigDecimal.ZERO : input.getAmount());
                 String tier = basis.compareTo(FIVE_THOUSAND) < 0 ? "LT_5000" : "GE_5000";
-                if (amountTier.equals(tier)) {
-                    return true;
+                if (!amountTier.equals(tier)) {
+                    return false;
                 }
             }
+            // 企业类型:配置了则必须命中
             String enterpriseType = cond.getStr("enterprise_type");
-            return StrUtil.isNotBlank(enterpriseType) && enterpriseType.equals(input.getCustomerType());
+            if (StrUtil.isNotBlank(enterpriseType)) {
+                anyCondition = true;
+                if (!enterpriseType.equals(input.getCustomerType())) {
+                    return false;
+                }
+            }
+            return anyCondition;
         } catch (Exception e) {
             return false;
         }

@@ -46,12 +46,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '审批详情' }
       },
       {
-        path: 'voting',
-        name: 'Voting',
-        component: () => import('@/views/voting/index.vue'),
-        meta: { title: '六人表决', icon: 'Key' }
-      },
-      {
         path: 'president',
         name: 'President',
         component: () => import('@/views/president/index.vue'),

@@ -109,6 +109,10 @@ public class CcrApplication extends BaseEntity {
     @TableField(exist = false)
     private List<CcrApplicationRelatedPerson> relatedPersons;
 
+    /** 是否有已签发决议(非表字段,历史列表标记决议书下载可用性;true=存在 ccr_resolution 记录) */
+    @TableField(exist = false)
+    private Boolean hasResolution;
+
     /** 在途分项当前节点文本(审批轨迹增强,非表字段:客户经理待办看申请走到哪/在哪卡着) */
     @TableField(exist = false)
     private String currentNodeText;

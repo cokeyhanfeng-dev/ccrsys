@@ -40,10 +40,23 @@ public final class RouteChains {
 
     /** 贷款链下一节点(超权限上送);已在终点返回 null */
     public static String nextNode(String nodeCode) {
-        int idx = LOAN_CHAIN.indexOf(nodeCode);
-        if (idx < 0 || idx == LOAN_CHAIN.size() - 1) {
+        return nextNode(nodeCode, null);
+    }
+
+    /**
+     * 沿给定链路找下一节点(超权限上送);优先沿分项提交时冻结的完整链路
+     * (矩阵驱动,可跳过无权限节点如 GM,保证推进与提交预览一致),链路为空回退贷款固定链;
+     * 已在终点或不在链上返回 null。
+     */
+    public static String nextNode(String nodeCode, List<String> chain) {
+        if (StrUtil.isBlank(nodeCode)) {
             return null;
         }
-        return LOAN_CHAIN.get(idx + 1);
+        List<String> effective = (chain == null || chain.isEmpty()) ? LOAN_CHAIN : chain;
+        int idx = effective.indexOf(nodeCode);
+        if (idx < 0 || idx == effective.size() - 1) {
+            return null;
+        }
+        return effective.get(idx + 1);
     }
 }

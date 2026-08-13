@@ -303,27 +303,28 @@ export function createApplication(payload: ApplicationPayload) {
 }
 
 /** 保存草稿(必带 versionNo;后端仅更新主单字段,分项以创建时为准) */
-export function saveApplication(id: number, payload: ApplicationPayload) {
+// 注意:id 为雪花主键(>2^53),统一按 number|string 接收、模板字符串拼 URL,严禁 Number() 转换(丢精度导致"申请不存在")
+export function saveApplication(id: number | string, payload: ApplicationPayload) {
   return put<ApplicationEntity>(`/ccr/applications/${id}`, payload)
 }
 
 /** 申请详情聚合 */
-export function getApplicationDetail(id: number) {
+export function getApplicationDetail(id: number | string) {
   return get<ApplicationDetail>(`/ccr/applications/${id}`)
 }
 
 /** 逐分项路由预览 */
-export function routePreview(id: number) {
+export function routePreview(id: number | string) {
   return post<RoutePreview>(`/ccr/applications/${id}/route-preview`)
 }
 
 /** 提交前校验(数据批次差异+质量预校验+硬边界) */
-export function submitCheck(id: number) {
+export function submitCheck(id: number | string) {
   return post<SubmitCheck>(`/ccr/applications/${id}/submit-check`)
 }
 
 /** 正式提交(幂等) */
-export function submitApplication(id: number) {
+export function submitApplication(id: number | string) {
   return post<SubmitResult>(`/ccr/applications/${id}/submit`)
 }
 

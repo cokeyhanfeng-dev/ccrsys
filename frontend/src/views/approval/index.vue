@@ -15,8 +15,8 @@
             {{ c.customer }}
             <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个担保分项</span>
           </div>
-          <div class="todo-card__sub" v-if="c.single">申请 {{ c.pricingItemNo }} · 当前节点 {{ c.nodeText }}</div>
-          <div class="todo-card__sub" v-else>当前节点 {{ c.nodeText }} · 需完成 {{ c.itemCount }} 个担保分项</div>
+          <div class="todo-card__sub" v-if="c.single">申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }}</div>
+          <div class="todo-card__sub" v-else>申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }} · 需完成 {{ c.itemCount }} 个担保分项</div>
           <div class="todo-card__grid">
             <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ c.rate }}{{ c.single ? '%' : '' }}</b></div>
             <div class="tc-item"><span class="dg-label">原执行利率</span><b>{{ c.originalRate }}</b></div>
@@ -67,13 +67,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listApprovalTasks, getApprovalDetail } from '@/api/approval'
+import { listVoteTodo } from '@/api/vote'
+import { useUserStore } from '@/store/user'
 import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict'
 
 const router = useRouter()
+const userStore = useUserStore()
 const todoCards = ref<any[]>([])
+// 登录角色为委员:待办走表决待办(listVoteTodo),入口与普通审批一致
+const isCommitteeMember = computed(() => (userStore.userInfo?.roles?.[0] || '') === 'committee_member')
 
 const check = ref<any>({
   show: false, loaded: false, id: null,
@@ -86,11 +91,13 @@ function statusText(s?: string) {
 
 async function load() {
   try {
-    const data = await listApprovalTasks<any[]>()
+    // 委员待办:本人待表决的批次分项(走表决待办;普通审批待办对小组节点返回空)
+    const data = isCommitteeMember.value ? await listVoteTodo<any[]>() : await listApprovalTasks<any[]>()
     // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部担保分项
     const byApp = new Map<string, any[]>()
     for (const p of data || []) {
-      const appId = p.applicationId || p.id
+      // 委员待办行含 applicationId(申请聚合,与普通审批一致);无则按分项兜底
+      const appId = p.applicationId || p.id || p.pricingItemId || p.roundId || ''
       if (!byApp.has(appId)) byApp.set(appId, [])
       byApp.get(appId)!.push(p)
     }
@@ -98,13 +105,15 @@ async function load() {
       const first = items[0]
       const rates = items.map((x) => Number(x.requestedRate) || 0)
       const single = items.length === 1
+      const keyId = isCommitteeMember.value ? first.pricingItemId : first.id
       return {
-        id: first.id, // 进入申请详情用组内第一个分项
+        id: keyId, // 进入申请详情用组内第一个分项
         applicationId: appId,
+        applicationNo: first.applicationNo || '-',
         itemCount: items.length,
         single,
-        pricingItemNo: single ? (first.pricingItemNo || first.id) : `${items.length} 个担保分项`,
-        customer: first.pricingCustomerNo || '-',
+        pricingItemNo: single ? (first.pricingItemNo || keyId) : `${items.length} 个担保分项`,
+        customer: first.pricingCustomerNo || first.customerNo || '-',
         amount: single ? (first.pricingAmount ?? '-') : items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0),
         rate: single ? (first.requestedRate ?? '-') : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}` : '-'),
         // 原执行利率按全部分项收集:有值显区间、全空显「新增业务」,不再只取第一个分项
@@ -116,10 +125,11 @@ async function load() {
         nodeText: nodeLabel(first.currentNodeCode),
         createTime: first.createTime ? String(first.createTime).replace('T', ' ').slice(0, 16) : '—',
         items: items.map((x) => ({
-          id: x.id, pricingItemNo: x.pricingItemNo || x.id,
+          id: isCommitteeMember.value ? x.pricingItemId : x.id,
+          pricingItemNo: x.pricingItemNo || x.pricingItemId || x.id,
           amount: x.pricingAmount ?? '-', rate: x.requestedRate ?? '-',
           originalRate: x.originalRate != null ? x.originalRate : '新增业务',
-          nodeCode: x.currentNodeCode, status: x.status
+          nodeCode: nodeLabel(x.currentNodeCode), status: x.status
         }))
       }
     })

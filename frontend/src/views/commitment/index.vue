@@ -40,11 +40,14 @@
         </div>
         <table class="table" v-if="customerRows.length">
           <thead>
-            <tr><th>客户号</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>有风险指标</th><th>操作</th></tr>
+            <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>有风险指标</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="c in customerRows" :key="c.customerNo">
-              <td>{{ c.customerNo }}</td>
+              <td>
+                <div>{{ c.customerNo }}</div>
+                <div v-if="c.customerName && c.customerName !== c.customerNo" class="section-tip">{{ c.customerName }}</div>
+              </td>
               <td class="num">{{ c.planCount }}</td>
               <td class="num">{{ c.metricCount }}</td>
               <td class="num">
@@ -336,6 +339,7 @@ const CURRENT_STATUS = ['PENDING', 'TRACKING', 'AT_RISK', 'DATA_PENDING']
 // ---------- 一级:按客户聚合 ----------
 interface CustomerRow {
   customerNo: string
+  customerName: string
   planCount: number
   metricCount: number
   avgRatio: number | null
@@ -351,8 +355,10 @@ const customerRows = computed<CustomerRow[]>(() => {
   }
   return [...map.entries()].map(([customerNo, list]) => {
     const ratios = list.map((r) => r.achievement_ratio).filter((v) => v != null).map((v) => Number(v) * 100)
+    const customerName = list.find((r) => r.customer_name)?.customer_name || ''
     return {
       customerNo,
+      customerName,
       planCount: new Set(list.map((r) => r.plan_no)).size,
       metricCount: list.filter((r) => r.metric_code).length,
       avgRatio: ratios.length ? Number((ratios.reduce((a, b) => a + b, 0) / ratios.length).toFixed(1)) : null,

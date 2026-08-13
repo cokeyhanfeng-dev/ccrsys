@@ -59,6 +59,8 @@ import java.util.Set;
  * 但分项不再各自独立终审/上送——
  *   权限内通过 → 该分项记「本节点已同意」但仍 ROUTING 在当前节点,暂不终审;
  *   申请内全部分项均在本节点权限内通过 → 全部一起终审(APPROVED_LEVEL,走既有终态串联);
+ *   终审节点判定:仅当前节点 = 矩阵冻结终审岗位(route_code)有权限内终审资格;
+ *   链路中间节点(强制上会场景的支行/分管)即使利率在权限内也只有过手权,整单上送下一节点;
  *   任一分项保留超权限利率通过 → 整单上送:全部 ROUTING 分项一起推进下一节点,
  *   下一节点为六人小组时走既有 createGroupRound 合批(§7.4);
  *   否决任一分项 → 整单否决:全部 ROUTING 分项置 REJECTED 并聚合主申请。
@@ -199,9 +201,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         } else {
             withinPermission = inNodePermission(businessType, effectiveRate, perm);
         }
-        // 下一节点:存款链支行过手后直上小组;贷款链按 RouteChains 上送;链终点(正常不可达)按权限内终审兜底
-        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP : RouteChains.nextNode(nodeCode);
-        boolean escalate = !withinPermission && next != null;
+        // 下一节点:存款链支行过手后直上小组;贷款链优先沿分项冻结链路(矩阵驱动,可跳过无权限节点如GM),
+        // 回退固定链;链终点(正常不可达)按权限内终审兜底
+        List<String> frozenChain = parseRouteChain(item.getRouteChain());
+        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP : RouteChains.nextNode(nodeCode, frozenChain);
+        // 终审节点判定:仅当前节点 = 矩阵冻结的终审岗位(route_code)才具备权限内终审资格;
+        // 链路中间节点(如强制上会场景的支行/分管行长)即使利率在权限内也只有知晓/过手权,须沿链上送,
+        // 避免在此截胡终审——预览为「上会+行长决策」,实际却被中间节点直接终审,前后口径不一致
+        String routeCode = item.getRouteCode();
+        boolean isFinalNode = StrUtil.isBlank(routeCode) || routeCode.equals(nodeCode);
+        boolean escalate = next != null && (!withinPermission || !isFinalNode);
 
         if (!escalate) {
             // 已通过集合:存在任意节点「权限内 APPROVE」的分项。超权限转送已用 ESCALATE 区分,
@@ -269,7 +278,8 @@ public class ApprovalServiceImpl implements ApprovalService {
             return;
         }
 
-        // 整单上送:任一分项保留超权限利率通过 → 该申请全部 ROUTING 分项一起推进下一节点
+        // 整单上送:任一分项超权限通过,或权限内但当前节点非终审岗位(链路中间节点过手)
+        // → 该申请全部 ROUTING 分项一起推进下一节点
         boolean toGroup = RouteChains.SIX_PEOPLE_GROUP.equals(next);
         updateItemWithStateAndVersion(item, next, PricingItemStatus.ROUTING.getCode(),
                 adjusted ? effectiveRate : null, null, versionNo);
@@ -287,12 +297,55 @@ public class ApprovalServiceImpl implements ApprovalService {
                     || !nodeCode.equals(sibling.getCurrentNodeCode())) {
                 continue;
             }
-            updateSiblingWholeOrder(sibling, next, PricingItemStatus.ROUTING.getCode(), null, null);
-            insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
-                    "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[" + next + "]",
-                    sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
-                    PricingItemStatus.ROUTING.getCode(),
-                    toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
+            // 存款双轨消除(§7.3):任一超上限整单上会,全部分项无条件推进小组,与 D16b 一致
+            if (deposit) {
+                updateSiblingWholeOrder(sibling, RouteChains.SIX_PEOPLE_GROUP,
+                        PricingItemStatus.ROUTING.getCode(), null, null);
+                insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
+                        "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[SIX_PEOPLE_GROUP]",
+                        sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.VOTING.getCode()));
+                continue;
+            }
+            // 贷款按 sibling 自身 route_code 分流(用户拍板:小组只审批自身权限内的分项):
+            // 当前节点即该 sibling 冻结终审岗位(route_code==当前节点)且利率权限内 → 就地终审,
+            // 不随触发分项连带进小组、不建表决轮次;其余 sibling 沿自身 route_chain 推进
+            String siblingRouteCode = sibling.getRouteCode();
+            boolean siblingFinal = StrUtil.isBlank(siblingRouteCode) || siblingRouteCode.equals(nodeCode);
+            boolean siblingWithin = inNodePermission(businessType, sibling.getCurrentApprovalRate(), perm);
+            if (siblingFinal && siblingWithin) {
+                updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
+                        sibling.getCurrentApprovalRate(), null);
+                insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
+                        "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项在节点["
+                                + nodeCode + "]权限内通过就地终审",
+                        sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
+                // 终态串联(决议+承诺计划+主申请聚合,异常不阻断主流程)
+                itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
+            } else {
+                List<String> siblingChain = parseRouteChain(sibling.getRouteChain());
+                String siblingNext = RouteChains.nextNode(nodeCode, siblingChain);
+                if (siblingNext == null) {
+                    // 链路已尽且当前节点非终审岗位的异常口径:按权限内就地终审兜底,避免分项悬挂
+                    updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
+                            sibling.getCurrentApprovalRate(), null);
+                    insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
+                            "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项链路已尽就地终审兜底",
+                            sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                            PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
+                    itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
+                } else {
+                    boolean siblingToGroup = RouteChains.SIX_PEOPLE_GROUP.equals(siblingNext);
+                    updateSiblingWholeOrder(sibling, siblingNext, PricingItemStatus.ROUTING.getCode(), null, null);
+                    insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
+                            "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至["
+                                    + siblingNext + "]",
+                            sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
+                            PricingItemStatus.ROUTING.getCode(),
+                            siblingToGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
+                }
+            }
         }
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
         warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "APPROVE",
@@ -404,10 +457,40 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         wrapper.orderByDesc(CcrApplication::getCreateTime);
         Page<CcrApplication> result = applicationMapper.selectPage(page, wrapper);
+        // 决议书可用性:仅已签发决议的申请提供决议书下载(前端"决议书"按钮显隐)
+        markHasResolution(result.getRecords());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("total", result.getTotal());
         data.put("records", result.getRecords());
         return data;
+    }
+
+    /** 批量标记申请是否有已签发决议(一次 IN 查询避免 N+1) */
+    private void markHasResolution(List<CcrApplication> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        StringBuilder in = new StringBuilder();
+        for (CcrApplication r : records) {
+            if (in.length() > 0) {
+                in.append(',');
+            }
+            in.append(r.getId());
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT pi.application_id applicationId FROM ccr_resolution r"
+                        + " JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " WHERE pi.application_id IN (" + in + ") AND r.del_flag = '0' GROUP BY pi.application_id");
+        Set<Long> hasResolution = new LinkedHashSet<>();
+        for (Map<String, Object> row : rows) {
+            Object v = row.get("applicationId");
+            if (v != null) {
+                hasResolution.add(((Number) v).longValue());
+            }
+        }
+        for (CcrApplication r : records) {
+            r.setHasResolution(hasResolution.contains(r.getId()));
+        }
     }
 
     @Override
@@ -454,19 +537,34 @@ public class ApprovalServiceImpl implements ApprovalService {
             result.put("qualityResults", List.of());
         }
 
-        // 审批轨迹 + 调价记录
+        // 审批轨迹 + 调价记录(动作补处理人姓名,与审批详情 flowTrace 同口径)
         result.put("approvalActions", jdbcTemplate.queryForList(
-                "SELECT aa.* FROM ccr_approval_action aa JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id WHERE pi.application_id = ? AND aa.del_flag = '0' ORDER BY aa.operation_time", applicationId));
+                "SELECT aa.*, u.nick_name operatorName FROM ccr_approval_action aa"
+                        + " JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id"
+                        + " LEFT JOIN ccr_sys_user u ON u.id = aa.operator_id"
+                        + " WHERE pi.application_id = ? AND aa.del_flag = '0' ORDER BY aa.operation_time", applicationId));
         result.put("rateAdjustments", jdbcTemplate.queryForList(
                 "SELECT ra.* FROM ccr_rate_adjustment ra JOIN ccr_pricing_item pi ON pi.id = ra.pricing_item_id WHERE pi.application_id = ? AND ra.del_flag = '0' ORDER BY ra.operation_time", applicationId));
 
         // 表决汇总(只到计票结果粒度,不返回票据明细,保持委员匿名)
-        result.put("voteRounds", jdbcTemplate.queryForList(
-                "SELECT id, round_no roundNo, round_name roundName, status, voter_count voterCount, required_count requiredCount, round_start_time roundStartTime, round_end_time roundEndTime FROM ccr_vote_round WHERE application_id = ? AND del_flag = '0' ORDER BY round_no", applicationId));
-        result.put("voteResults", jdbcTemplate.queryForList(
-                "SELECT vr.round_id roundId, vr.pricing_item_id pricingItemId, vr.approve_count approveCount, vr.reject_count rejectCount, vr.result, vr.count_time countTime FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id WHERE pi.application_id = ? AND vr.del_flag = '0'", applicationId));
-        result.put("presidentDecisions", jdbcTemplate.queryForList(
-                "SELECT pd.pricing_item_id pricingItemId, pd.decision, pd.opinion, pd.decision_time decisionTime FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id WHERE pi.application_id = ? AND pd.del_flag = '0'", applicationId));
+        // 保密性(§12.7/T4-02/T4-10):表决统计(轮次/计票/行长决策)仅行长·审计·超管可见;
+        // 审批过程与档案对委员/审批人隐藏票数与表决进度,后台自动计票,只有行长能查汇总
+        String roleCode = user.getRoleCode();
+        boolean voteVisible = CurrentLoginUser.ROLE_PRESIDENT.equals(roleCode)
+                || CurrentLoginUser.ROLE_AUDITOR.equals(roleCode)
+                || CurrentLoginUser.ROLE_ADMIN.equals(roleCode);
+        if (voteVisible) {
+            result.put("voteRounds", jdbcTemplate.queryForList(
+                    "SELECT id, round_no roundNo, round_name roundName, status, voter_count voterCount, required_count requiredCount, round_start_time roundStartTime, round_end_time roundEndTime FROM ccr_vote_round WHERE application_id = ? AND del_flag = '0' ORDER BY round_no", applicationId));
+            result.put("voteResults", jdbcTemplate.queryForList(
+                    "SELECT vr.round_id roundId, vr.pricing_item_id pricingItemId, vr.approve_count approveCount, vr.reject_count rejectCount, vr.result, vr.count_time countTime FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id WHERE pi.application_id = ? AND vr.del_flag = '0'", applicationId));
+            result.put("presidentDecisions", jdbcTemplate.queryForList(
+                    "SELECT pd.pricing_item_id pricingItemId, pd.decision, pd.opinion, pd.decision_time decisionTime FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id WHERE pi.application_id = ? AND pd.del_flag = '0'", applicationId));
+        } else {
+            result.put("voteRounds", List.of());
+            result.put("voteResults", List.of());
+            result.put("presidentDecisions", List.of());
+        }
 
         // 决议 + 执行核验
         result.put("resolutions", jdbcTemplate.queryForList(
@@ -500,8 +598,432 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 拟达成贡献度(申请承诺指标,按申请关联 §十三 13.2-6;成员级含成员客户号)
         result.put("commitments", jdbcTemplate.queryForList(
-                "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? ORDER BY id", applicationId));
+                "SELECT metric_code metricCode, target_type targetType, baseline_value baselineValue, target_value targetValue, unit, metric_scope metricScope, member_customer_no memberCustomerNo, commitment_desc commitmentDesc, end_date endDate FROM ccr_application_commitment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
+
+        // 申请内容留痕(§14.4 档案完整保留,与审批详情同口径):客户/融资/贡献度(提交快照优先+人工修正)、
+        // 授信信息、担保分项、他行融资、申请附件、集团信息、机构达成
+        assembleApplicationContent(result, application, applicationId);
         return result;
+    }
+
+    // ==================== 档案申请内容留痕组装(§14.4) ====================
+
+    /**
+     * 档案申请内容留痕:与审批详情 detail 同口径组装客户/融资/贡献度/授信/担保/他行融资/附件/集团/机构达成。
+     * 客户级信息优先读提交冻结快照(保留当时数据),无快照降级数仓实时,再叠加 customer_info_json 人工修正;
+     * 授信协议合并 credit_info_json 补录与数仓协议(同号去重)。
+     */
+    private void assembleApplicationContent(Map<String, Object> result, Map<String, Object> application, Long applicationId) {
+        Object custNo = application.get("customer_no");
+        String custNoStr = custNo == null ? "" : custNo.toString();
+        Object bundleId = application.get("snapshot_bundle_id");
+        List<Map<String, Object>> snapshotRecords = bundleId == null ? List.of()
+                : jdbcTemplate.queryForList(
+                        "SELECT subject_type subjectType, subject_id subjectId, source_data_dt sourceDataDt, core_json coreJson"
+                                + " FROM ccr_snapshot_record WHERE bundle_id = ? AND del_flag = '0'", bundleId);
+        if (!snapshotRecords.isEmpty()) {
+            result.put("source", "SNAPSHOT");
+            result.put("snapshotInfo", snapshotInfo(bundleId, snapshotRecords));
+            result.put("customer", snapshotCustomer(snapshotRecords, custNoStr));
+            result.put("financing", snapshotFinancing(snapshotRecords, custNoStr));
+            result.put("contribution", snapshotContribution(snapshotRecords, custNoStr));
+        } else {
+            result.put("source", "REALTIME");
+            result.put("customer", realtimeCustomer(custNoStr));
+            result.put("financing", realtimeFinancing(custNoStr));
+            result.put("contribution", realtimeContribution(custNoStr));
+        }
+        // 客户信息人工修正(ccr_application.customer_info_json):数仓带出后人工调整/新增客户手工录入,档案保留人工值
+        applyCustomerOverride(result, application);
+        // 授信信息(credit_info_json 补录 + 数仓协议合并去重)
+        result.put("creditAgreements", mergeCreditAgreements(application, custNoStr));
+        // 担保分项明细(按分项挂载,前端定价分项表内嵌展示)
+        result.put("guaranteesByItem", guaranteesByItem(applicationId));
+        // 他行融资(申请人工补录/Excel 导入 + 数仓征信,最新批次)
+        result.put("otherLoanSummary", jdbcTemplate.queryForList(
+                "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNoStr));
+        result.put("otherLoans", jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNoStr, custNoStr));
+        result.put("appOtherLoans", jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
+        // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
+        result.put("attachments", jdbcTemplate.queryForList(
+                "SELECT id, file_name fileName, file_size fileSize, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
+        // 集团信息(集团授信总额/到期日 + 集团贡献度,仅集团场景)
+        Object groupNo = application.get("group_no");
+        if (groupNo != null && StrUtil.isNotBlank(groupNo.toString())) {
+            String gno = groupNo.toString();
+            result.put("groupCredit", jdbcTemplate.queryForList(
+                    "SELECT approved_total_amount approvedTotalAmount, allocated_amount allocatedAmount, used_amount usedAmount, available_amount availableAmount, credit_start creditStart, credit_end creditEnd, credit_status creditStatus FROM dw_group_credit_snapshot WHERE group_no = ? ORDER BY data_dt DESC LIMIT 1", gno));
+            result.put("groupContribution", jdbcTemplate.queryForList(
+                    "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric"
+                            + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP'"
+                            + " AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric"
+                            + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP')",
+                    gno, gno));
+        } else {
+            result.put("groupCredit", List.of());
+            result.put("groupContribution", List.of());
+        }
+        // 机构达成(申请机构最新批次)
+        result.put("orgPerformance", orgPerformance(applicationId));
+    }
+
+    /** 快照信息(bundle_no/freeze_time/数据日期,数据日期=记录最大 source_data_dt) */
+    private Map<String, Object> snapshotInfo(Object bundleId, List<Map<String, Object>> records) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<Map<String, Object>> bundles = jdbcTemplate.queryForList(
+                "SELECT bundle_no bundleNo, freeze_time freezeTime FROM ccr_snapshot_bundle WHERE id = ?", bundleId);
+        if (!bundles.isEmpty()) {
+            info.put("bundleNo", bundles.get(0).get("bundleNo"));
+            info.put("freezeTime", bundles.get(0).get("freezeTime"));
+        }
+        records.stream().map(r -> r.get("sourceDataDt")).filter(Objects::nonNull)
+                .map(Object::toString).max(String::compareTo)
+                .ifPresent(dt -> info.put("dataDt", dt));
+        return info;
+    }
+
+    /** 快照内客户基本信息(CORPORATE/INDIVIDUAL 记录 core_json,字段与实时降级口径一致) */
+    private List<Map<String, Object>> snapshotCustomer(List<Map<String, Object>> records, String custNo) {
+        Map<String, Object> corp = null;
+        Map<String, Object> indv = null;
+        for (Map<String, Object> record : records) {
+            if (!custNo.equals(record.get("subjectId"))) {
+                continue;
+            }
+            if ("CORPORATE".equals(record.get("subjectType"))) {
+                corp = coreOf(record);
+            } else if ("INDIVIDUAL".equals(record.get("subjectType"))) {
+                indv = coreOf(record);
+            }
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        if (corp != null) {
+            row.put("customerNo", corp.get("cust_no"));
+            row.put("customerName", corp.get("cust_name"));
+            row.put("certNo", corp.get("cert_no"));
+            row.put("entpCharic", corp.get("entp_charic"));
+            row.put("entpScale", corp.get("entp_scale"));
+            row.put("industry", corp.get("blgd_idsty"));
+            row.put("creditLevel", corp.get("crdt_grd"));
+            row.put("fiveLevelClass", corp.get("ffthlv_class"));
+            row.put("empeNum", corp.get("entp_empe_num"));
+            row.put("totalAssets", corp.get("rest_asts"));
+            row.put("registeredCapital", corp.get("reg_cap"));
+            row.put("estbDate", corp.get("estp_estb_dt"));
+            row.put("restAddr", corp.get("rest_addr"));
+            row.put("openOrgName", corp.get("openact_org_nm"));
+            row.put("openDate", corp.get("openact_dt"));
+            row.put("customerClass", corp.get("cust_class"));
+            row.put("custType", "CORP");
+            row.put("dataSource", corp.get("data_source"));
+            return List.of(row);
+        }
+        if (indv != null) {
+            row.put("customerNo", indv.get("cust_no"));
+            row.put("customerName", indv.get("cust_nm"));
+            row.put("certType", indv.get("cert_tp"));
+            row.put("certNo", indv.get("cert_no"));
+            row.put("gender", indv.get("gnd"));
+            row.put("occupation", indv.get("ocupn"));
+            row.put("annualIncome", indv.get("whlyr_incm"));
+            row.put("maritalStatus", indv.get("mrrg_sittn"));
+            row.put("address", indv.get("rsd_addr"));
+            row.put("phone", indv.get("tel_no"));
+            row.put("openOrgName", indv.get("opnact_org_nm"));
+            row.put("openDate", indv.get("opnact_dt"));
+            row.put("fiveLevelClass", indv.get("ffthlv_class"));
+            row.put("customerClass", indv.get("cust_class"));
+            row.put("custType", "INDIV");
+            row.put("dataSource", indv.get("data_source"));
+            return List.of(row);
+        }
+        return List.of();
+    }
+
+    /** 快照内本行融资(CONTRACT/FINANCING 记录,按借款客户过滤,core_json 字段归一) */
+    private List<Map<String, Object>> snapshotFinancing(List<Map<String, Object>> records, String custNo) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map<String, Object> record : records) {
+            Object subjectType = record.get("subjectType");
+            if (!"FINANCING".equals(subjectType) && !"CONTRACT".equals(subjectType)) {
+                continue;
+            }
+            Map<String, Object> core = coreOf(record);
+            Object coreCust = jsonSafe(core.get("borrower_customer_no"));
+            if (coreCust == null) {
+                coreCust = jsonSafe(core.get("cust_no"));
+            }
+            if (!custNo.equals(coreCust)) {
+                continue;
+            }
+            Object loanBalance = jsonSafe(core.get("loan_balance"));
+            if (loanBalance == null) {
+                loanBalance = jsonSafe(core.get("contract_balance"));
+            }
+            Object contractRate = jsonSafe(core.get("contract_rate"));
+            if (contractRate == null) {
+                contractRate = jsonSafe(core.get("execution_rate"));
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("contractNo", jsonSafe(core.get("contract_no")));
+            row.put("agreementNo", jsonSafe(core.get("agreement_no")));
+            row.put("trancheNo", jsonSafe(core.get("tranche_no")));
+            row.put("contractAmount", jsonSafe(core.get("contract_amount")));
+            row.put("loanBalance", loanBalance);
+            row.put("contractRate", contractRate);
+            row.put("rateType", jsonSafe(core.get("rate_type")));
+            row.put("lprTerm", jsonSafe(core.get("lpr_term")));
+            row.put("startDate", jsonSafe(core.get("start_date")));
+            row.put("maturityDate", jsonSafe(core.get("maturity_date")));
+            row.put("contractStatus", jsonSafe(core.get("contract_status")));
+            row.put("currency", jsonSafe(core.get("currency")));
+            row.put("guaranteeType", jsonSafe(core.get("guarantee_type")));
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /** 快照内贡献度(CONTRIBUTION 记录 core_json.metrics 数组) */
+    private List<Map<String, Object>> snapshotContribution(List<Map<String, Object>> records, String custNo) {
+        for (Map<String, Object> record : records) {
+            if (!"CONTRIBUTION".equals(record.get("subjectType")) || !custNo.equals(record.get("subjectId"))) {
+                continue;
+            }
+            Object metrics = coreOf(record).get("metrics");
+            if (!(metrics instanceof List<?> list)) {
+                return List.of();
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Object m : list) {
+                if (!(m instanceof Map<?, ?> metric)) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("metricCode", metric.get("metric_code"));
+                row.put("metricName", metric.get("metric_name"));
+                row.put("metricValue", metric.get("metric_value"));
+                row.put("valueType", metric.get("value_type"));
+                rows.add(row);
+            }
+            return rows;
+        }
+        return List.of();
+    }
+
+    /** 解析快照 core_json(JSON 列查询结果为字符串) */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> coreOf(Map<String, Object> record) {
+        Object coreJson = record.get("coreJson");
+        if (coreJson == null) {
+            return Map.of();
+        }
+        if (coreJson instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return JSONUtil.parseObj(coreJson.toString());
+    }
+
+    /** Hutool JSON 解析 null 值为 JSONNull 包装对象,统一转 Java null */
+    private static Object jsonSafe(Object v) {
+        return (v instanceof cn.hutool.json.JSONNull) ? null : v;
+    }
+
+    /** 降级:数仓实时客户基本信息(对公/对私) */
+    private List<Map<String, Object>> realtimeCustomer(String custNo) {
+        if (StrUtil.isBlank(custNo)) {
+            return List.of();
+        }
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT cust_no customerNo, cust_name customerName, cert_no certNo, entp_charic entpCharic, entp_scale entpScale,"
+                        + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass, entp_empe_num empeNum,"
+                        + " rest_asts totalAssets, estp_estb_dt estbDate, rest_addr restAddr, openact_org_nm openOrgName,"
+                        + " openact_dt openDate, cust_class customerClass, 'CORP' custType"
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo);
+        if (!corp.isEmpty()) {
+            return corp;
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo,"
+                        + " gnd gender, ocupn occupation, whlyr_incm annualIncome, mrrg_sittn maritalStatus, rsd_addr address,"
+                        + " tel_no phone, opnact_org_nm openOrgName, opnact_dt openDate, ffthlv_class fiveLevelClass,"
+                        + " cust_class customerClass, 'INDIV' custType"
+                        + " FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo);
+    }
+
+    /** 降级:数仓实时本行融资(贷款合同最新快照) */
+    private List<Map<String, Object>> realtimeFinancing(String custNo) {
+        if (StrUtil.isBlank(custNo)) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT contract_no contractNo, agreement_no agreementNo, tranche_no trancheNo, borrower_customer_no borrowerCustomerNo,"
+                        + " contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType, currency,"
+                        + " execution_rate contractRate, rate_type rateType, lpr_term lprTerm, start_date startDate,"
+                        + " maturity_date maturityDate, contract_status contractStatus, contract_version contractVersion"
+                        + " FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?", custNo);
+    }
+
+    /** 降级:数仓实时贡献度 */
+    private List<Map<String, Object>> realtimeContribution(String custNo) {
+        if (StrUtil.isBlank(custNo)) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType FROM dw_contribution_metric WHERE cust_no = ?", custNo);
+    }
+
+    /** 客户信息人工修正(customer_info_json):人工值覆盖基线,新增客户(无基线)即唯一来源 */
+    private void applyCustomerOverride(Map<String, Object> result, Map<String, Object> application) {
+        Object ciObj = application.get("customer_info_json");
+        if (ciObj == null || ciObj.toString().isBlank()) {
+            return;
+        }
+        JSONObject manual;
+        try {
+            manual = JSONUtil.parseObj(ciObj.toString());
+        } catch (Exception e) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> custList = (List<Map<String, Object>>) result.get("customer");
+        if (custList == null) {
+            custList = new ArrayList<>();
+        }
+        boolean manualOnly = custList.isEmpty()
+                || "MANUAL".equals(custList.get(0).get("dataSource"));
+        Map<String, Object> row = manualOnly ? new LinkedHashMap<>() : custList.get(0);
+        overwriteCustomer(row, manual, "customerNo", "customerNo", false);
+        overwriteCustomer(row, manual, "customerName", "customerName", false);
+        if ("INDV".equals(manual.getStr("custType"))) {
+            overwriteCustomer(row, manual, "idNo", "certNo", true);
+        } else {
+            overwriteCustomer(row, manual, "ucrCode", "certNo", true);
+        }
+        overwriteCustomer(row, manual, "idType", "certType", true);
+        overwriteCustomer(row, manual, "fiveLevelClass", "fiveLevelClass", true);
+        overwriteCustomer(row, manual, "creditLevel", "creditLevel", true);
+        overwriteCustomer(row, manual, "industry", "industry", true);
+        overwriteCustomer(row, manual, "registeredCapital", "registeredCapital", true);
+        overwriteCustomer(row, manual, "occupation", "occupation", true);
+        overwriteCustomer(row, manual, "annualIncome", "annualIncome", true);
+        overwriteCustomer(row, manual, "maritalStatus", "maritalStatus", true);
+        overwriteCustomer(row, manual, "phone", "phone", true);
+        overwriteCustomer(row, manual, "openOrg", "openOrgName", true);
+        overwriteCustomer(row, manual, "openDate", "openDate", true);
+        if (manualOnly) {
+            row.put("custType", "CORP".equals(manual.getStr("custType")) ? "CORP" : "INDIV");
+            row.put("source", "MANUAL");
+            if (custList.isEmpty()) {
+                custList.add(row);
+            }
+            result.put("customer", custList);
+            result.put("source", "MANUAL");
+        } else {
+            row.put("source", "MANUAL_OVERRIDE");
+            result.put("source", "MANUAL_OVERRIDE");
+        }
+    }
+
+    /** 单字段人工修正覆盖(allowBlank=false 仅非空覆盖;true 含空覆盖,以人工为准) */
+    private void overwriteCustomer(Map<String, Object> row, JSONObject manual, String srcKey, String targetKey, boolean allowBlank) {
+        Object v = manual.get(srcKey);
+        if (v == null) {
+            return;
+        }
+        if (allowBlank || StrUtil.isNotBlank(v.toString())) {
+            row.put(targetKey, v);
+        }
+    }
+
+    /** 授信协议合并:credit_info_json 补录(来源 APPLICATION)在前 + 数仓协议(同号去重);补录协议号可空时不去重 */
+    private List<Map<String, Object>> mergeCreditAgreements(Map<String, Object> application, String custNo) {
+        List<Map<String, Object>> agreements = jdbcTemplate.queryForList(
+                "SELECT agreement_no agreementNo, agreement_type agreementType, credit_amount creditAmount, used_amount usedAmount, available_amount availableAmount, currency, start_date startDate, end_date endDate, agreement_status agreementStatus FROM dw_credit_agreement_snapshot WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot WHERE customer_no = ?) ORDER BY agreement_no", custNo, custNo);
+        Object creditInfoJson = application.get("credit_info_json");
+        if (creditInfoJson == null || creditInfoJson.toString().isBlank()) {
+            return agreements;
+        }
+        JSONObject ci;
+        try {
+            ci = JSONUtil.parseObj(creditInfoJson.toString());
+        } catch (Exception e) {
+            return agreements;
+        }
+        Map<String, Object> manual = new LinkedHashMap<>();
+        manual.put("agreementNo", ci.getStr("agreementNo"));
+        manual.put("agreementType", ci.getStr("agreementType"));
+        manual.put("creditAmount", ci.get("creditAmount"));
+        manual.put("usedAmount", ci.get("usedAmount"));
+        manual.put("availableAmount", ci.get("availableAmount"));
+        manual.put("currency", ci.getStr("currency"));
+        manual.put("startDate", ci.getStr("startDate"));
+        manual.put("endDate", ci.getStr("endDate"));
+        manual.put("agreementStatus", ci.getStr("agreementStatus"));
+        manual.put("source", "APPLICATION");
+        List<Map<String, Object>> merged = new ArrayList<>();
+        // 空壳补录(除 currency 外协议要素全空)不展示,避免档案授信区出现整行"--"(仅业务类型/币种等路由字段落库)
+        if (!isShellAgreement(manual)) {
+            merged.add(manual);
+        }
+        String manualNo = manual.get("agreementNo") == null ? null : manual.get("agreementNo").toString();
+        for (Map<String, Object> row : agreements) {
+            Object no = row.get("agreementNo");
+            String rowNo = no == null ? null : no.toString();
+            if (manualNo == null || manualNo.isEmpty()) {
+                merged.add(row);
+            } else if (!manualNo.equals(rowNo)) {
+                merged.add(row);
+            }
+        }
+        return merged;
+    }
+
+    /** 空壳补录判定:补录行除 currency 外协议要素(编号/类型/额度/起止/状态)全空,视为无实质内容(仅路由字段落库),不展示 */
+    private boolean isShellAgreement(Map<String, Object> manual) {
+        for (String k : new String[]{"agreementNo", "agreementType", "creditAmount", "usedAmount",
+                "availableAmount", "startDate", "endDate", "agreementStatus"}) {
+            Object v = manual.get(k);
+            if (v != null && !v.toString().isBlank()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 担保分项明细:同申请全部分项的担保包与措施,按 pricing_item_id 聚合 */
+    private Map<Object, List<Map<String, Object>>> guaranteesByItem(Long applicationId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT gp.pricing_item_id pricingItemId, gp.main_guarantee_type guaranteeType, gp.package_version packageVersion,"
+                        + " gm.measure_no measureNo, gm.measure_type measureType, gm.guarantee_amount guaranteeAmount, gm.ext_json extJson"
+                        + " FROM ccr_guarantee_package gp"
+                        + " LEFT JOIN ccr_guarantee_measure gm ON gm.package_id = gp.id"
+                        + " JOIN ccr_pricing_item pi ON pi.id = gp.pricing_item_id"
+                        + " WHERE pi.application_id = ? AND gp.del_flag = '0' AND gm.del_flag = '0' ORDER BY gp.id, gm.measure_no", applicationId);
+        Map<Object, List<Map<String, Object>>> byItem = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            byItem.computeIfAbsent(row.get("pricingItemId"), k -> new ArrayList<>()).add(row);
+        }
+        return byItem;
+    }
+
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.dept_code → 数仓最新批次 */
+    private List<Map<String, Object>> orgPerformance(Long appId) {
+        if (appId == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> orgCodes = jdbcTemplate.queryForList(
+                "SELECT d.dept_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
+                        + " WHERE a.id = ? AND d.del_flag = '0'", appId);
+        if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT org_code orgCode, stat_month statMonth, achieved_amount achievedAmount,"
+                        + " expected_amount expectedAmount, completion_rate completionRate, data_dt dataDt"
+                        + " FROM dw_org_performance_snapshot WHERE org_code = ?"
+                        + " ORDER BY data_dt DESC LIMIT 1", orgCodes.get(0).get("orgCode"));
     }
 
     /** 关联人信息补全(§12.4④):按 relatedCustomerNo 批量反查基本信息(caps_corp/indv)+授信信息(授信协议数/本行贷款余额) */
@@ -687,6 +1209,19 @@ public class ApprovalServiceImpl implements ApprovalService {
             filtered.add(item);
         }
         return filtered;
+    }
+
+    /** 解析分项冻结的完整审批链路(JSON数组);空/异常返回空列表(推进时回退贷款固定链) */
+    private List<String> parseRouteChain(String routeChainJson) {
+        if (StrUtil.isBlank(routeChainJson)) {
+            return List.of();
+        }
+        try {
+            return JSONUtil.parseArray(routeChainJson).toList(String.class);
+        } catch (Exception e) {
+            log.warn("分项 route_chain 解析失败,回退贷款固定链: {}", routeChainJson);
+            return List.of();
+        }
     }
 
     /** 节点审批人配置校验(§5.5.1):配置了有效指派时,仅解析出的处理人可通过/否决 */

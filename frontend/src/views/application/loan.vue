@@ -67,10 +67,7 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">客户性质</label>
-            <select class="form-select" v-model="form.customerNature">
-              <option value="EXISTING">存量客户(有历史贷款余额)</option>
-              <option value="NEW">新增客户(无历史贷款余额)</option>
-            </select>
+            <input class="form-input" :value="customerNatureText" readonly placeholder="选客户后自动判定" />
           </div>
         </template>
       </div>
@@ -177,7 +174,7 @@
         <template v-else>
           <div class="form-field">
             <label class="form-field__label">证件类型</label>
-            <input class="form-input" v-model="form.idType" placeholder="数仓带出,可修改" />
+            <input class="form-input" :value="certTypeText(form.idType)" placeholder="数仓带出" readonly />
           </div>
           <div class="form-field">
             <label class="form-field__label">证件号码</label>
@@ -334,90 +331,112 @@
       <div class="credit-overview">
         <div class="credit-overview__item">
           <span>授信协议</span>
-          <select class="form-select" style="min-width:300px" v-model="form.creditAgreementNo" @change="onAgreementSelect">
-            <option value="" disabled>选择授信协议</option>
+          <select class="form-select" v-model="form.creditAgreementNo" @change="onAgreementSelect"
+                  :disabled="form.businessType === 'NEW'">
+            <option value="" disabled>{{ form.businessType === 'NEW' ? '新增授信:协议资料请手工录入' : '选择授信协议' }}</option>
             <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
               {{ a.agreementNo }} · {{ agreementTypeText(a.agreementType) }} · {{ a.creditAmount }} 万
             </option>
           </select>
         </div>
         <template v-if="form.businessType === 'EXISTING' && selectedAgreement">
-          <div class="credit-overview__item"><span>授信协议号</span><b>{{ form.creditInfo.agreementNo }}</b></div>
+          <div class="credit-overview__item credit-overview__item--static"><span>授信协议号</span><b>{{ form.creditInfo.agreementNo }}</b></div>
           <div class="credit-overview__item">
             <span>授信类型</span>
-            <input class="form-input" style="width:140px" v-model="form.creditInfo.agreementType" placeholder="可修正" />
+            <input class="form-input" v-model="form.creditInfo.agreementType" placeholder="可修正" />
           </div>
           <div class="credit-overview__item">
             <span>币种</span>
-            <input class="form-input" style="width:80px" v-model="form.creditInfo.currency" placeholder="CNY" />
+            <input class="form-input" v-model="form.creditInfo.currency" placeholder="CNY" />
           </div>
           <div class="credit-overview__item">
             <span>协议状态</span>
-            <input class="form-input" style="width:110px" v-model="form.creditInfo.agreementStatus" placeholder="可修正" />
+            <input class="form-input" v-model="form.creditInfo.agreementStatus" placeholder="可修正" />
           </div>
           <div class="credit-overview__item">
             <span>授信额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.creditAmount" />
+            <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" />
           </div>
           <div class="credit-overview__item">
             <span>已用额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.usedAmount" />
+            <input class="form-input form-input--amount" v-model="form.creditInfo.usedAmount" />
           </div>
           <div class="credit-overview__item">
             <span>可用额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.availableAmount" />
+            <input class="form-input form-input--amount" v-model="form.creditInfo.availableAmount" />
           </div>
-          <div class="credit-overview__item">
+          <div class="credit-overview__item credit-overview__item--date">
             <span>协议期限</span>
-            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.startDate" /> 至
-            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.endDate" />
+            <div class="credit-overview__range">
+              <input class="form-input" type="date" v-model="form.creditInfo.startDate" />
+              <span class="credit-overview__range-sep">至</span>
+              <input class="form-input" type="date" v-model="form.creditInfo.endDate" />
+            </div>
           </div>
         </template>
+        <!-- 存量调息但未选中协议:授信要素手工补录(完整字段,可修正) -->
+        <template v-else-if="form.businessType === 'EXISTING'">
+          <div class="credit-overview__item">
+            <span>授信协议号</span>
+            <input class="form-input" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
+          </div>
+          <div class="credit-overview__item">
+            <span>授信类型</span>
+            <input class="form-input" v-model="form.creditInfo.agreementType" placeholder="手工录入" />
+          </div>
+          <div class="credit-overview__item">
+            <span>币种</span>
+            <input class="form-input" v-model="form.creditInfo.currency" placeholder="CNY" />
+          </div>
+          <div class="credit-overview__item">
+            <span>协议状态</span>
+            <input class="form-input" v-model="form.creditInfo.agreementStatus" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item">
+            <span>授信额度(万元)</span>
+            <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" placeholder="手工录入" />
+          </div>
+          <div class="credit-overview__item">
+            <span>已用额度(万元)</span>
+            <input class="form-input form-input--amount" v-model="form.creditInfo.usedAmount" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item">
+            <span>可用额度(万元)</span>
+            <input class="form-input form-input--amount" v-model="form.creditInfo.availableAmount" placeholder="可空" />
+          </div>
+          <div class="credit-overview__item credit-overview__item--date">
+            <span>协议期限</span>
+            <div class="credit-overview__range">
+              <input class="form-input" type="date" v-model="form.creditInfo.startDate" />
+              <span class="credit-overview__range-sep">至</span>
+              <input class="form-input" type="date" v-model="form.creditInfo.endDate" />
+            </div>
+          </div>
+        </template>
+        <!-- 新增授信:授信只需授信总额/协议编号/授信类型(下拉)3要素,其余要素留待协议生效后维护(§用户要求) -->
         <template v-else>
           <div class="credit-overview__item">
             <span>授信协议号</span>
-            <input class="form-input" style="width:160px" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
+            <input class="form-input" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
           </div>
           <div class="credit-overview__item">
             <span>授信类型</span>
-            <input class="form-input" style="width:140px" v-model="form.creditInfo.agreementType" placeholder="手工录入" />
-          </div>
-          <div class="credit-overview__item">
-            <span>币种</span>
-            <input class="form-input" style="width:80px" v-model="form.creditInfo.currency" placeholder="CNY" />
-          </div>
-          <div class="credit-overview__item">
-            <span>协议状态</span>
-            <input class="form-input" style="width:110px" v-model="form.creditInfo.agreementStatus" placeholder="可空" />
-          </div>
-          <div class="credit-overview__item">
-            <span>授信额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.creditAmount" placeholder="手工录入" />
-          </div>
-          <div class="credit-overview__item">
-            <span>已用额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.usedAmount" placeholder="可空" />
-          </div>
-          <div class="credit-overview__item">
-            <span>可用额度(万元)</span>
-            <input class="form-input form-input--amount" style="width:120px" v-model="form.creditInfo.availableAmount" placeholder="可空" />
-          </div>
-          <div class="credit-overview__item">
-            <span>协议期限</span>
-            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.startDate" /> 至
-            <input class="form-input" style="width:130px" type="date" v-model="form.creditInfo.endDate" />
+            <select class="form-select" v-model="form.creditInfo.agreementType">
+              <option value="" disabled>选择授信类型</option>
+              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
+            </select>
           </div>
         </template>
         <div class="credit-overview__item">
           <span>总授信额度(万元)</span>
-          <input class="form-input form-input--amount" style="width:160px" v-model="form.totalCredit" placeholder="授信额度带出或手工" />
+          <input class="form-input form-input--amount" v-model="form.totalCredit" placeholder="授信额度带出或手工" />
         </div>
-        <div class="credit-overview__item">
+        <div class="credit-overview__item credit-overview__item--static">
           <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
         </div>
         <template v-if="form.customerScope === 'GROUP'">
-          <div class="credit-overview__item"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
-          <div class="credit-overview__item"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
+          <div class="credit-overview__item credit-overview__item--static"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
+          <div class="credit-overview__item credit-overview__item--static"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
         </template>
       </div>
 
@@ -620,56 +639,59 @@
       <ContributionPanel :contribution="contributionCurrent" :show-commitments="false" />
 
       <div class="sub-title">拟达成承诺</div>
-      <table class="table" v-if="commitments.length">
-        <thead>
-          <tr>
-            <th>承诺指标 <span class="req">*</span></th>
-            <th>当前贡献度</th>
-            <th>目标类型 <span class="req">*</span></th>
-            <th>基线值</th><th>拟达成目标 <span class="req">*</span></th>
-            <th>截止日期</th><th>单位</th><th>适用范围</th>
-            <th v-if="form.customerScope === 'GROUP'">成员</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(c, i) in commitments" :key="i">
-            <td>
+      <div v-if="commitments.length" class="commitment-list">
+        <div v-for="(c, i) in commitments" :key="i" class="commitment-card">
+          <div class="commitment-card__head">
+            <span class="commitment-card__no">承诺 {{ i + 1 }}</span>
+            <button class="btn btn--text" @click="commitments.splice(i, 1)">删除</button>
+          </div>
+          <div class="form-grid commitment-card__grid">
+            <div class="form-field">
+              <label class="form-field__label">承诺指标 <span class="req">*</span></label>
               <select class="form-select" v-model="c.metricCode" @change="onMetricChange(c)">
                 <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
-            </td>
-            <td class="num">{{ c.metricCode === 'OTHER' ? '—' : (currentOf(c.metricCode) ?? '—') }}</td>
-            <td>
-              <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral">手工描述</span>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">当前贡献度</label>
+              <div class="section-tip commitment-static">{{ c.metricCode === 'OTHER' ? '—' : (currentOf(c.metricCode) ?? '—') }}</div>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">目标类型 <span class="req">*</span></label>
+              <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral commitment-static">手工描述</span>
               <select v-else class="form-select" v-model="c.targetType">
                 <option value="TARGET_BALANCE">目标余额</option>
                 <option value="INCREMENT">承诺新增</option>
                 <option value="CUMULATIVE">期间累计</option>
               </select>
-            </td>
-            <td>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">基线值</label>
               <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" />
-              <span v-else class="section-tip">—</span>
-            </td>
-            <td>
+              <div v-else class="section-tip commitment-static">—</div>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">拟达成目标 <span class="req">*</span></label>
               <template v-if="c.metricCode === 'OTHER'">
                 <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本,§6.4)" />
                 <div class="section-tip" style="color:var(--color-warning);margin-top:4px">手工描述跟踪,无数值达成率,不参与机构达成率</div>
               </template>
               <input v-else class="form-input form-input--amount" v-model="c.targetValue" />
-            </td>
-            <td>
-              <input type="date" class="form-input" v-model="c.endDate" placeholder="承诺截止" style="min-width:138px" />
-            </td>
-            <td>
-              <template v-if="c.metricCode === 'OTHER'"><span class="section-tip">—</span></template>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">截止日期 <span class="req">*</span></label>
+              <input type="date" class="form-input" v-model="c.endDate" placeholder="承诺截止" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">单位</label>
+              <template v-if="c.metricCode === 'OTHER'"><div class="section-tip commitment-static">—</div></template>
               <select v-else class="form-select" v-model="c.unit">
                 <option value="WAN_YUAN">万元</option>
                 <option value="COUNT">户/笔</option>
               </select>
-            </td>
-            <td>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">适用范围</label>
               <select class="form-select" v-model="c.metricScope">
                 <option value="PUBLIC">对公</option>
                 <option value="PRIVATE_SELF">本人对私</option>
@@ -677,19 +699,19 @@
                 <option value="GROUP">集团</option>
                 <option value="GROUP_MEMBER">集团成员</option>
               </select>
-            </td>
-            <td v-if="form.customerScope === 'GROUP'">
+            </div>
+            <div class="form-field" v-if="form.customerScope === 'GROUP'">
+              <label class="form-field__label">成员</label>
               <select class="form-select" v-model="c.memberCustomerNo">
                 <option value="">集团整体</option>
                 <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
                   {{ m.memberName || m.memberCustomerNo }}
                 </option>
               </select>
-            </td>
-            <td><button class="btn btn--text" @click="commitments.splice(i, 1)">删除</button></td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="empty" v-else>暂未录入承诺,可点击下方按钮添加</div>
       <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
 
@@ -827,7 +849,8 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
-  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES, agreementTypeText
+  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES, agreementTypeText,
+  AGREEMENT_TYPES, certTypeText
 } from '@/utils/dict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
@@ -841,6 +864,7 @@ const step = ref(0)
 
 // ---------- 字典 ----------
 const guaranteeTypes = GUARANTEE_TYPES
+const agreementTypes = AGREEMENT_TYPES
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 贷款产品(与规则/硬边界配置中的 product_code 对齐)
 // P2-4:以产品目录 ccr_product 为权威来源,目录为空时回退内置字典(避免新建环境缺目录不可用)
@@ -940,7 +964,7 @@ const form = reactive({
   creditAgreementNo: '', // 授信协议编号(存量)
   creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
-  customerNature: 'EXISTING',
+  customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '',
@@ -955,6 +979,13 @@ const form = reactive({
 })
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
+
+// 客户性质只读展示(§用户要求):由数仓 customerClass 自动判定,不允许手选;未选客户显示占位
+const customerNatureText = computed(() => {
+  if (form.customerNature === 'EXISTING') return '存量客户'
+  if (form.customerNature === 'NEW') return '新增客户'
+  return '—'
+})
 
 // 数仓带出数据
 const ownFinancing = ref<any[]>([])
@@ -987,6 +1018,8 @@ const submitted = ref(false)
 const routeResult = ref<RoutePreview | null>(null)
 const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
+/** 用户是否手动选定过业务类型(存量调息/新增授信);true 时带出客户不再自动切存量(§用户要求) */
+const userPickedBusinessType = ref(false)
 
 // ---------- 客户查询带出(数仓) ----------
 /** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
@@ -1008,6 +1041,8 @@ async function selectCustomer(item: any) {
   form.customerNo = c.customerNo
   form.customerName = c.customerName
   form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
+  // 换客户重新自动判断业务类型(名下有合同默认存量;客户经理手动选定后保持其选择)
+  userPickedBusinessType.value = false
   await loadCustomerDetail()
 }
 
@@ -1029,7 +1064,9 @@ async function loadCustomerDetail() {
     form.annualIncome = basic.annualIncome || ''
     form.maritalStatus = basic.maritalStatus || ''
     form.phone = basic.phone || ''
-    form.customerNature = basic.customerClass === 'NEW' ? 'NEW' : 'EXISTING'
+    form.customerNature = basic.customerClass === 'EXISTING' ? 'EXISTING' : 'NEW'
+    // 企业性质带出(数仓 entp_charic 仅 SOE 判国企,其余非国企,与后端 resolveCustomerType 同口径)
+    form.customerType = basic.entpCharic === 'SOE' ? 'SOE' : 'NON_SOE'
     ownFinancing.value = detail.financing || []
     // 授信协议(数仓);存量模式:授信项下全部贷款合同自动列为分项(可删除不需要调息的)
     try {
@@ -1037,7 +1074,8 @@ async function loadCustomerDetail() {
       creditAgreements.value = view.creditAgreements || []
       creditContracts.value = view.contracts || []
       relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
-      if (creditAgreements.value.length === 1) {
+      // 仅存量调息可带出并自动选中协议;新增授信协议资料需手工录入(§用户要求),不自动选中
+      if (form.businessType !== 'NEW' && creditAgreements.value.length === 1) {
         form.creditAgreementNo = creditAgreements.value[0].agreementNo
         onAgreementSelect()
       }
@@ -1046,9 +1084,9 @@ async function loadCustomerDetail() {
       const contractRows = view.contracts || []
       const totalContractAmt = contractRows.reduce((s, c: any) => s + (Number(c.contractAmount) || 0), 0)
       if (totalContractAmt > 0) form.amountTier = totalContractAmt >= 5000 ? 'GE_5000' : 'LT_5000'
-      // 存量贷款:客户名下有贷款合同即自动进入存量调息,合同自动展示并填充到分项(可删除不调息的);
-      // 新增贷款(无存量合同):保持新增授信,分项由客户经理手工补充
-      if (contractRows.length) {
+      // 存量贷款:客户名下有贷款合同默认自动进入存量调息并带出合同(可删除不调息的);
+      // 客户经理已手动选定业务类型(如新增授信)则尊重选择,不带出存量合同,分项手工补充
+      if (contractRows.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
         autoItemsFromContracts(contractRows)
       }
@@ -1058,7 +1096,8 @@ async function loadCustomerDetail() {
     otherLoans.value = (detail.creditDetail || []).map((d: any) => ({ ...d, inputMode: 'DW' }))
     ElMessage.success(`已带出客户 ${form.customerName || form.customerNo} 信息`)
   } catch {
-    // 带出失败由拦截器提示,不影响已选客户
+    // 数仓无该客户记录(新增客户手工填写)按新户判定;其余错误由拦截器提示
+    form.customerNature = 'NEW'
   }
 }
 
@@ -1280,10 +1319,14 @@ function onBusinessTypeChange() {
         .catch(() => {})
     }
   } else {
-    // 新增授信:无存量协议可带出,授信信息留待手工补录(协议号可空)
+    // 新增授信:无存量协议可带出,授信信息留待手工补录(协议号可空);
+    // 清空存量带出的贷款合同分项,重置为一条空白分项由客户经理手工补充(§用户要求)
     form.creditAgreementNo = ''
+    form.totalCredit = ''
     form.creditInfo = initialCreditInfo()
+    form.guarantees = [newGuarantee()]
   }
+  userPickedBusinessType.value = true
 }
 
 /** 保证金类担保(银票/信用证/存单外另行)——保证金质押同样录入金额/比例/期限 */
@@ -1492,6 +1535,7 @@ function validateStep(s: number): string | null {
       const c = commitments.value[i]
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
       if (c.metricCode === 'OTHER' ? isBlank(c.commitmentDesc) : isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入目标`
+      if (isBlank(c.endDate)) return `第 ${i + 1} 条承诺未录入截止日期`
     }
   }
   return null
@@ -1696,7 +1740,8 @@ function buildPayload(): ApplicationPayload {
 /** 授信协议补录/修正快照序列化(任一要素非空才随单提交;全空返回 undefined 不落库) */
 function serializeCreditInfo(): Record<string, unknown> | undefined {
   const c = form.creditInfo
-  const out: Record<string, unknown> = {}
+  // 授信业务类型显式随单提交(NEW=新增授信/EXISTING=存量调息),供后端按授信口径判定存量/新增路由,不以分项原利率推断
+  const out: Record<string, unknown> = { businessType: form.businessType }
   if (c.agreementNo) out.agreementNo = c.agreementNo
   if (c.agreementType) out.agreementType = c.agreementType
   if (c.currency) out.currency = c.currency
@@ -1799,27 +1844,57 @@ async function onConfirmSubmit() {
 onMounted(async () => {
   loadLoanProducts()
   const src = route.query.reapply
-  if (!src) return
-  try {
-    const newDraft = await reapplyApplication(String(src))
-    draft.id = newDraft.id
-    draft.versionNo = newDraft.versionNo ?? 1
-    draft.applicationNo = newDraft.applicationNo
-    await loadDraftIntoForm(newDraft.id)
-    ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)
-  } catch {
-    // 拦截器已提示
+  if (src) {
+    try {
+      const newDraft = await reapplyApplication(String(src))
+      draft.id = newDraft.id
+      draft.versionNo = newDraft.versionNo ?? 1
+      draft.applicationNo = newDraft.applicationNo
+      await loadDraftIntoForm(newDraft.id)
+      ElMessage.success(`已基于原申请 #${src} 生成新草稿 ${newDraft.applicationNo},请调整后提交`)
+    } catch {
+      // 拦截器已提示
+    }
+    return
+  }
+  // ?edit={draftId}:从历史页"继续编辑"加载草稿,继续调整后提交(草稿重新发起流程)
+  const editId = route.query.edit
+  if (editId) {
+    draft.id = String(editId)
+    try {
+      await loadDraftIntoForm(editId)
+    } catch {
+      // 拦截器已提示
+    }
   }
 })
 
-async function loadDraftIntoForm(id: number) {
+async function loadDraftIntoForm(id: number | string) {
   const d = await getApplicationDetail(id)
   const app = d.application
   // 重新加载草稿(编辑/重提)视为可再次提交,解除已提交置灰
   submitted.value = false
+  // 同步数据版本号:保存草稿(PUT)必须携带 versionNo(乐观锁),缺失会导致"保存草稿必须携带数据版本号"报错
+  draft.versionNo = app.versionNo != null ? app.versionNo : (draft.versionNo ?? 1)
   form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
   form.groupNo = app.groupNo || ''
+  // 客户信息人工快照回填(继续编辑/重提):数仓重查可能缺客户名称等字段,以提交时快照为准(§客户信息快照语义)
+  const custInfo = parseExtJson(app.customerInfoJson)
+  if (custInfo?.customerName) form.customerName = custInfo.customerName
+  form.ucrCode = custInfo?.ucrCode || ''
+  form.fiveLevelClass = custInfo?.fiveLevelClass || ''
+  form.creditLevel = custInfo?.creditLevel || ''
+  form.industry = custInfo?.industry || ''
+  form.registeredCapital = custInfo?.registeredCapital || ''
+  form.idType = custInfo?.idType || ''
+  form.idNo = custInfo?.idNo || ''
+  form.occupation = custInfo?.occupation || ''
+  form.annualIncome = custInfo?.annualIncome || ''
+  form.maritalStatus = custInfo?.maritalStatus || ''
+  form.phone = custInfo?.phone || ''
+  form.openOrg = custInfo?.openOrg || ''
+  form.openDate = custInfo?.openDate || ''
   // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
   const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
   relations.value = rels
@@ -1958,13 +2033,24 @@ async function loadDraftIntoForm(id: number) {
 
 /* 总授信额度概览条(利率申请步骤) */
 .credit-overview {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 16px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4); margin-bottom: 14px;
+  padding: 12px 16px; margin-bottom: 14px;
 }
-.credit-overview__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
-.credit-overview__item span { color: var(--color-text-sub); font-size: 12px; }
+.credit-overview__item {
+  font-size: 13px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+}
+.credit-overview__item span { color: var(--color-text-sub); font-size: 12px; white-space: nowrap; }
 .credit-overview__item b { font-variant-numeric: tabular-nums; }
+.credit-overview__item--static b { font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+.credit-overview__item .form-input, .credit-overview__item .form-select { width: 100%; }
+.credit-overview__item--date { flex-direction: column; }
+.credit-overview__range { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.credit-overview__range .form-input { min-width: 0; }
+.credit-overview__range-sep { color: var(--color-text-sub); flex-shrink: 0; }
+/* 新增授信时协议下拉禁用:灰底+不可点,提示资料需手工录入(§用户要求) */
+.credit-overview select:disabled { background: var(--color-bg, #f3f4f6); color: var(--color-text-sub); cursor: not-allowed; }
 .credit-overview-warning {
   background: #fef2f2; color: var(--color-danger);
   border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
@@ -1977,6 +2063,18 @@ async function loadDraftIntoForm(id: number) {
 .detail-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); display: flex; align-items: center; justify-content: space-between; }
 .req { color: var(--color-danger); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
+
+/* 拟达成承诺卡片(替代横向表格:承诺字段多,表格列宽超容器被横向滚动截断,卡片 3 列网格完整展示) */
+.commitment-list { display: flex; flex-direction: column; gap: 12px; }
+.commitment-card {
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  padding: 12px 16px; background: var(--color-surface);
+}
+.commitment-card__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.commitment-card__no { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
+.commitment-card__grid { margin-bottom: 0; }
+.commitment-card__grid .form-field { margin-bottom: 0; }
+.commitment-static { min-height: 40px; display: flex; align-items: center; }
 
 /* 向导步骤条(沿用 design-system .stepper) */
 .wizard-stepper {

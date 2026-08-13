@@ -76,22 +76,29 @@ public class VoteController {
         return R.ok(rows);
     }
 
-    /** 委员待办:本人待表决的批次分项(匿名编号;只查本人 assignment,不泄露他人进度) */
+    /** 委员待办:本人待表决的批次分项(匿名编号;只查本人 assignment,不泄露他人进度)
+     *  只返回仍在表决中的批次分项(轮次进行中且分项仍 VOTING)——已计票/已终态的分项从待办消失,避免委员在列表看到历史数据 */
     @GetMapping("/vote-rounds/todo")
     public R<List<Map<String, Object>>> todo() {
         Long voterUserId = currentLoginUser.requireLoginId();
         String sql = """
                 SELECT va.round_id roundId, va.voter_anonym_no anonymNo, va.status assignStatus,
-                       ri.pricing_item_id pricingItemId, pi.pricing_item_no pricingItemNo,
-                       pi.requested_rate requestedRate,
+                       pi.application_id applicationId, a.application_no applicationNo,
+                       a.business_type businessType, pi.pricing_customer_no customerNo,
+                       pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
+                       pi.requested_rate requestedRate, pi.original_rate originalRate,
                        pi.pricing_amount pricingAmount, pi.product_code productCode,
-                       pi.pricing_customer_no customerNo,
+                       pi.current_node_code currentNodeCode, pi.create_time createTime,
                        (SELECT gp.main_guarantee_type FROM ccr_guarantee_package gp
                         WHERE gp.pricing_item_id = pi.id AND gp.del_flag = '0' LIMIT 1) guaranteeType
                 FROM ccr_vote_assignment va
                 JOIN ccr_vote_round_item ri ON ri.round_id = va.round_id
                 JOIN ccr_pricing_item pi ON pi.id = ri.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
                 WHERE va.voter_user_id = ? AND va.status <> 'REPLACED' AND va.del_flag = '0'
+                  AND pi.status = 'VOTING'
+                  AND EXISTS (SELECT 1 FROM ccr_vote_round r
+                              WHERE r.id = va.round_id AND r.status IN ('CREATED','VOTING','COUNTING'))
                 ORDER BY va.create_time DESC
                 """;
         return R.ok(jdbcTemplate.queryForList(sql, voterUserId));

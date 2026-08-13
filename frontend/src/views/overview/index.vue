@@ -91,7 +91,7 @@
                   {{ t.title }}
                   <span class="badge" :class="t.kindBadge">{{ t.kindText }}</span>
                 </div>
-                <div class="todo-card__sub">分项 {{ t.itemNo }} · {{ t.nodeText }} · {{ t.time }}</div>
+                <div class="todo-card__sub">{{ t.sub ? t.sub : `分项 ${t.itemNo} · ${t.nodeText} · ${t.time}` }}</div>
                 <div class="todo-card__grid">
                   <div class="tc-item"><span class="dg-label">金额</span><b>{{ t.amount }}</b></div>
                   <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ t.rate }}</b></div>
@@ -239,16 +239,32 @@ const todoItems = computed(() => {
       extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
   }
+  // 委员待表决:同样按申请聚合(六人小组按整单表决,与普通审批一致的卡片形态)
+  const byAppVote = new Map<string, any[]>()
   for (const p of voteTodos.value) {
+    const appId = p.applicationId || p.roundId
+    if (!byAppVote.has(appId)) byAppVote.set(appId, [])
+    byAppVote.get(appId)!.push(p)
+  }
+  for (const [appId, ps] of byAppVote) {
+    const first = ps[0]
+    const single = ps.length === 1
+    const rates = ps.map((x) => Number(x.requestedRate) || 0)
     items.push({
-      key: `vote-${p.roundId}-${p.pricingItemId}`, kindText: '待表决', kindBadge: 'badge--warning',
-      title: `分项 #${p.pricingItemId}`,
-      itemNo: p.pricingItemId, nodeText: `批次 ${p.roundId} · ${nodeLabel('SIX_PEOPLE_GROUP')}`,
-      amount: p.pricingAmount != null ? `${p.pricingAmount} 万元` : '—',
-      rate: p.requestedRate != null ? `${p.requestedRate}%` : '—',
-      product: productName(p.productCode),
-      time: '', to: '/voting', actionText: '去表决',
-      extra: null
+      key: `vote-${appId}`, kindText: '待表决', kindBadge: 'badge--warning',
+      title: first.pricingCustomerNo || first.customerNo || '—',
+      itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个担保分项`,
+      nodeText: nodeLabel(first.currentNodeCode),
+      amount: single
+        ? (first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—')
+        : `${ps.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0)} 万元`,
+      rate: single
+        ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
+        : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
+      product: productName(first.productCode),
+      time: fmtTime(first.createTime), to: `/approval/${first.pricingItemId}`, actionText: '去表决',
+      sub: `申请 ${first.applicationNo || '—'} · ${nodeLabel(first.currentNodeCode)}`,
+      extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
   }
   for (const p of presidentTodos.value) {
@@ -323,7 +339,8 @@ const planList = computed(() => {
 const planStats = computed(() => {
   const plans = planList.value
   return {
-    tracking: plans.filter((p) => p.status === 'TRACKING').length,
+    // PENDING(待首次评估)/TRACKING 均属"跟踪中",与 /commitment 页 CURRENT_STATUS 口径一致(否则 PENDING 计划在工作台四档分布中无处安放)
+    tracking: plans.filter((p) => p.status === 'TRACKING' || p.status === 'PENDING').length,
     atRisk: plans.filter((p) => p.status === 'AT_RISK' || p.metrics.some((m: any) => m.result_status === 'AT_RISK')).length,
     achieved: plans.filter((p) => p.status === 'ACHIEVED').length,
     dataPending: plans.filter((p) => p.status === 'DATA_PENDING').length,
@@ -396,13 +413,13 @@ const stats = computed(() => {
     return [
       { icon: 'Document', label: '我的申请', value: applications.value.length, cls: 'stat-card__num--primary', to: '', sub: '本人发起的全部申请', subDanger: false },
       { icon: 'Loading', label: '审批中', value: inProgressCount.value, cls: 'stat-card__num--primary', to: '/history', sub: '正在流转审批的申请', subDanger: false },
-      { icon: 'RefreshLeft', label: '被否决/可重提', value: rejectedCount.value, cls: rejectedCount.value ? 'stat-card__num--danger' : '', to: '', sub: '终态否决,可重新发起', subDanger: rejectedCount.value > 0 },
+      { icon: 'RefreshLeft', label: '被否决/可重提', value: rejectedCount.value, cls: rejectedCount.value ? 'stat-card__num--danger' : '', to: '/history', sub: '终态否决,可重新发起', subDanger: rejectedCount.value > 0 },
       trackCard
     ]
   }
   if (r === 'committee_member') {
     return [
-      { icon: 'Key', label: '待我表决', value: voteTodos.value.length, cls: 'stat-card__num--warning', to: '/voting', sub: '待表决的批次分项', subDanger: false },
+      { icon: 'Key', label: '待我表决', value: voteTodos.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '待表决的申请', subDanger: false },
       todayCard, totalCard, trackCard
     ]
   }

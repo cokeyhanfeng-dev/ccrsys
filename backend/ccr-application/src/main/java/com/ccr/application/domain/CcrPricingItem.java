@@ -70,6 +70,9 @@ public class CcrPricingItem extends BaseEntity {
     /** 计算得到路由编码 */
     private String routeCode;
 
+    /** 完整审批链路(首节点至终审岗位,提交路由后冻结,§8.6;JSON数组,可跳过无权限节点如GM) */
+    private String routeChain;
+
     /** 工作流实例标识 */
     private String flowInstanceId;
 
