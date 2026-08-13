@@ -3,9 +3,9 @@
     <div class="section-head">
       <div class="section-title">
         <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
-        审批详情
+        {{ isPresidentDecision ? '行长决策' : '审批详情' }}
       </div>
-      <InfoTip :content="isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
+      <InfoTip :content="isPresidentDecision ? '六人小组表决已通过,请审阅完整申请内容与六人匿名审批意见后整单决策:同意利率或一票否决。' : isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
     </div>
 
     <!-- 0. 数据来源与快照信息(§12.16-7) -->
@@ -502,6 +502,60 @@
       </table>
     </div>
 
+    <!-- 11d. 行长决策(整单,§7.5):六人小组表决通过后待总行行长决策;与申请/审批页一致不拆分为项,
+         行长统一「同意利率/一票否决」,并在本区查看六人小组匿名审批意见(§12.7) -->
+    <div class="card" v-if="isPresidentDecision">
+      <div class="card__head"><span>行长决策(整单)</span></div>
+      <!-- 六人审批结果汇总(整单:取首待决策分项计票,分项明细在下方匿名意见折叠内) -->
+      <div class="vote-summary" v-if="presidentVote">
+        <span class="badge badge--success">{{ presidentVote.approveCount }} 票赞成</span>
+        <span class="badge badge--danger">{{ presidentVote.rejectCount }} 票反对</span>
+        <span class="badge badge--info">通过线 ≥{{ presidentVote.requiredCount }} · 已收 {{ presidentVote.submittedCount }} 票</span>
+        <span class="badge badge--info">申请利率 {{ fmtRate(presidentDecisionItems[0]?.requestedRate) }}%</span>
+        <span v-if="presidentDecisionItems.length > 1" class="badge badge--info">共 {{ presidentDecisionItems.length }} 个分项</span>
+      </div>
+      <div class="stat-card__sub" v-if="presidentDecisionItems.length > 1" style="margin:8px 0">
+        本申请含多个分项,六人小组按分项分别计票;以下按分项展示表决结果与匿名意见,行长统一整单决策。
+      </div>
+      <!-- 六人小组匿名审批意见(匿名码每批随机分配,仅行长/审计可见;默认收起) -->
+      <el-collapse v-if="presidentDecisionItems.length">
+        <el-collapse-item v-for="it in presidentDecisionItems" :key="it.id" :name="`item-${it.id}`">
+          <template #title>
+            <span style="font-weight:600;margin-right:8px">{{ itemName(it) }}</span>
+            <span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteResultOfItem(it).approveCount }}:{{ voteResultOfItem(it).rejectCount }} 通过</span>
+          </template>
+          <div class="stat-card__sub" style="margin-bottom:6px">
+            申请利率 {{ fmtRate(it.requestedRate) }}% · 审批利率 {{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}%
+            · 六人表决 {{ voteResultOfItem(it) ? `${voteResultOfItem(it).approveCount}:${voteResultOfItem(it).rejectCount}` : '—' }}
+          </div>
+          <table class="table">
+            <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
+            <tbody>
+              <tr v-for="(o, i) in (presidentOpinions[it.id] || [])" :key="i">
+                <td>{{ o.anonymNo || '—' }}</td>
+                <td>
+                  <span class="badge" :class="o.voteChoice === 'APPROVE' ? 'badge--success' : 'badge--danger'">
+                    {{ voteChoiceText(o.voteChoice) }}
+                  </span>
+                </td>
+                <td>{{ o.voteComment || '—' }}</td>
+                <td>{{ o.submitTime ? String(o.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="!(presidentOpinions[it.id] || []).length" class="empty" style="padding:8px">暂无委员匿名意见</div>
+        </el-collapse-item>
+      </el-collapse>
+      <div class="op-form__row" style="margin-top:12px">
+        <label class="op-form__label">行长决策意见</label>
+        <el-input v-model="presidentOpinion" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="同意可填意见;一票否决必须填写意见" />
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <button class="btn btn--primary" :disabled="submitting" @click="doPresidentDecision('APPROVE')">同意利率</button>
+        <button class="btn btn--danger" :disabled="submitting" @click="doPresidentDecision('VETO')">一票否决</button>
+      </div>
+    </div>
+
     <!-- 12. 流程轨迹(流程路由链 + 审批动作) -->
     <div class="card">
       <div class="card__head"><span>流程轨迹</span></div>
@@ -723,8 +777,7 @@
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <template v-if="isCommitteeVoting">
-            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll('APPROVE')">提交本人全部同意票</button>
-            <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAll('REJECT')">一键否决(整单)</button>
+            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll()">提交本人全部同意票</button>
             <span class="stat-card__sub" style="align-self:center">
               已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
             </span>
@@ -770,13 +823,14 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
-import { submitBallot } from '@/api/vote'
+import { submitBallot, submitPresidentDecision } from '@/api/vote'
+import { listRoundOpinions } from '@/api/approval2'
 import { download } from '@/api/request'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import {
   guaranteeTypeText, nodeLabel, itemStatusText, actionText, decisionText,
-  execStatusText, roundStatusText, evalResultText, ruleLevelText,
+  execStatusText, roundStatusText, evalResultText, ruleLevelText, voteChoiceText,
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText
@@ -840,6 +894,22 @@ const voteResults = ref<any[]>([])
 const presidentDecisions = ref<any[]>([])
 // 小组节点当前轮次(匿名汇总 + 本人票;普通节点为 null)
 const voteRound = ref<any>(null)
+// 行长决策(整单,§7.5):六人表决通过后待总行行长决策的分项与其匿名意见(§12.7)
+const presidentOpinion = ref('')
+const presidentOpinions = ref<Record<string, any[]>>({})
+const presidentDecisionItems = computed(() => siblingItems.value.filter((it: any) =>
+  it.status === 'COMMITTEE_PASS' || it.status === 'PRESIDENT_DECISION'))
+// 行长角色且存在待决策分项 → 展示行长决策卡片(行长「独立区域」查看六人匿名意见并整单决策)
+const isPresidentDecision = computed(() =>
+  (userStore.userInfo?.roles?.[0] || '') === 'president' && presidentDecisionItems.value.length > 0)
+const presidentVote = computed(() => {
+  const first = presidentDecisionItems.value[0]
+  if (!first) return null
+  return voteResults.value.find((r: any) => String(r.pricingItemId) === String(first.id)) || null
+})
+function voteResultOfItem(it: any) {
+  return voteResults.value.find((r: any) => String(r.pricingItemId) === String(it.id)) || null
+}
 
 const opComment = ref('')
 // 借据弹窗(审批决定区「合同下借据」改为链接弹出;借据仅作参考,不作为主要审批依据)
@@ -1131,9 +1201,67 @@ async function load() {
       rates[it.id] = base != null ? Number(base) : undefined
     }
     opRates.value = rates
+    // 行长/审计视角:加载六人小组匿名审批意见(§12.7,按轮次查询按分项归组)
+    if (canViewVote.value) {
+      await loadPresidentOpinions()
+    }
     loaded.value = true
   } catch {
     ElMessage.error('审批详情加载失败')
+  }
+}
+
+// 行长视角:按计票轮次加载六人匿名意见,按分项归组;单轮失败不影响其余
+async function loadPresidentOpinions() {
+  const roundIds = [...new Set(voteResults.value.map((r: any) => r.roundId).filter((id: any) => id != null))]
+  const map: Record<string, any[]> = {}
+  for (const rid of roundIds) {
+    try {
+      const rounds = await listRoundOpinions(rid)
+      for (const row of rounds || []) {
+        map[String(row.pricingItemId)] = row.opinions || []
+      }
+    } catch { /* 忽略单个轮次意见加载失败 */ }
+  }
+  presidentOpinions.value = map
+}
+
+// 行长决策(整单,§7.5):同意利率 → 整单终审签发决议;一票否决 → 整单终态;必填意见
+async function doPresidentDecision(decision: 'APPROVE' | 'VETO') {
+  const appId = application.value.id ?? pi.value.application_id
+  if (!appId) {
+    ElMessage.error('无法获取申请编号,请刷新后重试')
+    return
+  }
+  if (decision === 'VETO' && !presidentOpinion.value?.trim()) {
+    ElMessage.warning('一票否决必须填写决策意见')
+    return
+  }
+  const confirmText = decision === 'APPROVE'
+    ? `确认同意利率 ${fmtRate(presidentDecisionItems.value[0]?.requestedRate)}%?同意后整单签发决议,不可撤销。`
+    : '确认一票否决该申请?否决后为终态,同申请全部分项一并否决。'
+  try {
+    await ElMessageBox.confirm(confirmText, decision === 'APPROVE' ? '同意利率' : '一票否决', {
+      type: decision === 'APPROVE' ? 'info' : 'warning',
+      confirmButtonText: decision === 'APPROVE' ? '确认同意' : '确认否决',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  submitting.value = true
+  try {
+    await submitPresidentDecision({
+      applicationId: appId,
+      decision,
+      opinion: presidentOpinion.value?.trim() || undefined
+    })
+    ElMessage.success(decision === 'APPROVE' ? '已同意利率,申请终审通过' : '已一票否决')
+    router.push('/president')
+  } catch {
+    load()
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -1145,9 +1273,10 @@ function goBack() {
   router.push('/approval')
 }
 
-/** 返回审批列表(顶部「返回列表」按钮) */
+/** 返回列表(顶部「返回列表」按钮):行长返回行长工作台,其余角色返回审批列表 */
 function goBackList() {
-  router.push('/approval')
+  if (isPresidentDecision.value) router.push('/president')
+  else router.push('/approval')
 }
 
 // 审批提交成功提示:整单齐套终审→流程完结;推进→显示下一节点;未齐套→停留待整单齐套
@@ -1245,9 +1374,10 @@ async function doVoteItem(it: any, choice: string) {
   }
 }
 
-// 委员一键提交本人全部选票(对未投分项逐项 submitBallot)
-// 否决=整单否决:确认后对整个申请单投否决票;6 人表决否决过半时,申请单(含不需小组表决的分项)整体否决并出否决决议
-async function doVoteAll(choice: string) {
+// 委员一键提交本人全部同意票(对未投分项逐项 submitBallot)。
+// 六人小组按"一人一票、集体计票"表决:委员否决只能逐分项投否决票(doVoteItem),
+// 不提供整单一键否决入口——单委员无权直接否决整单,否决须由计票(≥4 票赞成才通过)决定。
+async function doVoteAll() {
   const roundId = voteRound.value?.roundId
   if (!roundId) {
     ElMessage.warning('未找到当前表决轮次,请刷新后重试')
@@ -1258,34 +1388,22 @@ async function doVoteAll(choice: string) {
     ElMessage.warning('没有待投票的分项')
     return
   }
-  const submit = async () => {
-    submitting.value = true
-    try {
-      for (const it of pending) {
-        await submitBallot(roundId, {
-          pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
-          choice,
-          comment: opComment.value || undefined
-        }, newIdempotencyKey())
-        locallyApproved.value.add(it.id)
-      }
-      ElMessage.success(choice === 'APPROVE'
-        ? `已提交 ${pending.length} 项同意票,等待其他委员投票`
-        : '已提交整单否决票,等待其他委员投票')
-      await load()
-    } catch {
-      load()
-    } finally {
-      submitting.value = false
+  submitting.value = true
+  try {
+    for (const it of pending) {
+      await submitBallot(roundId, {
+        pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
+        choice: 'APPROVE',
+        comment: opComment.value || undefined
+      }, newIdempotencyKey())
+      locallyApproved.value.add(it.id)
     }
-  }
-  if (choice === 'REJECT') {
-    ElMessageBox.confirm(
-      '确认对整个申请单投否决票?若 6 人表决否决过半,该申请(含不需小组表决的分项)将整体否决,并出具否决决议书。',
-      '一键否决(整单)', { type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消' }
-    ).then(submit).catch(() => {})
-  } else {
-    await submit()
+    ElMessage.success(`已提交 ${pending.length} 项同意票,等待其他委员投票`)
+    await load()
+  } catch {
+    load()
+  } finally {
+    submitting.value = false
   }
 }
 

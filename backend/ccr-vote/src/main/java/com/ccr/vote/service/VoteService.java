@@ -43,10 +43,11 @@ public interface VoteService {
     CcrVoteResult getVoteResult(Long pricingItemId);
 
     /**
-     * 行长决策(§7.5):只接收表决通过分项(状态 COMMITTEE_PASS/PRESIDENT_DECISION);
+     * 行长决策(§7.5,整单):按申请决策——该申请下所有待行长决策分项
+     * (状态 COMMITTEE_PASS/PRESIDENT_DECISION)一并同意/否决,与审批页整单口径一致;
      * 登录人须为总行行长;重复决策由 uk_president_pricing 唯一约束兜底(TASK_PROCESSED)
      */
-    void presidentDecision(Long pricingItemId, String decision, String opinion);
+    void presidentDecision(Long applicationId, String decision, String opinion);
 
     /**
      * 委员替补(§7.4):授权角色为行长或流程管理员(admin)。

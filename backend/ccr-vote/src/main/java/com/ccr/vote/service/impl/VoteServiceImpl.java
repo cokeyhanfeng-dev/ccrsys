@@ -40,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -265,7 +266,7 @@ public class VoteServiceImpl implements VoteService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void presidentDecision(Long pricingItemId, String decision, String opinion) {
+    public void presidentDecision(Long applicationId, String decision, String opinion) {
         if (!"APPROVE".equals(decision) && !"VETO".equals(decision)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "决策只能为 APPROVE/VETO");
         }
@@ -276,23 +277,33 @@ public class VoteServiceImpl implements VoteService {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_PRESIDENT);
         Long presidentUserId = currentLoginUser.requireLoginId();
 
-        CcrPricingItem item = pricingItemMapper.selectById(pricingItemId);
-        if (item == null) {
-            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "定价分项不存在");
-        }
-        // 只接收表决通过分项:计票通过置 PRESIDENT_DECISION,兼容历史 COMMITTEE_PASS
-        if (!PricingItemStatus.COMMITTEE_PASS.getCode().equals(item.getStatus())
-                && !PricingItemStatus.PRESIDENT_DECISION.getCode().equals(item.getStatus())) {
-            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "只接收六人表决通过的分项(§7.5)");
+        // 整单决策(§用户拍板):该申请下所有待行长决策分项一并决策,与审批页整单口径一致
+        List<CcrPricingItem> pendingItems = pricingItemMapper.selectList(
+                new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getApplicationId, applicationId)
+                        .and(w -> w.eq(CcrPricingItem::getStatus, PricingItemStatus.COMMITTEE_PASS.getCode())
+                                .or().eq(CcrPricingItem::getStatus, PricingItemStatus.PRESIDENT_DECISION.getCode()))
+                        .eq(CcrPricingItem::getDelFlag, "0"));
+        if (pendingItems.isEmpty()) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "该申请无待行长决策分项(§7.5)");
         }
         // 节点审批人配置限制(§5.5.1):PRESIDENT 节点配置有效指派时,仅解析出的处理人可决策
         List<Long> presidentAssignees = nodeAssigneeResolver.resolveUserIds("PRESIDENT",
-                applicantOrgId(item.getApplicationId()));
+                applicantOrgId(applicationId));
         if (!presidentAssignees.isEmpty() && !presidentAssignees.contains(presidentUserId)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "PRESIDENT节点已配置指定决策人,当前登录人不在指派范围内");
         }
 
+        for (CcrPricingItem item : pendingItems) {
+            decideOneItem(item, decision, opinion, presidentUserId);
+        }
+        log.info("申请 {} 行长决策 {} 完成,共 {} 个分项", applicationId, decision, pendingItems.size());
+    }
+
+    /** 单分项行长决策:落库决策记录 + 同意→FINAL/否决→VETOED(整单循环复用,幂等由 uk_president_pricing 兜底) */
+    private void decideOneItem(CcrPricingItem item, String decision, String opinion, Long presidentUserId) {
+        Long pricingItemId = item.getId();
         CcrPresidentDecision pd = new CcrPresidentDecision();
         pd.setPricingItemId(pricingItemId);
         pd.setDecision(decision);
@@ -501,12 +512,16 @@ public class VoteServiceImpl implements VoteService {
             }
         }
 
+        // 匿名代号每次批次随机打乱分配(§12.7 匿名口径):同一委员不同批次匿名代号不固定,
+        // 避免"A 一直对应某人"导致匿名可追溯;代号仅存本批次 assignment,不跨批次复用
         String[] anonym = {"A", "B", "C", "D", "E", "F"};
+        List<String> shuffled = new ArrayList<>(List.of(anonym));
+        Collections.shuffle(shuffled);
         for (int i = 0; i < members.size(); i++) {
             CcrVoteAssignment assignment = new CcrVoteAssignment();
             assignment.setRoundId(round.getId());
             assignment.setVoterUserId(members.get(i).getId());
-            assignment.setVoterAnonymNo(anonym[i]);
+            assignment.setVoterAnonymNo(shuffled.get(i));
             assignment.setStatus("PENDING");
             assignmentMapper.insert(assignment);
         }

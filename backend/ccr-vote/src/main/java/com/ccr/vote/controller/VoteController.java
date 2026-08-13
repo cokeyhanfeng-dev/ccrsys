@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -44,16 +46,19 @@ public class VoteController {
     @Resource
     private NodeAssigneeResolver nodeAssigneeResolver;
 
-    /** 行长待决策:表决通过(COMMITTEE_PASS/PRESIDENT_DECISION)待行长决策的分项(仅行长可见);
+    /** 行长待决策:表决通过(COMMITTEE_PASS/PRESIDENT_DECISION)待行长决策的申请(按申请聚合,与审批页一致);
+     *  同一申请的多个分项合并为一个待决策项,items 内含分项明细;
      *  PRESIDENT 节点配置有效指派时,仅解析出的处理人可见(admin 审计视角不过滤) */
     @GetMapping("/president/todo")
     public R<List<Map<String, Object>>> presidentTodo() {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_PRESIDENT, CurrentLoginUser.ROLE_ADMIN);
         String sql = """
-                SELECT pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
-                       pi.pricing_customer_no customerNo, pi.requested_rate requestedRate,
-                       pi.current_approval_rate approvalRate, pi.status status,
-                       a.applicant_org_id applicantOrgId,
+                SELECT pi.application_id applicationId, a.application_no applicationNo,
+                       a.business_type businessType, pi.pricing_customer_no customerNo,
+                       pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
+                       pi.requested_rate requestedRate, pi.current_approval_rate approvalRate,
+                       pi.status status, a.applicant_org_id applicantOrgId,
+                       COALESCE(vr.round_id,0) roundId,
                        COALESCE(vr.approve_count,0) approveCount, COALESCE(vr.reject_count,0) rejectCount
                 FROM ccr_pricing_item pi
                 JOIN ccr_application a ON a.id = pi.application_id
@@ -62,18 +67,44 @@ public class VoteController {
                 ORDER BY pi.create_time DESC
                 """;
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+        // 按申请聚合:同一申请全部分项合并为一个待决策项(行长决策为整单决策,与申请/审批页一致)
+        Map<Long, Map<String, Object>> byApp = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long appId = ((Number) row.get("applicationId")).longValue();
+            Map<String, Object> app = byApp.computeIfAbsent(appId, k -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("applicationId", appId);
+                m.put("applicationNo", row.get("applicationNo"));
+                m.put("businessType", row.get("businessType"));
+                m.put("customerNo", row.get("customerNo"));
+                m.put("applicantOrgId", row.get("applicantOrgId"));
+                m.put("items", new ArrayList<Map<String, Object>>());
+                return m;
+            });
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("pricingItemId", row.get("pricingItemId"));
+            item.put("pricingItemNo", row.get("pricingItemNo"));
+            item.put("requestedRate", row.get("requestedRate"));
+            item.put("approvalRate", row.get("approvalRate"));
+            item.put("status", row.get("status"));
+            item.put("roundId", row.get("roundId"));
+            item.put("approveCount", row.get("approveCount"));
+            item.put("rejectCount", row.get("rejectCount"));
+            ((List<Map<String, Object>>) app.get("items")).add(item);
+        }
+        List<Map<String, Object>> result = new ArrayList<>(byApp.values());
         if (CurrentLoginUser.ROLE_ADMIN.equals(currentLoginUser.currentRoleCode())) {
-            rows.forEach(row -> row.remove("applicantOrgId"));
-            return R.ok(rows);
+            result.forEach(row -> row.remove("applicantOrgId"));
+            return R.ok(result);
         }
         Long userId = currentLoginUser.requireLoginId();
-        rows.removeIf(row -> {
+        result.removeIf(row -> {
             Object orgId = row.remove("applicantOrgId");
             List<Long> assignees = nodeAssigneeResolver.resolveUserIds("PRESIDENT",
                     orgId == null ? null : ((Number) orgId).longValue());
             return !assignees.isEmpty() && !assignees.contains(userId);
         });
-        return R.ok(rows);
+        return R.ok(result);
     }
 
     /** 委员待办:本人待表决的批次分项(匿名编号;只查本人 assignment,不泄露他人进度)
@@ -157,11 +188,11 @@ public class VoteController {
         return R.ok(voteService.listRoundOpinions(roundId));
     }
 
-    /** 行长决策(同意利率/一票否决);Idempotency-Key 头可选(唯一约束兜底) */
+    /** 行长决策(整单:同意利率/一票否决,按申请一并决策);Idempotency-Key 头可选(唯一约束兜底) */
     @PostMapping("/president/decisions")
     public R<Void> presidentDecision(@RequestBody Map<String, Object> body) {
         voteService.presidentDecision(
-                Long.valueOf(body.get("pricingItemId").toString()),
+                Long.valueOf(body.get("applicationId").toString()),
                 body.get("decision").toString(),
                 body.get("opinion") == null ? null : body.get("opinion").toString());
         return R.ok();

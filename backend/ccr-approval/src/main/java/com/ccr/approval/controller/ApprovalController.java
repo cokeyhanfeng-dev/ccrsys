@@ -668,6 +668,26 @@ public class ApprovalController {
 
         // 六人小组节点:返回当前表决轮次匿名汇总 + 登录人本人票(审批页内联同意/否决 + 链路进度)
         result.put("voteRound", buildVoteRound(pricingItemId));
+
+        // 表决汇总(行长/审计/超管可见,§12.7/T4-02/T4-10):按申请返回全部分项计票结果(voteResults),
+        // 供行长决策页展示六人表决结果并按轮次加载匿名审批意见;其余角色不返回,保持委员匿名。
+        try {
+            String roleCode = appLoginUser.requireCurrentUser().getRoleCode();
+            if (AppLoginUser.ROLE_PRESIDENT.equals(roleCode)
+                    || AppLoginUser.ROLE_AUDITOR.equals(roleCode)
+                    || AppLoginUser.ROLE_ADMIN.equals(roleCode)) {
+                result.put("voteResults", jdbcTemplate.queryForList(
+                        "SELECT vr.round_id roundId, vr.pricing_item_id pricingItemId,"
+                                + " vr.approve_count approveCount, vr.reject_count rejectCount,"
+                                + " vr.required_count requiredCount, vr.submitted_count submittedCount,"
+                                + " vr.result, vr.count_time countTime"
+                                + " FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
+                                + " WHERE pi.application_id = ? AND vr.del_flag = '0'",
+                        appId));
+            }
+        } catch (Exception ignored) {
+            // 未登录/角色解析异常:不返回表决汇总,不阻断详情
+        }
         return R.ok(result);
     }
 

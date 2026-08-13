@@ -37,9 +37,9 @@ export function listPresidentTodo<T = any[]>(): Promise<T> {
   return get<T>('/ccr/president/todo')
 }
 
-/** 行长决策:decision 仅 APPROVE/VETO,VETO 必填 opinion */
+/** 行长决策(整单):按申请一并决策,decision 仅 APPROVE/VETO,VETO 必填 opinion */
 export function submitPresidentDecision(body: {
-  pricingItemId: number
+  applicationId: number | string
   decision: string
   opinion?: string
 }): Promise<void> {
