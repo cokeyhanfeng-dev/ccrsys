@@ -24,9 +24,15 @@ export interface ApprovalActionBody {
   versionNo: number | string
 }
 
+/** 审批提交成功后的流转去向(审批提交成功提示):terminal=终审结束,nextNodeCode=下一节点 */
+export interface ApprovalResult {
+  terminal?: boolean
+  nextNodeCode?: string | null
+}
+
 /** 普通节点通过(可携带权限内调价 adjustRate);Idempotency-Key 头可选 */
-export function approveTask(body: ApprovalActionBody, idempotencyKey?: string): Promise<void> {
-  return request<void>({
+export function approveTask(body: ApprovalActionBody, idempotencyKey?: string): Promise<ApprovalResult> {
+  return request<ApprovalResult>({
     url: '/ccr/approval/tasks/approve',
     method: 'post',
     data: body,

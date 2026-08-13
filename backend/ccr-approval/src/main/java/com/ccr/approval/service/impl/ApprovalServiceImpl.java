@@ -19,6 +19,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
 import com.ccr.approval.domain.DwLoanNoteSnapshot;
+import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.mapper.CcrApprovalActionMapper;
 import com.ccr.approval.mapper.CcrRateAdjustmentMapper;
 import com.ccr.approval.mapper.DwLoanNoteReadMapper;
@@ -151,7 +152,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
+    public ApprovalResult approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
                         Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments) {
         SysUserRead operator = checkOperatorAndNode(nodeCode);
         guardIdempotency(idempotencyKey);
@@ -280,6 +281,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 }
                 log.info("分项 {} 节点 {} 通过, 操作人 {} 调价:{} 整单齐套终审(共 {} 项)",
                         pricingItemId, nodeCode, operator.getId(), adjusted, appItems.size());
+                // 审批提交成功提示:整单齐套终审,流程完结
+                return ApprovalResult.terminal();
             } else {
                 // 权限内通过但未齐套:仅记「本节点已同意」,保持 ROUTING 在当前节点,暂不终审
                 updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.ROUTING.getCode(),
@@ -295,8 +298,9 @@ public class ApprovalServiceImpl implements ApprovalService {
                         operatorName(operator), comment);
                 log.info("分项 {} 节点 {} 权限内通过(本节点已同意,待整单齐套), 操作人 {} 调价:{}",
                         pricingItemId, nodeCode, operator.getId(), adjusted);
+                // 审批提交成功提示:待同申请其余分项齐套后整单推进
+                return ApprovalResult.go(nodeCode);
             }
-            return;
         }
 
         // 整单上送:任一分项超权限通过,或权限内但当前节点非终审岗位(链路中间节点过手)
@@ -421,6 +425,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         log.info("分项 {} 节点 {} 超权限保留利率通过, 操作人 {} 整单上送 {} 上送小组:{}",
                 pricingItemId, nodeCode, operator.getId(), next, toGroup);
+        // 审批提交成功提示:整单上送推进至下一节点(六人小组等)
+        return ApprovalResult.go(next);
     }
 
     @Override

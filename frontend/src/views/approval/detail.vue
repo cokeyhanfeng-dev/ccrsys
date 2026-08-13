@@ -769,7 +769,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey } from '@/api/approval'
+import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
 import { submitBallot } from '@/api/vote'
 import { download } from '@/api/request'
 import { useUserStore } from '@/store/user'
@@ -1150,6 +1150,17 @@ function goBackList() {
   router.push('/approval')
 }
 
+// 审批提交成功提示:整单齐套终审→流程完结;推进→显示下一节点;未齐套→停留待整单齐套
+function approveSuccessMsg(res?: ApprovalResult, nodeCode?: string): string {
+  if (res?.terminal || !res?.nextNodeCode) {
+    return '审批提交成功,本申请已终审通过'
+  }
+  if (res.nextNodeCode === nodeCode) {
+    return '审批提交成功,已同意,待整单齐套后推进'
+  }
+  return `审批提交成功,已推进至「${nodeLabel(res.nextNodeCode)}」`
+}
+
 // 逐分项「同意本项」(参照 demo):该分项本次同意,同申请全部分项齐套后整单终审/上送
 async function doApproveItem(it: any) {
   if (opRates.value[it.id] == null) {
@@ -1158,7 +1169,7 @@ async function doApproveItem(it: any) {
   }
   submitting.value = true
   try {
-    await approveTask({
+    const res = await approveTask({
       pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
       nodeCode: it.currentNodeCode,
       adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
@@ -1168,7 +1179,7 @@ async function doApproveItem(it: any) {
     }, newIdempotencyKey())
     locallyApproved.value.add(it.id)
     // 整单推进后本节点全部分项已一并上送/终审,直接返回列表;不可停留本页再点其余分项(会报 1007)
-    ElMessage.success(`已同意分项 ${it.pricingItemNo || it.id},整单推进`)
+    ElMessage.success(approveSuccessMsg(res, it.currentNodeCode))
     goBack()
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态
@@ -1193,7 +1204,7 @@ async function doApproveAll() {
   }
   submitting.value = true
   try {
-    await approveTask({
+    const res = await approveTask({
       pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
       nodeCode: it.currentNodeCode,
       adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
@@ -1201,7 +1212,7 @@ async function doApproveAll() {
       comment: opComment.value || undefined,
       versionNo: it.versionNo
     }, newIdempotencyKey())
-    ElMessage.success('已通过,整单推进')
+    ElMessage.success(approveSuccessMsg(res, it.currentNodeCode))
     goBack()
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态

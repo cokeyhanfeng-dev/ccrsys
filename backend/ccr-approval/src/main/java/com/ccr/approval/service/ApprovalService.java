@@ -1,6 +1,7 @@
 package com.ccr.approval.service;
 
 import com.ccr.application.domain.CcrPricingItem;
+import com.ccr.approval.dto.ApprovalResult;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -31,8 +32,9 @@ public interface ApprovalService {
      * @param idempotencyKey 幂等键(可空,重复抛 IDEMPOTENCY_REPEAT)
      * @param rateAdjustments 同申请其余分项(随整单推进的 sibling)调价利率:分项id→调整后利率,
      *                        仅收录相对当前利率有变化的分项;调价分项按新利率重算矩阵路由并按新链路推进
+     * @return 流转去向结果(terminal 终审结束 / nextNodeCode 下一节点,供前端提交成功提示)
      */
-    void approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
+    ApprovalResult approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
                  Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments);
 
     /**

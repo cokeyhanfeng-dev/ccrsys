@@ -6,6 +6,7 @@ import cn.hutool.json.JSONUtil;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
+import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
@@ -1094,16 +1095,16 @@ public class ApprovalController {
 
     /** 普通节点通过(可携带分项审批利率;同申请其余分项利率调整经 rateAdjustments 一并生效);versionNo 必传,Idempotency-Key 头可选 */
     @PostMapping("/tasks/approve")
-    public R<Void> approve(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+    public R<ApprovalResult> approve(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                            @RequestBody Map<String, Object> body) {
-        approvalService.approve(
+        ApprovalResult result = approvalService.approve(
                 Long.valueOf(body.get("pricingItemId").toString()),
                 body.get("nodeCode").toString(),
                 body.get("adjustRate") == null ? null : new BigDecimal(body.get("adjustRate").toString()),
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 body.get("versionNo") == null ? null : Integer.valueOf(body.get("versionNo").toString()),
                 idempotencyKey, parseRateAdjustments(body.get("rateAdjustments")));
-        return R.ok();
+        return R.ok(result);
     }
 
     /** 解析同申请其余分项调价利率(分项id→调整后利率,仅收录有变化的分项;空/非对象返回 null) */
