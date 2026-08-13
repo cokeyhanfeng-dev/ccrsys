@@ -108,7 +108,8 @@ public class VoteController {
     }
 
     /** 委员待办:本人待表决的批次分项(匿名编号;只查本人 assignment,不泄露他人进度)
-     *  只返回仍在表决中的批次分项(轮次进行中且分项仍 VOTING)——已计票/已终态的分项从待办消失,避免委员在列表看到历史数据 */
+     *  只返回本人尚未表决的分项:已投过(ballot 已存在)与已投完(assignment SUBMITTED/REPLACED)的均不显示,
+     *  避免委员在工作台看到已表决项重复表决 */
     @GetMapping("/vote-rounds/todo")
     public R<List<Map<String, Object>>> todo() {
         Long voterUserId = currentLoginUser.requireLoginId();
@@ -126,13 +127,17 @@ public class VoteController {
                 JOIN ccr_vote_round_item ri ON ri.round_id = va.round_id
                 JOIN ccr_pricing_item pi ON pi.id = ri.pricing_item_id
                 JOIN ccr_application a ON a.id = pi.application_id
-                WHERE va.voter_user_id = ? AND va.status <> 'REPLACED' AND va.del_flag = '0'
+                WHERE va.voter_user_id = ? AND va.status = 'PENDING' AND va.del_flag = '0'
                   AND pi.status = 'VOTING'
+                  AND NOT EXISTS (SELECT 1 FROM ccr_ballot b
+                                  WHERE b.round_id = va.round_id
+                                    AND b.pricing_item_id = pi.id
+                                    AND b.voter_user_hash = SHA2(?, 256))
                   AND EXISTS (SELECT 1 FROM ccr_vote_round r
                               WHERE r.id = va.round_id AND r.status IN ('CREATED','VOTING','COUNTING'))
                 ORDER BY va.create_time DESC
                 """;
-        return R.ok(jdbcTemplate.queryForList(sql, voterUserId));
+        return R.ok(jdbcTemplate.queryForList(sql, voterUserId, voterUserId));
     }
 
     /** 委员提交本人票(一人一票);Idempotency-Key 头可选 */
