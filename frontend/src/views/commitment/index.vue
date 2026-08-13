@@ -38,7 +38,7 @@
           <span>客户承诺概览</span>
           <button class="btn btn--secondary" @click="openPolicies">策略管理</button>
         </div>
-        <table class="table" v-if="customerRows.length">
+        <table class="table customer-overview" v-if="customerRows.length">
           <thead>
             <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>有风险指标</th><th>操作</th></tr>
           </thead>
@@ -750,6 +750,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 客户承诺概览:列少时拉长撑满容器(参照 approval/detail.vue 宽屏恢复拉伸的做法) */
+.customer-overview { width: 100%; display: table; }
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
