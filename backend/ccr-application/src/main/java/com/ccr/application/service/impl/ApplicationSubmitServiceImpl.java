@@ -81,7 +81,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private static final Set<String> ITEM_TERMINAL_STATUS = Set.of("FINAL", "REJECTED", "VETOED", "CLOSED", "SUPERSEDED");
 
     /** 允许关联重提的原申请状态(§7.6:否决后保持终态,重提创建新申请;REJECTED 为 D18b 最典型入口) */
-    private static final Set<String> REAPPLY_SOURCE_STATUS = Set.of("FINAL", "REJECTED", "VETOED", "RETURNED", "CLOSED");
+    private static final Set<String> REAPPLY_SOURCE_STATUS = Set.of("FINAL", "REJECTED", "VETOED", "CLOSED");
 
     /** 已批准分项状态(沿用原决议,不重新审批) */
     private static final Set<String> APPROVED_ITEM_STATUS = Set.of("FINAL", "APPROVED_LEVEL");
@@ -577,7 +577,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /**
      * 存量贷款重复申请校验(§10.4 方案 A):同一真实贷款合同已有进行中申请时阻断提交。
      * 拟签订(planned='Y' 或无正式合同号)不构成重复;重提 reapply 源申请已终态,天然豁免。
-     * 进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/RETURNED/CLOSED)。
+     * 进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/CLOSED)。
      */
     private void checkDuplicateContractApplication(CcrPricingItem item, Long excludeAppId) {
         List<CcrPricingItemContractRel> rels = contractRelMapper.selectList(new LambdaQueryWrapper<CcrPricingItemContractRel>()
@@ -597,7 +597,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                       AND cr.planned_contract_flag != 'Y'
                       AND a.id != ?
                       AND a.del_flag = '0' AND pi.del_flag = '0'
-                      AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','RETURNED','CLOSED')
+                      AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','CLOSED')
                     """,
                     loanContractNo, excludeAppId);
             if (!rows.isEmpty()) {
@@ -1091,11 +1091,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             commitmentMapper.insert(copy);
         }
 
-        // 原申请置 RETURNED(终态保留,不回 DRAFT,§14.1);同事务保证重提成功才落状态
-        if (!ApplicationStatus.RETURNED.getCode().equals(source.getStatus())) {
-            source.setStatus(ApplicationStatus.RETURNED.getCode());
-            applicationMapper.updateById(source);
-        }
+        // 原申请保持原终态(已否决等)供溯源,重提只创建新申请、不改变原申请状态(§14.1)
         return target;
     }
 

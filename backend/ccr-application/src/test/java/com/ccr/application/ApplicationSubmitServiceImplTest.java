@@ -432,10 +432,10 @@ class ApplicationSubmitServiceImplTest {
         assertEquals(11L, relCaptor.getValue().getSourcePricingItemId());
     }
 
-    // ---------- 任务1:REJECTED(全否)可关联重提 + 原申请置 RETURNED(终态保留) ----------
+    // ---------- 任务1:REJECTED(全否)可关联重提 + 原申请保持 REJECTED 终态(不置 RETURNED) ----------
 
     @Test
-    void reapplyAllowsRejectedSourceAndMarksSourceReturned() {
+    void reapplyAllowsRejectedSourceKeepsSourceRejected() {
         CcrApplication source = groupApp();
         source.setStatus("REJECTED");
         when(applicationMapper.selectById(1L)).thenReturn(source);
@@ -456,9 +456,8 @@ class ApplicationSubmitServiceImplTest {
 
         assertEquals("DRAFT", target.getStatus());
         assertEquals(1L, target.getSourceApplicationId());
-        // 原申请同事务置 RETURNED(终态保留,不回 DRAFT)
-        assertEquals("RETURNED", source.getStatus());
-        verify(applicationMapper).updateById(source);
+        // 原申请保持原终态 REJECTED 供溯源(不置 RETURNED)
+        assertEquals("REJECTED", source.getStatus());
     }
 
     // ---------- 任务7:非信用类分项必须有担保组合且措施非空(§9.3-5) ----------

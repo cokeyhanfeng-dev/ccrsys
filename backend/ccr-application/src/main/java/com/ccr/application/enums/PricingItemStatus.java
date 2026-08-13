@@ -20,7 +20,6 @@ public enum PricingItemStatus {
     FINAL("FINAL", "终态"),
     VETOED("VETOED", "一票否决"),
     REJECTED("REJECTED", "否决"),
-    RETURNED("RETURNED", "已退回"),
     CLOSED("CLOSED", "关闭");
 
     private final String code;

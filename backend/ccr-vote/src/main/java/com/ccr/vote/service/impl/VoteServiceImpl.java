@@ -657,8 +657,7 @@ public class VoteServiceImpl implements VoteService {
                 PricingItemStatus.APPROVED_LEVEL.getCode(),
                 PricingItemStatus.VETOED.getCode(),
                 PricingItemStatus.REJECTED.getCode(),
-                PricingItemStatus.CLOSED.getCode(),
-                PricingItemStatus.RETURNED.getCode()).contains(status);
+                PricingItemStatus.CLOSED.getCode()).contains(status);
     }
 
     /** ccr_approval_action 流转留痕(§14.7):仅插入,失败不阻断主流程 */

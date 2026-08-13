@@ -5,7 +5,7 @@ import lombok.Getter;
 /**
  * 主申请状态(PRD V2 §7.6)
  * DRAFT→SUBMITTED→ROUTING→(权限内APPROVED_LEVEL→FINAL | 上会VOTING→COMMITTEE_PASS→PRESIDENT_DECISION→FINAL/VETOED)
- * 终态(FINAL/REJECTED/VETOED/RETURNED/CLOSED)不可回退;退回重提只创建新申请,原申请置 RETURNED 保留终态(§14.1)
+ * 终态(FINAL/REJECTED/VETOED/CLOSED)不可回退;退回重提只创建新申请,原申请保持原终态(否决等)供溯源(§14.1)
  */
 @Getter
 public enum ApplicationStatus {
@@ -20,7 +20,6 @@ public enum ApplicationStatus {
     FINAL("FINAL", "终态(已批/已否/已否决)"),
     VETOED("VETOED", "一票否决"),
     REJECTED("REJECTED", "已否决"),
-    RETURNED("RETURNED", "已退回"),
     CLOSED("CLOSED", "关闭");
 
     private final String code;
