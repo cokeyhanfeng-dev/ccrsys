@@ -191,11 +191,11 @@ export function customerClassText(code?: string, fallback = '—'): string {
   return textOf(CUSTOMER_CLASS, code, fallback)
 }
 
-/** 证件类型(caps 数仓 cert_tp:USCC 对公统一社会信用代码 / IDC 对私身份证;ID_CARD 业务库编码) */
+/** 证件类型(caps 数仓 cert_tp:USCC 对公统一社会信用代码 / IDC 对私身份证;ID_CARD 业务库编码;RDC 对私居民身份证) */
 export const CERT_TYPE: Record<string, string> = {
   UNIFIED: '统一社会信用代码', ID: '身份证',
   UNIFIED_SOCIAL: '统一社会信用代码', ID_CARD: '身份证',
-  IDC: '身份证'
+  IDC: '身份证', RDC: '居民身份证'
 }
 export function certTypeText(code?: string, fallback = '—'): string {
   return textOf(CERT_TYPE, code, fallback)
