@@ -8,6 +8,7 @@
 -- 2026-08-14:机构表由 12 家测试机构迁移为真实宜兴农商行 59 家(org_code=320223xxxx,来源数仓 dws.ccr_sys_dept1);
 --           机构 id 全量重分配(总行 1000,其余按 org_code 升序 1001-1058);部门归属码同步:
 --           公司金融部=3202233912/授信评审部=3202233943/零售金融=3202233991;支行系:城东支行=3202233050/营业部=3202233001
+-- 2026-08-14:删重复机构 3 家(董事业办公室 3202233904/运营管理部 3202233932/网络金融部 3202233992)+ 投诉处理部 3202233998,59→55 家
 -- ============================================================
 
 USE `ccr_rate`;
@@ -32,7 +33,7 @@ CREATE TABLE IF NOT EXISTS `ccr_sys_dept` (
   KEY `idx_branch_code` (`branch_code`)
 ) ENGINE=InnoDB COMMENT='机构表(数据权限控制,编码前缀匹配)';
 
--- ---------- 种子:真实机构层级(2026-08-14 由 12 家测试机构迁移为真实宜兴农商行 59 家,来源数仓 dws.ccr_sys_dept1) ----------
+-- ---------- 种子:真实机构层级(2026-08-14 由 12 家测试机构迁移为真实宜兴农商行 59 家,后删 4 家,现 55 家;来源数仓 dws.ccr_sys_dept1) ----------
 -- 机构 id 全量重分配:总行 1000,其余按 org_code 升序 1001-1058;部门归属(矩阵 dept_code/指派/ccr_dept_vp)统一使用机构 org_code
 INSERT INTO `ccr_sys_dept`
   (`id`,`org_code`,`branch_code`,`dept_name`,`parent_id`,`org_type`,`manager`,`status`,`sort_no`) VALUES
@@ -71,7 +72,6 @@ INSERT INTO `ccr_sys_dept`
   (1032,'3202233071','3202233071','江苏宜兴农村商业银行广汇支行',1000,'BRANCH',NULL,'ENABLE',71),
   (1033,'3202233077','3202233077','江苏宜兴农村商业银行高淳支行',1000,'BRANCH',NULL,'ENABLE',77),
   (1034,'3202233080',NULL,'江苏宜兴农村商业银行普惠金融部',1000,'DEPT',NULL,'ENABLE',80),
-  (1035,'3202233904',NULL,'江苏宜兴农村商业银行董事业办公室',1000,'DEPT',NULL,'ENABLE',04),
   (1036,'3202233905',NULL,'江苏宜兴农村商业银行党群工作部',1000,'DEPT',NULL,'ENABLE',05),
   (1037,'3202233906',NULL,'江苏宜兴农村商业银行办公室',1000,'DEPT',NULL,'ENABLE',06),
   (1038,'3202233908',NULL,'江苏宜兴农村商业银行纪委纪检监察室',1000,'DEPT',NULL,'ENABLE',08),
@@ -81,7 +81,6 @@ INSERT INTO `ccr_sys_dept`
   (1042,'3202233915',NULL,'江苏宜兴农村商业银行特殊资产管理部',1000,'DEPT',NULL,'ENABLE',15),
   (1043,'3202233921',NULL,'江苏宜兴农村商业银行董事会办公室',1000,'DEPT',NULL,'ENABLE',21),
   (1044,'3202233931',NULL,'江苏宜兴农村商业银行计划财务部',1000,'DEPT',NULL,'ENABLE',31),
-  (1045,'3202233932',NULL,'江苏宜兴农村商业银行运营管理部',1000,'DEPT',NULL,'ENABLE',32),
   (1046,'3202233935',NULL,'江苏宜兴农村商业银行金融市场部',1000,'DEPT',NULL,'ENABLE',35),
   (1047,'3202233937',NULL,'江苏宜兴农村商业银行运营管理部',1000,'DEPT',NULL,'ENABLE',37),
   (1048,'3202233941',NULL,'江苏宜兴农村商业银行法律合规部',1000,'DEPT',NULL,'ENABLE',41),
@@ -92,9 +91,7 @@ INSERT INTO `ccr_sys_dept`
   (1053,'3202233971',NULL,'江苏宜兴农村商业银行人力资源部',1000,'DEPT',NULL,'ENABLE',71),
   (1054,'3202233981',NULL,'江苏宜兴农村商业银行安全保卫部',1000,'DEPT',NULL,'ENABLE',81),
   (1055,'3202233984',NULL,'江苏宜兴农村商业银行网络金融部',1000,'DEPT',NULL,'ENABLE',84),
-  (1056,'3202233991',NULL,'江苏宜兴农村商业银行零售金融',1000,'DEPT',NULL,'ENABLE',91),
-  (1057,'3202233992',NULL,'江苏宜兴农村商业银行网络金融部',1000,'DEPT',NULL,'ENABLE',92),
-  (1058,'3202233998',NULL,'江苏宜兴农村商业银行投诉处理部',1000,'DEPT',NULL,'ENABLE',98)
+  (1056,'3202233991',NULL,'江苏宜兴农村商业银行零售金融',1000,'DEPT',NULL,'ENABLE',91)
 ON DUPLICATE KEY UPDATE
   org_code=VALUES(org_code), branch_code=VALUES(branch_code), dept_name=VALUES(dept_name),
   parent_id=VALUES(parent_id), org_type=VALUES(org_type), manager=VALUES(manager), sort_no=VALUES(sort_no);

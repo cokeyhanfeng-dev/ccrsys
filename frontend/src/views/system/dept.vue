@@ -58,6 +58,10 @@
               <input class="form-input" v-model="editForm.deptName" />
             </div>
             <div class="form-field">
+              <label class="form-field__label">机构编码(org_code)</label>
+              <input class="form-input" :value="current.orgCode" disabled />
+            </div>
+            <div class="form-field">
               <label class="form-field__label">机构类型</label>
               <select class="form-select" v-model="editForm.orgType">
                 <option v-for="t in orgTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
@@ -280,10 +284,10 @@ onMounted(load)
 
 <style scoped>
 .dept-layout { display: flex; gap: 16px; align-items: flex-start; }
-.dept-tree { flex: 0 0 360px; max-height: calc(100vh - 220px); overflow: auto; }
+.dept-tree { flex: 0 0 480px; max-height: calc(100vh - 220px); overflow: auto; }
 .dept-detail { flex: 1; }
 .card__head { gap: 8px; flex-wrap: wrap; }
-.tree-node { display: inline-flex; align-items: center; gap: 8px; }
+.tree-node { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tree-node__code { color: var(--color-text-light); font-size: 12px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .req { color: var(--color-danger); }
