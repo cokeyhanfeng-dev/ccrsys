@@ -833,12 +833,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (Map<String, Object> contract : dataWarehouseService.contractsByTranche(trancheNo)) {
             contractSeq++;
             String contractNo = String.valueOf(contract.get("contract_no"));
-            Long contractRecordId = collect.contractRecordIds.computeIfAbsent(contractNo,
-                    k -> addSnapshotRecord(bundleId, "dw_loan_contract_snapshot", "CONTRACT", contractNo, contract));
-            if (trancheRecordId != null) {
+            // 合同去重(数据源可能存在多批次重复):仅首次采集合同并采集其借据,避免同借据重复采集撞 uk_snapshot_record
+            Long contractRecordId = collect.contractRecordIds.computeIfAbsent(contractNo, k -> {
+                Long rid = addSnapshotRecord(bundleId, "dw_loan_contract_snapshot", "CONTRACT", contractNo, contract);
+                collectNotes(bundleId, contractNo, rid, collect);
+                return rid;
+            });
+            if (trancheRecordId != null && contractRecordId != null) {
                 collect.relations.add(new SnapshotRelationInput(trancheRecordId, contractRecordId, "TRANCHE_TO_CONTRACT", contractSeq));
             }
-            collectNotes(bundleId, contractNo, contractRecordId, collect);
         }
     }
 
@@ -898,9 +901,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         // 名下合同→借据(合同关系回填与核验数据源)
         for (Map<String, Object> contract : dataWarehouseService.contractsByBorrower(customerNo)) {
             String contractNo = String.valueOf(contract.get("contract_no"));
-            Long contractRecordId = collect.contractRecordIds.computeIfAbsent(contractNo,
-                    k -> addSnapshotRecord(bundleId, "dw_loan_contract_snapshot", "CONTRACT", contractNo, contract));
-            collectNotes(bundleId, contractNo, contractRecordId, collect);
+            // 合同去重(数据源可能存在多批次重复):仅首次采集合同并采集其借据,避免同借据重复采集撞 uk_snapshot_record
+            collect.contractRecordIds.computeIfAbsent(contractNo, k -> {
+                Long rid = addSnapshotRecord(bundleId, "dw_loan_contract_snapshot", "CONTRACT", contractNo, contract);
+                collectNotes(bundleId, contractNo, rid, collect);
+                return rid;
+            });
         }
     }
 

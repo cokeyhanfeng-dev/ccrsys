@@ -1067,9 +1067,9 @@ function contractStatusBadge(s?: string) {
   return s === 'EFFECTIVE' ? 'badge--success' : s === 'SETTLED' ? 'badge--neutral' : s === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 
-// 部门归属文案(§D16a 矩阵透出:GSB/SXSB/LSB)
+// 部门归属文案(§D16a 矩阵透出:机构org_code——3202233912公司金融部/3202233943授信评审部/3202233991零售金融)
 function deptText(code?: string) {
-  const map: Record<string, string> = { '100101': '公司金融部', '100102': '授信评审部', '100103': '零售金融部' }
+  const map: Record<string, string> = { '3202233912': '公司金融部', '3202233943': '授信评审部', '3202233991': '零售金融' }
   return code ? (map[code] || code) : '—'
 }
 

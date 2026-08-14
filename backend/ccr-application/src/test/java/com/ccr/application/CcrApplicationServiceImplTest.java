@@ -498,7 +498,7 @@ class CcrApplicationServiceImplTest {
     void listApplicationsBranchManagerFiltersByBranchCode() {
         when(currentLoginUser.requireCurrentUser()).thenReturn(loginUser(8L, "branch_manager", 1001L));
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(1001L)))
-                .thenReturn(List.of("100201"));
+                .thenReturn(List.of("3202233050"));
 
         service.listApplications("ROUTING");
 
@@ -506,7 +506,7 @@ class CcrApplicationServiceImplTest {
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(applicationMapper).selectList(captor.capture());
         assertTrue(captor.getValue().getSqlSegment().contains("apply_branch_code"));
-        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("100201"));
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("3202233050"));
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ROUTING"));
         assertFalse(captor.getValue().getSqlSegment().contains("applicant_user_id"));
     }

@@ -57,7 +57,7 @@ class ApplicationAccessServiceTest {
         application.setId(30L);
         application.setApplicantUserId(1000L);
         application.setApplicantOrgId(1001L);
-        application.setApplyBranchCode("100201");
+        application.setApplyBranchCode("3202233050");
         application.setStatus("DRAFT");
         when(applicationMapper.selectById(30L)).thenReturn(application);
     }
@@ -92,7 +92,7 @@ class ApplicationAccessServiceTest {
     void requireView_allowsSameBranchManager() {
         when(appLoginUser.requireCurrentUser()).thenReturn(user(1001L, AppLoginUser.ROLE_BRANCH_MANAGER, 1001L));
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(1001L)))
-                .thenReturn(List.of("100201"));
+                .thenReturn(List.of("3202233050"));
 
         assertDoesNotThrow(() -> accessService.requireView(30L));
     }
@@ -101,7 +101,7 @@ class ApplicationAccessServiceTest {
     void requireView_rejectsDifferentBranchManager() {
         when(appLoginUser.requireCurrentUser()).thenReturn(user(1008L, AppLoginUser.ROLE_BRANCH_MANAGER, 1007L));
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(1007L)))
-                .thenReturn(List.of("100203"));
+                .thenReturn(List.of("3202233001"));
 
         ServiceException exception = assertThrows(ServiceException.class,
                 () -> accessService.requireView(30L));
@@ -110,10 +110,10 @@ class ApplicationAccessServiceTest {
 
     @Test
     void requirePricingItemView_allowsAssignedDepartmentManager() {
-        CcrPricingItem item = item("DEPT_GENERAL_MANAGER", "GSB");
+        CcrPricingItem item = item("DEPT_GENERAL_MANAGER", "3202233912");
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(appLoginUser.requireCurrentUser()).thenReturn(user(1010L, AppLoginUser.ROLE_DEPT_GM, 1003L));
-        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", 1001L, "GSB"))
+        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", 1001L, "3202233912"))
                 .thenReturn(List.of(1010L));
 
         assertDoesNotThrow(() -> accessService.requirePricingItemView(10L));
@@ -121,10 +121,10 @@ class ApplicationAccessServiceTest {
 
     @Test
     void requirePricingItemView_rejectsUnassignedDepartmentManager() {
-        CcrPricingItem item = item("DEPT_GENERAL_MANAGER", "GSB");
+        CcrPricingItem item = item("DEPT_GENERAL_MANAGER", "3202233912");
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(appLoginUser.requireCurrentUser()).thenReturn(user(1011L, AppLoginUser.ROLE_DEPT_GM, 1003L));
-        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", 1001L, "GSB"))
+        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", 1001L, "3202233912"))
                 .thenReturn(List.of(1010L));
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
                 .thenReturn(0);

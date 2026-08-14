@@ -61,7 +61,7 @@ public class NodeAssigneeResolver {
      * @param nodeCode 节点编码
      * @param orgId    申请人机构(ccr_sys_dept.id),用于 DEPT 层归属判定;可空(空时 DEPT 配置不参与)
      * @param flowKey  流程定义key,可空;非空时同时命中该流程专属配置与全局配置
-     * @param deptCode 分项部门归属编码(§D16a,矩阵透出落库:机构org_code——100101公司金融部/100102授信评审部/100103零售金融部;2026-08-14 统一 org_code);部门类节点
+     * @param deptCode 分项部门归属编码(§D16a,矩阵透出落库:机构org_code——3202233912公司金融部/3202233943授信评审部/3202233991零售金融;2026-08-14 统一 org_code);部门类节点
      *                 (DEPT_GENERAL_MANAGER/VICE_PRESIDENT)按此解析,非部门节点传 null 走原逻辑
      */
     public ResolveResult resolve(String nodeCode, Long orgId, String flowKey, String deptCode) {

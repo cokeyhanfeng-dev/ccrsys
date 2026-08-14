@@ -54,10 +54,6 @@
         <template v-if="current">
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">机构编码(org_code)</label>
-              <input class="form-input" :value="current.orgCode" disabled />
-            </div>
-            <div class="form-field">
               <label class="form-field__label">机构名称 <span class="req">*</span></label>
               <input class="form-input" v-model="editForm.deptName" />
             </div>
@@ -183,12 +179,14 @@ async function load() {
 }
 
 function onSelect(data: SysDept) {
-  current.value = data
-  editForm.deptName = data.deptName
-  editForm.orgType = data.orgType || 'BRANCH'
-  editForm.parentId = data.parentId ?? 0
-  editForm.manager = data.manager || ''
-  editForm.sortNo = data.sortNo ?? 1
+  // 树节点不含 parentId/manager/sortNo,用扁平列表补全详情数据(修复上级机构/负责人/排序号显示)
+  const full = flatDepts.value.find((d) => d.id === data.id) ?? data
+  current.value = full
+  editForm.deptName = full.deptName
+  editForm.orgType = full.orgType || 'BRANCH'
+  editForm.parentId = full.parentId ?? 0
+  editForm.manager = full.manager || ''
+  editForm.sortNo = full.sortNo ?? 1
 }
 
 async function saveEdit() {

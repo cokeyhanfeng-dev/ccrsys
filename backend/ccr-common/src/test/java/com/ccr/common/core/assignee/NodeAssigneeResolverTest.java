@@ -135,10 +135,10 @@ class NodeAssigneeResolverTest {
 
     @Test
     void resolve_deptHit_whenApplicantOrgUnderConfig() throws SQLException {
-        stubConfigs(List.of(config("DEPT", "100201"), config("ROLE", "branch_manager")));
-        // 申请人机构 10020101(网点) 归属配置机构 100201(支行)
+        stubConfigs(List.of(config("DEPT", "3202233050"), config("ROLE", "branch_manager")));
+        // 申请人机构 3202233055(东虹分理处) 归属配置机构 3202233050(城东支行)
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
-                .thenReturn(List.of("10020101"));
+                .thenReturn(List.of("3202233055"));
         NodeAssigneeResolver.AssigneeUser branchUser = user(1001L, "wangwu", "王五");
         stubUserQueries(Map.of(), Map.of("branch_manager", List.of(branchUser)), List.of(branchUser));
 
@@ -149,10 +149,10 @@ class NodeAssigneeResolverTest {
 
     @Test
     void resolve_deptNotMatched_fallsThroughToRole() throws SQLException {
-        stubConfigs(List.of(config("DEPT", "100201"), config("ROLE", "branch_manager")));
-        // 申请人机构 10020201 不归属配置机构 100201 → DEPT 不命中,ROLE 兜底
+        stubConfigs(List.of(config("DEPT", "3202233050"), config("ROLE", "branch_manager")));
+        // 申请人机构 3202233004(城东分理处) 不归属配置机构 3202233050(城东支行) → DEPT 不命中,ROLE 兜底
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
-                .thenReturn(List.of("10020201"));
+                .thenReturn(List.of("3202233004"));
         NodeAssigneeResolver.AssigneeUser branchUser = user(1001L, "wangwu", "王五");
         stubUserQueries(Map.of(), Map.of("branch_manager", List.of(branchUser)), List.of());
 

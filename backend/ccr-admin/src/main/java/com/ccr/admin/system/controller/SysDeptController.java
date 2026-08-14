@@ -40,20 +40,20 @@ public class SysDeptController {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 机构列表(扁平) */
+    /** 机构列表(扁平;排序:总行→部室→支行→网点,组内按 sort_no) */
     @GetMapping
     public R<List<CcrSysDept>> list() {
         return R.ok(deptMapper.selectList(new LambdaQueryWrapper<CcrSysDept>()
                 .eq(CcrSysDept::getDelFlag, "0")
-                .orderByAsc(CcrSysDept::getSortNo)));
+                .last("ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no")));
     }
 
-    /** 机构树(总行→部门/支行→网点) */
+    /** 机构树(总行→部门/支行→网点;排序:总行→部室→支行→网点,组内按 sort_no) */
     @GetMapping("/tree")
     public R<List<Map<String, Object>>> tree() {
         List<CcrSysDept> all = deptMapper.selectList(new LambdaQueryWrapper<CcrSysDept>()
                 .eq(CcrSysDept::getDelFlag, "0")
-                .orderByAsc(CcrSysDept::getSortNo));
+                .last("ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no"));
         List<Map<String, Object>> tree = new ArrayList<>();
         for (CcrSysDept d : all) {
             if (d.getParentId() == null || d.getParentId() == 0) {
@@ -254,14 +254,12 @@ public class SysDeptController {
         }
     }
 
-    /** 祖先链/支行编码推导:BRANCH=自身orgCode;NETWORK=所属支行branchCode;DEPT/HEAD为空 */
+    /** 父机构/支行编码推导:BRANCH=自身orgCode;NETWORK=所属支行branchCode;DEPT/HEAD为空 */
     private void fillHierarchy(CcrSysDept dept, CcrSysDept parent) {
         if (parent == null) {
             dept.setParentId(0L);
-            dept.setAncestors("0");
         } else {
             dept.setParentId(parent.getId());
-            dept.setAncestors(parent.getAncestors() + "," + parent.getId());
         }
         String orgType = dept.getOrgType() == null ? "" : dept.getOrgType();
         switch (orgType) {

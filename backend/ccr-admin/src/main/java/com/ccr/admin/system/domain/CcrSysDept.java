@@ -22,9 +22,6 @@ public class CcrSysDept {
     /** 机构编码(层级前缀数字码,唯一,禁改):1000总行/1001xx部门/1002xx支行/支行码+两位为网点 */
     private String orgCode;
 
-    /** 祖先链(机构id逗号分隔),如 0,1000,1002 */
-    private String ancestors;
-
     /** 支行编码:BRANCH=自身orgCode;NETWORK=所属支行orgCode;DEPT/HEAD为空 */
     private String branchCode;
 

@@ -588,7 +588,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         result.setMatchedRuleName(terminalRow.getRemark());
         // 终审命中行编号(小组兜底行同样记录,审计溯源 §8.6)
         result.setMatchedMatrixNo(terminalRow.getMatrixNo());
-        // 部门归属编码(矩阵透出,§D16a 部门分流:对公存量GSB/对公新增SXSB/个人经营LSB)
+        // 部门归属编码(矩阵透出,§D16a 部门分流:对公存量→3202233912公司金融部/对公新增→3202233943授信评审部/个人经营→3202233991零售金融)
         result.setDeptCode(terminalRow.getDeptCode());
         // 终审节点有效边界:矩阵边界 ∩ 产品硬边界(D3)
         result.setBoundaryRate(intersectBoundary(boundary, hardBoundary, isLoan));
