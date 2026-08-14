@@ -75,6 +75,7 @@
           <div v-if="customer.phone" class="desc-item"><span class="desc-label">联系电话</span>{{ customer.phone }}</div>
           <div v-if="customer.openOrgName" class="desc-item"><span class="desc-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.openDate" class="desc-item"><span class="desc-label">开户日期</span>{{ customer.openDate }}</div>
+          <div v-if="customer.basicAccount" class="desc-item"><span class="desc-label">基本户账户</span>{{ customer.basicAccount }}</div>
           <div v-if="customer.customerClass" class="desc-item"><span class="desc-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
         </div>
         <div v-else class="empty-block">暂无数据</div>

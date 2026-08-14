@@ -58,10 +58,6 @@
               <input class="form-input" :value="current.orgCode" disabled />
             </div>
             <div class="form-field">
-              <label class="form-field__label">机构编码(dept_code)</label>
-              <input class="form-input" :value="current.deptCode" disabled />
-            </div>
-            <div class="form-field">
               <label class="form-field__label">机构名称 <span class="req">*</span></label>
               <input class="form-input" v-model="editForm.deptName" />
             </div>

@@ -170,6 +170,10 @@
             <label class="form-field__label">注册资本(万元)</label>
             <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
           </div>
+          <div class="form-field">
+            <label class="form-field__label">基本户账户</label>
+            <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
+          </div>
         </template>
         <template v-else>
           <div class="form-field">
@@ -967,7 +971,7 @@ const form = reactive({
   customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
-  ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '',
+  ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '', basicAccount: '',
   // 对私(数仓带出,只读)
   idType: '', idNo: '', occupation: '', annualIncome: '', maritalStatus: '', phone: '',
   // 通用
@@ -1058,6 +1062,7 @@ async function loadCustomerDetail() {
     form.registeredCapital = basic.registeredCapital || ''
     form.openOrg = basic.openOrgName || ''
     form.openDate = basic.openDate || ''
+    form.basicAccount = basic.basicAccount || form.basicAccount
     form.idType = basic.certType || ''
     form.idNo = basic.certNo || ''
     form.occupation = basic.occupation || ''
@@ -1730,7 +1735,8 @@ function buildPayload(): ApplicationPayload {
       maritalStatus: form.maritalStatus,
       phone: form.phone,
       openOrg: form.openOrg,
-      openDate: form.openDate
+      openDate: form.openDate,
+      basicAccount: form.basicAccount
     }),
     // 授信协议补录/修正快照(存量=协议带出可修正;新增=手工补录,协议号可空;审批详情优先展示补录值)
     creditInfoJson: serializeCreditInfo() ? JSON.stringify(serializeCreditInfo()) : undefined
@@ -1895,6 +1901,7 @@ async function loadDraftIntoForm(id: number | string) {
   form.phone = custInfo?.phone || ''
   form.openOrg = custInfo?.openOrg || ''
   form.openDate = custInfo?.openDate || ''
+  form.basicAccount = custInfo?.basicAccount || ''
   // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
   const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
   relations.value = rels

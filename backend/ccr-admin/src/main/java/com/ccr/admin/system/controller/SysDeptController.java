@@ -66,7 +66,6 @@ public class SysDeptController {
     private Map<String, Object> toNode(List<CcrSysDept> all, CcrSysDept d) {
         Map<String, Object> node = new LinkedHashMap<>();
         node.put("id", d.getId());
-        node.put("deptCode", d.getDeptCode());
         node.put("orgCode", d.getOrgCode());
         node.put("branchCode", d.getBranchCode());
         node.put("deptName", d.getDeptName());
@@ -103,14 +102,6 @@ public class SysDeptController {
             }
             checkPrefixConsistency(parent, dept.getOrgCode());
         }
-        if (StrUtil.isBlank(dept.getDeptCode())) {
-            dept.setDeptCode(dept.getOrgCode());
-        }
-        Long codeDup = deptMapper.selectCount(new LambdaQueryWrapper<CcrSysDept>()
-                .eq(CcrSysDept::getDeptCode, dept.getDeptCode()));
-        if (codeDup != null && codeDup > 0) {
-            throw new ServiceException(400, "机构编码(dept_code)已存在:" + dept.getDeptCode());
-        }
         fillHierarchy(dept, parent);
         dept.setTenantId("000000");
         dept.setStatus("DISABLE"); // 新增机构默认停用,启用后方可被绑定与业务选择
@@ -133,9 +124,6 @@ public class SysDeptController {
         // 编码唯一、禁改(§5.1.1)
         if (StrUtil.isNotBlank(dept.getOrgCode()) && !dept.getOrgCode().equals(exist.getOrgCode())) {
             throw new ServiceException(400, "机构编码(org_code)禁止修改");
-        }
-        if (StrUtil.isNotBlank(dept.getDeptCode()) && !dept.getDeptCode().equals(exist.getDeptCode())) {
-            throw new ServiceException(400, "机构编码(dept_code)禁止修改");
         }
         exist.setDeptName(StrUtil.isBlank(dept.getDeptName()) ? exist.getDeptName() : dept.getDeptName());
         exist.setManager(dept.getManager());

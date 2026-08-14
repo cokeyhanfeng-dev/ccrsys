@@ -115,7 +115,8 @@ export function configStatusText(code?: string, fallback = '—'): string {
 /** 审批节点编码→岗位名 */
 export const NODE_LABELS: Record<string, string> = {
   BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长'
+  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长',
+  SECRETARY: '贷审会秘书岗'
 }
 export function nodeLabel(code?: string, fallback = '—'): string {
   return textOf(NODE_LABELS, code, fallback)
@@ -201,8 +202,10 @@ export function certTypeText(code?: string, fallback = '—'): string {
   return textOf(CERT_TYPE, code, fallback)
 }
 
-/** 金额档 */
-export const AMOUNT_TIER: Record<string, string> = { LT_5000: '5000万以下', GE_5000: '5000万及以上' }
+/** 金额档(需求三三档化:2026-08-14) */
+export const AMOUNT_TIER: Record<string, string> = {
+  LT_1000: '1000万以下', GE_1000_LT_5000: '1000万(含)-5000万', GE_5000: '5000万及以上'
+}
 export function amountTierText(code?: string, fallback = '—'): string {
   return textOf(AMOUNT_TIER, code, fallback)
 }
@@ -328,7 +331,7 @@ export const ROLE_TEXT: Record<string, string> = {
   customer_manager: '客户经理', branch_manager: '支行行长', dept_gm: '部门总经理',
   vice_president: '分管行长', committee_member: '审批小组成员', president: '总行行长',
   admin: '系统管理员', auditor: '审计员', config_reviewer: '配置复核员',
-  contract_operator: '合同经办岗'
+  contract_operator: '合同经办岗', secretary: '贷审会秘书岗'
 }
 export function roleText(code?: string, fallback = '—'): string {
   return textOf(ROLE_TEXT, code, fallback)

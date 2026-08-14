@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `ccr_node_assignee` (
   `id`                  BIGINT       NOT NULL,
   `tenant_id`           VARCHAR(20)  NOT NULL DEFAULT '000000',
   `flow_key`            VARCHAR(64)  NULL COMMENT '流程定义key(Warm-Flow),空=适用该节点所有流程',
-  `node_code`           VARCHAR(64)  NOT NULL COMMENT '节点编码:BRANCH_MANAGER/DEPT_GENERAL_MANAGER/VICE_PRESIDENT/SIX_PEOPLE_GROUP/PRESIDENT',
+  `node_code`           VARCHAR(64)  NOT NULL COMMENT '节点编码:BRANCH_MANAGER/DEPT_GENERAL_MANAGER/VICE_PRESIDENT/SIX_PEOPLE_GROUP/PRESIDENT/SECRETARY',
   `assignee_type`       VARCHAR(20)  NOT NULL COMMENT 'PERSON按人/GROUP按组(角色集合,逗号分隔)/DEPT按机构/ROLE按角色兜底',
   `assignee_code`       VARCHAR(64)  NOT NULL COMMENT '工号/组编码/机构org_code/角色码',
   `relation`            VARCHAR(10)  NOT NULL DEFAULT 'OR' COMMENT 'AND需全员/OR任一(默认)',
@@ -68,3 +68,12 @@ CREATE TABLE IF NOT EXISTS `ccr_export_record` (
   UNIQUE KEY `uk_export_no` (`export_no`),
   KEY `idx_export_app` (`application_id`,`export_time`)
 ) ENGINE=InnoDB COMMENT='ccr_export_record 档案导出记录(§11.10)';
+
+-- ---------- 种子:贷审会秘书岗节点指派(需求四,2026-08-14) ----------
+-- SECRETARY 节点按角色兜底解析:所有 secretary 角色用户可审批(审核岗,同意后上送、否决即整单拦截);
+-- 触发条件在路由引擎条件插节点(applySecretaryGate),此处仅配置处理人
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2091000000000000001,'000000',NULL,'SECRETARY','ROLE','secretary','OR','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SECRETARY' AND assignee_type='ROLE' AND assignee_code='secretary' AND del_flag='0');

@@ -1,10 +1,12 @@
 -- ============================================================
--- 手工测试业务数据清理(2026-08-12,配合 docs/06_测试方案.md §12 数据准备)
+-- 手工测试业务数据清理(2026-08-13,配合 docs/06_测试方案.md §12 数据准备 / docs/07_手工测试用例.md)
 -- 范围:清空全部业务表(申请/分项/审批/表决/决议/快照/承诺/通知/审计/导出/outbox/变更日志)
+--   + Warm-Flow 运行数据(flow_instance/flow_task/flow_his_task/flow_skip,审批实例/任务/历史/跳过)
 -- 保留:系统主数据(sys_user/sys_dept/sys_menu/sys_role/sys_user_post)、配置表
 --   (dict/rate_matrix/node_permission/node_assignee/dept_vp/product*/lpr*/rule*/cache_config/
 --    dataset*/field*/metric*/source_mapping/validation_rule/display_schema/notification_rule*/
---    tracking_policy*)、数仓 mock(caps_*/dw_*,由 10_mock/15/16/17 维护)
+--    tracking_policy*)、数仓 mock(caps_*/dw_*,由 10_mock/15/16/17 维护)、
+--    Warm-Flow 流程定义(flow_definition/flow_node/flow_user,审批流程定义必须保留)
 -- 幂等:可重复执行;TRUNCATE 隐式提交,执行前已 SET FOREIGN_KEY_CHECKS=0
 -- 执行:docker exec -i ccr-mysql mysql -uroot -proot123 --default-character-set=utf8mb4 ccr_rate < db/20_clean_biz.sql
 -- ============================================================
@@ -12,6 +14,12 @@
 USE `ccr_rate`;
 
 SET FOREIGN_KEY_CHECKS = 0;
+
+-- Warm-Flow 运行数据(流程定义 flow_definition/flow_node/flow_user 保留)
+TRUNCATE TABLE flow_skip;
+TRUNCATE TABLE flow_task;
+TRUNCATE TABLE flow_his_task;
+TRUNCATE TABLE flow_instance;
 
 -- 表决与行长决策
 TRUNCATE TABLE ccr_vote_round_item;

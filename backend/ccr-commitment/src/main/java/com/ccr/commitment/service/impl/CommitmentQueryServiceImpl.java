@@ -215,7 +215,7 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                 ORDER BY stat_month DESC LIMIT 1""", orgCode);
         Map<String, Object> snapshot = perf.isEmpty() ? null : perf.get(0);
 
-        // 本系统评估数据:机构下承诺计划(dept_code ↔ org_code 映射)
+        // 本系统评估数据:机构下承诺计划(统一 org_code,2026-08-14)
         List<Object> orgParams = new ArrayList<>();
         orgParams.add(orgCode);
         Map<String, Object> orgPlanStats = jdbcTemplate.queryForMap("""
@@ -226,7 +226,7 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                 LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                 LEFT JOIN ccr_application a ON a.id = pi.application_id
                 WHERE cp.del_flag = '0'
-                  AND cp.org_id IN (SELECT id FROM ccr_sys_dept WHERE dept_code = ? AND del_flag = '0')
+                  AND cp.org_id IN (SELECT id FROM ccr_sys_dept WHERE org_code = ? AND del_flag = '0')
                   AND """ + scopeCondition(scope, orgParams), orgParams.toArray());
 
         // 该客户自身的承诺计划评估汇总(集团客户含成员口径)

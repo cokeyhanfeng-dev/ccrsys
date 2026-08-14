@@ -73,6 +73,10 @@
             <label class="form-field__label">内部信用等级</label>
             <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
           </div>
+          <div class="form-field">
+            <label class="form-field__label">基本户账户</label>
+            <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
+          </div>
         </template>
         <!-- 对私字段(数仓带出,只读) -->
         <template v-else>
@@ -116,75 +120,81 @@
         <span class="badge badge--warning">存款利率越高越优惠</span>
         <InfoTip>每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。</InfoTip>
       </div>
-      <table class="table" v-if="items.length">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>账户方式 <span class="req">*</span></th>
-            <th>存款账户</th>
-            <th>产品 <span class="req">*</span></th>
-            <th>期限</th>
-            <th>金额(万元) <span class="req">*</span></th>
-            <th>币种</th>
-            <th>当前执行利率(%)</th>
-            <th>申请利率(%) <span class="req">*</span></th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(d, i) in items" :key="i">
-            <td>{{ i + 1 }}</td>
-            <td>
-              <select class="form-select" v-model="d.accountMode" @change="onAccountModeChange(d)">
-                <option value="EXISTING">存量账户调价</option>
-                <option value="PLANNED">拟开户方案</option>
-              </select>
-            </td>
-            <td>
-              <template v-if="d.accountMode === 'EXISTING'">
-                <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
-                <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
-                  数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 当前利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
-                </div>
-                <div v-else-if="d.lookupDone" class="section-tip" style="color:var(--color-warning);margin-top:4px">
-                  数仓未找到该账户,请手工完善产品/期限/原利率
-                </div>
-              </template>
-              <span v-else class="badge badge--neutral">拟开户</span>
-            </td>
-            <td>
-              <select class="form-select" v-model="d.productCode">
-                <option value="" disabled>选择产品</option>
-                <option v-for="p in depositProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
-              </select>
-            </td>
-            <td>
-              <div style="display:flex;gap:4px">
-                <input class="form-input form-input--amount" v-model="d.termValue" placeholder="数值" style="width:80px" />
-                <select class="form-select" v-model="d.termUnit" style="width:80px">
-                  <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
-                </select>
+      <!-- 每分项一张卡片(字段带标签分行分块,避免多列横向滚动导致关键字段看不见;提交结构不变) -->
+      <div v-for="(d, i) in items" :key="i" class="mortgage-item deposit-item">
+        <div class="mortgage-item__head">
+          <span class="deposit-item__title">存款分项 {{ i + 1 }}</span>
+          <button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button>
+        </div>
+        <!-- 账户方式 + 存款账户(存量反查/拟开户) -->
+        <div class="mortgage-item__grid">
+          <div class="form-field">
+            <label class="form-field__label">账户方式 <span class="req">*</span></label>
+            <select class="form-select" v-model="d.accountMode" @change="onAccountModeChange(d)">
+              <option value="EXISTING">存量账户调价</option>
+              <option value="PLANNED">拟开户方案</option>
+            </select>
+          </div>
+          <div class="form-field" style="grid-column: span 3">
+            <label class="form-field__label">存款账户</label>
+            <template v-if="d.accountMode === 'EXISTING'">
+              <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
+              <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
+                数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 当前利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
               </div>
-            </td>
-            <td><input class="form-input form-input--amount" v-model="d.amount" /></td>
-            <td>
-              <select class="form-select" v-model="d.currency">
-                <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </td>
-            <td><input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" /></td>
-            <td>
-              <input class="form-input form-input--amount" v-model="d.requestedRate" placeholder="高于当前执行利率" />
-              <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
-              <div v-if="limitOf(d.productCode)" class="limit-hint" :class="{ 'limit-hint--exceed': exceedOf(d) }">
-                标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
-                <template v-if="bpOf(d) != null"> · 较上限 {{ bpOf(d)! > 0 ? '+' : '' }}{{ bpOf(d) }} BP</template>
+              <div v-else-if="d.lookupDone" class="section-tip" style="color:var(--color-warning);margin-top:4px">
+                数仓未找到该账户,请手工完善产品/期限/原利率
               </div>
-            </td>
-            <td><button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button></td>
-          </tr>
-        </tbody>
-      </table>
+            </template>
+            <span v-else class="badge badge--neutral">拟开户(未开户业务)</span>
+          </div>
+        </div>
+        <!-- 产品/期限/金额/币种 -->
+        <div class="mortgage-item__grid" style="margin-top:10px">
+          <div class="form-field">
+            <label class="form-field__label">产品 <span class="req">*</span></label>
+            <select class="form-select" v-model="d.productCode">
+              <option value="" disabled>选择产品</option>
+              <option v-for="p in depositProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">期限 <span class="req">*</span></label>
+            <div style="display:flex;gap:4px">
+              <input class="form-input form-input--amount" v-model="d.termValue" placeholder="数值" style="flex:1" />
+              <select class="form-select" v-model="d.termUnit" style="width:76px">
+                <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">金额(万元) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="d.amount" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">币种</label>
+            <select class="form-select" v-model="d.currency">
+              <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </div>
+        </div>
+        <!-- 利率:当前执行 + 申请(含标准上限对比) -->
+        <div class="mortgage-item__grid" style="margin-top:10px">
+          <div class="form-field">
+            <label class="form-field__label">当前执行利率(%)</label>
+            <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
+          </div>
+          <div class="form-field" style="grid-column: span 3">
+            <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="d.requestedRate" placeholder="高于当前执行利率" />
+            <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
+            <div v-if="limitOf(d.productCode)" class="limit-hint" :class="{ 'limit-hint--exceed': exceedOf(d) }">
+              标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
+              <template v-if="bpOf(d) != null"> · 较上限 {{ bpOf(d)! > 0 ? '+' : '' }}{{ bpOf(d) }} BP</template>
+            </div>
+          </div>
+        </div>
+      </div>
       <button class="btn btn--secondary" style="margin-top:12px" @click="addItem">＋ 添加存款分项</button>
     </div>
 
@@ -330,7 +340,7 @@ const form = reactive({
   customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
-  ucrCode: '', fiveLevelClass: '', creditLevel: '',
+  ucrCode: '', fiveLevelClass: '', creditLevel: '', basicAccount: '',
   // 对私(数仓带出,只读)
   idType: '', idNo: '', occupation: '', phone: '',
   openOrg: '', openDate: '',
@@ -408,6 +418,7 @@ async function loadCustomerDetail() {
     form.creditLevel = basic.creditLevel || ''
     form.openOrg = basic.openOrgName || ''
     form.openDate = basic.openDate || ''
+    form.basicAccount = basic.basicAccount || form.basicAccount
     form.idType = basic.certType || ''
     form.idNo = basic.certNo || ''
     form.occupation = basic.occupation || ''
@@ -529,7 +540,8 @@ function buildPayload(): ApplicationPayload {
       occupation: form.occupation,
       phone: form.phone,
       openOrg: form.openOrg,
-      openDate: form.openDate
+      openDate: form.openDate,
+      basicAccount: form.basicAccount
     })
   }
 }
@@ -655,6 +667,7 @@ async function loadDraftIntoForm(id: number | string) {
   let custInfo: any = null
   try { custInfo = app.customerInfoJson ? JSON.parse(app.customerInfoJson) : null } catch { custInfo = null }
   if (custInfo?.customerName) form.customerName = custInfo.customerName
+  form.basicAccount = custInfo?.basicAccount || ''
   if (app.customerNo) {
     await loadCustomerDetail()
   }
@@ -716,4 +729,7 @@ async function loadDraftIntoForm(id: number | string) {
   background: var(--color-primary-light); color: var(--color-primary);
   font-size: 12px; font-weight: 500;
 }
+/* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
+.deposit-item { margin-bottom: 14px; }
+.deposit-item__title { font-size: 14px; font-weight: 600; }
 </style>

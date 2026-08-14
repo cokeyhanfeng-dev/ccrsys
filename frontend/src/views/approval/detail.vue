@@ -92,6 +92,7 @@
           <div v-if="customer.restAddr"><span class="dg-label">注册地址</span>{{ customer.restAddr }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.openDate"><span class="dg-label">开户日期</span>{{ customer.openDate }}</div>
+          <div v-if="customer.basicAccount"><span class="dg-label">基本户账户</span>{{ customer.basicAccount }}</div>
           <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
         </template>
         <!-- 对私客户(§20 ①:姓名/证件类型/证件号码/职业/年收入/婚姻状况/居住地址等) -->
@@ -740,8 +741,9 @@
             <span class="op-rate"><span class="dg-label">申请利率</span><b>{{ fmtRate(it.requestedRate) }}</b></span>
             <span class="op-rate" v-if="!itemPassed(it)">
               <span class="dg-label">审批后利率</span>
-              <template v-if="isCommitteeVoting">
+              <template v-if="isCommitteeVoting || isSecretaryNode">
                 <!-- 六人小组无利率修改权限:只读展示当前审批利率,仅同意/否决 -->
+                <!-- 贷审会秘书岗(需求四)同为审核岗:只读展示,仅同意/否决 -->
                 <b>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</b>
               </template>
               <template v-else>
@@ -754,9 +756,14 @@
             仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决出决议书。
           </div>
           <div class="stat-card__sub" v-else-if="!itemPassed(it) && canOperate(it)">
-            {{ isLoan
-              ? '审批利率不低于本节点下限方可权限内通过;低于下限将保留利率随整单上送下一节点。'
-              : '审批利率不高于本节点上限方可权限内通过;超出将保留利率上送小组表决。' }}
+            <template v-if="isSecretaryNode">
+              贷审会秘书岗为审核岗:仅同意/否决,不调整利率;否决即整单拦截,流程终止。
+            </template>
+            <template v-else>
+              {{ isLoan
+                ? '审批利率不低于本节点下限方可权限内通过;低于下限将保留利率随整单上送下一节点。'
+                : '审批利率不高于本节点上限方可权限内通过;超出将保留利率上送小组表决。' }}
+            </template>
           </div>
           <div class="op-item__actions" v-if="!itemPassed(it) && (isVotableItem(it) || !isCommitteeVoting)">
             <template v-if="isVotableItem(it)">
@@ -927,13 +934,16 @@ const locallyApproved = ref<Set<string>>(new Set())
 
 const ROLE_NODE: Record<string, string> = {
   branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT',
-  committee_member: 'SIX_PEOPLE_GROUP'
+  committee_member: 'SIX_PEOPLE_GROUP', secretary: 'SECRETARY'
 }
 
 // 六人小组节点(委员内联审批):当前分项在小组节点且登录人角色为委员
 const isCommitteeVoting = computed(() =>
   pi.value.current_node_code === 'SIX_PEOPLE_GROUP'
   && (userStore.userInfo?.roles?.[0] || '') === 'committee_member')
+
+// 贷审会秘书岗节点(需求四):审核岗仅同意/否决,不调整利率,否决即整单拦截
+const isSecretaryNode = computed(() => pi.value.current_node_code === 'SECRETARY')
 
 const isLoan = computed(() => application.value.businessType !== 'DEPOSIT')
 const businessTypeText = computed(() => application.value.businessType === 'DEPOSIT' ? '存款' : '贷款')
@@ -1059,7 +1069,7 @@ function contractStatusBadge(s?: string) {
 
 // 部门归属文案(§D16a 矩阵透出:GSB/SXSB/LSB)
 function deptText(code?: string) {
-  const map: Record<string, string> = { GSB: '公司金融部', SXSB: '授信评审部', LSB: '零售金融部' }
+  const map: Record<string, string> = { '100101': '公司金融部', '100102': '授信评审部', '100103': '零售金融部' }
   return code ? (map[code] || code) : '—'
 }
 

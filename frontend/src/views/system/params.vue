@@ -872,7 +872,8 @@
               <label class="form-field__label">金额档</label>
               <select class="form-select" v-model="routeDialog.form.voteAmountTier" @change="syncVoteCondition">
                 <option value="">不限</option>
-                <option value="LT_5000">&lt;5000万</option>
+                <option value="LT_1000">&lt;1000万</option>
+                <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
                 <option value="GE_5000">≥5000万</option>
               </select>
             </div>
@@ -1109,7 +1110,8 @@
               <label class="form-field__label">金额档</label>
               <select class="form-select" v-model="matrixDialog.form.amountTier">
                 <option value="">通配</option>
-                <option value="LT_5000">5000万以下</option>
+                <option value="LT_1000">1000万以下</option>
+                <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
                 <option value="GE_5000">5000万及以上</option>
               </select>
             </div>
@@ -1721,7 +1723,7 @@ function voteConditionText(json?: string) {
   try {
     const o = JSON.parse(json)
     const parts: string[] = []
-    if (o.amount_tier) parts.push(`金额${o.amount_tier === 'LT_5000' ? '<5000万' : '≥5000万'}`)
+    if (o.amount_tier) parts.push(`金额${amountTierText(o.amount_tier)}`)
     if (o.enterprise_type) parts.push(o.enterprise_type === 'SOE' ? '国企' : '非国企')
     return parts.length ? parts.join(' 且 ') : '—'
   } catch {

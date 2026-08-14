@@ -88,9 +88,9 @@ INSERT INTO dw_contribution_metric (etl_md5,data_dt,cust_no,metric_code,metric_n
 ON DUPLICATE KEY UPDATE metric_value=VALUES(metric_value);
 
 -- ---------- 4. 关联人(主数据+关系) ----------
-INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,cust_class) VALUES
-('md5_corp_rel1',CURDATE(),'REL001','江苏某某贸易有限公司','UNIFIED','91320000XXXXXXXXX4','正常','NON_SOE','小型','批发零售','A-',120,'南京市XX路8号',800.0000,'2019-06-01',1001,'城东支行','2020-01-10','EXISTING')
-ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name);
+INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,basic_account_no,cust_class) VALUES
+('md5_corp_rel1',CURDATE(),'REL001','江苏某某贸易有限公司','UNIFIED','91320000XXXXXXXXX4','正常','NON_SOE','小型','批发零售','A-',120,'南京市XX路8号',800.0000,'2019-06-01',1001,'城东支行','2020-01-10','110066000005','EXISTING')
+ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name), basic_account_no=VALUES(basic_account_no);
 
 INSERT INTO dw_customer_relation_snapshot (etl_md5,data_dt,customer_no,related_customer_no,relation_type,relation_strength,relation_start,relation_end,relation_status) VALUES
 (5131,CURDATE(),'CUST001','REL001','SAME_CONTROLLER','STRONG','2020-01-01',NULL,'VALID')

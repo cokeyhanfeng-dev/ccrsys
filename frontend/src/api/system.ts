@@ -52,7 +52,6 @@ export const matrixRoute = (data: object) => post<any>('/ccr/rule/matrix-route',
 export interface SysDept {
   id: number
   parentId?: number
-  deptCode?: string
   orgCode?: string
   branchCode?: string
   deptName: string

@@ -1212,7 +1212,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         input.setCustomerType(resolveCustomerType(app, item, corpCache));
         input.setProductCode(item.getProductCode());
         input.setAmount(item.getPricingAmount());
-        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_GROUP_TOTAL_CREDIT);
+        // 需求三(2026-08-14):金额定档基准改为按申请/分项金额定档(原集团授信总额优先)
+        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT);
         input.setGroupCreditTotal(groupCreditTotal);
         input.setTermValue(item.getTermValue());
         input.setTermUnit(item.getTermUnit());
@@ -1227,6 +1228,11 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 存量/新增判定:优先以申请授信快照中的授信业务类型(credit_info_json.businessType,NEW=新增授信/EXISTING=存量调息)为准;
      *  该字段由前端申请页业务类型显式提交(§用户要求),不以分项原利率推断——原利率属存量贷款合同带出,不能代表授信新增/存量的判定口径 */
     private String resolveNewOrExisting(CcrApplication app, CcrPricingItem item) {
+        // 存款按期限档设上限、D16b 无部门层级,矩阵无存量/新增之分,恒按新增路由
+        // (存款存量账户反查带出的 originalRate 仅作展示,不得据此判 EXISTING 匹配不到矩阵行)
+        if ("DEPOSIT".equals(businessBigType(app))) {
+            return "NEW";
+        }
         if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
             try {
                 String bt = JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType");

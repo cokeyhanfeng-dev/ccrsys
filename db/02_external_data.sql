@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `caps_corp_cust_basic_info` (
   `openact_org_no`    VARCHAR(32)  NULL COMMENT '开户机构/基本户所属机构编号',
   `openact_org_nm`    VARCHAR(32)  NULL COMMENT '开户机构/基本户所属机构名称',
   `openact_dt`        DATE         NULL COMMENT '开户日期/基本户开户日期',
+  `basic_account_no`  VARCHAR(64)  NULL COMMENT '基本户账户/基本户账号(数仓回填,申请页可改,可空;2026-08-14 新增)',
   `cust_class`        VARCHAR(10)  NOT NULL COMMENT 'EXISTING存客/NEW新客',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_cust_no` (`cust_no`),

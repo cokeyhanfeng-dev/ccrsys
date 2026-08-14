@@ -1017,13 +1017,13 @@ public class ApprovalController {
         return info;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.dept_code → 数仓最新批次 */
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 数仓最新批次(2026-08-14 统一 org_code) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
         }
         List<Map<String, Object>> orgCodes = jdbcTemplate.queryForList(
-                "SELECT d.dept_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
+                "SELECT d.org_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
                         + " WHERE a.id = ? AND d.del_flag = '0'", appId);
         if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
             return List.of();

@@ -6,11 +6,11 @@
 USE `ccr_rate`;
 
 -- ---------- 对公客户主数据(caps_corp) ----------
-INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,cust_class) VALUES
-('md5_corp_001',CURDATE(),'CUST001','江苏某某科技有限公司','UNIFIED','91320000XXXXXXXXX9','正常','NON_SOE','大型','高端装备制造','AA',1200,'南京市XX路1号',5000.0000,'2015-03-01',1001,'城东支行','2016-06-12','EXISTING'),
-('md5_corp_002',CURDATE(),'CUST002','宜兴市某某制造有限公司','UNIFIED','91320000XXXXXXXXX8','正常','SOE','中型','纺织制造','A+',800,'宜兴市XX路2号',3000.0000,'2010-01-01',1002,'城西支行','2011-05-20','EXISTING'),
-('md5_corp_003',CURDATE(),'CUST003','江阴某某装备有限公司','UNIFIED','91320000XXXXXXXXX7','关注','NON_SOE','中型','高端装备制造','BBB',600,'江阴市XX路3号',2000.0000,'2018-08-01',1001,'城东支行','2019-03-15','NEW')
-ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name);
+INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,basic_account_no,cust_class) VALUES
+('md5_corp_001',CURDATE(),'CUST001','江苏某某科技有限公司','UNIFIED','91320000XXXXXXXXX9','正常','NON_SOE','大型','高端装备制造','AA',1200,'南京市XX路1号',5000.0000,'2015-03-01',1001,'城东支行','2016-06-12','110066000001','EXISTING'),
+('md5_corp_002',CURDATE(),'CUST002','宜兴市某某制造有限公司','UNIFIED','91320000XXXXXXXXX8','正常','SOE','中型','纺织制造','A+',800,'宜兴市XX路2号',3000.0000,'2010-01-01',1002,'城西支行','2011-05-20','110066000002','EXISTING'),
+('md5_corp_003',CURDATE(),'CUST003','江阴某某装备有限公司','UNIFIED','91320000XXXXXXXXX7','关注','NON_SOE','中型','高端装备制造','BBB',600,'江阴市XX路3号',2000.0000,'2018-08-01',1001,'城东支行','2019-03-15',NULL,'NEW')
+ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name), basic_account_no=VALUES(basic_account_no);
 
 -- ---------- 对私客户主数据(caps_indv) ----------
 INSERT INTO caps_indv_cust_basic_info (etl_md5,data_dt,cust_no,cust_nm,cert_tp,cert_no,gnd,ffthlv_class,ocupn,whlyr_incm,mrrg_sittn,rsd_addr,tel_no,opnact_org_no,opnact_org_nm,opnact_dt,cust_class) VALUES
@@ -60,10 +60,10 @@ ON DUPLICATE KEY UPDATE completion_rate=VALUES(completion_rate);
 -- ============================================================
 
 -- ---------- 集团成员客户主数据(caps_corp) ----------
-INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,cust_class) VALUES
-('md5_corp_004',CURDATE(),'MEMBER_A','江苏某某控股电气有限公司','UNIFIED','91320000XXXXXXXXX6','正常','NON_SOE','大型','电气设备制造','AA-',900,'南京市XX工业园10号',8000.0000,'2012-05-01',1001,'城东支行','2013-04-10','EXISTING'),
-('md5_corp_005',CURDATE(),'MEMBER_B','江苏某某控股新材料有限公司','UNIFIED','91320000XXXXXXXXX5','正常','NON_SOE','中型','新材料制造','A',500,'无锡市XX工业园20号',4000.0000,'2016-09-01',1001,'城东支行','2017-02-15','EXISTING')
-ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name);
+INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,basic_account_no,cust_class) VALUES
+('md5_corp_004',CURDATE(),'MEMBER_A','江苏某某控股电气有限公司','UNIFIED','91320000XXXXXXXXX6','正常','NON_SOE','大型','电气设备制造','AA-',900,'南京市XX工业园10号',8000.0000,'2012-05-01',1001,'城东支行','2013-04-10','110066000003','EXISTING'),
+('md5_corp_005',CURDATE(),'MEMBER_B','江苏某某控股新材料有限公司','UNIFIED','91320000XXXXXXXXX5','正常','NON_SOE','中型','新材料制造','A',500,'无锡市XX工业园20号',4000.0000,'2016-09-01',1001,'城东支行','2017-02-15','110066000004','EXISTING')
+ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name), basic_account_no=VALUES(basic_account_no);
 
 -- ---------- 集团主数据(dw_customer_group_snapshot) ----------
 INSERT INTO dw_customer_group_snapshot (etl_md5,data_dt,group_no,group_name,group_type,manager_org_id,group_status) VALUES

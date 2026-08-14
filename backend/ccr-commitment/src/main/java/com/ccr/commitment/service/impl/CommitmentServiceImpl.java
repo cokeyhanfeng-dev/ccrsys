@@ -512,8 +512,8 @@ public class CommitmentServiceImpl implements CommitmentService {
             return null;
         }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT dept_code FROM ccr_sys_dept WHERE id = ? AND del_flag = '0'", orgId);
-        return rows.isEmpty() ? null : (String) rows.get(0).get("dept_code");
+                "SELECT org_code FROM ccr_sys_dept WHERE id = ? AND del_flag = '0'", orgId);
+        return rows.isEmpty() ? null : (String) rows.get(0).get("org_code");
     }
 
     /** 数仓取数结果 */

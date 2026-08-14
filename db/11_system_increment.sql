@@ -166,6 +166,7 @@ ON DUPLICATE KEY UPDATE
 
 -- ---------- 部门归属(ccr_pricing_item.dept_code,幂等 ALTER;§D16a 部门分流) ----------
 -- 矩阵路由透出的部门归属编码落库到分项,部门总经理/分管行长节点按分项 dept_code 解析处理人
+-- 2026-08-14:机构表 dept_code 列删除,部门归属统一使用机构 org_code(100101公司金融部/100102授信评审部/100103零售金融部)
 DROP PROCEDURE IF EXISTS `ccr_add_pricing_item_dept_code`;
 DELIMITER $$
 CREATE PROCEDURE `ccr_add_pricing_item_dept_code`()
@@ -175,7 +176,7 @@ BEGIN
                    AND COLUMN_NAME='dept_code') THEN
     ALTER TABLE `ccr_pricing_item`
       ADD COLUMN `dept_code` VARCHAR(64) NULL
-      COMMENT '部门归属编码(矩阵透出并提交冻结:GSB公司金融部/SXSB授信评审部/LSB零售金融部,§D16a)';
+      COMMENT '部门归属编码(矩阵透出并提交冻结:机构org_code 100101公司金融部/100102授信评审部/100103零售金融部,§D16a;2026-08-14 统一 org_code)';
   END IF;
 END$$
 DELIMITER ;
@@ -184,11 +185,11 @@ DROP PROCEDURE `ccr_add_pricing_item_dept_code`;
 
 -- ---------- 部门分管行长映射(ccr_dept_vp,§D16a) ----------
 -- 分管行领导与部门多对多:一个部门可配多个分管行长、一个分管行长可分管多个部门;
--- 部门总经理按「dept_code→机构下 dept_gm 角色用户」解析,分管行长按本表按 dept_code 精确映射。
+-- 部门总经理按「dept_code(机构org_code)→机构下 dept_gm 角色用户」解析,分管行长按本表按 dept_code(org_code)精确映射。
 CREATE TABLE IF NOT EXISTS `ccr_dept_vp` (
   `id`             BIGINT       NOT NULL COMMENT '雪花主键',
   `tenant_id`      VARCHAR(20)  NOT NULL DEFAULT '000000' COMMENT '租户标识',
-  `dept_code`      VARCHAR(64)  NOT NULL COMMENT '部门归属编码(对齐 ccr_rate_matrix.dept_code:GSB/SXSB/LSB)',
+  `dept_code`      VARCHAR(64)  NOT NULL COMMENT '部门归属编码(机构org_code,对齐 ccr_rate_matrix.dept_code:100101公司金融部/100102授信评审部/100103零售金融部;2026-08-14 统一 org_code)',
   `vp_user_id`     BIGINT       NOT NULL COMMENT '分管行领导用户id(ccr_sys_user.id,复用 vice_president 角色码)',
   `status`         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'EFFECTIVE/INACTIVE',
   `valid_from`     DATETIME     NULL COMMENT '生效时间(空=不限)',
@@ -203,3 +204,15 @@ CREATE TABLE IF NOT EXISTS `ccr_dept_vp` (
   KEY `idx_dept_code` (`dept_code`),
   KEY `idx_vp_user` (`vp_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门-分管行领导映射(§D16a;一人可分管多部门,纯配置)';
+
+-- ---------- 种子:部门-分管行长映射(org_code;2026-08-14 统一 org_code;幂等) ----------
+-- 公司金融部/零售金融部 → 吴分管行长(1022 vice_president);授信评审部 → 郑分管行长(1023 vice_president)
+INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000001,'000000','100101',1022,'ACTIVE',1,'1004',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='100101' AND del_flag='0');
+INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000002,'000000','100102',1023,'ACTIVE',1,'1004',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='100102' AND del_flag='0');
+INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000003,'000000','100103',1022,'ACTIVE',1,'1004',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='100103' AND del_flag='0');

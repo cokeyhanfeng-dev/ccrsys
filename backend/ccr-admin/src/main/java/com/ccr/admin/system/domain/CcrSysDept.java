@@ -19,9 +19,6 @@ public class CcrSysDept {
 
     private String tenantId;
 
-    /** 机构编码(历史字母编码,展示/外部对接用) */
-    private String deptCode;
-
     /** 机构编码(层级前缀数字码,唯一,禁改):1000总行/1001xx部门/1002xx支行/支行码+两位为网点 */
     private String orgCode;
 

@@ -74,7 +74,8 @@ INSERT INTO `ccr_sys_user` (`id`,`username`,`password`,`nick_name`,`role_code`,`
   (1011,'vicepresident','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','钱分管行长','vice_president',1000,'13800000019','ENABLE'),
   (1013,'reviewer','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','周配置复核人','config_reviewer',1000,'13800000021','ENABLE'),
   (1014,'auditor','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','吴审计人员','auditor',1000,'13800000022','ENABLE'),
-  (1015,'lisi','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','李客户经理','customer_manager',1007,'13800000023','ENABLE')
+  (1015,'lisi','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','李客户经理','customer_manager',1007,'13800000023','ENABLE'),
+  (1017,'secretary','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC','贷审会秘书','secretary',1000,'13800000024','ENABLE')
 ON DUPLICATE KEY UPDATE nick_name=VALUES(nick_name);
 
 -- ---------- 种子:角色(菜单权限与实际前端菜单一致;无独立"参数管理员"角色,详设 §5.2) ----------
@@ -87,7 +88,8 @@ INSERT INTO `ccr_sys_role` (`id`,`role_code`,`role_name`,`remark`,`menu_ids`) VA
   (2005,'dept_gm','部门总经理','权限内审批与调价','1,4,5,10,11'),
   (2006,'vice_president','分管行领导','权限内审批与调价','1,4,5,10,11'),
   (2008,'config_reviewer','配置复核人','参数复核与发布','1,9,11'),
-  (2009,'auditor','审计人员','授权档案/表决汇总/导出查询','1,5,11,12')
+  (2009,'auditor','审计人员','授权档案/表决汇总/导出查询','1,5,11,12'),
+  (2011,'secretary','贷审会秘书岗','贷审会秘书岗审核(需求四:≥1000万且利率<2.6%的必经审核,否决即拦截)','1,4,5,10,11')
 ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), menu_ids=VALUES(menu_ids);
 
 -- ---------- 种子:菜单(与实际前端侧边栏一致) ----------

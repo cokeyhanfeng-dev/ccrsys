@@ -13,9 +13,9 @@ USE `ccr_rate`;
 -- CUST004 仅存在于数仓客户主数据与征信,无 dw_credit_agreement_snapshot 行(无数仓协议)。
 DELETE FROM dw_credit_agreement_snapshot WHERE customer_no='CUST004';
 DELETE FROM caps_corp_cust_basic_info WHERE cust_no='CUST004';
-INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,cust_class) VALUES
-('md5_corp_c004',CURDATE(),'CUST004','宜兴某某环保科技有限公司','UNIFIED','91320000XXXXXXXXX5','正常','NON_SOE','小型','环保','A',60,'宜兴市XX路9号',900.0000,'2022-04-01',1001,'城东支行','2022-05-01','EXISTING')
-ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name);
+INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp,cert_no,ffthlv_class,entp_charic,entp_scale,blgd_idsty,crdt_grd,entp_empe_num,rest_addr,rest_asts,estp_estb_dt,openact_org_no,openact_org_nm,openact_dt,basic_account_no,cust_class) VALUES
+('md5_corp_c004',CURDATE(),'CUST004','宜兴某某环保科技有限公司','UNIFIED','91320000XXXXXXXXX5','正常','NON_SOE','小型','环保','A',60,'宜兴市XX路9号',900.0000,'2022-04-01',1001,'城东支行','2022-05-01','110066000006','EXISTING')
+ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name), basic_account_no=VALUES(basic_account_no);
 
 -- 征信(质量校验用,否则提交被 BLOCK)
 INSERT INTO dw_credit_report_snapshot (etl_md5,data_dt,cust_no,report_date,parse_status) VALUES

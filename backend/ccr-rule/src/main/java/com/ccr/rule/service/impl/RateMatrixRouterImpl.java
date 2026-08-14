@@ -55,6 +55,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     /** 总行行长决策节点(§8A.5② president_decision/表决通过后必经,B11/D20a) */
     private static final String PRESIDENT_NODE = "PRESIDENT";
 
+    /** 分管行领导节点(需求四:贷审会秘书岗插入位置,在其审批后必经) */
+    private static final String VICE_PRESIDENT_NODE = "VICE_PRESIDENT";
+
+    /** 贷审会秘书岗节点(需求四:≥1000万且申请利率<2.6%时,在分管行领导后插入的必经审核节点) */
+    private static final String SECRETARY_NODE = "SECRETARY";
+
+    /** 秘书岗触发金额下限(万元,含):≥1000万 */
+    private static final BigDecimal SECRETARY_MIN_AMOUNT = new BigDecimal("1000");
+
+    /** 秘书岗触发利率阈值(%):申请利率 <2.6% 才插入 */
+    private static final BigDecimal SECRETARY_RATE_GATE = new BigDecimal("2.6");
+
     /** 产品链路路由模式:直接上会(存款/保证金 D16b,必经支行行长后直接上会,不参与链式优先级) */
     private static final String DIRECT_VOTE = "DIRECT_VOTE";
 
@@ -66,6 +78,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             (CcrProductRoute r) -> r.getPriority() == null ? 0 : r.getPriority());
 
     private static final BigDecimal ONE_BP = new BigDecimal("0.01");
+    private static final BigDecimal ONE_THOUSAND = new BigDecimal("1000");
     private static final BigDecimal FIVE_THOUSAND = new BigDecimal("5000");
 
     @Resource
@@ -162,15 +175,15 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal boundary = calcBoundary(row, input, lprMap);
             if (boundary == null) {
                 // 无边界 = 权限内即终审(D3)
-                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
-                        "该岗位权限内即终审(D3)"), route, input, matched);
+                return applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
+                        "该岗位权限内即终审(D3)"), route, input, matched), input);
             }
             if (rate != null && rate.compareTo(boundary) >= 0) {
                 String msg = FIRST_NODE.equals(row.getStartNodeCode())
                         ? "申请利率" + rate + "% ≥ 支行行长终审边界(部门总经理线)" + boundary + "%,支行行长终审"
                         : "申请利率" + rate + "% ≥ 岗位下限" + boundary + "%," + row.getStartNodeCode() + "终审";
-                return applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
-                        route, input, matched);
+                return applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
+                        route, input, matched), input);
             }
         }
         // 无岗位可终审 → 上会小组(≥4票);配置行长决策时必经总行行长(applyPresident)
@@ -180,7 +193,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                 .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), hardBoundary, lpr,
                         "利率低于全部岗位下限,提交小组表决(≥4票)"))
                 .orElseThrow(() -> new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(), "未配置上会兜底行"));
-        return applyPresident(vote, route);
+        return applySecretaryGate(applyPresident(vote, route), input);
     }
 
     // ---------- 私有 ----------
@@ -240,7 +253,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                         && !MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT.equals(input.getAmountBasis())
                         ? input.getGroupCreditTotal()
                         : (input.getAmount() == null ? BigDecimal.ZERO : input.getAmount());
-                String tier = basis.compareTo(FIVE_THOUSAND) < 0 ? "LT_5000" : "GE_5000";
+                String tier = toAmountTier(basis);
                 if (!amountTier.equals(tier)) {
                     return false;
                 }
@@ -349,6 +362,50 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         return null;
     }
 
+    /**
+     * 金额档三档化(需求三):按定档基准映射三档——
+     * LT_1000(<1000万)/GE_1000_LT_5000(1000万≤X<5000万)/GE_5000(≥5000万)。
+     * 定档基准与 §B18 一致:默认集团综合授信总额(amountBasis≠APPLY_AMOUNT),无则退回申请金额。
+     */
+    private String toAmountTier(BigDecimal basis) {
+        if (basis == null) return null;
+        if (basis.compareTo(ONE_THOUSAND) < 0) return "LT_1000";
+        return basis.compareTo(FIVE_THOUSAND) < 0 ? "GE_1000_LT_5000" : "GE_5000";
+    }
+
+    /**
+     * 贷审会秘书岗(需求四):对公贷款 申请金额≥1000万(含)且申请利率<2.6% 时,
+     * 在分管行领导(VICE_PRESIDENT)审批后插入必经的贷审会秘书岗审核节点(SECRETARY),
+     * 秘书岗审核后再往六人小组/行长方向走;秘书岗为中间必经节点,不影响终审岗位与利率边界。
+     * 链路不含 VICE_PRESIDENT(如支行行长权限内终审)时退化为在链路末位前插入,保证必经;
+     * 触发不命中或已含秘书岗节点时原样返回。
+     */
+    private RouteResult applySecretaryGate(RouteResult result, MatrixRouteInput input) {
+        if (result == null || input == null || result.getRouteChain() == null || result.getRouteChain().isEmpty()) {
+            return result;
+        }
+        boolean isLoan = input.getBusinessBigType() != null && input.getBusinessBigType().startsWith("LOAN");
+        BigDecimal amount = input.getAmount();
+        BigDecimal rate = input.getRequestedRate();
+        boolean hit = isLoan
+                && amount != null && amount.compareTo(SECRETARY_MIN_AMOUNT) >= 0
+                && rate != null && rate.compareTo(SECRETARY_RATE_GATE) < 0;
+        if (!hit || result.getRouteChain().contains(SECRETARY_NODE)) {
+            return result;
+        }
+        List<String> chain = new ArrayList<>(result.getRouteChain());
+        int insertAt = chain.size();
+        int vp = chain.indexOf(VICE_PRESIDENT_NODE);
+        if (vp >= 0) {
+            insertAt = vp + 1;                 // 分管行长审批后插入
+        } else if (chain.size() > 1) {
+            insertAt = chain.size() - 1;       // 无分管行长环节,在末位(终审岗位)前插入
+        }
+        chain.add(insertAt, SECRETARY_NODE);
+        result.setRouteChain(chain);
+        return result;
+    }
+
     private boolean match(CcrRateMatrix r, MatrixRouteInput in) {
         if (StrUtil.isNotBlank(r.getCustomerType()) && !r.getCustomerType().equals(in.getCustomerType())) return false;
         if (StrUtil.isNotBlank(r.getProductCode()) && !r.getProductCode().equals(in.getProductCode())) return false;
@@ -359,7 +416,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                     && !MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT.equals(in.getAmountBasis())
                     ? in.getGroupCreditTotal()
                     : (in.getAmount() == null ? BigDecimal.ZERO : in.getAmount());
-            String tier = basis.compareTo(FIVE_THOUSAND) < 0 ? "LT_5000" : "GE_5000";
+            String tier = toAmountTier(basis);
             if (!r.getAmountTier().equals(tier)) return false;
         }
         if (StrUtil.isNotBlank(r.getTermTier())) {

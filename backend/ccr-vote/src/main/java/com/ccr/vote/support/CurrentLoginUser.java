@@ -24,6 +24,7 @@ public class CurrentLoginUser {
     public static final String ROLE_VICE_PRESIDENT = "vice_president";
     public static final String ROLE_COMMITTEE = "committee_member";
     public static final String ROLE_PRESIDENT = "president";
+    public static final String ROLE_SECRETARY = "secretary";
     public static final String ROLE_ADMIN = "admin";
     public static final String ROLE_AUDITOR = "auditor";
 
@@ -33,7 +34,8 @@ public class CurrentLoginUser {
             "DEPT_GENERAL_MANAGER", ROLE_DEPT_GM,
             "VICE_PRESIDENT", ROLE_VICE_PRESIDENT,
             "SIX_PEOPLE_GROUP", ROLE_COMMITTEE,
-            "PRESIDENT", ROLE_PRESIDENT);
+            "PRESIDENT", ROLE_PRESIDENT,
+            "SECRETARY", ROLE_SECRETARY);
 
     @Resource
     private SysUserReadMapper sysUserReadMapper;

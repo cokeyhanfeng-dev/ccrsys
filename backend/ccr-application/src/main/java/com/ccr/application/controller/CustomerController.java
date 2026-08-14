@@ -58,8 +58,9 @@ public class CustomerController {
         List<Map<String, Object>> corp = jdbcTemplate.queryForList("""
                 SELECT cust_no customerNo, cust_name customerName, cert_tp certType, cert_no certNo, ffthlv_class fiveLevelClass,
                        entp_charic entpCharic, entp_scale entpScale, blgd_idsty industry, crdt_grd creditLevel, rest_asts registeredCapital,
-                       openact_org_nm openOrgName, openact_dt openDate, cust_class customerClass
-                FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1""", customerNo);
+                       openact_org_nm openOrgName, openact_dt openDate, basic_account_no basicAccount, cust_class customerClass
+                FROM caps_corp_cust_basic_info
+                WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no) LIMIT 1""", customerNo);
         if (!corp.isEmpty()) {
             result.put("basic", corp.get(0));
             result.put("custType", "CORP");
@@ -67,7 +68,8 @@ public class CustomerController {
             List<Map<String, Object>> indv = jdbcTemplate.queryForList("""
                     SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo, ocupn occupation,
                            whlyr_incm annualIncome, mrrg_sittn maritalStatus, tel_no phone, cust_class customerClass
-                    FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1""", customerNo);
+                    FROM caps_indv_cust_basic_info
+                    WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no) LIMIT 1""", customerNo);
             if (indv.isEmpty()) {
                 throw new ServiceException(404, "客户不存在");
             }

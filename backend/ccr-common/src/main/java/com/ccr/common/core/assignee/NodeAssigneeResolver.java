@@ -61,7 +61,7 @@ public class NodeAssigneeResolver {
      * @param nodeCode 节点编码
      * @param orgId    申请人机构(ccr_sys_dept.id),用于 DEPT 层归属判定;可空(空时 DEPT 配置不参与)
      * @param flowKey  流程定义key,可空;非空时同时命中该流程专属配置与全局配置
-     * @param deptCode 分项部门归属编码(§D16a,矩阵透出落库:GSB/SXSB/LSB);部门类节点
+     * @param deptCode 分项部门归属编码(§D16a,矩阵透出落库:机构org_code——100101公司金融部/100102授信评审部/100103零售金融部;2026-08-14 统一 org_code);部门类节点
      *                 (DEPT_GENERAL_MANAGER/VICE_PRESIDENT)按此解析,非部门节点传 null 走原逻辑
      */
     public ResolveResult resolve(String nodeCode, Long orgId, String flowKey, String deptCode) {
@@ -155,8 +155,8 @@ public class NodeAssigneeResolver {
                     }
                 }
                 case "DEPT" -> {
-                    // 「dept_code:role」语法(§D16a 部门分流):按分项部门归属编码精确匹配机构 dept_code,
-                    // 取该机构下指定角色启用用户(部门总经理按所属部门解析,不依赖具体工号)
+                    // 「dept_code:role」语法(§D16a 部门分流):按分项部门归属编码精确匹配机构 org_code,
+                    // 取该机构下指定角色启用用户(部门总经理按所属部门解析,不依赖具体工号;2026-08-14 统一 org_code)
                     int colon = assigneeCode.indexOf(':');
                     if (colon > 0) {
                         String cfgDeptCode = assigneeCode.substring(0, colon);
@@ -239,12 +239,12 @@ public class NodeAssigneeResolver {
                         rs.getString("nick_name")), orgCode);
     }
 
-    /** 指定部门(dept_code 精确匹配机构)下指定角色启用用户(§D16a 部门总经理按部门归属解析) */
+    /** 指定部门(org_code 精确匹配机构)下指定角色启用用户(§D16a 部门总经理按部门归属解析;2026-08-14 统一 org_code) */
     private List<AssigneeUser> findEnabledUsersByRoleAndDept(String roleCode, String deptCode) {
         return jdbcTemplate.query("""
                         SELECT u.id, u.username, u.nick_name FROM ccr_sys_user u
                         JOIN ccr_sys_dept d ON d.id = u.org_id AND d.del_flag = '0'
-                        WHERE d.dept_code = ? AND u.role_code = ?
+                        WHERE d.org_code = ? AND u.role_code = ?
                           AND u.status = 'ENABLE' AND u.del_flag = '0'
                         ORDER BY u.id
                         """,

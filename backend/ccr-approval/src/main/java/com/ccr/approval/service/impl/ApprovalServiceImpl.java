@@ -983,6 +983,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         overwriteCustomer(row, manual, "phone", "phone", true);
         overwriteCustomer(row, manual, "openOrg", "openOrgName", true);
         overwriteCustomer(row, manual, "openDate", "openDate", true);
+        overwriteCustomer(row, manual, "basicAccount", "basicAccount", true);
         if (manualOnly) {
             row.put("custType", "CORP".equals(manual.getStr("custType")) ? "CORP" : "INDIV");
             row.put("source", "MANUAL");
@@ -1079,13 +1080,13 @@ public class ApprovalServiceImpl implements ApprovalService {
         return byItem;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.dept_code → 数仓最新批次 */
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 数仓最新批次(2026-08-14 统一 org_code) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
         }
         List<Map<String, Object>> orgCodes = jdbcTemplate.queryForList(
-                "SELECT d.dept_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
+                "SELECT d.org_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
                         + " WHERE a.id = ? AND d.del_flag = '0'", appId);
         if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
             return List.of();
@@ -1449,7 +1450,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         input.setCustomerType(routeCustomerType(app, item));
         input.setProductCode(item.getProductCode());
         input.setAmount(item.getPricingAmount());
-        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_GROUP_TOTAL_CREDIT);
+        // 需求三(2026-08-14):金额定档基准改为按申请/分项金额定档(原集团授信总额优先)
+        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT);
         input.setGroupCreditTotal(routeGroupCreditTotal(app));
         input.setTermValue(item.getTermValue());
         input.setTermUnit(item.getTermUnit());
