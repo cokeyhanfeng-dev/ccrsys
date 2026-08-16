@@ -3,6 +3,7 @@ package com.ccr.admin.system.controller;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.domain.CcrSysUserPost;
@@ -48,26 +49,33 @@ public class SysUserController {
     @Resource
     private CcrSysDeptMapper deptMapper;
 
-    /** 用户列表(筛选:机构/角色/状态/关键字,§11.12) */
+    /** 用户列表(筛选:机构/角色/状态/关键字 + 分页,§11.12) */
     @GetMapping
-    public R<List<CcrSysUser>> list(@RequestParam(required = false) String username,
-                                    @RequestParam(required = false) String roleCode,
-                                    @RequestParam(required = false) Long orgId,
-                                    @RequestParam(required = false) String status,
-                                    @RequestParam(required = false) String keyword) {
-        List<CcrSysUser> list = userMapper.selectList(new LambdaQueryWrapper<CcrSysUser>()
-                .eq(CcrSysUser::getDelFlag, "0")
-                .like(StrUtil.isNotBlank(username), CcrSysUser::getUsername, username)
-                .eq(StrUtil.isNotBlank(roleCode), CcrSysUser::getRoleCode, roleCode)
-                .eq(orgId != null, CcrSysUser::getOrgId, orgId)
-                .eq(StrUtil.isNotBlank(status), CcrSysUser::getStatus, status)
-                .and(StrUtil.isNotBlank(keyword), w -> w
-                        .like(CcrSysUser::getUsername, keyword)
-                        .or().like(CcrSysUser::getNickName, keyword))
-                .orderByAsc(CcrSysUser::getCreateTime));
+    public R<Map<String, Object>> list(@RequestParam(required = false) String username,
+                                       @RequestParam(required = false) String roleCode,
+                                       @RequestParam(required = false) Long orgId,
+                                       @RequestParam(required = false) String status,
+                                       @RequestParam(required = false) String keyword,
+                                       @RequestParam(required = false, defaultValue = "1") Integer pageNum,
+                                       @RequestParam(required = false, defaultValue = "10") Integer pageSize) {
+        Page<CcrSysUser> page = userMapper.selectPage(
+                new Page<>(Math.max(pageNum, 1), Math.min(Math.max(pageSize, 1), 200)),
+                new LambdaQueryWrapper<CcrSysUser>()
+                        .eq(CcrSysUser::getDelFlag, "0")
+                        .like(StrUtil.isNotBlank(username), CcrSysUser::getUsername, username)
+                        .eq(StrUtil.isNotBlank(roleCode), CcrSysUser::getRoleCode, roleCode)
+                        .eq(orgId != null, CcrSysUser::getOrgId, orgId)
+                        .eq(StrUtil.isNotBlank(status), CcrSysUser::getStatus, status)
+                        .and(StrUtil.isNotBlank(keyword), w -> w
+                                .like(CcrSysUser::getUsername, keyword)
+                                .or().like(CcrSysUser::getNickName, keyword))
+                        .orderByAsc(CcrSysUser::getCreateTime));
         // 脱敏密码
-        list.forEach(u -> u.setPassword(null));
-        return R.ok(list);
+        page.getRecords().forEach(u -> u.setPassword(null));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", page.getTotal());
+        result.put("records", page.getRecords());
+        return R.ok(result);
     }
 
     /** 新建用户 */
@@ -130,9 +138,11 @@ public class SysUserController {
         if (exist == null) {
             throw new ServiceException(404, "用户不存在");
         }
-        exist.setDelFlag("1");
-        exist.setUpdateTime(LocalDateTime.now());
-        userMapper.updateById(exist);
+        // delFlag 为 MP 全局逻辑删除字段(logic-delete-field:delFlag),updateById 会排除该字段更新,
+        // 直接 setDelFlag 不生效;须用 deleteById 触发逻辑删除(UPDATE del_flag='1')
+        userMapper.deleteById(id);
+        // 连带逻辑删除机构-岗位绑定
+        userPostMapper.delete(new LambdaQueryWrapper<CcrSysUserPost>().eq(CcrSysUserPost::getUserId, id));
         return R.ok();
     }
 
@@ -201,8 +211,9 @@ public class SysUserController {
                 throw new ServiceException(400, "机构已停用,不可绑定:" + dept.getDeptName());
             }
         }
-        // 整体替换(物理删除旧绑定后重建)
-        userPostMapper.delete(new LambdaQueryWrapper<CcrSysUserPost>().eq(CcrSysUserPost::getUserId, id));
+        // 整体替换:物理删除旧绑定后重建(delete() 受全局逻辑删除拦截会变逻辑删,
+        // 旧绑定 del_flag='1' 仍占 uk_user_org_post 唯一键,重建 insert 撞键报"重复提交",须用原生物理删)
+        userPostMapper.physicalDeleteByUserId(id);
         LocalDateTime now = LocalDateTime.now();
         for (CcrSysUserPost b : bindings) {
             CcrSysUserPost row = new CcrSysUserPost();

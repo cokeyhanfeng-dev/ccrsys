@@ -52,6 +52,16 @@
           <tr v-if="!users.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
+      <div class="pager" v-if="total > 0">
+        <el-pagination
+          background
+          layout="total, prev, pager, next"
+          :total="total"
+          :page-size="pageSize"
+          :current-page="pageNum"
+          @current-change="onPage"
+        />
+      </div>
     </div>
 
     <!-- 新建/编辑弹窗 -->
@@ -162,6 +172,10 @@ async function loadRoles() {
 const query = reactive({ keyword: '', orgId: '' as number | '', roleCode: '', status: '' })
 const users = ref<any[]>([])
 const depts = ref<SysDept[]>([])
+// 分页(§11.12 用户较多,翻页查看)
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 const dialog = reactive({
   show: false,
   isEdit: false,
@@ -170,16 +184,30 @@ const dialog = reactive({
 })
 
 async function load() {
+  // 查询条件变化时从第一页开始
+  pageNum.value = 1
+  await fetchPage()
+}
+async function fetchPage() {
   try {
-    users.value = await listUsers({
+    const data = await listUsers({
       keyword: query.keyword || undefined,
       orgId: query.orgId === '' ? undefined : query.orgId,
       roleCode: query.roleCode || undefined,
-      status: query.status || undefined
+      status: query.status || undefined,
+      pageNum: pageNum.value,
+      pageSize: pageSize.value
     })
+    users.value = data?.records || []
+    total.value = Number(data?.total) || 0
   } catch {
     users.value = []
+    total.value = 0
   }
+}
+function onPage(p: number) {
+  pageNum.value = p
+  fetchPage()
 }
 async function loadDepts() {
   try {
@@ -269,13 +297,17 @@ async function save() {
 async function toggleStatus(u: any) {
   await updateUserStatus(u.id, u.status === 'ENABLE' ? 'DISABLE' : 'ENABLE')
   ElMessage.success('状态已更新')
-  load()
+  fetchPage()
 }
 async function handleDel(u: any) {
   await ElMessageBox.confirm(`确认删除用户「${u.nickName || u.username}」?`, '删除确认', { type: 'warning' })
   await deleteUser(u.id)
   ElMessage.success('已删除')
-  load()
+  // 保持当前页刷新(load() 会跳回第 1 页,删除非查询条件变化);当前页只剩最后一条则回退一页
+  if (users.value.length === 1 && pageNum.value > 1) {
+    pageNum.value -= 1
+  }
+  fetchPage()
 }
 onMounted(() => {
   load()

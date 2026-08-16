@@ -76,6 +76,18 @@ class NodeAssigneeResolverTest {
         return new NodeAssigneeResolver.AssigneeUser(id, username, nickName);
     }
 
+    /**
+     * 组织树打桩(2026-08-14 起 DEPT 归属按 parent_id 组织树判定):
+     * rootId 为配置机构(org_code 定位)id;parentOf 为机构 id → 父机构 id 全表映射
+     */
+    private void stubOrgTree(long rootId, Map<Long, Long> parentOf) {
+        when(jdbcTemplate.queryForList(anyString(), eq(Long.class), any(Object.class)))
+                .thenReturn(List.of(rootId));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        parentOf.forEach((id, parent) -> rows.add(Map.of("id", id, "parent_id", parent)));
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(rows);
+    }
+
     @Test
     void resolve_tableMissing_marksErrorAndRejectsRoleFallback() {
         // 配置表缺失或查询故障时拒绝按角色放行，避免故障扩大权限。
@@ -136,9 +148,11 @@ class NodeAssigneeResolverTest {
     @Test
     void resolve_deptHit_whenApplicantOrgUnderConfig() throws SQLException {
         stubConfigs(List.of(config("DEPT", "3202233050"), config("ROLE", "branch_manager")));
-        // 申请人机构 3202233055(东虹分理处) 归属配置机构 3202233050(城东支行)
+        // 申请人机构 org_code(orgCodeOf):2001 → 东虹分理处 3202233055
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
                 .thenReturn(List.of("3202233055"));
+        // 组织树:配置机构 3202233050(城东支行) id=3001,申请人 2001 直属其下 → 归属命中
+        stubOrgTree(3001L, Map.of(3001L, 0L, 2001L, 3001L));
         NodeAssigneeResolver.AssigneeUser branchUser = user(1001L, "wangwu", "王五");
         stubUserQueries(Map.of(), Map.of("branch_manager", List.of(branchUser)), List.of(branchUser));
 
@@ -150,9 +164,11 @@ class NodeAssigneeResolverTest {
     @Test
     void resolve_deptNotMatched_fallsThroughToRole() throws SQLException {
         stubConfigs(List.of(config("DEPT", "3202233050"), config("ROLE", "branch_manager")));
-        // 申请人机构 3202233004(城东分理处) 不归属配置机构 3202233050(城东支行) → DEPT 不命中,ROLE 兜底
+        // 申请人机构 org_code(orgCodeOf):2001 → 城东分理处 3202233004
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
                 .thenReturn(List.of("3202233004"));
+        // 组织树:申请人 2001 直属总行 1000,配置机构城东支行 3001 是其兄弟 → 不归属,DEPT 不命中,ROLE 兜底
+        stubOrgTree(3001L, Map.of(3001L, 1000L, 1000L, 0L, 2001L, 1000L));
         NodeAssigneeResolver.AssigneeUser branchUser = user(1001L, "wangwu", "王五");
         stubUserQueries(Map.of(), Map.of("branch_manager", List.of(branchUser)), List.of());
 

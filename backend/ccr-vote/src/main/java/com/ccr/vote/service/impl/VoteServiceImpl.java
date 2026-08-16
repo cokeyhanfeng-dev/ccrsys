@@ -376,7 +376,9 @@ public class VoteServiceImpl implements VoteService {
         if (toUser == null || !"ENABLE".equals(toUser.getStatus())) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "替补委员用户不存在或已停用");
         }
-        if (!CurrentLoginUser.ROLE_COMMITTEE.equals(toUser.getRoleCode())) {
+        // §D-7 兼岗:替补委员可为 role_code=committee_member 或六人小组配置名单中的兼岗用户(如部门总经理兼委员)
+        if (!CurrentLoginUser.ROLE_COMMITTEE.equals(toUser.getRoleCode())
+                && !nodeAssigneeResolver.isUserInAssignees("SIX_PEOPLE_GROUP", toUser.getId())) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "替补委员须为小组成员");
         }
         Long dup = assignmentMapper.selectCount(new LambdaQueryWrapper<CcrVoteAssignment>()

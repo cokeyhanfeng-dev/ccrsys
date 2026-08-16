@@ -290,7 +290,7 @@ CREATE TABLE IF NOT EXISTS `ccr_dept_vp` (
   PRIMARY KEY (`id`),
   KEY `idx_dept_code` (`dept_code`),
   KEY `idx_vp_user` (`vp_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门-分管行领导映射(§D16a;一人可分管多部门,纯配置)';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='部门-分管行领导映射(§D16a;一人可分管多部门,纯配置)';
 
 -- ---------- 种子:部门-分管行长映射(org_code;2026-08-14 统一 org_code;幂等) ----------
 -- 公司金融部/零售金融部 → 吴分管行长(1022 vice_president);授信评审部 → 郑分管行长(1023 vice_president)
@@ -303,3 +303,35 @@ WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233943' AND d
 INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
 SELECT 2092000000000000003,'000000','3202233991',1022,'ACTIVE',1,'1004',NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233991' AND del_flag='0');
+
+-- ---------- 种子:支行行长节点指派(2026-08-14 真实支行行长数据落地) ----------
+-- 原 PERSON wangwu(测试行长)已删除;改 DEPT 总行前缀 3202230000:
+-- NodeAssigneeResolver 对 BRANCH_MANAGER 特判——申请人机构 org_code 前缀命中配置机构时,
+-- 取该机构(精确)下 branch_manager 角色真实行长,各支行申请自动流到本支行行长;
+-- 未配置行长的支行(营业部/官林/周铁等 11 家)解析为空,走角色兜底(待补数据)
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000100,'000000',NULL,'BRANCH_MANAGER','DEPT','3202230000','OR','ACTIVE','真实支行行长按申请机构解析(2026-08-14 用户表更新)',1,'1004',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='BRANCH_MANAGER' AND assignee_type='DEPT' AND del_flag='0');
+
+-- ---------- 种子:六人小组成员名单(§D-7 参数表配置,可人工维护) ----------
+-- 委员名单由 ccr_node_assignee 集中配置(PERSON 逐人工号),替代用户表 role_code=committee_member 写死;
+-- 兼岗:deptgm_sxsb(授信评审部总经理)同时被配置为小组成员,登录角色附加 committee_member(§7.4 仅六人小组支持兼岗);
+-- committee6 移出名单(如需恢复,在流程配置页维护即可)
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000101,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','committee','AND','ACTIVE','六人小组成员(§D-7 名单配置化)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='committee' AND del_flag='0');
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000102,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','committee2','AND','ACTIVE','六人小组成员(§D-7 名单配置化)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='committee2' AND del_flag='0');
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000103,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','committee3','AND','ACTIVE','六人小组成员(§D-7 名单配置化)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='committee3' AND del_flag='0');
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000104,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','committee4','AND','ACTIVE','六人小组成员(§D-7 名单配置化)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='committee4' AND del_flag='0');
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000105,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','committee5','AND','ACTIVE','六人小组成员(§D-7 名单配置化)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='committee5' AND del_flag='0');
+INSERT INTO `ccr_node_assignee` (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`remark`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000106,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','deptgm_sxsb','AND','ACTIVE','六人小组成员兼岗(授信评审部总经理,§D-7 兼岗示例)',1,'1002',NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee` WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='deptgm_sxsb' AND del_flag='0');

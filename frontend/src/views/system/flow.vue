@@ -62,6 +62,83 @@
       </table>
     </div>
 
+    <!-- ========== 部门-分管行领导映射(§D16a,2026-08-14 配置界面化) ========== -->
+    <div v-if="activeTab === 'deptVp'" class="card">
+      <div class="notice-bar">
+        <span>部门-分管行领导映射(§D16a):按分项部门归属编码(如 3202233912 公司金融部/3202233943 授信评审部/3202233991 零售金融部)
+        解析对应分管行领导;一人可分管多部门,未配置时走角色兜底。变更仅影响新提交流程。</span>
+      </div>
+      <div class="card__head">
+        <span>部门-分管行领导映射</span>
+        <button class="btn btn--primary" @click="openDeptVpCreate">＋ 新增映射</button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr><th>部门编码</th><th>部门名称</th><th>分管行领导</th><th>状态</th><th>生效期</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="v in deptVps" :key="v.id">
+            <td>{{ v.deptCode }}</td>
+            <td>{{ v.deptName || '—' }}</td>
+            <td>{{ v.vpNickName || v.vpUsername || v.vpUserId }}</td>
+            <td>
+              <span :class="v.status === 'ACTIVE' ? 'badge badge--success' : 'badge badge--neutral'">
+                {{ v.status === 'ACTIVE' ? '启用' : '停用' }}
+              </span>
+            </td>
+            <td>{{ v.validFrom || '长期' }}{{ v.validTo ? ' ~ ' + v.validTo : '' }}</td>
+            <td>
+              <button class="btn btn--text" @click="openDeptVpEdit(v)">编辑</button>
+              <button class="btn btn--text" @click="removeDeptVp(v)">删除</button>
+            </td>
+          </tr>
+          <tr v-if="!deptVps.length"><td colspan="6" class="empty-cell">暂无映射</td></tr>
+        </tbody>
+      </table>
+
+      <!-- 新增/编辑分管行长映射弹窗 -->
+      <div class="modal" v-if="deptVpDialog.show">
+        <div class="modal__card">
+          <div class="modal__title">{{ deptVpDialog.isEdit ? '编辑分管行长映射' : '新增分管行长映射' }}</div>
+          <div class="modal__body">
+            <div class="form-field">
+              <label class="form-field__label">部门 <span class="req">*</span></label>
+              <select class="form-select" v-model="deptVpDialog.form.deptCode">
+                <option value="" disabled>请选择部门</option>
+                <option v-for="d in deptOptions" :key="d.orgCode" :value="d.orgCode">{{ d.deptName }}({{ d.orgCode }})</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">分管行领导 <span class="req">*</span></label>
+              <select class="form-select" v-model="deptVpDialog.form.vpUserId">
+                <option value="" disabled>请选择分管行领导</option>
+                <option v-for="u in vpUsers" :key="u.id" :value="u.id">{{ u.nickName }}({{ u.username }})</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">状态</label>
+              <select class="form-select" v-model="deptVpDialog.form.status">
+                <option value="ACTIVE">启用</option>
+                <option value="INACTIVE">停用</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">生效起</label>
+              <input class="form-input" v-model="deptVpDialog.form.validFrom" type="date" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">生效止</label>
+              <input class="form-input" v-model="deptVpDialog.form.validTo" type="date" />
+            </div>
+          </div>
+          <div class="modal__actions">
+            <button class="btn btn--secondary" @click="deptVpDialog.show = false">取消</button>
+            <button class="btn btn--primary" @click="saveDeptVp">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ========== 节点审批人员指派(§12.17) ========== -->
     <!-- 流程图查看弹窗(只读) -->
     <div class="modal" v-if="flowView.show">
@@ -308,19 +385,21 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listFlowDefinitions, publishFlowDefinition, unpublishFlowDefinition, getFlowDefinitionDetail,
   listFlowNodes, listAssignees, createAssignee, updateAssignee, deleteAssignee,
   delegateAssignee, resolveAssignees,
+  listDeptVp, createDeptVp, updateDeptVp, deleteDeptVp,
   listRoles, listUsers, listDepts,
-  type FlowNode, type NodeAssignee, type SysDept, type SysRole
+  type FlowNode, type NodeAssignee, type DeptVp, type SysDept, type SysRole
 } from '@/api/system'
 import { nodeLabel, assigneeTypeText } from '@/utils/dict'
 
 const tabs = [
   { key: 'assignee', label: '节点指派' },
+  { key: 'deptVp', label: '分管行长映射' },
   { key: 'flow', label: '流程定义' }
 ]
 const activeTab = ref('assignee')
@@ -387,6 +466,11 @@ const assignees = ref<NodeAssignee[]>([])
 const users = ref<any[]>([])
 const roles = ref<SysRole[]>([])
 const depts = ref<SysDept[]>([])
+const deptVps = ref<DeptVp[]>([])
+const deptVpDialog = reactive({ show: false, isEdit: false, form: {} as any })
+// 分管行长下拉=启用用户中 vice_president 角色;部门下拉=机构表中部门(DEPT)机构(映射按部门归属码)
+const vpUsers = computed(() => users.value.filter((u) => u.roleCode === 'vice_president'))
+const deptOptions = computed(() => depts.value.filter((d) => d.orgType === 'DEPT'))
 
 async function loadNodes() {
   try {
@@ -412,7 +496,9 @@ async function loadAssignees() {
 }
 async function loadRefs() {
   try {
-    users.value = await listUsers({ status: 'ENABLE' })
+    // 用户管理分页化后 listUsers 返回 {total, records},指派下拉取 records(启用用户约 77,一次拉全)
+    const page = await listUsers({ status: 'ENABLE', pageNum: 1, pageSize: 200 })
+    users.value = (page as any)?.records || []
   } catch {
     users.value = []
   }
@@ -425,6 +511,77 @@ async function loadRefs() {
     depts.value = (await listDepts()).filter((d) => d.status === 'ENABLE')
   } catch {
     depts.value = []
+  }
+}
+
+// ---------- 部门-分管行领导映射(§D16a) ----------
+async function loadDeptVps() {
+  try {
+    deptVps.value = await listDeptVp()
+  } catch {
+    deptVps.value = []
+  }
+}
+function openDeptVpCreate() {
+  deptVpDialog.isEdit = false
+  deptVpDialog.form = { deptCode: '', vpUserId: '', status: 'ACTIVE', validFrom: '', validTo: '' }
+  deptVpDialog.show = true
+}
+function openDeptVpEdit(v: DeptVp) {
+  deptVpDialog.isEdit = true
+  deptVpDialog.form = {
+    id: v.id,
+    deptCode: v.deptCode,
+    vpUserId: v.vpUserId,
+    status: v.status,
+    validFrom: v.validFrom || '',
+    validTo: v.validTo || '',
+    versionNo: v.versionNo
+  }
+  deptVpDialog.show = true
+}
+async function saveDeptVp() {
+  const f = deptVpDialog.form
+  if (!f.deptCode || !f.vpUserId) {
+    ElMessage.warning('部门与分管行领导必选')
+    return
+  }
+  const payload = {
+    deptCode: f.deptCode,
+    vpUserId: Number(f.vpUserId),
+    status: f.status,
+    validFrom: f.validFrom || undefined,
+    validTo: f.validTo || undefined
+  }
+  try {
+    if (deptVpDialog.isEdit) {
+      await updateDeptVp(f.id, { ...payload, versionNo: f.versionNo })
+    } else {
+      await createDeptVp(payload)
+    }
+    deptVpDialog.show = false
+    ElMessage.success('保存成功')
+    await loadDeptVps()
+  } catch {
+    // 错误已由请求拦截器统一提示
+  }
+}
+async function removeDeptVp(v: DeptVp) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除该映射(部门 ${v.deptCode} → ${v.vpNickName || v.vpUsername})?仅影响新提交流程。`,
+      '删除确认',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteDeptVp(v.id)
+    ElMessage.success('删除成功')
+    await loadDeptVps()
+  } catch {
+    // 错误已由请求拦截器统一提示
   }
 }
 
@@ -484,7 +641,8 @@ function openAssigneeEdit(a: NodeAssignee) {
     validFrom: a.validFrom ? String(a.validFrom).slice(0, 10) : '',
     validTo: a.validTo ? String(a.validTo).slice(0, 10) : '',
     sort: a.sort ?? 1,
-    remark: a.remark || ''
+    remark: a.remark || '',
+    versionNo: a.versionNo ?? 1 // 乐观锁版本,后端 update 必传
   }
   assigneeDialog.show = true
 }
@@ -506,7 +664,7 @@ async function saveAssignee() {
     remark: f.remark
   }
   if (assigneeDialog.isEdit) {
-    await updateAssignee(f.id, payload)
+    await updateAssignee(f.id, { ...payload, versionNo: f.versionNo ?? 1 })
   } else {
     await createAssignee(payload)
   }
@@ -585,6 +743,7 @@ onMounted(() => {
   loadDefinitions()
   loadNodes()
   loadRefs()
+  loadDeptVps()
 })
 </script>
 

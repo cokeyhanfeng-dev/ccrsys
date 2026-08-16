@@ -78,7 +78,12 @@ export interface UserQuery {
   status?: string
   keyword?: string
 }
-export const listUsers = (params: UserQuery) => get<any[]>('/system/users', params)
+export interface UserPage {
+  total: number
+  records: any[]
+}
+export const listUsers = (params: UserQuery & { pageNum?: number; pageSize?: number }) =>
+  get<UserPage>('/system/users', params)
 export const createUser = (data: object) => post<any>('/system/users', data)
 export const updateUser = (id: number, data: object) => put(`/system/users/${id}`, data)
 export const updateUserStatus = (id: number, status: string) => put(`/system/users/${id}/status`, { status })
@@ -199,6 +204,25 @@ export const delegateAssignee = (id: number, data: { delegateTo: string; delegat
 // 解析预览:选节点+机构→实际处理人;未命中返回空数组,前端红字提示角色兜底
 export const resolveAssignees = (data: { nodeCode: string; orgId?: number | ''; asOfTime?: string }) =>
   post<any[]>('/system/flow/assignees/resolve', data)
+
+// ---------- 部门-分管行领导映射(§D16a;一人可分管多部门,纯配置) ----------
+export interface DeptVp {
+  id: number
+  deptCode: string
+  deptName?: string
+  vpUserId: number
+  vpUsername?: string
+  vpNickName?: string
+  status: string
+  validFrom?: string
+  validTo?: string
+  versionNo: number
+  createTime?: string
+}
+export const listDeptVp = () => get<DeptVp[]>('/system/flow/dept-vp')
+export const createDeptVp = (data: object) => post<number>('/system/flow/dept-vp', data)
+export const updateDeptVp = (id: number, data: object) => put(`/system/flow/dept-vp/${id}`, data)
+export const deleteDeptVp = (id: number) => del(`/system/flow/dept-vp/${id}`)
 
 // ---------- 缓存项配置(§3.6 v2;仅 admin;DB 动态定义 + 配置化刷新,立即生效不重启) ----------
 export interface CacheConfigItem {

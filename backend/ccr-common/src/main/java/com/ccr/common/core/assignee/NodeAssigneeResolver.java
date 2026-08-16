@@ -11,10 +11,15 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 节点审批人解析器(§5.5.1/§10.3.19)
@@ -39,6 +44,13 @@ public class NodeAssigneeResolver {
 
     /** 分管行领导节点编码(部门-分管行长映射专用;ccr-common 不依赖 ccr-approval,字符串字面量) */
     private static final String VICE_PRESIDENT_NODE = "VICE_PRESIDENT";
+
+    /** 支行行长节点编码(2026-08-14 真实支行行长数据落地:按申请人机构解析该支行 branch_manager 用户) */
+    private static final String BRANCH_MANAGER_NODE = "BRANCH_MANAGER";
+    private static final String BRANCH_MANAGER_ROLE = "branch_manager";
+
+    /** 秘书岗节点编码(需求四:贷审会秘书,2026-08-14 改由计划财务部总经理兼任;固定机构+角色解析,与分项部门归属无关) */
+    private static final String SECRETARY_NODE = "SECRETARY";
 
     private static final List<String> LAYER_ORDER = List.of("PERSON", "GROUP", "DEPT", "ROLE");
 
@@ -84,7 +96,7 @@ public class NodeAssigneeResolver {
                 if (layerConfigs.isEmpty()) {
                     continue;
                 }
-                List<AssigneeUser> users = resolveLayer(layer, layerConfigs, applicantOrgCode, deptCode);
+                List<AssigneeUser> users = resolveLayer(layer, layerConfigs, orgId, applicantOrgCode, deptCode, nodeCode);
                 if (!users.isEmpty()) {
                     return new ResolveResult(nodeCode, layer, users);
                 }
@@ -104,6 +116,24 @@ public class NodeAssigneeResolver {
     /** 带分项部门归属编码的解析(§D16a:部门总经理/分管行长按分项 dept_code 解析处理人) */
     public List<Long> resolveUserIds(String nodeCode, Long orgId, String deptCode) {
         return requireResolved(resolve(nodeCode, orgId, null, deptCode));
+    }
+
+    /**
+     * 判断用户是否在节点配置的指派名单中(兼岗识别,§D-7 六人小组配置化)
+     * 用于 role_code 非委员但被配置为小组成员的兼岗用户(如授信评审部总经理兼小组成员)登录角色附加与
+     * 替补校验;解析失败或节点未配置按不在名单处理,不阻断主流程。
+     */
+    public boolean isUserInAssignees(String nodeCode, Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        try {
+            return resolveUserIds(nodeCode, null).contains(userId);
+        } catch (Exception e) {
+            log.warn("节点名单解析失败,按非名单成员处理: nodeCode={}, userId={}, 原因={}",
+                    nodeCode, userId, e.getMessage());
+            return false;
+        }
     }
 
     private List<Long> requireResolved(ResolveResult result) {
@@ -133,8 +163,8 @@ public class NodeAssigneeResolver {
     }
 
     /** 单层解析:按指派类型展开为启用用户列表(去重,保持配置顺序) */
-    private List<AssigneeUser> resolveLayer(String layer, List<Map<String, Object>> layerConfigs,
-                                            String applicantOrgCode, String deptCode) {
+    private List<AssigneeUser> resolveLayer(String layer, List<Map<String, Object>> layerConfigs, Long orgId,
+                                            String applicantOrgCode, String deptCode, String nodeCode) {
         Map<Long, AssigneeUser> users = new LinkedHashMap<>();
         for (Map<String, Object> config : layerConfigs) {
             String assigneeCode = String.valueOf(config.get("assignee_code"));
@@ -165,12 +195,29 @@ public class NodeAssigneeResolver {
                             for (AssigneeUser user : findEnabledUsersByRoleAndDept(roleCode, cfgDeptCode)) {
                                 users.putIfAbsent(user.getUserId(), user);
                             }
+                        } else if (deptCode == null && SECRETARY_NODE.equals(nodeCode)) {
+                            // 固定机构节点(秘书岗=计划财务部总经理兼任):与分项部门归属/申请人机构无关,
+                            // 按配置机构+角色直接解析;部门总经理/分管行长仍走 deptCode 分流,deptCode 为空不命中
+                            for (AssigneeUser user : findEnabledUsersByRoleAndDept(roleCode, cfgDeptCode)) {
+                                users.putIfAbsent(user.getUserId(), user);
+                            }
                         }
                     } else {
-                        // 原语义:申请人机构归属于配置机构(org_code 前缀匹配)时,该机构及下级机构启用用户入选
-                        if (applicantOrgCode != null && applicantOrgCode.startsWith(assigneeCode)) {
-                            for (AssigneeUser user : findEnabledUsersUnderOrg(assigneeCode)) {
-                                users.putIfAbsent(user.getUserId(), user);
+                        // 归属判定:申请人机构是否归属于配置机构组织树。org_code 字符串前缀在真实机构码下失效
+                        // (支行 3202233050 不以总行 3202230000 开头),2026-08-14 改按 parent_id 组织树归属;
+                        // 命中时该机构及下级机构启用用户入选
+                        if (belongsToOrgTree(orgId, assigneeCode)) {
+                            if (BRANCH_MANAGER_NODE.equals(nodeCode)) {
+                                // 支行行长(2026-08-14 真实行长数据落地):按申请人机构(org_code 精确)取该机构下
+                                // branch_manager 角色用户——各支行申请自动流到本支行真实行长;配置机构=总行前缀
+                                // 3202230000 覆盖全部支行(未配置行长的支行解析为空,走角色兜底)
+                                for (AssigneeUser user : findEnabledUsersByRoleAndDept(BRANCH_MANAGER_ROLE, applicantOrgCode)) {
+                                    users.putIfAbsent(user.getUserId(), user);
+                                }
+                            } else {
+                                for (AssigneeUser user : findEnabledUsersUnderOrg(assigneeCode)) {
+                                    users.putIfAbsent(user.getUserId(), user);
+                                }
                             }
                         }
                     }
@@ -226,17 +273,57 @@ public class NodeAssigneeResolver {
                         rs.getString("nick_name")), roleCode);
     }
 
-    /** 机构及下级机构(org_code 前缀匹配)下全部启用用户 */
+    /** 机构及下级机构(组织树子树)下全部启用用户 */
     private List<AssigneeUser> findEnabledUsersUnderOrg(String orgCode) {
+        Set<Long> ids = subtreeOrgIds(orgCode);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        String inSql = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
         return jdbcTemplate.query("""
-                        SELECT u.id, u.username, u.nick_name FROM ccr_sys_user u
-                        JOIN ccr_sys_dept d ON d.id = u.org_id AND d.del_flag = '0'
-                        WHERE d.org_code LIKE CONCAT(?, '%')
-                          AND u.status = 'ENABLE' AND u.del_flag = '0'
-                        ORDER BY u.id
+                        SELECT id, username, nick_name FROM ccr_sys_user
+                        WHERE org_id IN (""" + inSql + """
+                          )
+                          AND status = 'ENABLE' AND del_flag = '0'
+                        ORDER BY id
                         """,
                 (rs, i) -> new AssigneeUser(rs.getLong("id"), rs.getString("username"),
-                        rs.getString("nick_name")), orgCode);
+                        rs.getString("nick_name")), ids.toArray());
+    }
+
+    /** 组织树归属判定:申请人机构(orgId)是否归属于配置机构(org_code 定位)的子树(含自身) */
+    private boolean belongsToOrgTree(Long orgId, String orgCode) {
+        return orgId != null && subtreeOrgIds(orgCode).contains(orgId);
+    }
+
+    /** 配置机构(org_code 精确)及其全部后代机构 id 集合(机构数少,全表加载内存构建树) */
+    private Set<Long> subtreeOrgIds(String orgCode) {
+        List<Long> root = jdbcTemplate.queryForList(
+                "SELECT id FROM ccr_sys_dept WHERE org_code = ? AND del_flag = '0'", Long.class, orgCode);
+        if (root.isEmpty()) {
+            return Set.of();
+        }
+        List<Map<String, Object>> all = jdbcTemplate.queryForList(
+                "SELECT id, parent_id FROM ccr_sys_dept WHERE del_flag = '0'");
+        Map<Long, List<Long>> children = new HashMap<>();
+        for (Map<String, Object> row : all) {
+            long id = ((Number) row.get("id")).longValue();
+            long parent = ((Number) row.get("parent_id")).longValue();
+            children.computeIfAbsent(parent, k -> new ArrayList<>()).add(id);
+        }
+        Set<Long> subtree = new HashSet<>();
+        Deque<Long> stack = new ArrayDeque<>();
+        stack.push(root.get(0));
+        while (!stack.isEmpty()) {
+            long cur = stack.pop();
+            if (!subtree.add(cur)) {
+                continue;
+            }
+            for (long child : children.getOrDefault(cur, List.of())) {
+                stack.push(child);
+            }
+        }
+        return subtree;
     }
 
     /** 指定部门(org_code 精确匹配机构)下指定角色启用用户(§D16a 部门总经理按部门归属解析;2026-08-14 统一 org_code) */

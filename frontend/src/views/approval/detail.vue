@@ -937,10 +937,10 @@ const ROLE_NODE: Record<string, string> = {
   committee_member: 'SIX_PEOPLE_GROUP', secretary: 'SECRETARY'
 }
 
-// 六人小组节点(委员内联审批):当前分项在小组节点且登录人角色为委员
+// 六人小组节点(委员内联审批):当前分项在小组节点且登录人具备委员身份(含兼岗,§D-7)
 const isCommitteeVoting = computed(() =>
   pi.value.current_node_code === 'SIX_PEOPLE_GROUP'
-  && (userStore.userInfo?.roles?.[0] || '') === 'committee_member')
+  && (userStore.userInfo?.roles || []).includes('committee_member'))
 
 // 贷审会秘书岗节点(需求四):审核岗仅同意/否决,不调整利率,否决即整单拦截
 const isSecretaryNode = computed(() => pi.value.current_node_code === 'SECRETARY')
@@ -964,14 +964,21 @@ const currentNodeIndex = computed(() => {
 // 仅当分项在审批中且当前节点与登录人角色节点一致时可操作
 // 六人小组节点:委员可操作(VOTING 即小组轮次中),与普通节点 ROUTING 语义对齐
 const actionable = computed(() => {
-  const role = userStore.userInfo?.roles?.[0] || ''
+  const roles = userStore.userInfo?.roles || []
   const node = pi.value.current_node_code
-  if (!node || ROLE_NODE[role] !== node) return false
-  if (node === 'SIX_PEOPLE_GROUP') {
+  if (!node) return false
+  // §D-7 兼岗:roles 含 committee_member(含主角色非委员被配置进小组名单)即按委员处理
+  if (node === 'SIX_PEOPLE_GROUP' && roles.includes('committee_member')) {
     // 委员在小组节点全程可见表决操作区:即使最后一人投完分项翻出 VOTING(PRESIDENT_DECISION/REJECTED),
     // 也保留卡片展示已投状态与进度,避免"最后一人投完后页面效果与其他委员不一致"(卡片整卡消失)
     return true
   }
+  // §秘书岗(计划财务部总经理兼任):SECRETARY 节点按 roles 数组含 secretary 判定(与委员兼岗一致,不只看主角色)
+  if (node === 'SECRETARY' && roles.includes('secretary')) {
+    return pi.value.status === 'ROUTING'
+  }
+  const role = roles[0] || ''
+  if (ROLE_NODE[role] !== node) return false
   return pi.value.status === 'ROUTING'
 })
 

@@ -160,6 +160,8 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const role = computed(() => userStore.userInfo?.roles?.[0] || 'customer_manager')
+// §D-7 兼岗:roles 含 committee_member(含主角色非委员被配置进小组名单)即按委员识别
+const isCommittee = computed(() => (userStore.userInfo?.roles || []).includes('committee_member'))
 const nickName = computed(() => userStore.userInfo?.nickName || userStore.userInfo?.userName || '同事')
 const orgId = computed(() => userStore.userInfo?.orgId)
 const roleName = computed(() => roleText(role.value, role.value))
@@ -419,18 +421,6 @@ const stats = computed(() => {
       trackCard
     ]
   }
-  if (r === 'committee_member') {
-    return [
-      { icon: 'Key', label: '待我表决', value: voteTodos.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '待表决的申请', subDanger: false },
-      todayCard, totalCard, trackCard
-    ]
-  }
-  if (r === 'president') {
-    return [
-      { icon: 'Stamp', label: '待我决策', value: presidentTodos.value.length, cls: 'stat-card__num--warning', to: '/president', sub: '小组通过后待行长决策', subDanger: false },
-      todayCard, totalCard, trackCard
-    ]
-  }
   if (r === 'admin' || r === 'auditor') {
     return [
       { icon: 'Document', label: '在途申请', value: inProgressCount.value, cls: 'stat-card__num--primary', to: '/history', sub: '全行流转中的申请', subDanger: false },
@@ -439,11 +429,18 @@ const stats = computed(() => {
       todayCard
     ]
   }
-  // 审批角色:branch_manager / dept_gm / vice_president
-  return [
-    { icon: 'Stamp', label: '待我审批', value: tasks.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '流转到本人当前节点的分项', subDanger: false },
-    todayCard, totalCard, trackCard
-  ]
+  // §D-7 兼岗:主角色审批人/行长且 roles 含 committee_member 时同时展示对应待办卡
+  const cards: any[] = []
+  if (r === 'president') {
+    cards.push({ icon: 'Stamp', label: '待我决策', value: presidentTodos.value.length, cls: 'stat-card__num--warning', to: '/president', sub: '小组通过后待行长决策', subDanger: false })
+  } else if (APPROVAL_ROLES.includes(r)) {
+    cards.push({ icon: 'Stamp', label: '待我审批', value: tasks.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '流转到本人当前节点的分项', subDanger: false })
+  }
+  if (isCommittee.value) {
+    cards.push({ icon: 'Key', label: '待我表决', value: voteTodos.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '待表决的申请', subDanger: false })
+  }
+  cards.push(todayCard, totalCard, trackCard)
+  return cards
 })
 
 // ---------- 数据加载(每个接口独立容错) ----------
@@ -466,12 +463,15 @@ async function load() {
       historyTotal.value = Number(h?.total) || 0
     }))
   }
+  // §D-7 兼岗:审批角色与委员身份并行加载(兼岗用户两类待办同时出现)
   if (APPROVAL_ROLES.includes(r)) {
     jobs.push(safe(async () => { tasks.value = (await listApprovalTasks<any[]>()) || [] }))
-  } else if (r === 'committee_member') {
-    jobs.push(safe(async () => { voteTodos.value = (await listVoteTodo<any[]>()) || [] }))
-  } else if (r === 'president') {
+  }
+  if (r === 'president') {
     jobs.push(safe(async () => { presidentTodos.value = (await listPresidentTodo<any[]>()) || [] }))
+  }
+  if (isCommittee.value) {
+    jobs.push(safe(async () => { voteTodos.value = (await listVoteTodo<any[]>()) || [] }))
   }
   await Promise.all(jobs)
 }

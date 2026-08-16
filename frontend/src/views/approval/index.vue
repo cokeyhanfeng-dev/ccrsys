@@ -77,8 +77,11 @@ import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict
 const router = useRouter()
 const userStore = useUserStore()
 const todoCards = ref<any[]>([])
-// 登录角色为委员:待办走表决待办(listVoteTodo),入口与普通审批一致
-const isCommitteeMember = computed(() => (userStore.userInfo?.roles?.[0] || '') === 'committee_member')
+// 委员身份(role_code=committee_member 或六人小组配置名单兼岗,§D-7):待办走表决待办(listVoteTodo),入口与普通审批一致
+const isCommitteeMember = computed(() => (userStore.userInfo?.roles || []).includes('committee_member'))
+// 审批角色(§D-7 兼岗):与委员身份并存,同时加载普通审批待办
+const isApprovalRole = computed(() => (userStore.userInfo?.roles || [])
+  .some((r) => ['branch_manager', 'dept_gm', 'vice_president'].includes(r)))
 
 const check = ref<any>({
   show: false, loaded: false, id: null,
@@ -91,11 +94,15 @@ function statusText(s?: string) {
 
 async function load() {
   try {
-    // 委员待办:本人待表决的批次分项(走表决待办;普通审批待办对小组节点返回空)
-    const data = isCommitteeMember.value ? await listVoteTodo<any[]>() : await listApprovalTasks<any[]>()
+    // §D-7 兼岗:委员身份走表决待办、审批角色走普通审批待办,合并后统一按申请聚合
+    const [voteRows, taskRows] = await Promise.all([
+      isCommitteeMember.value ? listVoteTodo<any[]>() : Promise.resolve([]),
+      isApprovalRole.value ? listApprovalTasks<any[]>() : Promise.resolve([])
+    ])
+    const data = [...(voteRows || []), ...(taskRows || [])]
     // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部担保分项
     const byApp = new Map<string, any[]>()
-    for (const p of data || []) {
+    for (const p of data) {
       // 委员待办行含 applicationId(申请聚合,与普通审批一致);无则按分项兜底
       const appId = p.applicationId || p.id || p.pricingItemId || p.roundId || ''
       if (!byApp.has(appId)) byApp.set(appId, [])
@@ -105,7 +112,8 @@ async function load() {
       const first = items[0]
       const rates = items.map((x) => Number(x.requestedRate) || 0)
       const single = items.length === 1
-      const keyId = isCommitteeMember.value ? first.pricingItemId : first.id
+      // 表决待办行主键为 pricingItemId、审批待办行为 id,按行取其一
+      const keyId = first.pricingItemId || first.id
       return {
         id: keyId, // 进入申请详情用组内第一个分项
         applicationId: appId,
@@ -125,7 +133,7 @@ async function load() {
         nodeText: nodeLabel(first.currentNodeCode),
         createTime: first.createTime ? String(first.createTime).replace('T', ' ').slice(0, 16) : '—',
         items: items.map((x) => ({
-          id: isCommitteeMember.value ? x.pricingItemId : x.id,
+          id: x.pricingItemId || x.id,
           pricingItemNo: x.pricingItemNo || x.pricingItemId || x.id,
           amount: x.pricingAmount ?? '-', rate: x.requestedRate ?? '-',
           originalRate: x.originalRate != null ? x.originalRate : '新增业务',

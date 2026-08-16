@@ -8,6 +8,7 @@ import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
+import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -20,7 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -39,6 +42,9 @@ public class AuthController {
 
     @Resource
     private JdbcTemplate jdbcTemplate;
+
+    @Resource
+    private NodeAssigneeResolver nodeAssigneeResolver;
 
     @PostMapping("/login")
     public R<Map<String, Object>> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
@@ -70,7 +76,19 @@ public class AuthController {
         userInfo.put("userId", user.getId());
         userInfo.put("userName", user.getUsername());
         userInfo.put("nickName", user.getNickName());
-        userInfo.put("roles", new String[]{user.getRoleCode()});
+        // 角色数组:主角色 role_code;六人小组兼岗(§D-7 名单配置化)——主角色非委员但被配置为小组成员时附加委员角色
+        List<String> roles = new ArrayList<>();
+        roles.add(user.getRoleCode());
+        if (!"committee_member".equals(user.getRoleCode())
+                && nodeAssigneeResolver.isUserInAssignees("SIX_PEOPLE_GROUP", user.getId())) {
+            roles.add("committee_member");
+        }
+        // 秘书岗由计划财务部总经理兼任(节点指派 DEPT 3202233931:dept_gm)——主角色非秘书但被解析为秘书处理人时附加秘书角色
+        if (!"secretary".equals(user.getRoleCode())
+                && nodeAssigneeResolver.isUserInAssignees("SECRETARY", user.getId())) {
+            roles.add("secretary");
+        }
+        userInfo.put("roles", roles.toArray(new String[0]));
         userInfo.put("orgId", user.getOrgId());
         userInfo.put("orgCode", orgCode);
         userInfo.put("orgName", dept == null ? null : dept.getDeptName());

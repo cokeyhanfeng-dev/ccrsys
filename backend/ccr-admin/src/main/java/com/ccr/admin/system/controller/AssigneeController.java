@@ -48,6 +48,7 @@ public class AssigneeController {
             put("VICE_PRESIDENT", "分管行长");
             put("SIX_PEOPLE_GROUP", "六人小组");
             put("PRESIDENT", "总行行长");
+            put("SECRETARY", "秘书");
         }};
 
     private static final Set<String> ASSIGNEE_TYPES = Set.of("PERSON", "GROUP", "DEPT", "ROLE");
@@ -262,6 +263,93 @@ public class AssigneeController {
                 orgId == null ? null : ((Number) orgId).longValue(), flowKey));
     }
 
+    // ---------- 部门-分管行领导映射(§D16a;一人可分管多部门,纯配置,2026-08-14 配置界面化) ----------
+
+    /** 分管行长映射列表(关联机构名/分管行长姓名) */
+    @GetMapping("/dept-vp")
+    public R<List<Map<String, Object>>> listDeptVp() {
+        requireAdmin();
+        return R.ok(jdbcTemplate.queryForList("""
+                SELECT vp.id, vp.dept_code deptCode, d.dept_name deptName,
+                       vp.vp_user_id vpUserId, u.username vpUsername, u.nick_name vpNickName,
+                       vp.status, vp.valid_from validFrom, vp.valid_to validTo,
+                       vp.version_no versionNo, vp.create_time createTime
+                FROM ccr_dept_vp vp
+                LEFT JOIN ccr_sys_dept d ON d.org_code = vp.dept_code AND d.del_flag = '0'
+                LEFT JOIN ccr_sys_user u ON u.id = vp.vp_user_id
+                WHERE vp.del_flag = '0'
+                ORDER BY vp.dept_code
+                """));
+    }
+
+    /** 新增分管行长映射(部门+分管行长;一人可分管多部门) */
+    @PostMapping("/dept-vp")
+    public R<Long> createDeptVp(@RequestBody Map<String, Object> body) {
+        SysUserRead operator = requireAdmin();
+        String deptCode = str(body.get("deptCode"));
+        Long vpUserId = body.get("vpUserId") == null ? null : ((Number) body.get("vpUserId")).longValue();
+        validateDeptVp(deptCode, vpUserId);
+        long id = IdUtil.getSnowflakeNextId();
+        jdbcTemplate.update("""
+                        INSERT INTO ccr_dept_vp
+                        (id, tenant_id, dept_code, vp_user_id, status, valid_from, valid_to,
+                         version_no, create_by, create_time)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                        """,
+                id, "000000", deptCode, vpUserId,
+                StrUtil.blankToDefault(str(body.get("status")), "ACTIVE"),
+                str(body.get("validFrom")), str(body.get("validTo")),
+                1, operator.getId(), LocalDateTime.now());
+        writeAuditLog("ASSIGNEE_CHANGE", String.valueOf(id),
+                "新增分管行长映射:部门=" + deptCode + ",分管行长=" + vpUserId, operator);
+        return R.ok(id);
+    }
+
+    /** 修改分管行长映射(乐观锁 version_no) */
+    @PutMapping("/dept-vp/{id}")
+    public R<Void> updateDeptVp(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        SysUserRead operator = requireAdmin();
+        String deptCode = str(body.get("deptCode"));
+        Long vpUserId = body.get("vpUserId") == null ? null : ((Number) body.get("vpUserId")).longValue();
+        validateDeptVp(deptCode, vpUserId);
+        Object versionNo = body.get("versionNo");
+        if (versionNo == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "版本号 versionNo 必传");
+        }
+        int rows = jdbcTemplate.update("""
+                        UPDATE ccr_dept_vp
+                        SET dept_code = ?, vp_user_id = ?, status = ?, valid_from = ?, valid_to = ?,
+                            version_no = version_no + 1, update_by = ?, update_time = ?
+                        WHERE id = ? AND version_no = ? AND del_flag = '0'
+                        """,
+                deptCode, vpUserId,
+                StrUtil.blankToDefault(str(body.get("status")), "ACTIVE"),
+                str(body.get("validFrom")), str(body.get("validTo")),
+                operator.getId(), LocalDateTime.now(), id, ((Number) versionNo).intValue());
+        if (rows == 0) {
+            throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(),
+                    "分管行长映射数据版本冲突或已删除,请刷新后重试");
+        }
+        writeAuditLog("ASSIGNEE_CHANGE", String.valueOf(id),
+                "修改分管行长映射:部门=" + deptCode + ",分管行长=" + vpUserId, operator);
+        return R.ok();
+    }
+
+    /** 删除分管行长映射(逻辑删除) */
+    @DeleteMapping("/dept-vp/{id}")
+    public R<Void> deleteDeptVp(@PathVariable Long id) {
+        SysUserRead operator = requireAdmin();
+        int rows = jdbcTemplate.update(
+                "UPDATE ccr_dept_vp SET del_flag = '1', update_by = ?, update_time = ?"
+                        + " WHERE id = ? AND del_flag = '0'",
+                operator.getId(), LocalDateTime.now(), id);
+        if (rows == 0) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "分管行长映射不存在或已删除");
+        }
+        writeAuditLog("ASSIGNEE_CHANGE", String.valueOf(id), "删除分管行长映射", operator);
+        return R.ok();
+    }
+
     // ---------- 私有 ----------
 
     /** 仅 admin 角色(流程配置管理) */
@@ -336,5 +424,28 @@ public class AssigneeController {
     /** 请求值 → 去空白字符串(空串归一为 null) */
     private String str(Object value) {
         return value == null ? null : StrUtil.blankToDefault(value.toString().trim(), null);
+    }
+
+    /** 分管行长映射校验:部门机构码存在 + 分管行长须为启用 vice_president 用户 */
+    private void validateDeptVp(String deptCode, Long vpUserId) {
+        if (StrUtil.isBlank(deptCode)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "部门必选");
+        }
+        if (vpUserId == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "分管行长必选");
+        }
+        Long deptCnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_sys_dept WHERE org_code = ? AND del_flag = '0'",
+                Long.class, deptCode);
+        if (deptCnt == null || deptCnt == 0) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "部门不存在:" + deptCode);
+        }
+        Long vpCnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_sys_user WHERE id = ? AND role_code = 'vice_president'"
+                        + " AND status = 'ENABLE' AND del_flag = '0'",
+                Long.class, vpUserId);
+        if (vpCnt == null || vpCnt == 0) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "分管行长须为启用状态的分管行长角色用户");
+        }
     }
 }
