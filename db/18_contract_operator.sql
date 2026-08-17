@@ -4,11 +4,11 @@
 
 USE `ccr_rate`;
 
--- 隔离测试账号，密码 123456；生产环境必须通过正式用户管理流程创建并修改密码。
+-- 隔离测试账号，密码=统一初始密码 Yxnsh@1a3s（首登强制改密）；生产环境必须通过正式用户管理流程创建并修改密码。
 INSERT INTO `ccr_sys_user`
   (`id`,`username`,`password`,`nick_name`,`role_code`,`org_id`,`phone`,`status`)
 VALUES
-  (1016,'contractor','$2a$10$THM2OKfKEr21VQkyhtsX0.6Beq1ENtulIQJiaE8W50WR9f39io2rC',
+  (1016,'contractor','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi',
    '郑合同经办','contract_operator',1000,'13800000024','ENABLE')
 ON DUPLICATE KEY UPDATE
   nick_name=VALUES(nick_name), role_code=VALUES(role_code), org_id=VALUES(org_id),

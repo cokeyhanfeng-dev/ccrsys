@@ -69,11 +69,45 @@ CREATE TABLE IF NOT EXISTS `ccr_export_record` (
   KEY `idx_export_app` (`application_id`,`export_time`)
 ) ENGINE=InnoDB COMMENT='ccr_export_record 档案导出记录(§11.10)';
 
--- ---------- 种子:贷审会秘书岗节点指派(需求四,2026-08-14) ----------
--- SECRETARY 节点按角色兜底解析:所有 secretary 角色用户可审批(审核岗,同意后上送、否决即整单拦截);
+-- ---------- 种子:贷审会秘书岗节点指派(需求四,2026-08-14;2026-08-14 改由计划财务部总经理兼任) ----------
+-- SECRETARY 节点按计划财务部+部门总经理岗位解析:计划财务部总经理兼任秘书(审核岗,同意后上送、否决即整单拦截);
 -- 触发条件在路由引擎条件插节点(applySecretaryGate),此处仅配置处理人
 INSERT INTO `ccr_node_assignee`
   (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
-SELECT 2091000000000000001,'000000',NULL,'SECRETARY','ROLE','secretary','OR','ACTIVE',1,1004,NOW(),'0'
+SELECT 2091000000000000001,'000000',NULL,'SECRETARY','DEPT','3202233931:dept_gm','OR','ACTIVE',1,1004,NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
-                  WHERE node_code='SECRETARY' AND assignee_type='ROLE' AND assignee_code='secretary' AND del_flag='0');
+                  WHERE node_code='SECRETARY' AND assignee_type='DEPT' AND assignee_code='3202233931:dept_gm' AND del_flag='0');
+
+-- ---------- 种子:六人小组委员(需求 §7.5:授信评审部分管行领导/风险管理部分管行领导/计划财务部分管行领导/授信评审部总经理/风险管理部总经理/计划财务部总经理;2026-08-14 落真实人员) ----------
+-- 3 位分管行领导(系统现有 3 位 vice_president):史志明/陈开成/侯允杰;3 位部门总经理:张文伟(授信评审部 3202233943)/程欣(风险管理部 3202233942)/周瑜(计划财务部 3202233931)
+-- AND 全员表决,≥4 同意通过;委员登录 roles 由 AuthController 按 SIX_PEOPLE_GROUP 指派附加 committee_member
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000101,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','01500064','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='01500064' AND del_flag='0');
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000102,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','02300273','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='02300273' AND del_flag='0');
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000103,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','02300744','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='02300744' AND del_flag='0');
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000104,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','02300483','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='02300483' AND del_flag='0');
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000105,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','02300040','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='02300040' AND del_flag='0');
+INSERT INTO `ccr_node_assignee`
+  (`id`,`tenant_id`,`flow_key`,`node_code`,`assignee_type`,`assignee_code`,`relation`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
+SELECT 2092000000000000106,'000000',NULL,'SIX_PEOPLE_GROUP','PERSON','02300222','AND','ACTIVE',1,1004,NOW(),'0'
+WHERE NOT EXISTS (SELECT 1 FROM `ccr_node_assignee`
+                  WHERE node_code='SIX_PEOPLE_GROUP' AND assignee_type='PERSON' AND assignee_code='02300222' AND del_flag='0');
