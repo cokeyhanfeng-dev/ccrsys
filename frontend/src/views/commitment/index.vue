@@ -40,7 +40,7 @@
         </div>
         <table class="table customer-overview" v-if="customerRows.length">
           <thead>
-            <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>有风险指标</th><th>操作</th></tr>
+            <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>含关联人达成率</th><th>有风险指标</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="c in customerRows" :key="c.customerNo">
@@ -52,6 +52,10 @@
               <td class="num">{{ c.metricCount }}</td>
               <td class="num">
                 <span v-if="c.avgRatio != null" :class="ratioClass(c.avgRatio)">{{ c.avgRatio }}%</span>
+                <span v-else>暂无数据</span>
+              </td>
+              <td class="num">
+                <span v-if="c.avgRelatedRatio != null" :class="ratioClass(c.avgRelatedRatio)">{{ c.avgRelatedRatio }}%</span>
                 <span v-else>暂无数据</span>
               </td>
               <td class="num">
@@ -202,6 +206,31 @@
                 <b class="metric-val__num" :class="ratioClass(m.achievementRatio)">{{ m.achievementRatio != null ? `${m.achievementRatio}%` : '—' }}</b>
               </div>
             </div>
+            <!-- 含关联人实绩并入(展示层聚合,同编码才并;§11.8):主客户+关联人总和达成率与状态 -->
+            <div v-if="m.relatedSummary" class="metric-row__related">
+              <div class="metric-row__related-head">
+                <span class="dg-label">含关联人实绩</span>
+                <span :class="resultBadge(m.relatedSummary.totalStatus)">{{ resultText(m.relatedSummary.totalStatus) }}</span>
+              </div>
+              <div class="metric-row__vals">
+                <div class="metric-val">
+                  <span class="dg-label">主客户</span>
+                  <b class="metric-val__num">{{ m.relatedSummary.mainActual ?? '—' }}</b>
+                </div>
+                <div class="metric-val" v-for="(rc, ri) in m.relatedSummary.relatedCustomers" :key="ri">
+                  <span class="dg-label">{{ relationTypeText(rc.relationType) }} {{ rc.customerNo }}</span>
+                  <b class="metric-val__num">{{ rc.actualValue ?? '—' }}</b>
+                </div>
+                <div class="metric-val">
+                  <span class="dg-label">总和实绩</span>
+                  <b class="metric-val__num">{{ m.relatedSummary.totalActual ?? '—' }}</b>
+                </div>
+                <div class="metric-val">
+                  <span class="dg-label">总和达成率</span>
+                  <b class="metric-val__num" :class="ratioClass(m.relatedSummary.totalRatioPct)">{{ m.relatedSummary.totalRatioPct != null ? `${m.relatedSummary.totalRatioPct}%` : '—' }}</b>
+                </div>
+              </div>
+            </div>
             <el-progress
               :percentage="progressPct(m.achievementRatio)"
               :color="progressColor(m.achievementRatio)"
@@ -218,7 +247,7 @@
                   <tr v-for="(e, ei) in m.evaluations" :key="ei">
                     <td>{{ String(e.dataDt).slice(0, 10) }}</td>
                     <td class="num">{{ e.actualValue ?? '—' }}</td>
-                    <td class="num"><span :class="ratioBadge(e.achievementRatio)">{{ e.achievementRatio != null ? `${e.achievementRatio}%` : '—' }}</span></td>
+                    <td class="num"><span :class="ratioClass(e.achievementRatio)">{{ e.achievementRatio != null ? `${e.achievementRatio}%` : '—' }}</span></td>
                     <td><span class="badge" :class="resultBadge(e.resultStatus)">{{ resultText(e.resultStatus) }}</span></td>
                   </tr>
                 </tbody>
@@ -323,7 +352,7 @@ import { listCommitmentPlans, listTrackingPolicies, simulatePolicy, saveMetricTr
 import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
 import {
   planStatusText, configStatusText, evalResultText, appStatusText,
-  customerScopeText, metricName, businessTypeText, commitmentUnitText
+  customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText
 } from '@/utils/dict'
 
 // ---------- 钻取层级(§12.11):1 客户列表 / 2 客户承诺记录 / 3 指标明细 ----------
@@ -343,6 +372,7 @@ interface CustomerRow {
   planCount: number
   metricCount: number
   avgRatio: number | null
+  avgRelatedRatio: number | null
   atRiskCount: number
 }
 
@@ -362,6 +392,11 @@ const customerRows = computed<CustomerRow[]>(() => {
       planCount: new Set(list.map((r) => r.plan_no)).size,
       metricCount: list.filter((r) => r.metric_code).length,
       avgRatio: ratios.length ? Number((ratios.reduce((a, b) => a + b, 0) / ratios.length).toFixed(1)) : null,
+      // 含关联人达成率(展示层聚合,同编码才并;§11.8):按后端拼装的 total_ratio 比率聚合
+      avgRelatedRatio: (() => {
+        const rs = list.map((r) => r.total_ratio).filter((v) => v != null).map((v) => Number(v) * 100)
+        return rs.length ? Number((rs.reduce((a, b) => a + b, 0) / rs.length).toFixed(1)) : null
+      })(),
       atRiskCount: list.filter((r) => r.result_status === 'AT_RISK' || r.status === 'AT_RISK').length
     }
   })
@@ -490,6 +525,8 @@ const planMetrics = computed<any[]>(() => {
         achievementRatio: pctOf(ev.achievementRatio),
         resultStatus: ev.resultStatus,
         dataDt: ev.dataDt,
+        // 关联人实绩并入(展示层聚合,同编码才并;§11.8):主客户+关联人总和达成率/状态,无关联人或无同码数据为 null
+        relatedSummary: it.relatedSummary ? { ...it.relatedSummary, totalRatioPct: pctOf(it.relatedSummary.totalRatio) } : null,
         // 每期履约明细(planDetail 返回该指标全部评估期,按 data_dt 倒序)
         evaluations: (it.evaluations || []).map((e: any) => ({
           dataDt: e.dataDt, actualValue: e.actualValue,
@@ -763,6 +800,8 @@ onMounted(load)
 .plan-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .plan-card__meta { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
 .metric-row { margin-bottom: 14px; }
+.metric-row__related { margin-top: 2px; padding: 8px 12px; background: #f8fafc; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
+.metric-row__related-head { display: flex; align-items: center; gap: 12px; font-size: 13px; margin-bottom: 2px; }
 .metric-row__head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; font-size: 14px; }
 .metric-row__code { font-size: 12px; color: var(--color-text-light); }
 .metric-row__vals { display: flex; flex-wrap: wrap; gap: 24px; padding: 8px 0 4px; }

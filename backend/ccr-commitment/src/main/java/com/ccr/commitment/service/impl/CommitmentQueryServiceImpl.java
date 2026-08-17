@@ -6,21 +6,31 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.commitment.domain.CcrCommitmentMetric;
 import com.ccr.commitment.domain.CcrCommitmentPlan;
 import com.ccr.commitment.domain.CcrTrackingEvaluation;
+import com.ccr.commitment.domain.CcrTrackingPolicyVersion;
+import com.ccr.commitment.domain.CcrTrackingThreshold;
 import com.ccr.commitment.mapper.CcrCommitmentMetricMapper;
 import com.ccr.commitment.mapper.CcrCommitmentPlanMapper;
 import com.ccr.commitment.mapper.CcrTrackingEvaluationMapper;
+import com.ccr.commitment.mapper.CcrTrackingPolicyVersionMapper;
+import com.ccr.commitment.mapper.CcrTrackingThresholdMapper;
 import com.ccr.commitment.service.CommitmentQueryService;
+import com.ccr.commitment.service.support.PolicyThresholds;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -37,6 +47,10 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
     private CcrCommitmentMetricMapper metricMapper;
     @Resource
     private CcrTrackingEvaluationMapper evaluationMapper;
+    @Resource
+    private CcrTrackingPolicyVersionMapper policyVersionMapper;
+    @Resource
+    private CcrTrackingThresholdMapper thresholdMapper;
     @Resource
     private JdbcTemplate jdbcTemplate;
 
@@ -127,6 +141,8 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
             item.put("metric", metric);
             item.put("latestEvaluation", latest);
             item.put("evaluations", evaluations);
+            // 关联人实绩并入(展示层聚合,同编码才并;§11.8)
+            item.put("relatedSummary", relatedSummary(plan, metric, latest));
             items.add(item);
         }
         Map<String, Object> result = new LinkedHashMap<>();
@@ -259,5 +275,117 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
 
     private static String toStr(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    // ---------- 关联人实绩并入(展示层聚合,同编码才并;§11.8) ----------
+
+    /**
+     * 单指标关联人聚合摘要:主客户+有效关联人同指标编码数仓实绩合计,分母=主客户承诺目标不变。
+     * 集团计划保持成员口径不做关联人聚合;无关联人/无同码数据/未评估/OTHER/目标值为 0 时返回 null。
+     */
+    private Map<String, Object> relatedSummary(CcrCommitmentPlan plan, CcrCommitmentMetric metric,
+                                               CcrTrackingEvaluation latest) {
+        if ("GROUP".equals(plan.getScopeType())) {
+            return null;
+        }
+        if (latest == null || "OTHER".equals(metric.getMetricCode())
+                || metric.getTargetValue() == null || metric.getTargetValue().compareTo(BigDecimal.ZERO) == 0
+                || StrUtil.isBlank(plan.getCustomerNo())) {
+            return null;
+        }
+        // 1. 有效关联人(数仓 B03 客户关系快照最新批次,复用审批详关联人查询口径)
+        List<Map<String, Object>> relations = jdbcTemplate.queryForList(
+                "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength "
+                        + "FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' "
+                        + "AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)",
+                plan.getCustomerNo(), plan.getCustomerNo());
+        // 2. 关联人同码实绩(最近批次,折算贡献度行优先;同编码才并)
+        List<Map<String, Object>> relatedCustomers = new ArrayList<>();
+        BigDecimal relatedSum = BigDecimal.ZERO;
+        // 同一关联人多种关系(如担保人+实际控制人)只并入一次实绩
+        Set<String> seenRelated = new HashSet<>();
+        for (Map<String, Object> rel : relations) {
+            String relCustNo = toStr(rel.get("relatedCustomerNo"));
+            if (StrUtil.isBlank(relCustNo) || !seenRelated.add(relCustNo)) {
+                continue;
+            }
+            BigDecimal value = warehouseLatestValue(relCustNo, metric.getMetricCode());
+            if (value == null) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("customerNo", relCustNo);
+            row.put("relationType", toStr(rel.get("relationType")));
+            row.put("actualValue", value);
+            row.put("dataDt", latest.getDataDt());
+            relatedCustomers.add(row);
+            relatedSum = relatedSum.add(value);
+        }
+        if (relatedCustomers.isEmpty()) {
+            return null;
+        }
+        // 3. 总和达成率(复用 §11.3 三公式,分子=主客户实绩+关联人合计,分母不变)
+        BigDecimal mainActual = latest.getActualValue() == null ? BigDecimal.ZERO : latest.getActualValue();
+        BigDecimal totalActual = mainActual.add(relatedSum);
+        BigDecimal totalRatio = calcAchievement(metric.getTargetType(), metric.getTargetValue(),
+                metric.getBaselineValue(), totalActual);
+        // 4. 总和状态(复用 PolicyThresholds,阈值从计划冻结策略版本解析)
+        PolicyThresholds thresholds = loadThresholds(plan);
+        boolean expired = !LocalDate.now().isBefore(plan.getEndDate());
+        String totalStatus = totalRatio == null ? null : thresholds.resolveStatus(totalRatio, expired, false);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("relatedCustomers", relatedCustomers);
+        summary.put("relatedActualSum", relatedSum);
+        summary.put("mainActual", mainActual);
+        summary.put("totalActual", totalActual);
+        summary.put("totalRatio", totalRatio);
+        summary.put("totalStatus", totalStatus);
+        return summary;
+    }
+
+    /** 数仓单客户单指标最近批次值(折算贡献度行优先,同编码才并) */
+    private BigDecimal warehouseLatestValue(String custNo, String metricCode) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric "
+                        + "WHERE cust_no = ? AND metric_code = ? AND data_dt = (SELECT MAX(data_dt) "
+                        + "FROM dw_contribution_metric WHERE cust_no = ? AND metric_code = ?)",
+                custNo, metricCode, custNo, metricCode);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        List<Map<String, Object>> contribution = rows.stream()
+                .filter(r -> "CONTRIBUTION_AMOUNT".equals(toStr(r.get("valueType")))).toList();
+        List<Map<String, Object>> effective = contribution.isEmpty() ? rows : contribution;
+        return effective.stream()
+                .map(r -> r.get("metricValue") == null ? BigDecimal.ZERO : new BigDecimal(r.get("metricValue").toString()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** 达成率三公式(与 CommitmentServiceImpl.calcAchievement 同口径) */
+    private BigDecimal calcAchievement(String targetType, BigDecimal target, BigDecimal baseline, BigDecimal actual) {
+        if (actual == null || target == null || target.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        BigDecimal base = baseline == null ? BigDecimal.ZERO : baseline;
+        return switch (targetType == null ? "" : targetType) {
+            case "INCREMENT" -> actual.subtract(base).divide(target, 6, RoundingMode.HALF_UP);
+            default -> actual.divide(target, 6, RoundingMode.HALF_UP);
+        };
+    }
+
+    /** 计划冻结策略阈值;未冻结/未匹配用默认(参照 CommitmentServiceImpl.loadThresholds) */
+    private PolicyThresholds loadThresholds(CcrCommitmentPlan plan) {
+        CcrTrackingPolicyVersion version = null;
+        if (plan.getPolicyVersionId() != null) {
+            version = policyVersionMapper.selectById(plan.getPolicyVersionId());
+        }
+        if (version == null) {
+            return PolicyThresholds.defaults();
+        }
+        List<CcrTrackingThreshold> thresholds = thresholdMapper.selectList(
+                new LambdaQueryWrapper<CcrTrackingThreshold>()
+                        .eq(CcrTrackingThreshold::getPolicyVersionId, version.getId()));
+        return PolicyThresholds.from(thresholds, version.getDataToleranceDays());
     }
 }

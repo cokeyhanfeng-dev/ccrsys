@@ -24,9 +24,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 创建计划请求 DTO(避免 Map 强转问题) */
 @Data
@@ -174,7 +179,7 @@ public class CommitmentController {
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                            a.application_no, a.submit_time,
                            """ + APP_SUMMARY_SELECT + """
-                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
+                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     JOIN ccr_resolution r ON r.id = cp.resolution_id
@@ -188,14 +193,16 @@ public class CommitmentController {
                     WHERE cp.del_flag = '0'
                     ORDER BY cp.create_time DESC
                     """;
-            return R.ok(jdbcTemplate.queryForList(sql));
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+            enrichRelatedSummary(rows);
+            return R.ok(rows);
         }
         if ("customer_manager".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                            a.application_no, a.submit_time,
                            """ + APP_SUMMARY_SELECT + """
-                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.track_desc,
+                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
                     FROM ccr_commitment_plan cp
                     JOIN ccr_resolution r ON r.id = cp.resolution_id
@@ -209,14 +216,16 @@ public class CommitmentController {
                     WHERE cp.del_flag = '0' AND a.applicant_user_id = ?
                     ORDER BY cp.create_time DESC
                     """;
-            return R.ok(jdbcTemplate.queryForList(sql, operatorId));
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, operatorId);
+            enrichRelatedSummary(rows);
+            return R.ok(rows);
         }
         // 普通审批人:本人审批过的申请的客户
         sql = """
                 SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
                        a.application_no, a.submit_time,
                        """ + APP_SUMMARY_SELECT + """
-                       cm.metric_code, cm.metric_name, cm.target_value,
+                       cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value,
                        te.actual_value, te.achievement_ratio, te.result_status
                 FROM ccr_commitment_plan cp
                 JOIN ccr_resolution r ON r.id = cp.resolution_id
@@ -235,6 +244,191 @@ public class CommitmentController {
                   )
                 ORDER BY cp.create_time DESC
                 """;
-        return R.ok(jdbcTemplate.queryForList(sql, operatorId));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, operatorId);
+        enrichRelatedSummary(rows);
+        return R.ok(rows);
+    }
+
+    // ---------- 关联人实绩并入(展示层聚合,同编码才并;§11.8 客户概览用) ----------
+
+    /**
+     * 列表行批查拼装:主客户 + 有效关联人同码数仓实绩合计。
+     * 每行新增 related_actual_sum / total_actual / total_ratio(无关联人/无同码数据时置 null)。
+     */
+    private void enrichRelatedSummary(List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        Set<String> customers = new LinkedHashSet<>();
+        for (Map<String, Object> row : rows) {
+            String customerNo = toStr(row.get("customer_no"));
+            if (!isBlank(customerNo)) {
+                customers.add(customerNo);
+            }
+        }
+        if (customers.isEmpty()) {
+            return;
+        }
+        Map<String, List<Map<String, Object>>> relationsByCustomer = validRelations(customers);
+        if (relationsByCustomer.isEmpty()) {
+            return;
+        }
+        Set<String> relatedCustomers = new LinkedHashSet<>();
+        for (List<Map<String, Object>> rels : relationsByCustomer.values()) {
+            for (Map<String, Object> rel : rels) {
+                String relNo = toStr(rel.get("relatedCustomerNo"));
+                if (!isBlank(relNo)) {
+                    relatedCustomers.add(relNo);
+                }
+            }
+        }
+        Set<String> metricCodes = new LinkedHashSet<>();
+        for (Map<String, Object> row : rows) {
+            String code = toStr(row.get("metric_code"));
+            if (!isBlank(code)) {
+                metricCodes.add(code);
+            }
+        }
+        Map<String, BigDecimal> values = warehouseLatestValues(relatedCustomers, metricCodes);
+        for (Map<String, Object> row : rows) {
+            String customerNo = toStr(row.get("customer_no"));
+            String metricCode = toStr(row.get("metric_code"));
+            BigDecimal relatedSum = BigDecimal.ZERO;
+            boolean hasRelated = false;
+            List<Map<String, Object>> rels = relationsByCustomer.get(customerNo);
+            if (rels != null) {
+                // 同一关联人多种关系只并入一次实绩
+                Set<String> seenRelated = new LinkedHashSet<>();
+                for (Map<String, Object> rel : rels) {
+                    String relNo = toStr(rel.get("relatedCustomerNo"));
+                    if (isBlank(relNo) || !seenRelated.add(relNo)) {
+                        continue;
+                    }
+                    BigDecimal value = values.get(keyOf(relNo, metricCode));
+                    if (value != null) {
+                        relatedSum = relatedSum.add(value);
+                        hasRelated = true;
+                    }
+                }
+            }
+            BigDecimal totalActual = null;
+            BigDecimal totalRatio = null;
+            if (hasRelated) {
+                BigDecimal mainActual = row.get("actual_value") == null ? BigDecimal.ZERO
+                        : new BigDecimal(row.get("actual_value").toString());
+                totalActual = mainActual.add(relatedSum);
+                totalRatio = ratio(toStr(row.get("target_type")),
+                        toBigDecimal(row.get("target_value")),
+                        toBigDecimal(row.get("baseline_value")),
+                        totalActual);
+            }
+            row.put("related_actual_sum", hasRelated ? relatedSum : null);
+            row.put("total_actual", totalActual);
+            row.put("total_ratio", totalRatio);
+        }
+    }
+
+    /** 批查主客户有效关联人(数仓 B03 最新批次,按客户自身最新批次;按 customer_no 分组) */
+    private Map<String, List<Map<String, Object>>> validRelations(Set<String> customers) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT s.customer_no customerNo, s.related_customer_no relatedCustomerNo, s.relation_type relationType "
+                        + "FROM dw_customer_relation_snapshot s "
+                        + "JOIN (SELECT customer_no, MAX(data_dt) max_dt FROM dw_customer_relation_snapshot GROUP BY customer_no) t "
+                        + "ON t.customer_no = s.customer_no AND t.max_dt = s.data_dt "
+                        + "WHERE s.customer_no IN (" + inClause(customers) + ") AND s.relation_status = 'VALID'");
+        Map<String, List<Map<String, Object>>> byCustomer = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String customerNo = toStr(row.get("customerNo"));
+            if (!isBlank(customerNo)) {
+                byCustomer.computeIfAbsent(customerNo, k -> new ArrayList<>()).add(row);
+            }
+        }
+        return byCustomer;
+    }
+
+    /** 批查关联人数仓值:每组 (cust_no, metric_code) 取最新批次,折算贡献度行优先;同编码才并 */
+    private Map<String, BigDecimal> warehouseLatestValues(Set<String> customers, Set<String> metricCodes) {
+        Map<String, BigDecimal> result = new HashMap<>();
+        if (customers.isEmpty() || metricCodes.isEmpty()) {
+            return result;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT cust_no custNo, metric_code metricCode, metric_value metricValue, value_type valueType, data_dt "
+                        + "FROM dw_contribution_metric WHERE cust_no IN (" + inClause(customers) + ") "
+                        + "AND metric_code IN (" + inClause(metricCodes) + ")");
+        // 每组 (cust_no, metric_code):折算贡献度行优先,否则取最新批次
+        Map<String, List<Map<String, Object>>> byKey = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String key = keyOf(toStr(row.get("custNo")), toStr(row.get("metricCode")));
+            byKey.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
+        }
+        for (Map.Entry<String, List<Map<String, Object>>> e : byKey.entrySet()) {
+            Map<String, Object> chosen = null;
+            for (Map<String, Object> row : e.getValue()) {
+                if ("CONTRIBUTION_AMOUNT".equals(toStr(row.get("valueType")))) {
+                    chosen = row;
+                    break;
+                }
+            }
+            if (chosen == null) {
+                String maxDt = null;
+                for (Map<String, Object> row : e.getValue()) {
+                    String dt = toStr(row.get("data_dt"));
+                    if (dt != null && (maxDt == null || dt.compareTo(maxDt) > 0)) {
+                        maxDt = dt;
+                    }
+                }
+                for (Map<String, Object> row : e.getValue()) {
+                    if (maxDt != null && maxDt.equals(toStr(row.get("data_dt")))) {
+                        chosen = row;
+                        break;
+                    }
+                }
+            }
+            if (chosen != null && chosen.get("metricValue") != null) {
+                result.put(e.getKey(), new BigDecimal(chosen.get("metricValue").toString()));
+            }
+        }
+        return result;
+    }
+
+    private static String toStr(Object value) {
+        return value == null ? null : value.toString();
+    }
+
+    private static BigDecimal toBigDecimal(Object value) {
+        return value == null ? null : new BigDecimal(value.toString());
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private static String keyOf(String custNo, String metricCode) {
+        return custNo + "|" + metricCode;
+    }
+
+    /** IN 子句(单引号转义防注入;值来自数仓主键/字典码) */
+    private String inClause(Set<String> values) {
+        StringBuilder sb = new StringBuilder();
+        for (String v : values) {
+            if (sb.length() > 0) {
+                sb.append(",");
+            }
+            sb.append("'").append(v.replace("'", "''")).append("'");
+        }
+        return sb.toString();
+    }
+
+    /** 达成率三公式(与 CommitmentQueryServiceImpl 同口径;INCREMENT 用增量) */
+    private BigDecimal ratio(String targetType, BigDecimal target, BigDecimal baseline, BigDecimal actual) {
+        if (actual == null || target == null || target.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        BigDecimal base = baseline == null ? BigDecimal.ZERO : baseline;
+        return switch (targetType == null ? "" : targetType) {
+            case "INCREMENT" -> actual.subtract(base).divide(target, 6, RoundingMode.HALF_UP);
+            default -> actual.divide(target, 6, RoundingMode.HALF_UP);
+        };
     }
 }
