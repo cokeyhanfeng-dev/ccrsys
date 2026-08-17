@@ -119,7 +119,7 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         payload.put("applicationId", item.getApplicationId());
         payload.put("finalRate", finalRate == null ? null : finalRate.toPlainString());
         payload.put("carrierType", item.getPricingCarrierType());
-        payload.put("carrierBusinessKey", StrUtil.blankToDefault(item.getCreditTrancheRef(), item.getPricingItemNo()));
+        payload.put("carrierBusinessKey", item.getPricingItemNo());
         payload.put("effectiveFrom", LocalDate.now().toString());
         payload.put("effectiveTo", LocalDate.now().plusDays(resolutionEffectiveDays).toString());
         payload.put("decisionSource", StrUtil.blankToDefault(decisionSource, "LEVEL_APPROVED"));

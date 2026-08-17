@@ -273,35 +273,13 @@ CREATE TABLE IF NOT EXISTS `dw_member_credit_limit_snapshot` (
   KEY `idx_ml_member` (`member_customer_no`)
 ) ENGINE=InnoDB COMMENT='成员额度快照(V1.0 A.5)';
 
--- ---------- 用信分项快照 ----------
-CREATE TABLE IF NOT EXISTS `dw_credit_tranche_snapshot` (
-  `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
-  `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
-  `tranche_no`        VARCHAR(64)  NOT NULL COMMENT '用信分项编号',
-  `member_limit_no`   VARCHAR(64)  NOT NULL COMMENT '所属成员额度编号',
-  `member_customer_no` VARCHAR(64) NOT NULL COMMENT '成员客户号',
-  `product_code`      VARCHAR(32)  NOT NULL COMMENT '产品编码',
-  `main_guarantee_type` VARCHAR(32) NOT NULL COMMENT '担保主类型',
-  `tranche_amount`    DECIMAL(18,4) NOT NULL COMMENT '分项金额(万元)',
-  `used_amount`       DECIMAL(18,4) NOT NULL COMMENT '已用金额(万元)',
-  `available_amount`  DECIMAL(18,4) NOT NULL COMMENT '可用金额(万元)',
-  `currency`          VARCHAR(8)   NOT NULL DEFAULT 'CNY' COMMENT '币种',
-  `term_start`        DATE         NOT NULL COMMENT '分项开始日期',
-  `term_end`          DATE         NOT NULL COMMENT '分项到期日期',
-  `tranche_status`    VARCHAR(16)  NOT NULL COMMENT 'EFFECTIVE有效/EXPIRED到期/CLOSED结清',
-  PRIMARY KEY (`etl_md5`),
-  KEY `idx_tr_no` (`tranche_no`),
-  KEY `idx_tr_ml` (`member_limit_no`),
-  KEY `idx_tr_member` (`member_customer_no`)
-) ENGINE=InnoDB COMMENT='用信分项快照(V1.0 A.5)';
-
 -- ---------- 贷款合同快照 ----------
 CREATE TABLE IF NOT EXISTS `dw_loan_contract_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
   `contract_no`       VARCHAR(64)  NOT NULL COMMENT '贷款合同号',
   `agreement_no`      VARCHAR(64)  NULL COMMENT '所属授信协议编号(关联 dw_credit_agreement_snapshot.agreement_no)',
-  `tranche_no`        VARCHAR(64)  NULL COMMENT '所属用信分项编号',
+  `tranche_no`        VARCHAR(64)  NULL COMMENT '存量不填(集团切分授信无分项层,保留列兼容数仓旧推送)',
   `borrower_customer_no` VARCHAR(64) NOT NULL COMMENT '借款人客户号',
   `contract_amount`   DECIMAL(18,4) NOT NULL COMMENT '合同金额(万元)',
   `contract_balance`  DECIMAL(18,4) NOT NULL COMMENT '合同余额(万元)',
@@ -317,7 +295,6 @@ CREATE TABLE IF NOT EXISTS `dw_loan_contract_snapshot` (
   PRIMARY KEY (`etl_md5`),
   KEY `idx_lc_no` (`contract_no`),
   KEY `idx_lc_agreement` (`agreement_no`),
-  KEY `idx_lc_tranche` (`tranche_no`),
   KEY `idx_lc_borrower` (`borrower_customer_no`)
 ) ENGINE=InnoDB COMMENT='贷款合同快照(V1.0 A.5);agreement_no 关联授信协议;guarantee_type 承原本行融资担保';
 
@@ -328,7 +305,7 @@ CREATE TABLE IF NOT EXISTS `dw_loan_note_snapshot` (
   `loan_note_no`      VARCHAR(64)  NOT NULL COMMENT '借据号',
   `agreement_no`      VARCHAR(64)  NULL COMMENT '所属授信协议编号(关联 dw_credit_agreement_snapshot.agreement_no)',
   `contract_no`       VARCHAR(64)  NOT NULL COMMENT '所属贷款合同号',
-  `tranche_no`        VARCHAR(64)  NULL COMMENT '所属用信分项编号',
+  `tranche_no`        VARCHAR(64)  NULL COMMENT '存量不填(集团切分授信无分项层,保留列兼容数仓旧推送)',
   `borrower_customer_no` VARCHAR(64) NOT NULL COMMENT '借款人客户号',
   `loan_amount`       DECIMAL(18,4) NOT NULL COMMENT '借据金额(万元)',
   `loan_balance`      DECIMAL(18,4) NOT NULL COMMENT '借据余额(万元)',

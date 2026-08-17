@@ -95,7 +95,6 @@ CREATE TABLE IF NOT EXISTS `ccr_pricing_item` (
   `pricing_customer_no` VARCHAR(64)  NOT NULL COMMENT '实际定价客户号(集团场景为成员)',
   `member_customer_no`  VARCHAR(64)  NULL COMMENT '集团成员客户号（集团场景必填）',
   `pricing_carrier_type` VARCHAR(24) NOT NULL COMMENT 'LOAN_CONTRACT/DEPOSIT_ACCOUNT',
-  `credit_tranche_ref`  VARCHAR(64)  NULL COMMENT '用信或担保分项来源主键',
   `product_code`        VARCHAR(32)  NOT NULL COMMENT '产品编码',
   `guarantee_package_id` BIGINT      NULL COMMENT '冻结担保组合',
   `term_value`          INT          NOT NULL COMMENT '期限数值',

@@ -38,7 +38,6 @@ class DatacenterServiceImplTest {
             "dw_credit_financing_detail",
             "dw_credit_financing_summary",
             "dw_credit_report_snapshot",
-            "dw_credit_tranche_snapshot",
             "dw_customer_group_member_snapshot",
             "dw_customer_group_snapshot",
             "dw_customer_relation_snapshot",

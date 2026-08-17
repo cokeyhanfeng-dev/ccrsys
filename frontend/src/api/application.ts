@@ -40,7 +40,6 @@ export interface GuaranteeInput {
   contractBusinessKey?: string
   plannedContractFlag?: string
   guaranteeType?: string
-  creditTrancheRef?: string
   measures?: GuaranteeMeasureInput[]
 }
 

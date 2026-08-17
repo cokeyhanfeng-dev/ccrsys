@@ -78,13 +78,13 @@ CREATE TABLE IF NOT EXISTS `ccr_snapshot_relation` (
   `bundle_id`           BIGINT       NOT NULL COMMENT '快照包主键',
   `parent_record_id`    BIGINT       NOT NULL COMMENT '父快照记录主键',
   `child_record_id`     BIGINT       NOT NULL COMMENT '子快照记录主键',
-  `relation_type`       VARCHAR(32)  NOT NULL COMMENT 'GROUP_TO_MEMBER/MEMBER_TO_LIMIT/LIMIT_TO_TRANCHE/TRANCHE_TO_CONTRACT/CONTRACT_TO_NOTE/TO_GUARANTEE',
+  `relation_type`       VARCHAR(32)  NOT NULL COMMENT 'GROUP_TO_MEMBER/MEMBER_TO_LIMIT/LIMIT_TO_CONTRACT/CONTRACT_TO_NOTE/TO_GUARANTEE',
   `sequence_no`         INT          NOT NULL DEFAULT 1 COMMENT '同类型顺序',
   PRIMARY KEY (`id`),
   KEY `idx_rel_bundle` (`bundle_id`),
   KEY `idx_rel_parent` (`parent_record_id`),
   KEY `idx_rel_child` (`child_record_id`)
-) ENGINE=InnoDB COMMENT='ccr_snapshot_relation 快照关系(集团→成员→额度→分项→合同→借据→担保)';
+) ENGINE=InnoDB COMMENT='ccr_snapshot_relation 快照关系(集团→成员→额度→合同→借据→担保)';
 
 -- ---------- 质量校验结果 ----------
 CREATE TABLE IF NOT EXISTS `ccr_snapshot_quality_result` (

@@ -18,7 +18,7 @@ public class SnapshotRelationInput {
     /** 子快照记录主键 */
     private Long childRecordId;
 
-    /** 关系类型:GROUP_TO_MEMBER/MEMBER_TO_LIMIT/LIMIT_TO_TRANCHE/TRANCHE_TO_CONTRACT/CONTRACT_TO_NOTE */
+    /** 关系类型:GROUP_TO_MEMBER/MEMBER_TO_LIMIT/LIMIT_TO_CONTRACT/CONTRACT_TO_NOTE */
     private String relationType;
 
     /** 同类型顺序 */

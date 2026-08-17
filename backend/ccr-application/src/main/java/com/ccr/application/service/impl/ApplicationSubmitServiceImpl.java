@@ -796,7 +796,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             }
             // 成员贡献度
             addContributionRecord(bundleId, memberNo);
-            // 成员额度→用信分项→合同→借据
+            // 成员额度→合同→借据
             if (groupCreditNo == null) {
                 continue;
             }
@@ -809,28 +809,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             if (memberRecordId != null) {
                 collect.relations.add(new SnapshotRelationInput(memberRecordId, limitRecordId, "MEMBER_TO_LIMIT", 1));
             }
-            collectTrancheChain(bundleId, String.valueOf(limit.get("member_limit_no")), limitRecordId, collect);
+            collectContractChain(bundleId, memberNo, limitRecordId, collect);
         }
     }
 
-    /** 用信分项→合同→借据链 */
-    private void collectTrancheChain(Long bundleId, String memberLimitNo, Long limitRecordId, SnapshotCollect collect) {
-        int trancheSeq = 0;
-        for (Map<String, Object> tranche : dataWarehouseService.tranchesByLimit(memberLimitNo)) {
-            trancheSeq++;
-            String trancheNo = String.valueOf(tranche.get("tranche_no"));
-            Long trancheRecordId = addSnapshotRecord(bundleId, "dw_credit_tranche_snapshot", "TRANCHE", trancheNo, tranche);
-            if (limitRecordId != null) {
-                collect.relations.add(new SnapshotRelationInput(limitRecordId, trancheRecordId, "LIMIT_TO_TRANCHE", trancheSeq));
-            }
-            collectContractChain(bundleId, trancheNo, trancheRecordId, collect);
-        }
-    }
-
-    /** 合同→借据链 */
-    private void collectContractChain(Long bundleId, String trancheNo, Long trancheRecordId, SnapshotCollect collect) {
+    /** 合同→借据链(按成员 borrower 直接采合同;存量无分项层,合同直接挂成员额度下) */
+    private void collectContractChain(Long bundleId, String memberCustomerNo, Long limitRecordId, SnapshotCollect collect) {
         int contractSeq = 0;
-        for (Map<String, Object> contract : dataWarehouseService.contractsByTranche(trancheNo)) {
+        for (Map<String, Object> contract : dataWarehouseService.contractsByBorrower(memberCustomerNo)) {
             contractSeq++;
             String contractNo = String.valueOf(contract.get("contract_no"));
             // 合同去重(数据源可能存在多批次重复):仅首次采集合同并采集其借据,避免同借据重复采集撞 uk_snapshot_record
@@ -839,8 +825,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 collectNotes(bundleId, contractNo, rid, collect);
                 return rid;
             });
-            if (trancheRecordId != null && contractRecordId != null) {
-                collect.relations.add(new SnapshotRelationInput(trancheRecordId, contractRecordId, "TRANCHE_TO_CONTRACT", contractSeq));
+            if (limitRecordId != null && contractRecordId != null) {
+                collect.relations.add(new SnapshotRelationInput(limitRecordId, contractRecordId, "LIMIT_TO_CONTRACT", contractSeq));
             }
         }
     }
@@ -1039,7 +1025,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             copy.setPricingCustomerNo(src.getPricingCustomerNo());
             copy.setMemberCustomerNo(src.getMemberCustomerNo());
             copy.setPricingCarrierType(src.getPricingCarrierType());
-            copy.setCreditTrancheRef(src.getCreditTrancheRef());
             copy.setProductCode(src.getProductCode());
             copy.setTermValue(src.getTermValue());
             copy.setTermUnit(src.getTermUnit());

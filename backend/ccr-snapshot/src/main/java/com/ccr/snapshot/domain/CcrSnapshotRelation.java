@@ -7,7 +7,7 @@ import lombok.EqualsAndHashCode;
 
 /**
  * 快照关系(ccr_snapshot_relation)——有向关系(§A.6)
- * GROUP_TO_MEMBER / MEMBER_TO_LIMIT / LIMIT_TO_TRANCHE / TRANCHE_TO_CONTRACT / CONTRACT_TO_NOTE / TO_GUARANTEE
+ * GROUP_TO_MEMBER / MEMBER_TO_LIMIT / LIMIT_TO_CONTRACT / CONTRACT_TO_NOTE / TO_GUARANTEE
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

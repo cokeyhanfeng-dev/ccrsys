@@ -158,36 +158,12 @@ public class DataWarehouseService {
                 ORDER BY member_limit_no""", memberCustomerNo);
     }
 
-    /** 用信分项(按成员额度,最新批次) */
-    public List<Map<String, Object>> tranchesByLimit(String memberLimitNo) {
-        return jdbcTemplate.queryForList("""
-                SELECT * FROM dw_credit_tranche_snapshot
-                WHERE member_limit_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_tranche_snapshot)
-                ORDER BY tranche_no""", memberLimitNo);
-    }
-
-    /** 用信分项(按成员客户号,最新批次) */
-    public List<Map<String, Object>> tranchesByMember(String memberCustomerNo) {
-        return jdbcTemplate.queryForList("""
-                SELECT * FROM dw_credit_tranche_snapshot
-                WHERE member_customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_tranche_snapshot)
-                ORDER BY tranche_no""", memberCustomerNo);
-    }
-
     /** 授信协议(按客户,最新批次;单户与集团成员统一按 customer_no) */
     public List<Map<String, Object>> creditAgreements(String customerNo) {
         return jdbcTemplate.queryForList("""
                 SELECT * FROM dw_credit_agreement_snapshot
                 WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot)
                 ORDER BY agreement_no""", customerNo);
-    }
-
-    /** 贷款合同(按用信分项,最新批次) */
-    public List<Map<String, Object>> contractsByTranche(String trancheNo) {
-        return jdbcTemplate.queryForList("""
-                SELECT * FROM dw_loan_contract_snapshot
-                WHERE tranche_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_loan_contract_snapshot)
-                ORDER BY contract_no""", trancheNo);
     }
 
     /** 贷款合同(按借款人,最新批次) */
@@ -247,7 +223,6 @@ public class DataWarehouseService {
             tables.add("dw_customer_group_member_snapshot");
             tables.add("dw_group_credit_snapshot");
             tables.add("dw_member_credit_limit_snapshot");
-            tables.add("dw_credit_tranche_snapshot");
             tables.add("dw_loan_contract_snapshot");
             tables.add("dw_loan_note_snapshot");
         } else if ("INDIVIDUAL".equals(customerScope)) {

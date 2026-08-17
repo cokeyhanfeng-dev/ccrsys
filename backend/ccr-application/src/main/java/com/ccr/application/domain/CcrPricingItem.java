@@ -31,9 +31,6 @@ public class CcrPricingItem extends BaseEntity {
     /** LOAN_CONTRACT / DEPOSIT_ACCOUNT */
     private String pricingCarrierType;
 
-    /** 用信或担保分项来源主键 */
-    private String creditTrancheRef;
-
     /** 产品编码 */
     private String productCode;
 

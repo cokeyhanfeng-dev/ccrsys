@@ -85,7 +85,7 @@ public class GroupQueryController {
         return R.ok(members);
     }
 
-    /** 成员额度/用信分项/合同/合同下借据/担保视图 */
+    /** 成员额度/合同/合同下借据/担保视图 */
     @GetMapping("/ccr/members/{customerNo}/credit-view")
     public R<Map<String, Object>> memberCreditView(@PathVariable String customerNo) {
         Map<String, Object> corp = dataWarehouseService.findCorpCustomer(customerNo);
@@ -96,17 +96,10 @@ public class GroupQueryController {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("customer", camel(corp != null ? corp : indv));
 
-        // 成员额度 → 用信分项
+        // 成员额度(合同直接挂成员额度下,无用信分项层)
         List<Map<String, Object>> limits = new ArrayList<>();
         for (Map<String, Object> limit : dataWarehouseService.memberLimitsByMember(customerNo)) {
-            Map<String, Object> row = camel(limit);
-            List<Map<String, Object>> tranches = new ArrayList<>();
-            for (Map<String, Object> tranche :
-                    dataWarehouseService.tranchesByLimit(String.valueOf(limit.get("member_limit_no")))) {
-                tranches.add(camel(tranche));
-            }
-            row.put("tranches", tranches);
-            limits.add(row);
+            limits.add(camel(limit));
         }
         result.put("creditLimits", limits);
 

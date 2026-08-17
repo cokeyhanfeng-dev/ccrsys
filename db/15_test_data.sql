@@ -23,7 +23,6 @@ UPDATE dw_customer_group_member_snapshot SET data_dt=CURDATE();
 UPDATE dw_customer_relation_snapshot SET data_dt=CURDATE();
 UPDATE dw_group_credit_snapshot SET data_dt=CURDATE();
 UPDATE dw_member_credit_limit_snapshot SET data_dt=CURDATE();
-UPDATE dw_credit_tranche_snapshot SET data_dt=CURDATE();
 UPDATE dw_loan_contract_snapshot SET data_dt=CURDATE();
 UPDATE dw_loan_note_snapshot SET data_dt=CURDATE();
 UPDATE dw_deposit_account_snapshot SET data_dt=CURDATE();

@@ -88,7 +88,7 @@ public class CcrApplication extends BaseEntity {
 
     /** 贷款担保切分录入(非表字段,仅接收,创建 ccr_pricing_item + 担保组合;
      *  键:requestedRate/amount/productCode/termValue/termUnit/currency/originalRate/
-     *  memberCustomerNo/contractBusinessKey/plannedContractFlag/creditTrancheRef/
+     *  memberCustomerNo/contractBusinessKey/plannedContractFlag/
      *  guaranteeType/measures[measureType/guarantorCustomerNo/collateralNo/guaranteeAmount/currency]) */
     @TableField(exist = false)
     private List<Map<String, Object>> guarantees;

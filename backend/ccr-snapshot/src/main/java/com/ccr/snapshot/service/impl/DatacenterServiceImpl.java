@@ -45,14 +45,13 @@ public class DatacenterServiceImpl implements DatacenterService {
         KNOWN_TABLE_NAMES.put("dw_customer_relation_snapshot", "客户关系");
         KNOWN_TABLE_NAMES.put("dw_group_credit_snapshot", "集团综合授信");
         KNOWN_TABLE_NAMES.put("dw_member_credit_limit_snapshot", "成员授信额度");
-        KNOWN_TABLE_NAMES.put("dw_credit_tranche_snapshot", "用信分项");
         KNOWN_TABLE_NAMES.put("dw_loan_contract_snapshot", "贷款合同");
         KNOWN_TABLE_NAMES.put("dw_loan_note_snapshot", "借据");
         KNOWN_TABLE_NAMES.put("dw_deposit_account_snapshot", "存款账户");
     }
 
-    /** 弃用表(物理表存在也不再纳入动态监控) */
-    private static final Set<String> DEPRECATED_TABLES = Set.of("dw_org_dim");
+    /** 弃用表(物理表存在也不再纳入动态监控;dw_credit_tranche_snapshot 为已去除的用信分项层存量表) */
+    private static final Set<String> DEPRECATED_TABLES = Set.of("dw_org_dim", "dw_credit_tranche_snapshot");
 
     /** 表名白名单:字母开头 + 字母数字下划线(防注入,与 DwTableCacheLoader 一致) */
     private static final Pattern TABLE_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]*$");

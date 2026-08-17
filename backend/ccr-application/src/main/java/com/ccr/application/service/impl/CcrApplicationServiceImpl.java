@@ -260,7 +260,6 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             pi.setRequestedRate(requestedRate);
             pi.setCurrentApprovalRate(requestedRate);
             pi.setRateDirection("LOWER_BETTER");
-            pi.setCreditTrancheRef(strVal(g.get("creditTrancheRef")));
             pricingItemMapper.insert(pi);
             created.add(pi);
 
