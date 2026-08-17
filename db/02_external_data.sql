@@ -2,7 +2,7 @@
 -- 客户贡献度与利率决策系统 · 外部数据落地表(数仓契约)
 -- 依据:《ccrd_dw_schema _修订.sql》(v1.1 / PRD V2 D1-D21)
 -- 数据由内部数据仓库统一加工落地,本系统消费做快照绑定(D11/D20b)
--- 字符集 utf8mb4;金额统一 DECIMAL(18,4)(万元);敏感列密文+查询哈希
+-- 字符集 utf8mb4;金额统一 DECIMAL(18,4)(万元);敏感字段明文存储(2026-08-17 改)
 -- 批次标识:etl_md5 主键 + data_dt 数据日期;业务读取最新 data_dt 成功批次
 -- ============================================================
 
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS `caps_corp_cust_basic_info` (
   `cust_no`           VARCHAR(32)  NOT NULL COMMENT '客户号',
   `cust_name`         VARCHAR(128) NOT NULL COMMENT '客户名称',
   `cert_tp`           VARCHAR(10)  NOT NULL COMMENT '证件类型',
-  `cert_no`           VARCHAR(512) NOT NULL COMMENT '证件号密文',
+  `cert_no`           VARCHAR(64)  NOT NULL COMMENT '证件号(明文)',
   `ffthlv_class`      VARCHAR(10)  NULL COMMENT '客户五级分类',
   `entp_charic`       VARCHAR(20)  NULL COMMENT '企业性质',
   `entp_scale`        VARCHAR(20)  NULL COMMENT '企业规模',
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS `caps_indv_cust_basic_info` (
   `cust_no`           VARCHAR(32)  NOT NULL COMMENT '客户号(CUST_NO)',
   `cust_nm`           VARCHAR(128) NOT NULL COMMENT '客户姓名(CUST_NM)',
   `cert_tp`           VARCHAR(10)  NOT NULL COMMENT '证件类型(CERT_TP)',
-  `cert_no`           VARCHAR(512) NOT NULL COMMENT '证件号密文(CERT_NO)',
+  `cert_no`           VARCHAR(64)  NOT NULL COMMENT '证件号(明文)(CERT_NO)',
   `gnd`               CHAR(64)     NOT NULL COMMENT '性别',
   `ffthlv_class`      VARCHAR(10)  NULL COMMENT '五级分类(FFTHLV_CLASF)',
   `ocupn`             VARCHAR(40)  NULL COMMENT '职业(OCUPN)',
@@ -350,8 +350,7 @@ CREATE TABLE IF NOT EXISTS `dw_loan_note_snapshot` (
 CREATE TABLE IF NOT EXISTS `dw_deposit_account_snapshot` (
   `etl_md5`           BIGINT       NOT NULL AUTO_INCREMENT,
   `data_dt`           DATE         NOT NULL COMMENT '数据日期(DATA_DT)',
-  `deposit_account_no_cipher` VARCHAR(512) NOT NULL COMMENT '存款账号密文',
-  `deposit_account_hash` CHAR(64)   NOT NULL COMMENT '存款账号查询哈希',
+  `deposit_account_no` VARCHAR(64)  NOT NULL COMMENT '存款账号(明文)',
   `customer_no`       VARCHAR(64)  NOT NULL COMMENT '客户号',
   `product_code`      VARCHAR(32)  NOT NULL COMMENT '存款产品编码',
   `account_balance`   DECIMAL(18,4) NOT NULL COMMENT '账户余额(万元)',
@@ -364,7 +363,7 @@ CREATE TABLE IF NOT EXISTS `dw_deposit_account_snapshot` (
   `maturity_date`     DATE         NULL COMMENT '到期日期(活期为空)',
   `account_status`    VARCHAR(16)  NOT NULL COMMENT 'NORMAL正常/CLOSED销户/FROZEN冻结',
   PRIMARY KEY (`etl_md5`),
-  KEY `idx_da_hash` (`deposit_account_hash`),
+  KEY `idx_da_no` (`deposit_account_no`),
   KEY `idx_da_cust` (`customer_no`)
 ) ENGINE=InnoDB COMMENT='存款账户快照(V1.0 A.5)';
 

@@ -168,12 +168,11 @@ CREATE TABLE IF NOT EXISTS `ccr_pricing_item_deposit_rel` (
   `del_flag`            CHAR(1)      NOT NULL DEFAULT '0',
   `application_id`      BIGINT       NOT NULL COMMENT '申请主键',
   `pricing_item_id`     BIGINT       NOT NULL COMMENT '定价分项主键',
-  `deposit_account_no_cipher` VARCHAR(512) NULL COMMENT '存款账号密文(拟开户可空)',
-  `deposit_account_hash` CHAR(64)    NULL COMMENT '存款账号查询哈希',
+  `deposit_account_no` VARCHAR(64)  NULL COMMENT '存款账号(明文,拟开户可空)',
   `account_snapshot_id` BIGINT       NULL COMMENT '冻结账户快照记录id',
   `planned_account_flag` CHAR(1)     NOT NULL DEFAULT 'N' COMMENT '是否拟开户方案Y/N',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_app_account` (`application_id`,`deposit_account_hash`,`del_flag`),
+  UNIQUE KEY `uk_app_account` (`application_id`,`deposit_account_no`,`del_flag`),
   KEY `idx_pricing_item` (`pricing_item_id`)
 ) ENGINE=InnoDB COMMENT='ccr_pricing_item_deposit_rel 分项与存款账户关系(唯一键含del_flag,失效后可重绑;有效记录唯一由服务层保证)';
 
