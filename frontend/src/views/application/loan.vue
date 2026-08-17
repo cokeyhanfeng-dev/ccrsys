@@ -853,9 +853,10 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
-  productName, inputModeText, LOAN_PRODUCTS, METRIC_CODES, agreementTypeText,
+  productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
   AGREEMENT_TYPES, certTypeText
 } from '@/utils/dict'
+import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 
@@ -885,8 +886,8 @@ async function loadLoanProducts() {
     // 失败保持字典回退
   }
 }
-// 贡献度指标字典(§9;当前值由数仓带出,不做静态假定)
-const metricDict = METRIC_CODES
+// 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态;当前值由数仓带出,不做静态假定)
+const metricDict = computed(() => useMetricDict().list)
 
 // ---------- 表单状态 ----------
 interface MortgageRow {
@@ -1849,6 +1850,7 @@ async function onConfirmSubmit() {
 // ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
 onMounted(async () => {
   loadLoanProducts()
+  useMetricDict().load()
   const src = route.query.reapply
   if (src) {
     try {

@@ -59,23 +59,14 @@ CREATE TABLE IF NOT EXISTS `ccr_sys_menu` (
   KEY `idx_parent` (`parent_id`)
 ) ENGINE=InnoDB COMMENT='系统菜单表';
 
--- ---------- 种子:用户 ----------
+-- ---------- 种子:用户(仅系统兜底角色:president/admin/reviewer/auditor) ----------
+-- 客户经理/支行行长/部门总经理真实账号见下方真实数据段;六人小组/秘书/分管行长由 ccr_node_assignee 指派真实用户,
+-- 早期 mock 账号(zhangsan/lisi/deptgm/committee*6/vicepresident/secretary)已清理(2026-08-17)
 INSERT INTO `ccr_sys_user` (`id`,`username`,`password`,`nick_name`,`role_code`,`org_id`,`phone`,`status`) VALUES
-  (1000,'zhangsan','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','张客户经理','customer_manager',1001,'13800000001','ENABLE'),
-  (1002,'committee','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','李小组成员','committee_member',1003,'13800000003','ENABLE'),
   (1003,'president','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','王总行行长','president',1000,'13800000004','ENABLE'),
   (1004,'admin','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','系统管理员','admin',1000,'13800000000','ENABLE'),
-  (1005,'committee2','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','小组成员二','committee_member',1003,'13800000013','ENABLE'),
-  (1006,'committee3','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','小组成员三','committee_member',1003,'13800000014','ENABLE'),
-  (1007,'committee4','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','小组成员四','committee_member',1003,'13800000015','ENABLE'),
-  (1008,'committee5','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','小组成员五','committee_member',1003,'13800000016','ENABLE'),
-  (1009,'committee6','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','小组成员六','committee_member',1003,'13800000017','ENABLE'),
-  (1010,'deptgm','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','赵部门总经理','dept_gm',1003,'13800000018','ENABLE'),
-  (1011,'vicepresident','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','钱分管行长','vice_president',1000,'13800000019','ENABLE'),
   (1013,'reviewer','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','周配置复核人','config_reviewer',1000,'13800000021','ENABLE'),
-  (1014,'auditor','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','吴审计人员','auditor',1000,'13800000022','ENABLE'),
-  (1015,'lisi','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','李客户经理','customer_manager',1007,'13800000023','ENABLE'),
-  (1017,'secretary','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','贷审会秘书','secretary',1000,'13800000024','ENABLE')
+  (1014,'auditor','$2a$10$F7xXIVTj0Q3EcSuo1S.CzeHutuc9MP2KDoPbxvYEFpfjX9UvJNPwi','吴审计人员','auditor',1000,'13800000022','ENABLE')
 ON DUPLICATE KEY UPDATE nick_name=VALUES(nick_name);
 
 -- ---------- 种子:真实支行行长(2026-08-14,来源数仓 dws.ccr_sys_user 用户信息表) ----------
@@ -159,16 +150,6 @@ CREATE TABLE IF NOT EXISTS `ccr_sys_user_post` (
 
 -- ---------- 种子:用户-机构-岗位绑定(与 ccr_sys_user 的 org_id/role_code 对齐,均为默认绑定) ----------
 INSERT INTO `ccr_sys_user_post` (`id`,`user_id`,`org_id`,`post_code`,`is_default`) VALUES
-  (1,1000,1026,'customer_manager','1'),
-  (3,1015,1006,'customer_manager','1'),
-  (4,1002,1040,'committee_member','1'),
-  (5,1005,1040,'committee_member','1'),
-  (6,1006,1040,'committee_member','1'),
-  (7,1007,1040,'committee_member','1'),
-  (8,1008,1040,'committee_member','1'),
-  (9,1009,1040,'committee_member','1'),
-  (10,1010,1040,'dept_gm','1'),
-  (11,1011,1000,'vice_president','1'),
   (12,1003,1000,'president','1'),
   (13,1004,1000,'admin','1'),
   (14,1013,1000,'config_reviewer','1'),

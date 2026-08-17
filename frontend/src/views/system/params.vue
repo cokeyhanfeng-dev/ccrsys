@@ -304,7 +304,7 @@
           <select class="form-select" v-model="policyMetric" style="width:170px" @change="loadPolicies">
             <option value="">全部指标</option>
             <option value="*">全行默认</option>
-            <option v-for="m in METRIC_CODES" :key="m.code" :value="m.code">{{ m.name }}</option>
+            <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
           </select>
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
@@ -372,6 +372,47 @@
           <div v-else class="empty" style="margin-top:8px">该计划无承诺指标数据</div>
         </div>
       </div>
+    </div>
+
+    <!-- ========== 指标字典(§9;admin 配置化) ========== -->
+    <div v-if="activeTab === 'metricDict'" class="card">
+      <div class="card__head">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span>指标字典(数仓按字典推送指标数据,新增指标在此登记即可,前端承诺/跟踪下拉无需改代码;编码一经创建不可改)</span>
+          <select class="form-select" v-model="metricQuery.status" style="width:120px" @change="loadMetricDefs">
+            <option value="">全部状态</option>
+            <option value="ACTIVE">启用</option>
+            <option value="DISABLED">停用</option>
+          </select>
+          <input class="form-input" v-model="metricQuery.keyword" placeholder="编码/名称" style="width:180px" @keyup.enter="loadMetricDefs" />
+          <button class="btn btn--secondary" @click="loadMetricDefs">查询</button>
+        </div>
+        <button v-if="canMaintain" class="btn btn--primary" @click="openMetricCreate">＋ 新增指标</button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>指标编码</th><th>指标名称</th><th>值类型</th><th>适用范围</th><th>单位</th><th>折算版本</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in metricDefs" :key="m.id">
+            <td>{{ m.metricCode }}</td>
+            <td>{{ m.metricName }}</td>
+            <td>{{ metricValueTypeText(m.valueType) }}</td>
+            <td>{{ m.metricScope ? metricScopeText(m.metricScope) : '—' }}</td>
+            <td>{{ m.unit || '—' }}</td>
+            <td>{{ m.currentCalcVersion || '—' }}</td>
+            <td><span :class="metricStatusBadge(m.status)">{{ metricStatusText(m.status) }}</span></td>
+            <td>
+              <button v-if="canMaintain" class="btn btn--text" @click="openMetricEdit(m)">编辑</button>
+              <button v-if="canMaintain && m.status === 'ACTIVE'" class="btn btn--text" @click="doMetricStatus(m, 'DISABLED')">停用</button>
+              <button v-if="canMaintain && m.status === 'DISABLED'" class="btn btn--text" @click="doMetricStatus(m, 'ACTIVE')">启用</button>
+            </td>
+          </tr>
+          <tr v-if="!metricDefs.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- ========== 变更日志(§8A.2) ========== -->
@@ -515,7 +556,7 @@
               <label class="form-field__label">指标编码 <span class="req">*</span></label>
               <select class="form-select" v-model="policyDialog.form.metricCode">
                 <option value="*">全行默认</option>
-                <option v-for="m in METRIC_CODES" :key="m.code" :value="m.code">{{ m.name }}</option>
+                <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
             </div>
             <div class="form-field">
@@ -804,6 +845,58 @@
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="productDialog.show = false">取消</button>
           <button class="btn btn--primary" @click="saveProduct">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增/编辑指标字典弹窗(§9;编码一经创建不可改) -->
+    <div class="modal" v-if="metricDialog.show">
+      <div class="modal__card modal__card--wide">
+        <div class="modal__title">{{ metricDialog.id ? '编辑指标' : '新增指标' }}</div>
+        <div class="modal__body">
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label">指标编码 <span class="req">*</span></label>
+              <input class="form-input" v-model="metricDialog.form.metricCode" :disabled="!!metricDialog.id" placeholder="如 PUBLIC_DEPOSIT_AVG" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">指标名称 <span class="req">*</span></label>
+              <input class="form-input" v-model="metricDialog.form.metricName" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">值类型 <span class="req">*</span></label>
+              <select class="form-select" v-model="metricDialog.form.valueType">
+                <option value="CONTRIBUTION_AMOUNT">折算</option>
+                <option value="AVG_BALANCE">业务余额</option>
+                <option value="INCOME">收入</option>
+                <option value="RATIO">派生比值</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">适用范围</label>
+              <select class="form-select" v-model="metricDialog.form.metricScope">
+                <option value="">不限</option>
+                <option value="PUBLIC">对公</option>
+                <option value="PRIVATE_SELF">本人对私</option>
+                <option value="RELATED">关联人</option>
+                <option value="GROUP">集团</option>
+                <option value="GROUP_MEMBER">集团成员</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">单位</label>
+              <input class="form-input" v-model="metricDialog.form.unit" placeholder="万元/户/%" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">折算版本</label>
+              <input class="form-input" v-model="metricDialog.form.currentCalcVersion" placeholder="V1.0" />
+            </div>
+          </div>
+          <div class="section-tip">校验:指标编码全局唯一且一经创建不可改(防历史承诺跟踪错位);停用后新承诺/新策略不可选,历史跟踪不受影响。</div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="metricDialog.show = false">取消</button>
+          <button class="btn btn--primary" @click="saveMetric">保存</button>
         </div>
       </div>
     </div>
@@ -1321,9 +1414,11 @@ import {
   listProductCatalog, createProduct, updateProduct, changeProductStatus, deleteProduct,
   listProductRoutes, createProductRoute, submitProductRoute, publishProductRoute,
   rejectProductRoute, disableProductRoute, deleteProductRoute,
+  listMetricDefinitions, createMetricDefinition, updateMetricDefinition, changeMetricStatus,
   type ConfigChangeLog
 } from '@/api/system'
-import { GUARANTEE_TYPES, guaranteeTypeText, METRIC_CODES, metricName } from '@/utils/dict'
+import { GUARANTEE_TYPES, guaranteeTypeText, metricName } from '@/utils/dict'
+import { useMetricDict } from '@/store/metricDict'
 import {
   configStatusText, configActionText, configTypeText, businessBigTypeText,
   nodeLabel, customerTypeText, amountTierText, termTierText, rateDirectionText,
@@ -1349,6 +1444,7 @@ const tabs = [
   { key: 'productCenter', label: '产品配置' },
   { key: 'ruleset', label: '规则集' },
   { key: 'policy', label: '跟踪策略' },
+  { key: 'metricDict', label: '指标字典' },
   { key: 'changelog', label: '变更日志' },
   { key: 'trial', label: '路由试算' }
 ]
@@ -1806,6 +1902,77 @@ async function doProductDelete(p: any) {
   loadProductCatalog()
 }
 
+// 指标字典管理(§9:数仓按 ccr_metric_definition 字典推送指标数据,admin 前台配置化)
+const metricQuery = reactive({ status: '', keyword: '' })
+const metricDefs = ref<any[]>([])
+async function loadMetricDefs() {
+  try {
+    metricDefs.value = await listMetricDefinitions(metricQuery.status || undefined, metricQuery.keyword?.trim() || undefined)
+  } catch {
+    metricDefs.value = []
+  }
+}
+function metricStatusText(s: string) {
+  return { ACTIVE: '启用', DISABLED: '停用' }[s] || s || '—'
+}
+function metricStatusBadge(s: string) {
+  return `badge ${s === 'ACTIVE' ? 'badge--success' : 'badge--neutral'}`
+}
+function metricValueTypeText(s?: string) {
+  return { AVG_BALANCE: '业务余额', INCOME: '收入', CONTRIBUTION_AMOUNT: '折算', RATIO: '派生比值' }[s || ''] || s || '—'
+}
+function metricScopeText(s: string) {
+  return { PUBLIC: '对公', PRIVATE_SELF: '本人对私', RELATED: '关联人', GROUP: '集团', GROUP_MEMBER: '集团成员' }[s] || s || '—'
+}
+const metricDialog = reactive({ show: false, id: 0, form: {} as any })
+function openMetricCreate() {
+  metricDialog.id = 0
+  metricDialog.form = {
+    metricCode: '', metricName: '', valueType: 'CONTRIBUTION_AMOUNT', metricScope: '',
+    unit: '万元', currentCalcVersion: 'V1.0'
+  }
+  metricDialog.show = true
+}
+function openMetricEdit(m: any) {
+  metricDialog.id = m.id
+  metricDialog.form = { ...m }
+  metricDialog.show = true
+}
+async function saveMetric() {
+  const f = metricDialog.form
+  if (!f.metricCode?.trim() || !f.metricName?.trim() || !f.valueType) {
+    ElMessage.warning('指标编码/指标名称/值类型必填')
+    return
+  }
+  const payload: any = {
+    ...f,
+    metricScope: f.metricScope?.trim() || null,
+    unit: f.unit?.trim() || null,
+    currentCalcVersion: f.currentCalcVersion?.trim() || 'V1.0'
+  }
+  if (metricDialog.id) {
+    await updateMetricDefinition(metricDialog.id, payload)
+  } else {
+    await createMetricDefinition(payload)
+  }
+  metricDialog.show = false
+  ElMessage.success(metricDialog.id ? '指标已更新' : '指标已创建并启用')
+  loadMetricDefs()
+  useMetricDict().reload()
+}
+async function doMetricStatus(m: any, status: string) {
+  await ElMessageBox.confirm(
+    status === 'DISABLED'
+      ? `停用后新承诺/新策略不可选,历史承诺跟踪不受影响。确认停用 ${m.metricName}?`
+      : `确认启用 ${m.metricName}?`,
+    status === 'DISABLED' ? '停用确认' : '启用确认', { type: 'warning' }
+  )
+  await changeMetricStatus(m.id, status)
+  ElMessage.success(status === 'DISABLED' ? '已停用' : '已启用')
+  loadMetricDefs()
+  useMetricDict().reload()
+}
+
 // 产品审批链路
 const routeQuery = reactive({ productCode: '', status: '' })
 const productRoutes = ref<any[]>([])
@@ -1984,6 +2151,8 @@ async function runRouteSimulate() {
 // ---------- 跟踪策略(§11.5/§11.7) ----------
 const policyList = ref<any[]>([])
 const policyMetric = ref('')
+// 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态)
+const metricDict = computed(() => useMetricDict().list)
 async function loadPolicies() {
   try {
     policyList.value = await listTrackingPolicies(policyMetric.value || undefined)
@@ -2183,6 +2352,7 @@ async function runTrial() {
 }
 
 onMounted(() => {
+  useMetricDict().load()
   loadLpr()
   loadMatrix()
   loadRuleSets()
@@ -2193,6 +2363,7 @@ onMounted(() => {
   loadPolicies()
   loadPlanOptions()
   loadChangeLogs()
+  loadMetricDefs()
 })
 </script>
 

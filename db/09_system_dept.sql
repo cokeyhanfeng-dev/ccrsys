@@ -97,10 +97,9 @@ ON DUPLICATE KEY UPDATE
   parent_id=VALUES(parent_id), org_type=VALUES(org_type), manager=VALUES(manager), sort_no=VALUES(sort_no);
 
 -- ---------- 种子:用户机构对齐(2026-08-14 按真实机构 org_code JOIN 定位新 id) ----------
-UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202230000' SET u.org_id=d.id WHERE u.username IN ('admin','president','committee','vicepresident','reviewer','auditor','contractor','secretary','vicepresident_gsb','vicepresident_sxsb');
-UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202233050' SET u.org_id=d.id WHERE u.username IN ('zhangsan','wangwu');
-UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202233001' SET u.org_id=d.id WHERE u.username IN ('lisi');
-UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202233912' SET u.org_id=d.id WHERE u.username IN ('deptgm','committee2','committee3','committee4','committee5','committee6');
+UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202230000' SET u.org_id=d.id WHERE u.username IN ('admin','president','reviewer','auditor','contractor','vicepresident_gsb','vicepresident_sxsb');
+-- (早期 mock 账号 zhangsan/lisi/deptgm/committee2-6 已清理(2026-08-17),对应机构对齐 UPDATE 随之移除;
+--   注:wangwu 测试行长此前已删除)
 UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202233943' SET u.org_id=d.id WHERE u.username IN ('deptgm_sxsb');
 UPDATE ccr_sys_user u JOIN ccr_sys_dept d ON d.org_code='3202233991' SET u.org_id=d.id WHERE u.username IN ('deptgm_lsb');
 DROP PROCEDURE IF EXISTS `ccr_drop_dept_ancestors`;

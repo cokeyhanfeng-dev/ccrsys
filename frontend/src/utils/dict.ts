@@ -372,7 +372,7 @@ export const METRIC_CODES: DictItem[] = [
   { code: 'GM_DEPOSIT_CONTRIBUTION', name: '存款贡献' },
   { code: 'PUBLIC_DEPOSIT_AVG', name: '存款日均' },
   { code: 'PUBLIC_LOAN_AVG', name: '流贷日均' },
-  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '项目贷日均' },
+  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '贷款日均' },
   { code: 'PUBLIC_DISCOUNT', name: '贴现利差收益' },
   { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现规模' },
   { code: 'PUBLIC_INTERMEDIATE', name: '对公中间业务收入' },
@@ -388,10 +388,22 @@ export const METRIC_CODES: DictItem[] = [
   { code: 'PRIVATE_LOAN_AVG', name: '对私贷款日均' },
   { code: 'PRIVATE_WEALTH', name: '对私财富中收' },
   { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' },
+  // 派生指标(docs/15 A06):存贷比,数仓派生,不参与勾稽
+  { code: 'PUBLIC_DEPOSIT_LOAN_RATIO', name: '存贷比' },
   // §6.4 承诺类型"其它":手工录入(金额或文本),数仓无指标,无数值达成率、不参与机构达成率(D19)
   { code: 'OTHER', name: '其它(手工录入,无数值达成率)' }
 ]
 const METRIC_NAME_MAP: Record<string, string> = Object.fromEntries(METRIC_CODES.map((m) => [m.code, m.name]))
+
+/**
+ * 注册指标字典(ccr_metric_definition 接口返回):覆盖/补充静态映射。
+ * metricName() 优先查注册后的映射;接口未加载/失败时回退静态 METRIC_CODES,行为与改造前一致。
+ */
+export function registerMetricDict(items: DictItem[]) {
+  for (const item of items) {
+    METRIC_NAME_MAP[item.code] = item.name
+  }
+}
 
 export function metricName(code?: string, fallback = '—'): string {
   return textOf(METRIC_NAME_MAP, code, fallback)

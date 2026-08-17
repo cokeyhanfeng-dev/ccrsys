@@ -265,3 +265,27 @@ export const listCacheLoaders = () => get<CacheLoaderInfo[]>('/system/cache-conf
 
 /** 流程定义详情(节点+跳转,流程图查看) */
 export const getFlowDefinitionDetail = (id: number | string) => get<any>(`/system/flow/definitions/${id}/detail`)
+
+// ---------- 指标字典管理(§9;仅 admin;数仓按 ccr_metric_definition 字典推送指标数据) ----------
+// 公开只读端点(/ccr/metric-definitions/enabled)供申请页/跟踪策略下拉,此处为后台管理 CRUD。
+// 指标编码一经创建不可改(防历史承诺跟踪错位);停用后新承诺/新策略不可选,历史跟踪不受影响。
+export interface MetricDefinition {
+  id: number
+  metricCode: string
+  metricName: string
+  valueType?: string
+  metricScope?: string
+  unit?: string
+  currentCalcVersion?: string
+  status?: string
+}
+export const listMetricDefinitions = (status?: string, keyword?: string) =>
+  get<MetricDefinition[]>('/system/metric-definitions', {
+    ...(status ? { status } : {}),
+    ...(keyword ? { keyword } : {})
+  })
+export const createMetricDefinition = (data: object) => post<number>('/system/metric-definitions', data)
+export const updateMetricDefinition = (id: number, data: object) => put(`/system/metric-definitions/${id}`, data)
+// 启停为 query 参数(后端 @RequestParam)
+export const changeMetricStatus = (id: number, status: string) =>
+  post(`/system/metric-definitions/${id}/status?status=${encodeURIComponent(status)}`)
