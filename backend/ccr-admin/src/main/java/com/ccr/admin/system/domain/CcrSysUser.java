@@ -22,7 +22,7 @@ public class CcrSysUser {
     /** 登录名 */
     private String username;
 
-    /** 密码(开发期明文,接入后加密) */
+    /** 密码(BCrypt加密) */
     private String password;
 
     /** 姓名 */
@@ -46,4 +46,7 @@ public class CcrSysUser {
     private LocalDateTime updateTime;
 
     private String delFlag;
+
+    /** 是否需强制改密:1需改密/0已改 */
+    private String pwdChangeFlag;
 }

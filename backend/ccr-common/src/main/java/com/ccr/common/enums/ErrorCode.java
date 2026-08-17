@@ -29,7 +29,8 @@ public enum ErrorCode {
     MESSAGE_SEND_FAIL(1012, "消息发送失败"),
     IDEMPOTENCY_REPEAT(1013, "重复提交"),
     LPR_NOT_EFFECTIVE(1014, "无生效的LPR版本"),
-    DUPLICATE_APPLICATION(1015, "该贷款合同已有审批中的申请,请勿重复申请");
+    DUPLICATE_APPLICATION(1015, "该贷款合同已有审批中的申请,请勿重复申请"),
+    PASSWORD_CHANGE_REQUIRED(1016, "请先修改初始密码");
 
     private final int code;
     private final String msg;

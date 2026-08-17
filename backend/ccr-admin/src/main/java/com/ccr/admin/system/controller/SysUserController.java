@@ -11,6 +11,7 @@ import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
 import com.ccr.admin.system.mapper.CcrSysUserPostMapper;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.PasswordUtil;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.transaction.annotation.Transactional;
@@ -93,10 +94,16 @@ public class SysUserController {
         user.setStatus(StrUtil.isBlank(user.getStatus()) ? "ENABLE" : user.getStatus());
         user.setDelFlag("0");
         user.setCreateTime(LocalDateTime.now());
-        // 密码 BCrypt 加密存储(不落明文)
+        // 密码 BCrypt 加密存储(不落明文);统一初始密码 Yxnsh@1a3s,首登强制改密
         if (StrUtil.isNotBlank(user.getPassword())) {
+            if (!PasswordUtil.isStrong(user.getPassword())) {
+                throw new ServiceException(400, "密码不符合强度要求(不少于8位,须含大写字母/小写字母/特殊字符)");
+            }
             user.setPassword(BCrypt.hashpw(user.getPassword(), BCrypt.gensalt()));
+        } else {
+            user.setPassword(PasswordUtil.INIT_PASSWORD_HASH);
         }
+        user.setPwdChangeFlag("1");
         userMapper.insert(user);
         user.setPassword(null);
         return R.ok(user);
@@ -109,8 +116,16 @@ public class SysUserController {
         if (exist == null) {
             throw new ServiceException(404, "用户不存在");
         }
-        if (StrUtil.isBlank(user.getPassword())) {
-            user.setPassword(exist.getPassword()); // 保留原密码
+        // 密码:非空则强校验+BCrypt 加密+置需改密(管理端重置→下次登录强制改);空则保留原密码
+        if (StrUtil.isNotBlank(user.getPassword())) {
+            if (!PasswordUtil.isStrong(user.getPassword())) {
+                throw new ServiceException(400, "密码不符合强度要求(不少于8位,须含大写字母/小写字母/特殊字符)");
+            }
+            user.setPassword(BCrypt.hashpw(user.getPassword(), BCrypt.gensalt()));
+            user.setPwdChangeFlag("1");
+        } else {
+            user.setPassword(null); // NOT_NULL 更新策略忽略,保留原密码
+            user.setPwdChangeFlag(null); // 忽略前端提交的改密标记,由服务端控制
         }
         user.setId(id);
         user.setUpdateTime(LocalDateTime.now());

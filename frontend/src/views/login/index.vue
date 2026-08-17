@@ -93,6 +93,12 @@ async function onSubmit() {
   loading.value = true
   try {
     await userStore.login(form.username, form.password)
+    // 首次登录需强制改密 → 直接进改密页(避免工作台挂载后又被 1016 拦截报错)
+    if (userStore.userInfo?.pwdChangeFlag === '1') {
+      ElMessage.warning('首次登录需修改初始密码')
+      router.replace('/change-password')
+      return
+    }
     ElMessage.success('登录成功')
     // 登录后固定进入工作台,忽略 redirect(不跳回被踢前的页面)
     router.push('/overview')

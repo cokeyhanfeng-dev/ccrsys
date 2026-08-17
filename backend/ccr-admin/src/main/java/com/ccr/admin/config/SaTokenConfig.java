@@ -3,6 +3,8 @@ package com.ccr.admin.config;
 import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
+import com.ccr.common.enums.ErrorCode;
+import com.ccr.common.exception.ServiceException;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -23,6 +25,16 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     SaRouter.match("/**")
                             .notMatch("/actuator/**", "/health", "/auth/login", "/demo/**")
                             .check(r -> StpUtil.checkLogin());
+                    // 强制改密兜底:已登录但需改密的用户,仅放行改密/登出,其余接口一律 1016(防绕过前端守卫直调 API)
+                    SaRouter.match("/**")
+                            .notMatch("/auth/login", "/auth/change-password", "/auth/logout",
+                                    "/actuator/**", "/health", "/demo/**")
+                            .check(r -> {
+                                if ("1".equals(StpUtil.getSession().get("pwdChangeFlag"))) {
+                                    throw new ServiceException(ErrorCode.PASSWORD_CHANGE_REQUIRED.getCode(),
+                                            ErrorCode.PASSWORD_CHANGE_REQUIRED.getMsg());
+                                }
+                            });
                     // 阈值配置(参数管理):admin/config_reviewer 任一角色可用
                     SaRouter.match("/system/flow/thresholds/**")
                             .check(r -> StpUtil.checkRoleOr("admin", "config_reviewer"));

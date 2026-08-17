@@ -85,8 +85,9 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">密码{{ dialog.isEdit ? '(留空不修改)' : '(新建时)' }}</label>
-              <input class="form-input" v-model="dialog.form.password" type="password" />
+              <label class="form-field__label">密码{{ dialog.isEdit ? '(留空不修改)' : '(留空用统一初始密码)' }}</label>
+              <input class="form-input" v-model="dialog.form.password" type="password" @input="newPwdHint = pwdHint(dialog.form.password)" />
+              <span v-if="newPwdHint" class="pwd-hint" :class="{ 'pwd-hint--ok': newPwdHint.startsWith('✓') }">{{ newPwdHint }}</span>
             </div>
             <div class="form-field">
               <label class="form-field__label">归属机构</label>
@@ -156,6 +157,7 @@ import {
   getUserBinding, saveUserBinding,
   type SysDept, type UserBinding
 } from '@/api/system'
+import { pwdHint } from '@/utils/password'
 
 // 角色选项从后端角色表拉取(与 db/08_system.sql 角色种子一致;岗位编码与角色码对齐)
 const roleOptions = ref<{ value: string; label: string }[]>([])
@@ -182,6 +184,8 @@ const dialog = reactive({
   form: {} as any,
   bindings: [] as UserBinding[]
 })
+// 密码强度逐步提示(与后端强密码规则一致)
+const newPwdHint = ref('')
 
 async function load() {
   // 查询条件变化时从第一页开始
@@ -229,6 +233,7 @@ function openCreate() {
   const orgId = depts.value.find((d) => d.status === 'ENABLE')?.id ?? ''
   dialog.form = { username: '', nickName: '', roleCode: role, password: '', orgId, phone: '', status: 'ENABLE' }
   dialog.bindings = [{ orgId, postCode: role, isDefault: '1' }]
+  newPwdHint.value = ''
   dialog.show = true
 }
 async function openEdit(u: any) {
@@ -242,6 +247,7 @@ async function openEdit(u: any) {
   } catch {
     dialog.bindings = [{ orgId: u.orgId ?? '', postCode: u.roleCode || '', isDefault: '1' }]
   }
+  newPwdHint.value = ''
   dialog.show = true
 }
 
@@ -283,6 +289,8 @@ async function save() {
     return
   }
   if (!validateBindings()) return
+  // 重置了密码(编辑填了新密码/新建填了密码)→ 该用户下次登录强制改密
+  const pwdReset = dialog.isEdit ? !!dialog.form.password : !!dialog.form.password
   if (dialog.isEdit) {
     await updateUser(dialog.form.id, dialog.form)
     await saveUserBinding(dialog.form.id, dialog.bindings)
@@ -291,7 +299,7 @@ async function save() {
     await saveUserBinding(created.id, dialog.bindings)
   }
   dialog.show = false
-  ElMessage.success('保存成功')
+  ElMessage.success(pwdReset ? '保存成功,该用户下次登录需强制改密' : '保存成功')
   load()
 }
 async function toggleStatus(u: any) {
@@ -321,6 +329,8 @@ onMounted(() => {
 .req { color: var(--color-danger); }
 .modal__card--wide { width: 720px; max-width: 92vw; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.pwd-hint { font-size: 12px; line-height: 1.6; color: var(--color-warning); }
+.pwd-hint--ok { color: var(--color-success); }
 .binding-block { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
 .binding-block__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 600; }
 </style>

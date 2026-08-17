@@ -8,6 +8,8 @@ export interface UserInfo {
   nickName: string
   roles: string[]
   orgId: number
+  /** 是否需强制改密:1需改密/0已改(兼容旧缓存无字段) */
+  pwdChangeFlag?: string
 }
 
 // 用户状态:token 与登录信息(userInfo 持久化,刷新后路由守卫/数据权限仍可用)
@@ -32,5 +34,13 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('ccr_user_info')
   }
 
-  return { token, userInfo, login, logout }
+  // 改密成功后标记已改,并同步持久化(localStorage),避免刷新后又被守卫弹回
+  function markPasswordChanged() {
+    if (userInfo.value) {
+      userInfo.value = { ...userInfo.value, pwdChangeFlag: '0' }
+      localStorage.setItem('ccr_user_info', JSON.stringify(userInfo.value))
+    }
+  }
+
+  return { token, userInfo, login, logout, markPasswordChanged }
 })

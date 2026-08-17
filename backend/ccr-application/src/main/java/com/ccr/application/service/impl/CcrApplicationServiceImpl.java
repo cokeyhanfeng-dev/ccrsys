@@ -615,8 +615,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 .eq(CcrApplicationOtherLoan::getApplicationId, applicationId));
         relatedPersonMapper.delete(new LambdaQueryWrapper<CcrApplicationRelatedPerson>()
                 .eq(CcrApplicationRelatedPerson::getApplicationId, applicationId));
-        applicationMemberMapper.delete(new LambdaQueryWrapper<CcrApplicationMember>()
-                .eq(CcrApplicationMember::getApplicationId, applicationId));
+        // 成员:物理删除(uk_app_member(application_id, member_customer_no) 不含 del_flag,MP 逻辑删除 del_flag 0→1
+        // 时旧行仍占唯一键,重建 INSERT 撞键报 Duplicate entry→「重复提交」;成员随载荷全量重建,物理删除根治)
+        applicationMemberMapper.deletePhysical(applicationId);
         if (inheritedIds.isEmpty()) {
             commitmentMapper.delete(new LambdaQueryWrapper<CcrApplicationCommitment>()
                     .eq(CcrApplicationCommitment::getApplicationId, applicationId));

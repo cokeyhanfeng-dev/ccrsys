@@ -11,6 +11,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '登录' }
   },
   {
+    // 改密页:layout 之外独立页(需改密用户在 layout 内任何页面都会被 1016 拦截,不能挂 layout)
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: () => import('@/views/login/change-password.vue'),
+    meta: { title: '修改密码' }
+  },
+  {
     path: '/',
     component: () => import('@/layout/index.vue'),
     redirect: '/overview',
@@ -144,6 +151,11 @@ router.beforeEach((to, _from, next) => {
   }
   if (!userStore.token) {
     next({ path: '/login', query: { redirect: to.fullPath } })
+    return
+  }
+  // 强制改密:需改密用户只能停留在改密页,其余页面一律弹回(主动访问也拦)
+  if (to.path !== '/change-password' && userStore.userInfo?.pwdChangeFlag === '1') {
+    next({ path: '/change-password', query: { redirect: to.fullPath } })
     return
   }
   const needRoles = to.meta.roles as string[] | undefined

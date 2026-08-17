@@ -2,6 +2,7 @@ package com.ccr.admin.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.admin.system.domain.CcrSysDept;
@@ -10,6 +11,7 @@ import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.PasswordUtil;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -70,6 +72,9 @@ public class AuthController {
         String orgCode = dept == null ? null : dept.getOrgCode();
         String dataScope = dataScopeLevel(user.getRoleCode());
         StpUtil.getSession().set("orgId", user.getOrgId());
+        // 是否需强制改密(兼容旧数据无字段:null 视为需改密)
+        String pwdChangeFlag = user.getPwdChangeFlag() == null ? "1" : user.getPwdChangeFlag();
+        StpUtil.getSession().set("pwdChangeFlag", pwdChangeFlag);
         String token = StpUtil.getTokenValue();
 
         Map<String, Object> userInfo = new LinkedHashMap<>();
@@ -93,12 +98,48 @@ public class AuthController {
         userInfo.put("orgCode", orgCode);
         userInfo.put("orgName", dept == null ? null : dept.getDeptName());
         userInfo.put("dataScope", dataScope);
+        userInfo.put("pwdChangeFlag", pwdChangeFlag);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("token", token);
         result.put("userInfo", userInfo);
         writeLoginLog("LOGIN", user.getId(), user.getNickName(), ip, "登录成功");
         return R.ok(result);
+    }
+
+    /**
+     * 修改密码(登录用户主动改密,首次登录强制改密入口)
+     * 校验:原密码正确 → 新密码满足强规则 → 新旧不同;成功后 pwd_change_flag 置 0,解除强制改密
+     * 旧密码错误返回 400(不用 401,避免前端 401 清 token 整页跳登录)
+     */
+    @PostMapping("/change-password")
+    public R<Void> changePassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String oldPassword = body.getOrDefault("oldPassword", "");
+        String newPassword = body.getOrDefault("newPassword", "");
+        if (StrUtil.isBlank(oldPassword) || StrUtil.isBlank(newPassword)) {
+            throw new ServiceException(400, "原密码与新密码必填");
+        }
+        Long uid = StpUtil.getLoginIdAsLong();
+        CcrSysUser user = sysUserMapper.selectById(uid);
+        if (user == null || !BCrypt.checkpw(oldPassword, user.getPassword())) {
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, null, request.getRemoteAddr(), "原密码错误");
+            throw new ServiceException(400, "原密码错误");
+        }
+        if (!PasswordUtil.isStrong(newPassword)) {
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), request.getRemoteAddr(), "新密码不满足强规则");
+            throw new ServiceException(400, "新密码不符合强度要求(不少于8位,须含大写字母/小写字母/特殊字符)");
+        }
+        if (oldPassword.equals(newPassword)) {
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), request.getRemoteAddr(), "新密码与旧密码相同");
+            throw new ServiceException(400, "新密码不能与原密码相同");
+        }
+        user.setPassword(BCrypt.hashpw(newPassword, BCrypt.gensalt()));
+        user.setPwdChangeFlag("0");
+        user.setUpdateTime(LocalDateTime.now());
+        sysUserMapper.updateById(user);
+        StpUtil.getSession().set("pwdChangeFlag", "0");
+        writeLoginLog("CHANGE_PASSWORD", uid, user.getNickName(), request.getRemoteAddr(), "修改密码成功");
+        return R.ok();
     }
 
     /** 登录响应展示的数据范围级别；业务对象授权由各领域服务执行。 */
