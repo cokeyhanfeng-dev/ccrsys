@@ -34,11 +34,8 @@ public class DepositItemInput {
     /** 原执行利率(%)(存量存款调价) */
     private BigDecimal originalRate;
 
-    /** 存款账号(拟开户可空,落库密文+查询哈希) */
+    /** 存款账号(明文,拟开户可空;存量调价直接填写或选择数仓账户明文账号) */
     private String depositAccountNo;
-
-    /** 数仓账户查询哈希(存量调价选择数仓账户时携带,直接绑定数仓账户) */
-    private String depositAccountHash;
 
     /** 是否拟开户方案 Y/N */
     private String plannedAccountFlag;

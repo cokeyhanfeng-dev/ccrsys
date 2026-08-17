@@ -344,12 +344,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             rel.setPricingItemId(pi.getId());
             rel.setPlannedAccountFlag(planned ? "Y" : "N");
             if (StrUtil.isNotBlank(d.getDepositAccountNo())) {
-                // 手工补录真实账号:密文+哈希落库,哈希用于与数仓账户关联
-                rel.setDepositAccountNoCipher("CIPHER_" + d.getDepositAccountNo());
-                rel.setDepositAccountHash(DigestUtil.sha256Hex(d.getDepositAccountNo()));
-            } else if (StrUtil.isNotBlank(d.getDepositAccountHash())) {
-                // 直接选择数仓账户:以数仓查询哈希绑定(数仓侧账号密文存储,无法回填明文)
-                rel.setDepositAccountHash(d.getDepositAccountHash());
+                // 明文账号直接落库(手工补录或选择数仓账户均以明文账号关联)
+                rel.setDepositAccountNo(d.getDepositAccountNo().trim());
             }
             depositRelMapper.insert(rel);
         }

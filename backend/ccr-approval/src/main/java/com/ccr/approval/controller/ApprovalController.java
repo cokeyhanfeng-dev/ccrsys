@@ -1048,36 +1048,35 @@ public class ApprovalController {
         return JSONUtil.parseObj(coreJson.toString());
     }
 
-    /** 存款分项账户视图(§12.7):分项-账户关系 + 快照 DEPOSIT_ACCOUNT 记录,无快照降级数仓按哈希;账号脱敏 */
+    /** 存款分项账户视图(§12.7):分项-账户关系 + 快照 DEPOSIT_ACCOUNT 记录,无快照降级数仓按明文账号;账号明文展示 */
     private List<Map<String, Object>> depositAccountView(Long pricingItemId, List<Map<String, Object>> snapshotRecords) {
         List<Map<String, Object>> rels = jdbcTemplate.queryForList(
-                "SELECT deposit_account_no_cipher cipher, deposit_account_hash hash, planned_account_flag planned"
+                "SELECT deposit_account_no accountNo, planned_account_flag planned"
                         + " FROM ccr_pricing_item_deposit_rel WHERE pricing_item_id = ? AND del_flag = '0'", pricingItemId);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Map<String, Object> rel : rels) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("plannedAccountFlag", "Y".equals(rel.get("planned")) ? "Y" : "N");
-            Object cipher = rel.get("cipher");
-            row.put("accountNoMasked", maskAccount(cipher == null ? null : cipher.toString()));
-            Object hash = rel.get("hash");
+            Object accountNo = rel.get("accountNo");
+            row.put("accountNo", accountNo);
             Map<String, Object> acct = null;
             for (Map<String, Object> record : snapshotRecords) {
                 if (!"DEPOSIT_ACCOUNT".equals(record.get("subjectType"))) {
                     continue;
                 }
                 Map<String, Object> core = coreOf(record);
-                if (hash != null && hash.equals(core.get("deposit_account_hash"))) {
+                if (accountNo != null && accountNo.equals(core.get("deposit_account_no"))) {
                     acct = core;
                     break;
                 }
                 if (acct == null) {
-                    acct = core; // 无哈希(拟开户)时兜底取包内第一条账户记录
+                    acct = core; // 无账号(拟开户)时兜底取包内第一条账户记录
                 }
             }
-            if (acct == null && hash != null) {
+            if (acct == null && accountNo != null) {
                 List<Map<String, Object>> dw = jdbcTemplate.queryForList(
-                        "SELECT * FROM dw_deposit_account_snapshot WHERE deposit_account_hash = ?"
-                                + " ORDER BY data_dt DESC, etl_md5 DESC LIMIT 1", hash);
+                        "SELECT * FROM dw_deposit_account_snapshot WHERE deposit_account_no = ?"
+                                + " ORDER BY data_dt DESC, etl_md5 DESC LIMIT 1", accountNo);
                 if (!dw.isEmpty()) {
                     acct = dw.get(0);
                 }
@@ -1096,15 +1095,6 @@ public class ApprovalController {
             rows.add(row);
         }
         return rows;
-    }
-
-    /** 账号脱敏:CIPHER_9550880000000101 → 9550****0101 */
-    private String maskAccount(String cipher) {
-        if (cipher == null || cipher.isBlank()) {
-            return null;
-        }
-        String no = cipher.startsWith("CIPHER_") ? cipher.substring(7) : cipher;
-        return no.length() > 8 ? no.substring(0, 4) + "****" + no.substring(no.length() - 4) : "****";
     }
 
     /** 查询当前用户待办(按登录人角色过滤,不再传 nodeCode/operatorId) */

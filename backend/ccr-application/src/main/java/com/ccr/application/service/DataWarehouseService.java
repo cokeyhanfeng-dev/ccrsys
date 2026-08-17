@@ -225,13 +225,13 @@ public class DataWarehouseService {
                 ORDER BY open_date""", customerNo);
     }
 
-    /** 存款账户单条(按查询哈希,最新批次) */
-    public Map<String, Object> findDepositAccountByHash(String depositAccountHash) {
+    /** 存款账户单条(按明文账号,最新批次) */
+    public Map<String, Object> findDepositAccountByNo(String depositAccountNo) {
         return queryOne("""
                 SELECT * FROM dw_deposit_account_snapshot
-                WHERE deposit_account_hash = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_deposit_account_snapshot)
+                WHERE deposit_account_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_deposit_account_snapshot)
                 ORDER BY etl_md5 DESC
-                LIMIT 1""", depositAccountHash);
+                LIMIT 1""", depositAccountNo);
     }
 
     // ---------- 私有 ----------

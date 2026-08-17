@@ -222,7 +222,7 @@
           <tbody>
             <tr v-for="(d, i) in archive.depositAccounts" :key="i">
               <td>{{ val(d, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td>{{ val(d, 'depositAccountNoCipher', 'deposit_account_no_cipher') }}</td>
+              <td>{{ val(d, 'depositAccountNo', 'deposit_account_no') }}</td>
               <td>{{ plannedText(val(d, 'plannedAccountFlag', 'planned_account_flag')) }}</td>
             </tr>
           </tbody>

@@ -308,7 +308,6 @@ async function loadDepositProducts() {
 interface DepositItemRow {
   accountMode: 'EXISTING' | 'PLANNED'
   depositAccountNo: string // 存量模式输入真实账号,自动反查数仓
-  depositAccountHash: string // 反查命中的数仓账户查询哈希
   accountBalance: string | number | null
   openDate: string
   maturityDate: string
@@ -325,7 +324,7 @@ interface DepositItemRow {
 }
 function newItem(): DepositItemRow {
   return {
-    accountMode: 'EXISTING', depositAccountNo: '', depositAccountHash: '',
+    accountMode: 'EXISTING', depositAccountNo: '',
     accountBalance: null, openDate: '', maturityDate: '', accountStatus: '',
     lookupDone: false, lookupFound: false,
     productCode: '', termValue: '', termUnit: 'MONTH',
@@ -439,7 +438,6 @@ function addItem() {
 }
 function onAccountModeChange(d: DepositItemRow) {
   d.depositAccountNo = ''
-  d.depositAccountHash = ''
   d.accountBalance = null
   d.openDate = ''
   d.maturityDate = ''
@@ -449,12 +447,11 @@ function onAccountModeChange(d: DepositItemRow) {
   d.originalRate = ''
 }
 
-/** 输入账号后自动反查数仓(哈希匹配),命中带出产品/期限/币种/余额/当前利率,未命中不阻断 */
+/** 输入账号后自动反查数仓(明文匹配),命中带出产品/期限/币种/余额/当前利率,未命中不阻断 */
 async function onAccountLookup(d: DepositItemRow) {
   if (isBlank(d.depositAccountNo) || isBlank(form.customerNo)) {
     d.lookupDone = false
     d.lookupFound = false
-    d.depositAccountHash = ''
     return
   }
   try {
@@ -462,7 +459,6 @@ async function onAccountLookup(d: DepositItemRow) {
     d.lookupDone = true
     if (a) {
       d.lookupFound = true
-      d.depositAccountHash = a.depositAccountHash || ''
       d.accountBalance = a.accountBalance ?? null
       d.openDate = a.openDate || ''
       d.maturityDate = a.maturityDate || ''
@@ -474,7 +470,6 @@ async function onAccountLookup(d: DepositItemRow) {
       d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
     } else {
       d.lookupFound = false
-      d.depositAccountHash = ''
       d.accountBalance = null
     }
   } catch {
@@ -519,7 +514,6 @@ function buildPayload(): ApplicationPayload {
       requestedRate: d.requestedRate,
       originalRate: isBlank(d.originalRate) ? undefined : d.originalRate,
       depositAccountNo: d.accountMode === 'EXISTING' && !isBlank(d.depositAccountNo) ? d.depositAccountNo : undefined,
-      depositAccountHash: d.accountMode === 'EXISTING' && !isBlank(d.depositAccountHash) ? d.depositAccountHash : undefined,
       plannedAccountFlag: d.accountMode === 'PLANNED' ? 'Y' : 'N'
     })),
     applicantUserId: userStore.userInfo?.userId,
@@ -676,9 +670,9 @@ async function loadDraftIntoForm(id: number | string) {
     const rel = (d.depositRelations || []).find((r) => r.pricingItemId === p.id)
     const row = newItem()
     row.accountMode = rel?.plannedAccountFlag === 'Y' ? 'PLANNED' : 'EXISTING'
-    // 已有数仓账户绑定(哈希)时还原绑定标记;真实账号无法从密文还原,需重新输入账号反查
-    if (row.accountMode === 'EXISTING' && rel?.depositAccountHash) {
-      row.depositAccountHash = rel.depositAccountHash
+    // 明文账号直接还原
+    if (row.accountMode === 'EXISTING' && rel?.depositAccountNo) {
+      row.depositAccountNo = rel.depositAccountNo
     }
     row.productCode = p.productCode || ''
     row.termValue = p.termValue != null ? String(p.termValue) : ''

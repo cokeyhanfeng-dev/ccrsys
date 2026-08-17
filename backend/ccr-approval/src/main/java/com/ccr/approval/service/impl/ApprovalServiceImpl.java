@@ -590,7 +590,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                         + " ORDER BY pricing_item_id, id", applicationId);
         result.put("contracts", contracts);
         result.put("depositAccounts", jdbcTemplate.queryForList(
-                "SELECT id, pricing_item_id pricingItemId, deposit_account_no_cipher depositAccountNoCipher,"
+                "SELECT id, pricing_item_id pricingItemId, deposit_account_no depositAccountNo,"
                         + " planned_account_flag plannedAccountFlag"
                         + " FROM ccr_pricing_item_deposit_rel WHERE application_id = ? AND del_flag = '0'"
                         + " ORDER BY pricing_item_id, id", applicationId));

@@ -683,15 +683,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                         new LambdaQueryWrapper<CcrPricingItemDepositRel>()
                                 .eq(CcrPricingItemDepositRel::getPricingItemId, item.getId()));
                 for (CcrPricingItemDepositRel rel : rels) {
-                    if (StrUtil.isBlank(rel.getDepositAccountHash())) {
+                    if (StrUtil.isBlank(rel.getDepositAccountNo())) {
                         continue; // 拟开户无账号,不参与唯一性
                     }
                     List<CcrPricingItemDepositRel> conflicts = depositRelMapper.selectList(
                             new LambdaQueryWrapper<CcrPricingItemDepositRel>()
-                                    .eq(CcrPricingItemDepositRel::getDepositAccountHash, rel.getDepositAccountHash())
+                                    .eq(CcrPricingItemDepositRel::getDepositAccountNo, rel.getDepositAccountNo())
                                     .ne(CcrPricingItemDepositRel::getPricingItemId, item.getId()));
                     blockIfNonTerminal(conflicts.stream().map(CcrPricingItemDepositRel::getPricingItemId).toList(),
-                            "存款账号[" + rel.getDepositAccountHash() + "]");
+                            "存款账号[" + rel.getDepositAccountNo() + "]");
                 }
             }
         }
@@ -722,7 +722,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         private final List<SnapshotRelationInput> relations = new ArrayList<>();
         /** 合同号→合同快照记录id */
         private final Map<String, Long> contractRecordIds = new HashMap<>();
-        /** 存款账号哈希→账户快照记录id */
+        /** 存款账号→账户快照记录id */
         private final Map<String, Long> depositRecordIds = new HashMap<>();
     }
 
@@ -735,7 +735,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         } else {
             collectSingleCustomer(app, bundleId, collect);
         }
-        // 存款账户快照(按分项账户关系引用的账号哈希)
+        // 存款账户快照(按分项账户关系引用的明文账号)
         for (CcrPricingItem item : items) {
             if (!"DEPOSIT_ACCOUNT".equals(item.getPricingCarrierType())) {
                 continue;
@@ -744,15 +744,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     new LambdaQueryWrapper<CcrPricingItemDepositRel>()
                             .eq(CcrPricingItemDepositRel::getPricingItemId, item.getId()));
             for (CcrPricingItemDepositRel rel : rels) {
-                if (StrUtil.isBlank(rel.getDepositAccountHash())
-                        || collect.depositRecordIds.containsKey(rel.getDepositAccountHash())) {
+                if (StrUtil.isBlank(rel.getDepositAccountNo())
+                        || collect.depositRecordIds.containsKey(rel.getDepositAccountNo())) {
                     continue;
                 }
-                Map<String, Object> account = dataWarehouseService.findDepositAccountByHash(rel.getDepositAccountHash());
+                Map<String, Object> account = dataWarehouseService.findDepositAccountByNo(rel.getDepositAccountNo());
                 if (account != null) {
                     Long recordId = addSnapshotRecord(bundleId, "dw_deposit_account_snapshot", "DEPOSIT_ACCOUNT",
                             String.valueOf(account.get("customer_no")), account);
-                    collect.depositRecordIds.put(rel.getDepositAccountHash(), recordId);
+                    collect.depositRecordIds.put(rel.getDepositAccountNo(), recordId);
                 }
             }
         }
@@ -966,8 +966,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                         new LambdaQueryWrapper<CcrPricingItemDepositRel>()
                                 .eq(CcrPricingItemDepositRel::getPricingItemId, item.getId()));
                 for (CcrPricingItemDepositRel rel : rels) {
-                    Long recordId = StrUtil.isBlank(rel.getDepositAccountHash()) ? null
-                            : collect.depositRecordIds.get(rel.getDepositAccountHash());
+                    Long recordId = StrUtil.isBlank(rel.getDepositAccountNo()) ? null
+                            : collect.depositRecordIds.get(rel.getDepositAccountNo());
                     if (recordId != null) {
                         rel.setAccountSnapshotId(recordId);
                         depositRelMapper.updateById(rel);
@@ -1120,8 +1120,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             CcrPricingItemDepositRel copy = new CcrPricingItemDepositRel();
             copy.setApplicationId(targetAppId);
             copy.setPricingItemId(targetItemId);
-            copy.setDepositAccountNoCipher(rel.getDepositAccountNoCipher());
-            copy.setDepositAccountHash(rel.getDepositAccountHash());
+            copy.setDepositAccountNo(rel.getDepositAccountNo());
             copy.setPlannedAccountFlag(rel.getPlannedAccountFlag());
             depositRelMapper.insert(copy);
         }

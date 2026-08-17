@@ -329,7 +329,7 @@
           </thead>
           <tbody>
             <tr v-for="(a, i) in depositAccounts" :key="i">
-              <td>{{ a.accountNoMasked || '—' }}</td>
+              <td>{{ a.accountNo || '—' }}</td>
               <td>{{ productName(a.productCode || pi.product_code) }}</td>
               <td class="num">{{ a.accountBalance ?? '—' }}</td>
               <td class="num">{{ a.executionRate ?? '—' }}</td>

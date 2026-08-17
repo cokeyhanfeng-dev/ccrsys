@@ -164,7 +164,7 @@ class CcrApplicationServiceImplTest {
         ArgumentCaptor<CcrPricingItemDepositRel> relCaptor = ArgumentCaptor.forClass(CcrPricingItemDepositRel.class);
         verify(depositRelMapper).insert(relCaptor.capture());
         CcrPricingItemDepositRel rel = relCaptor.getValue();
-        assertEquals(DigestUtil.sha256Hex("ACCT001"), rel.getDepositAccountHash());
+        assertEquals("ACCT001", rel.getDepositAccountNo());
         assertEquals("N", rel.getPlannedAccountFlag());
     }
 
@@ -390,7 +390,7 @@ class CcrApplicationServiceImplTest {
         verify(depositRelMapper).insert(relCaptor.capture());
         CcrPricingItemDepositRel rel = relCaptor.getValue();
         assertEquals(item.getId(), rel.getPricingItemId());
-        assertEquals(DigestUtil.sha256Hex("ACCT001"), rel.getDepositAccountHash());
+        assertEquals("ACCT001", rel.getDepositAccountNo());
 
         ArgumentCaptor<CcrApplicationCommitment> commitmentCaptor =
                 ArgumentCaptor.forClass(CcrApplicationCommitment.class);

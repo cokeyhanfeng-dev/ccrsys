@@ -20,11 +20,8 @@ public class CcrPricingItemDepositRel extends BaseEntity {
     /** 定价分项主键 */
     private Long pricingItemId;
 
-    /** 存款账号密文(拟开户可空) */
-    private String depositAccountNoCipher;
-
-    /** 存款账号查询哈希 */
-    private String depositAccountHash;
+    /** 存款账号(明文,拟开户可空) */
+    private String depositAccountNo;
 
     /** 冻结账户快照记录id */
     private Long accountSnapshotId;

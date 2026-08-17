@@ -55,7 +55,6 @@ export interface DepositItemInput {
   requestedRate: number | string
   originalRate?: number | string
   depositAccountNo?: string
-  depositAccountHash?: string
   plannedAccountFlag?: string
 }
 
