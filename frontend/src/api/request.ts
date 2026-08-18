@@ -25,10 +25,13 @@ service.interceptors.response.use(
     // 会话过期/未登录(Sa-Token 经全局异常处理返回业务码 401):清 token 并跳登录页
     if (res.code === 401) {
       localStorage.removeItem('ccr_token')
-      const redirect = window.location.pathname + window.location.search
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login?redirect=' + encodeURIComponent(redirect)
+      // 已在登录页:401 即账号或密码错误,明确提示,避免静默失败
+      if (window.location.pathname.startsWith('/login')) {
+        ElMessage.error(res.msg || '用户名或密码错误')
+        return Promise.reject(new Error(res.msg || '用户名或密码错误'))
       }
+      const redirect = window.location.pathname + window.location.search
+      window.location.href = '/login?redirect=' + encodeURIComponent(redirect)
       return Promise.reject(new Error(res.msg || '登录已过期'))
     }
     ElMessage.error(res.msg || '请求失败')

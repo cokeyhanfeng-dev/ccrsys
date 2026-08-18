@@ -310,7 +310,7 @@
       <!-- 5d. 贡献度参考(当前与拟达成贡献度并排;G3 定价依据,贷款场景) -->
       <div class="card" v-if="isLoan">
         <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
-        <ContributionPanel :contribution="contribution" :commitments="commitments" />
+        <ContributionPanel :contribution="contribution" :commitments="archive.commitments || []" />
       </div>
 
       <!-- 5e. 机构达成(申请机构最新批次) -->
@@ -358,25 +358,6 @@
               <td v-else>—</td>
               <td class="num">{{ val(r, 'creditAgreementCount') }}</td>
               <td class="num">{{ val(r, 'loanBalanceTotal') }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 5c. 拟达成贡献度(申请承诺指标;精简为与左边 5d 贡献度参考一致的信息) -->
-      <div class="card" v-if="archive.commitments?.length">
-        <div class="card__head"><span>拟达成贡献度</span></div>
-        <table class="table">
-          <thead>
-            <tr><th>指标</th><th>基线 → 目标</th><th>单位</th><th>截止日期</th><th>范围</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(c, i) in archive.commitments" :key="i">
-              <td>{{ metricName(val(c, 'metricCode')) }}</td>
-              <td class="num">{{ val(c, 'metricCode') === 'OTHER' ? (val(c, 'commitmentDesc') || '—') : (`${val(c, 'baselineValue') ?? '—'} → ${val(c, 'targetValue') ?? '—'}`) }}</td>
-              <td>{{ commitmentUnitText(val(c, 'unit')) }}</td>
-              <td>{{ val(c, 'endDate') ? String(val(c, 'endDate')).slice(0, 10) : '—' }}</td>
-              <td>{{ val(c, 'memberCustomerNo') ? `成员 ${val(c, 'memberCustomerNo')}` : (val(c, 'metricScope') ? metricScopeText(val(c, 'metricScope')) : '整体') }}</td>
             </tr>
           </tbody>
         </table>
@@ -573,7 +554,7 @@ import {
   appStatusText, itemStatusText, relationTypeText,
   businessTypeText, customerScopeText, nodeLabel, roleText, actionText,
   productName, metricName, memberRoleText, termUnitText, commitmentUnitText,
-  metricScopeText, currencyText, decisionText,
+  currencyText, decisionText,
   roundStatusText, execStatusText, ruleLevelText,
   evalResultText, planStatusText,
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
