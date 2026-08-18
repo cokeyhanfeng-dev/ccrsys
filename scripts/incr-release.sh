@@ -50,8 +50,18 @@ if [ "$#" -gt 0 ]; then
   done
 else
   if compgen -G "db/incr/${DATE}_*.sql" > /dev/null; then
-    cp db/incr/${DATE}_*.sql "$OUT/db/"
-    ls -1 "$OUT/db/"
+    # 只收集未在历史增量包(release/incr_*/db/)收录过的本日增量 SQL,避免跨包重复交付
+    PACKED="$(for f in release/incr_*/db/*.sql; do [ -f "$f" ] && basename "$f"; done)"
+    for f in db/incr/${DATE}_*.sql; do
+      b="$(basename "$f")"
+      if ! printf '%s\n' "$PACKED" | grep -qx "$b"; then
+        cp "$f" "$OUT/db/"
+        echo "    + $b"
+      else
+        echo "    - 跳过(已在历史增量包收录): $b"
+      fi
+    done
+    [ -z "$(ls -1 "$OUT/db/")" ] && echo "    (本日增量均已交付过,无新 SQL)"
   else
     echo "    (未指定且无本日增量 SQL)"
   fi

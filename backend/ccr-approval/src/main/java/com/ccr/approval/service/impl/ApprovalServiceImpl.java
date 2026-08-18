@@ -1318,13 +1318,18 @@ public class ApprovalServiceImpl implements ApprovalService {
                                    String deptCode) {
         List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
                 application.getApplicantOrgId(), deptCode);
-        if (!assignees.isEmpty() && !assignees.contains(operator.getId())) {
+        if (assignees.isEmpty()) {
+            // 未配置指定审批人:按节点角色校验兜底(§5.5.1)
+            currentLoginUser.requireNodeRole(nodeCode);
+        } else if (!assignees.contains(operator.getId())) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "节点[" + nodeCode + "]已配置指定审批人,当前登录人不在指派范围内");
         }
+        // assignees 含当前登录人:指派命中即放行——兼岗节点(如秘书岗=计划财务部总经理兼任,指派 dept_gm)
+        // 不再强制节点角色;§D16a 固定机构节点即此形态
     }
 
-    /** 身份与节点校验:小组/行长节点不走普通审批通道;登录人须具备节点角色 */
+    /** 身份与节点校验:小组/行长节点不走普通审批通道;节点角色在 guardNodeAssignee 中按「指派优先」校验 */
     private SysUserRead checkOperatorAndNode(String nodeCode) {
         if (StrUtil.isBlank(nodeCode)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "节点编码必填");
@@ -1334,9 +1339,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "节点[" + nodeCode + "]不属于普通审批通道");
         }
-        SysUserRead operator = currentLoginUser.requireCurrentUser();
-        currentLoginUser.requireNodeRole(nodeCode);
-        return operator;
+        return currentLoginUser.requireCurrentUser();
     }
 
     /** 幂等键防护:同键已处理直接拒绝(uk_action_idem 兜底) */
