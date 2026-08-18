@@ -1,6 +1,7 @@
 package com.ccr.approval.service.impl;
 
 import cn.hutool.core.convert.Convert;
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
@@ -782,7 +783,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             row.put("empeNum", corp.get("entp_empe_num"));
             row.put("totalAssets", corp.get("rest_asts"));
             row.put("registeredCapital", corp.get("reg_cap"));
-            row.put("estbDate", corp.get("estp_estb_dt"));
+            row.put("estbDate", snapshotDate(corp.get("estp_estb_dt")));
             row.put("restAddr", corp.get("rest_addr"));
             row.put("openOrgName", corp.get("openact_org_nm"));
             row.put("openDate", corp.get("openact_dt"));
@@ -811,6 +812,22 @@ public class ApprovalServiceImpl implements ApprovalService {
             return List.of(row);
         }
         return List.of();
+    }
+
+    /** 快照日期归一:数仓 DATE 列被快照冻结为 epoch 毫秒(数字或13位数字串),统一转 yyyy-MM-dd。
+     *  字符串日期(如 openact_dt)原样返回;非日期值原样返回。 */
+    private static Object snapshotDate(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n && n.longValue() > 0) {
+            return DateUtil.format(DateUtil.date(n.longValue()), "yyyy-MM-dd");
+        }
+        String s = v.toString().trim();
+        if (s.matches("\\d{13}")) {
+            return DateUtil.format(DateUtil.date(Long.parseLong(s)), "yyyy-MM-dd");
+        }
+        return v;
     }
 
     /** 快照内本行融资(CONTRACT/FINANCING 记录,按借款客户过滤,core_json 字段归一) */

@@ -40,6 +40,33 @@ public final class ResolutionPdfExporter {
 
     // ---------- 文案映射(同 docx) ----------
 
+    /** 单元格显示规整:
+     *  ISO 时间(T 分隔,如 2026-08-18T15:24)→ 空格分隔;
+     *  纯数值去尾零(4.500000→4.5, 1888.0000→1888),与银行公文习惯一致;
+     *  其余原样返回。 */
+    private static String display(String v) {
+        if (v == null) {
+            return "";
+        }
+        String s = v.trim();
+        if (s.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?(\\.\\d+)?")) {
+            return s.replace('T', ' ');
+        }
+        if (s.matches("-?\\d+\\.\\d+")) {
+            try {
+                return new java.math.BigDecimal(s).stripTrailingZeros().toPlainString();
+            } catch (NumberFormatException ignore) {
+                // 非标准数值,保持原样
+            }
+        }
+        return s;
+    }
+
+    /** 利率显示规整(去尾零;空值→—) */
+    private static String rate(String v) {
+        return v == null ? "—" : display(v);
+    }
+
     private static String decisionSourceText(String source) {
         if ("VOTE_APPROVED".equals(source)) {
             return "小组表决通过";
@@ -194,12 +221,12 @@ public final class ResolutionPdfExporter {
                 String original = pick(item, "original_rate", "originalRate");
                 String requested = pick(item, "requested_rate", "requestedRate");
                 String finalRate = pick(item, "final_rate", "finalRate");
-                String from = original != null && !original.isEmpty() ? original
-                        : (requested != null && !requested.isEmpty() ? requested : "—");
+                String from = rate(original != null && !original.isEmpty() ? original
+                        : (requested != null && !requested.isEmpty() ? requested : null));
                 if (committeeReject) {
                     ctx.para("该分项(" + no + ")经小组表决否决,未形成最终利率(原执行 " + from + "%)。", 9, 12);
                 } else {
-                    ctx.para("该分项(" + no + ")利率由 " + from + "% 调整为 " + (finalRate == null ? "—" : finalRate) + "%", 9, 12);
+                    ctx.para("该分项(" + no + ")利率由 " + from + "% 调整为 " + rate(finalRate) + "%", 9, 12);
                 }
             }
             ctx.gap(8);
@@ -427,6 +454,12 @@ public final class ResolutionPdfExporter {
             if (grid.length == 0 || grid[0].length == 0) {
                 return;
             }
+            // 单元格显示规整(时间 T→空格、数值去尾零),先归一保证换行宽度与绘制一致
+            for (int r = 0; r < grid.length; r++) {
+                for (int c = 0; c < grid[r].length; c++) {
+                    grid[r][c] = display(grid[r][c]);
+                }
+            }
             final float pad = 3f;
             final float lh = 11f;      // 表格行文本行高
             final float cellMin = 15f; // 单元格最小行高
@@ -468,10 +501,13 @@ public final class ResolutionPdfExporter {
                     cs.lineTo(x, top);
                     cs.closePath();
                     cs.stroke();
-                    // 文本
+                    // 文本(垂直居中,避免文字顶部越过单元格顶边框压在横线上)
                     float textSize = 8.5f;
                     List<String> lines = wrap(grid[r][c], headRow ? head : body, textSize, w - pad * 2);
-                    float ty = top - pad - 3;
+                    float blockH = lines.size() * lh;
+                    float avail = heights[r] - pad * 2;
+                    float topPad = Math.max(0f, (avail - blockH) / 2f);
+                    float ty = top - pad - topPad - textSize * 0.8f;
                     for (String line : lines) {
                         text(line, headRow ? head : body, textSize, x + pad, ty);
                         ty -= lh;
