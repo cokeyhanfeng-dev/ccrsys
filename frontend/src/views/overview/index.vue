@@ -253,7 +253,8 @@ const todoItems = computed(() => {
     const single = ps.length === 1
     const rates = ps.map((x) => Number(x.requestedRate) || 0)
     items.push({
-      key: `vote-${appId}`, kindText: '待表决', kindBadge: 'badge--warning',
+      // §委员工作台:表决条目并入审批待办展示(用户口径:无「表决」概念),kind/badge/按钮与审批待办一致
+      key: `vote-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
       title: first.pricingCustomerNo || first.customerNo || '—',
       itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个担保分项`,
       nodeText: nodeLabel(first.currentNodeCode),
@@ -264,7 +265,7 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
-      time: fmtTime(first.createTime), to: `/approval/${first.pricingItemId}`, actionText: '去表决',
+      time: fmtTime(first.createTime), to: `/approval/${first.pricingItemId}`, actionText: '去审批',
       sub: `申请 ${first.applicationNo || '—'} · ${nodeLabel(first.currentNodeCode)}`,
       extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
@@ -433,11 +434,11 @@ const stats = computed(() => {
   const cards: any[] = []
   if (r === 'president') {
     cards.push({ icon: 'Stamp', label: '待我决策', value: presidentTodos.value.length, cls: 'stat-card__num--warning', to: '/president', sub: '小组通过后待行长决策', subDanger: false })
-  } else if (APPROVAL_ROLES.includes(r)) {
-    cards.push({ icon: 'Stamp', label: '待我审批', value: tasks.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '流转到本人当前节点的分项', subDanger: false })
-  }
-  if (isCommittee.value) {
-    cards.push({ icon: 'Key', label: '待我表决', value: voteTodos.value.length, cls: 'stat-card__num--warning', to: '/approval', sub: '待表决的申请', subDanger: false })
+  } else if (APPROVAL_ROLES.includes(r) || isCommittee.value) {
+    // §委员工作台:表决不再单设「待我表决」卡,并入「待我审批」——/approval 页已把普通审批待办与
+    // 表决待办(listVoteTodo)按申请聚合展示,两类入口同一页面,故合并计数;去掉该卡后委员 5 卡变 4 卡不换行
+    const mergeTodo = tasks.value.length + voteTodos.value.length
+    cards.push({ icon: 'Stamp', label: '待我审批', value: mergeTodo, cls: 'stat-card__num--warning', to: '/approval', sub: isCommittee.value ? '待本人审批/表决的分项' : '流转到本人当前节点的分项', subDanger: false })
   }
   cards.push(todayCard, totalCard, trackCard)
   return cards
