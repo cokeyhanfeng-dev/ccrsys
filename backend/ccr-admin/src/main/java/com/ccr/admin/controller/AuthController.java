@@ -52,7 +52,8 @@ public class AuthController {
     public R<Map<String, Object>> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String username = body.getOrDefault("username", "");
         String password = body.getOrDefault("password", "");
-        String ip = request.getRemoteAddr();
+        // §15.2 真实客户端 IP:nginx 已转发 X-Forwarded-For,优先取首段,避免记录 Docker 内网地址
+        String ip = clientIp(request);
         CcrSysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<CcrSysUser>()
                 .eq(CcrSysUser::getUsername, username)
                 .eq(CcrSysUser::getDelFlag, "0"));
@@ -103,7 +104,10 @@ public class AuthController {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("token", token);
         result.put("userInfo", userInfo);
-        writeLoginLog("LOGIN", user.getId(), user.getNickName(), ip, "登录成功");
+        // §15.2 MAC 尽力抓取:HTTP 协议浏览器不携带真实 MAC,仅约定头 X-Client-Mac(客户端程序采集)有效
+        String mac = clientMac(request);
+        writeLoginLog("LOGIN", user.getId(), user.getNickName(), ip,
+                mac == null ? "登录成功" : "登录成功,客户端MAC=" + mac);
         return R.ok(result);
     }
 
@@ -122,15 +126,15 @@ public class AuthController {
         Long uid = StpUtil.getLoginIdAsLong();
         CcrSysUser user = sysUserMapper.selectById(uid);
         if (user == null || !BCrypt.checkpw(oldPassword, user.getPassword())) {
-            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, null, request.getRemoteAddr(), "原密码错误");
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, null, clientIp(request), "原密码错误");
             throw new ServiceException(400, "原密码错误");
         }
         if (!PasswordUtil.isStrong(newPassword)) {
-            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), request.getRemoteAddr(), "新密码不满足强规则");
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), clientIp(request), "新密码不满足强规则");
             throw new ServiceException(400, "新密码不符合强度要求(不少于8位,须含大写字母/小写字母/特殊字符)");
         }
         if (oldPassword.equals(newPassword)) {
-            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), request.getRemoteAddr(), "新密码与旧密码相同");
+            writeLoginLog("CHANGE_PASSWORD_FAIL", uid, user.getNickName(), clientIp(request), "新密码与旧密码相同");
             throw new ServiceException(400, "新密码不能与原密码相同");
         }
         user.setPassword(BCrypt.hashpw(newPassword, BCrypt.gensalt()));
@@ -138,7 +142,7 @@ public class AuthController {
         user.setUpdateTime(LocalDateTime.now());
         sysUserMapper.updateById(user);
         StpUtil.getSession().set("pwdChangeFlag", "0");
-        writeLoginLog("CHANGE_PASSWORD", uid, user.getNickName(), request.getRemoteAddr(), "修改密码成功");
+        writeLoginLog("CHANGE_PASSWORD", uid, user.getNickName(), clientIp(request), "修改密码成功");
         return R.ok();
     }
 
@@ -161,10 +165,35 @@ public class AuthController {
         }
         if (uid != null) {
             CcrSysUser user = sysUserMapper.selectById(uid);
-            writeLoginLog("LOGOUT", uid, user == null ? null : user.getNickName(), request.getRemoteAddr(), "退出登录");
+            writeLoginLog("LOGOUT", uid, user == null ? null : user.getNickName(), clientIp(request), "退出登录");
         }
         StpUtil.logout();
         return R.ok();
+    }
+
+    /** 真实客户端 IP:优先 X-Forwarded-For 首段(nginx 已转发),再 X-Real-IP,最后 RemoteAddr(容器内网) */
+    private String clientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (StrUtil.isNotBlank(xff)) {
+            String first = xff.split(",")[0].trim();
+            if (StrUtil.isNotBlank(first) && !"unknown".equalsIgnoreCase(first)) {
+                return first;
+            }
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (StrUtil.isNotBlank(realIp) && !"unknown".equalsIgnoreCase(realIp)) {
+            return realIp;
+        }
+        return request.getRemoteAddr();
+    }
+
+    /** MAC 尽力抓取:HTTP 协议层浏览器不携带真实 MAC,仅约定头 X-Client-Mac(客户端程序采集)有效,格式非法返回 null */
+    private String clientMac(HttpServletRequest request) {
+        String mac = request.getHeader("X-Client-Mac");
+        if (mac == null || !mac.matches("(?i)[0-9a-f]{2}([:-][0-9a-f]{2}){5}")) {
+            return null;
+        }
+        return mac;
     }
 
     /** 登录审计留痕(§15.2);表/连接异常仅记日志,不阻断登录 */
