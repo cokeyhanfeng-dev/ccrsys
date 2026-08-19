@@ -363,6 +363,29 @@ export function productName(code?: string, fallback = '—'): string {
   return textOf(PRODUCT_NAME_MAP, code, fallback)
 }
 
+// ---------- 数仓数据集(提交前校验·数据批次差异:表名→中文) ----------
+/** 数仓数据集编码→中文(覆盖 DataWarehouseService.relevantDatasets 全部表名) */
+export const DATASET_NAMES: DictItem[] = [
+  { code: 'caps_corp_cust_basic_info', name: '对公客户基本信息' },
+  { code: 'caps_indv_cust_basic_info', name: '个人客户基本信息' },
+  { code: 'dw_customer_group_snapshot', name: '集团快照' },
+  { code: 'dw_customer_group_member_snapshot', name: '集团成员快照' },
+  { code: 'dw_group_credit_snapshot', name: '集团授信快照' },
+  { code: 'dw_member_credit_limit_snapshot', name: '成员额度快照' },
+  { code: 'dw_loan_contract_snapshot', name: '贷款合同快照' },
+  { code: 'dw_loan_note_snapshot', name: '贷款借据快照' },
+  { code: 'dw_credit_report_snapshot', name: '征信报告快照' },
+  { code: 'dw_credit_financing_summary', name: '授信融资汇总' },
+  { code: 'dw_credit_financing_detail', name: '授信融资明细' },
+  { code: 'dw_contribution_metric', name: '贡献度指标' },
+  { code: 'dw_deposit_account_snapshot', name: '存款账户快照' }
+]
+const DATASET_NAME_MAP: Record<string, string> = Object.fromEntries(DATASET_NAMES.map((d) => [d.code, d.name]))
+
+export function datasetName(code?: string, fallback = '—'): string {
+  return textOf(DATASET_NAME_MAP, code, fallback)
+}
+
 // ---------- 贡献度指标 ----------
 
 /** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径) */

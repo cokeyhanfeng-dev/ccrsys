@@ -261,8 +261,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import {
   searchCustomers as apiSearchCustomers,
@@ -287,6 +287,7 @@ import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeTe
 
 const userStore = useUserStore()
 const route = useRoute()
+const router = useRouter()
 
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 存款产品(product_code 与产品边界/数仓账户口径对齐)
@@ -600,12 +601,9 @@ async function onConfirmSubmit() {
     const result = await submitApplication(draft.id)
     checkDialogVisible.value = false
     const firstNode = nodeLabel(result.items?.[0]?.currentNodeCode)
-    const finalNode = nodeLabel(result.items?.[0]?.routeCode)
-    ElMessageBox.alert(
-      `申请号:${result.applicationNo}\n当前节点:${firstNode}\n终审岗位:${finalNode}\n提交时间:${result.submitTime || '—'}`,
-      result.submitted === false ? '申请已提交(幂等返回)' : '提交成功',
-      { confirmButtonText: '知道了' }
-    )
+    // 提交成功直接跳回工作台首页(与贷款申请一致,§用户要求);不再停留申请页
+    ElMessage.success(`申请 ${result.applicationNo} 已提交,当前节点:${firstNode}`)
+    router.push('/overview')
   } catch {
     // 拦截器已提示
   } finally {

@@ -47,7 +47,7 @@
         <div><span class="dg-label">申请授信总额(万元)</span>{{ appliedCredit.creditAmount != null ? appliedCredit.creditAmount : '—' }}</div>
       </div>
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th>担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
+        <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
             <td>{{ it.pricingItemNo || '—' }}</td>
@@ -56,7 +56,7 @@
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
             <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
             <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
-            <td>{{ guaranteesText(it.guarantees) }}</td>
+            <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
             <td>{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</td>
             <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
             <td>{{ itemStatusText(it.status) }}</td>
@@ -162,8 +162,8 @@
       </el-collapse>
     </div>
 
-    <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用) -->
-    <div class="card">
+    <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用;仅贷款场景,存款无授信) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
       <table class="table" v-if="creditAgreements.length">
         <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
@@ -187,8 +187,8 @@
       <div v-else class="empty">暂无授信协议数据</div>
     </div>
 
-    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白) -->
-    <div class="card">
+    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白;仅贷款场景) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>本行融资</span><span class="badge badge--info">数仓</span></div>
       <table class="table" v-if="financing.length">
         <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
@@ -461,7 +461,7 @@
           </tr>
         </tbody>
       </table>
-      <table class="table" style="margin-top:8px" v-if="resolutionExecutions.length">
+      <table class="table" style="margin-top:8px" v-if="isLoan && resolutionExecutions.length">
         <thead><tr><th>贷款合同号</th><th>补充协议号</th><th>执行利率</th><th>执行状态</th><th>核验结果</th><th>核验时间</th></tr></thead>
         <tbody>
           <tr v-for="(e, i) in resolutionExecutions" :key="i">
@@ -631,17 +631,21 @@
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
-          <!-- 贷款合同信息(要审批的内容:合同号/拟签订 + 金额/期限/产品;借据仅作参考,链接弹窗查看,不占主表空间) -->
-          <div class="op-item__subhead">贷款合同</div>
+          <!-- 合同信息(要审批的内容:贷款=合同号/拟签订+借据,存款=仅金额/期限/产品;借据仅作参考,链接弹窗查看) -->
+          <div class="op-item__subhead">{{ isLoan ? '贷款合同' : '存款信息' }}</div>
           <table class="table">
-            <thead><tr><th>贷款合同</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>借据</th></tr></thead>
+            <thead><tr>
+              <th v-if="isLoan">贷款合同</th>
+              <th>金额(万元)</th><th>期限</th><th>产品</th>
+              <th v-if="isLoan">借据</th>
+            </tr></thead>
             <tbody>
               <tr>
-                <td>{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
+                <td v-if="isLoan">{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
                 <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
                 <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
                 <td>{{ productName(it.productCode) }}</td>
-                <td>
+                <td v-if="isLoan">
                   <template v-if="it.contractNo && itemNotes(it).length">
                     <a class="link" href="javascript:;" @click.prevent="openNotes(it)">查看借据({{ itemNotes(it).length }} 笔)</a>
                   </template>
@@ -651,7 +655,8 @@
               </tr>
             </tbody>
           </table>
-          <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容) -->
+          <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容;仅贷款场景,存款无担保) -->
+          <template v-if="isLoan">
           <div class="op-item__subhead">担保信息</div>
           <table class="table" v-if="(it.guarantees || []).length">
             <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th></tr></thead>
@@ -735,6 +740,7 @@
             </tbody>
           </table>
           <div v-else class="op-item__empty-tip">无担保明细</div>
+          </template>
           <!-- 利率对比:原执行 / 申请 / 审批后(可调),要审批的利率一目了然 -->
           <div class="op-item__rates">
             <span class="op-rate"><span class="dg-label">原执行利率</span><b>{{ fmtRate(it.originalRate) }}</b></span>

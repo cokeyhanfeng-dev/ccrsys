@@ -16,7 +16,7 @@
               </thead>
               <tbody>
                 <tr v-for="d in check.diffs" :key="d.datasetCode">
-                  <td>{{ d.datasetCode }}</td>
+                  <td>{{ datasetName(d.datasetCode) }}</td>
                   <td>{{ d.baselineDataDt || '暂无数据' }}</td>
                   <td>{{ d.latestDataDt || '暂无数据' }}</td>
                   <td>
@@ -79,7 +79,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SubmitCheck } from '@/api/application'
-import { productName } from '@/utils/dict'
+import { productName, datasetName } from '@/utils/dict'
 
 const props = defineProps<{
   modelValue: boolean
