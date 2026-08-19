@@ -36,7 +36,7 @@
           <label class="query-label">分项主键</label>
           <el-input v-model="ballotQuery.pricingItemId" placeholder="分项主键" clearable class="query-input" />
         </div>
-        <button class="btn btn--primary" :disabled="ballotLoading" @click="queryBallot">
+        <button class="btn btn--primary" :disabled="ballotLoading" @click="searchBallot">
           {{ ballotLoading ? '查询中…' : '查询' }}
         </button>
         <button class="btn btn--primary" :disabled="!ballotRows.length" @click="exportCsv(ballotRows, ballotCsvCols, '实际投票人反查')">
@@ -61,6 +61,18 @@
         </tbody>
       </table>
       <div v-else class="empty-cell">{{ ballotQueried ? '无匹配投票记录' : '输入批次/分项后查询' }}</div>
+      <div v-if="ballotQueried && ballotTotal > 0" class="pagination-wrap">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="ballotTotal"
+          v-model:current-page="ballotPageNum"
+          v-model:page-size="ballotPageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          @current-change="queryBallot"
+          @size-change="changeBallotSize"
+        />
+      </div>
     </div>
 
     <!-- ② 导出记录 -->
@@ -88,6 +100,18 @@
           <tr v-if="!exportRecords.length"><td colspan="6" class="empty-cell">暂无导出记录</td></tr>
         </tbody>
       </table>
+      <div v-if="exportTotal > 0" class="pagination-wrap">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="exportTotal"
+          v-model:current-page="exportPageNum"
+          v-model:page-size="exportPageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          @current-change="loadExportRecords"
+          @size-change="changeExportSize"
+        />
+      </div>
     </div>
 
     <!-- ③ 配置版本查询 -->
@@ -108,7 +132,7 @@
             <el-option label="产品硬边界" value="PRODUCT_LIMIT" />
           </el-select>
         </div>
-        <button class="btn btn--primary" :disabled="changeLogLoading" @click="loadChangeLog">
+        <button class="btn btn--primary" :disabled="changeLogLoading" @click="searchChangeLog">
           {{ changeLogLoading ? '查询中…' : '查询' }}
         </button>
       </div>
@@ -130,6 +154,18 @@
           <tr v-if="!changeLogs.length"><td colspan="6" class="empty-cell">暂无变更记录</td></tr>
         </tbody>
       </table>
+      <div v-if="changeLogTotal > 0" class="pagination-wrap">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="changeLogTotal"
+          v-model:current-page="changeLogPageNum"
+          v-model:page-size="changeLogPageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          @current-change="loadChangeLog"
+          @size-change="changeConfigLogSize"
+        />
+      </div>
     </div>
 
     <!-- ④ 操作日志 -->
@@ -225,6 +261,9 @@ const activeAuditTab = ref('ballot')
 // ---------- ① 实际投票人反查 ----------
 const ballotQuery = reactive<{ roundId: string; pricingItemId: string }>({ roundId: '', pricingItemId: '' })
 const ballotRows = ref<BallotDetailRow[]>([])
+const ballotTotal = ref(0)
+const ballotPageNum = ref(1)
+const ballotPageSize = ref(20)
 const ballotLoading = ref(false)
 const ballotQueried = ref(false)
 
@@ -235,16 +274,31 @@ async function queryBallot() {
   }
   ballotLoading.value = true
   try {
-    ballotRows.value = await getBallotDetail({
+    const data = await getBallotDetail({
       roundId: ballotQuery.roundId || undefined,
-      pricingItemId: ballotQuery.pricingItemId || undefined
+      pricingItemId: ballotQuery.pricingItemId || undefined,
+      pageNum: ballotPageNum.value,
+      pageSize: ballotPageSize.value
     })
+    ballotRows.value = data?.records || []
+    ballotTotal.value = data?.total || 0
     ballotQueried.value = true
   } catch {
     ballotRows.value = []
+    ballotTotal.value = 0
   } finally {
     ballotLoading.value = false
   }
+}
+// 查询:重置到第 1 页再加载
+function searchBallot() {
+  ballotPageNum.value = 1
+  queryBallot()
+}
+// 每页条数变更:回到第 1 页
+function changeBallotSize() {
+  ballotPageNum.value = 1
+  queryBallot()
 }
 
 function ballotText(t?: string) {
@@ -256,29 +310,60 @@ function ballotBadge(t?: string) {
 
 // ---------- ② 导出记录 ----------
 const exportRecords = ref<any[]>([])
+const exportTotal = ref(0)
+const exportPageNum = ref(1)
+const exportPageSize = ref(20)
 
 async function loadExportRecords() {
   try {
-    exportRecords.value = await listExportRecords()
+    const data = await listExportRecords({ pageNum: exportPageNum.value, pageSize: exportPageSize.value })
+    exportRecords.value = data?.records || []
+    exportTotal.value = data?.total || 0
   } catch {
     exportRecords.value = []
+    exportTotal.value = 0
   }
+}
+// 每页条数变更:回到第 1 页
+function changeExportSize() {
+  exportPageNum.value = 1
+  loadExportRecords()
 }
 
 // ---------- ③ 配置版本查询 ----------
 const changeLogType = ref('')
 const changeLogs = ref<any[]>([])
+const changeLogTotal = ref(0)
+const changeLogPageNum = ref(1)
+const changeLogPageSize = ref(20)
 const changeLogLoading = ref(false)
 
 async function loadChangeLog() {
   changeLogLoading.value = true
   try {
-    changeLogs.value = await listConfigChangeLog(changeLogType.value ? { configType: changeLogType.value } : {})
+    const data = await listConfigChangeLog({
+      configType: changeLogType.value || undefined,
+      pageNum: changeLogPageNum.value,
+      pageSize: changeLogPageSize.value
+    })
+    changeLogs.value = data?.records || []
+    changeLogTotal.value = data?.total || 0
   } catch {
     changeLogs.value = []
+    changeLogTotal.value = 0
   } finally {
     changeLogLoading.value = false
   }
+}
+// 查询:重置到第 1 页再加载
+function searchChangeLog() {
+  changeLogPageNum.value = 1
+  loadChangeLog()
+}
+// 每页条数变更:回到第 1 页
+function changeConfigLogSize() {
+  changeLogPageNum.value = 1
+  loadChangeLog()
 }
 function actionText(a?: string) {
   return configActionText(a)

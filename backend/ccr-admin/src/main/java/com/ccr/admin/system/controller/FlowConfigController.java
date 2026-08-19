@@ -6,6 +6,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
@@ -570,15 +571,23 @@ public class FlowConfigController {
 
     // ---------- 配置变更审计(§8A.2) ----------
 
-    /** 配置变更日志查询(审计用;可按配置域/记录主键过滤) */
+    /** 配置变更日志查询(审计用;可按配置域/记录主键过滤,分页) */
     @SaCheckRole(value = {"admin", "config_reviewer"}, mode = SaMode.OR)
     @GetMapping("/thresholds/change-log")
-    public R<List<CcrConfigChangeLog>> changeLogList(@RequestParam(required = false) String configType,
-                                                     @RequestParam(required = false) Long configId) {
-        return R.ok(configChangeLogMapper.selectList(new LambdaQueryWrapper<CcrConfigChangeLog>()
-                .eq(StrUtil.isNotBlank(configType), CcrConfigChangeLog::getConfigType, configType)
-                .eq(configId != null, CcrConfigChangeLog::getConfigId, configId)
-                .orderByDesc(CcrConfigChangeLog::getOperateTime)));
+    public R<Map<String, Object>> changeLogList(@RequestParam(required = false) String configType,
+                                                @RequestParam(required = false) Long configId,
+                                                @RequestParam(defaultValue = "1") int pageNum,
+                                                @RequestParam(defaultValue = "20") int pageSize) {
+        Page<CcrConfigChangeLog> page = configChangeLogMapper.selectPage(
+                new Page<>(Math.max(pageNum, 1), Math.min(Math.max(pageSize, 1), 100)),
+                new LambdaQueryWrapper<CcrConfigChangeLog>()
+                        .eq(StrUtil.isNotBlank(configType), CcrConfigChangeLog::getConfigType, configType)
+                        .eq(configId != null, CcrConfigChangeLog::getConfigId, configId)
+                        .orderByDesc(CcrConfigChangeLog::getOperateTime));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("total", page.getTotal());
+        data.put("records", page.getRecords());
+        return R.ok(data);
     }
 
     // ---------- 发布前校验(§8A.3/§8A.4) ----------
