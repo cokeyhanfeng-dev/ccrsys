@@ -448,6 +448,11 @@
         分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
       </div>
 
+      <!-- 存量调息未选授信协议:分项留空,由协议选择按协议项下带出(§用户要求) -->
+      <div v-if="form.businessType === 'EXISTING' && !form.creditAgreementNo" class="empty" style="margin-bottom:12px">
+        请先在「授信信息」中选择授信协议,将自动带出该协议项下的贷款合同作为利率申请分项。
+      </div>
+
       <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/合同/措施明细 + 产品/期限/金额/利率 -->
       <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
         <div class="mortgage-item__head">
@@ -1090,11 +1095,12 @@ async function loadCustomerDetail() {
       const contractRows = view.contracts || []
       const totalContractAmt = contractRows.reduce((s, c: any) => s + (Number(c.contractAmount) || 0), 0)
       if (totalContractAmt > 0) form.amountTier = totalContractAmt >= 5000 ? 'GE_5000' : 'LT_5000'
-      // 存量贷款:客户名下有贷款合同默认自动进入存量调息并带出合同(可删除不调息的);
-      // 客户经理已手动选定业务类型(如新增授信)则尊重选择,不带出存量合同,分项手工补充
+      // 存量贷款:客户名下有贷款合同默认自动进入存量调息;
+      // 分项合同由「授信协议选择」按协议项下带出(先选协议再填充;未选协议不填充,§用户要求)——
+      // 唯一协议已在上方自动选中并带出,多协议/无协议则分项留空,由客户经理选择协议触发带出
       if (contractRows.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
-        autoItemsFromContracts(contractRows)
+        if (!form.creditAgreementNo) form.guarantees = []
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
@@ -1243,11 +1249,13 @@ function onAgreementSelect() {
       endDate: a.endDate ?? ''
     }
   }
-  // 带出协议项下贷款合同与关联抵押物/保证人(数仓,按客户)
+  // 带出该授信协议项下贷款合同与关联抵押物/保证人(数仓,按客户)并自动列为分项;
+  // 未选协议不填充(§用户要求:先选授信协议再带出合同,切换协议即重新按协议项下带出)
   if (form.customerNo) {
     getCustomerBusinessView(form.customerNo).then((view: any) => {
       creditContracts.value = view.contracts || []
       relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
+      autoItemsFromContracts(view.contracts || [])
     }).catch(() => {})
   }
 }
@@ -1291,10 +1299,11 @@ function contractTerm(start?: string, end?: string): { value: string; unit: stri
   return { value: String(months), unit: 'MONTH' }
 }
 
-/** 存量:把授信项下全部贷款合同自动列为担保分项(客户经理可删除不需要提交调息的合同) */
+/** 存量:把「当前选中的授信协议」项下贷款合同自动列为担保分项(客户经理可删除不需要提交调息的合同);
+ *  未选授信协议不填充(§用户要求:先选协议再带合同,分项随协议变化) */
 function autoItemsFromContracts(contracts: any[]) {
-  const rows = (contracts || []).filter((c) => c && c.contractNo)
-  if (!rows.length) return
+  const rows = (contracts || []).filter((c) => c && c.contractNo && c.agreementNo === form.creditAgreementNo)
+  if (!rows.length) { form.guarantees = []; return }
   form.guarantees = rows.map((c) => {
     const g = newGuarantee()
     g.contractBusinessKey = c.contractNo
@@ -1318,12 +1327,16 @@ function onBusinessTypeChange() {
   if (form.businessType === 'EXISTING') {
     form.totalCredit = ''
     form.creditAgreementNo = ''
-    // 已有客户则立即列出全部合同
+    form.creditInfo = initialCreditInfo()
+    // 先选授信协议再带出合同(§用户要求):未选协议时分项留空,由协议选择按协议项下带出
+    form.guarantees = []
+    // 已有客户则刷新授信协议列表供选择
     if (form.customerNo) {
       getCustomerBusinessView(form.customerNo)
-        .then((view: any) => autoItemsFromContracts(view.contracts || []))
+        .then((view: any) => { creditAgreements.value = view.creditAgreements || [] })
         .catch(() => {})
     }
+    ElMessage.info('请选择授信协议,将自动带出该协议项下的贷款合同')
   } else {
     // 新增授信:无存量协议可带出,授信信息留待手工补录(协议号可空);
     // 清空存量带出的贷款合同分项,重置为一条空白分项由客户经理手工补充(§用户要求)
@@ -1379,11 +1392,15 @@ function finGuaranteeType(contractNo: string): string {
 
 function addGuarantee() {
   if (form.businessType === 'EXISTING') {
-    // 存量:分项=授信协议项下贷款合同,添加即补回一个未在列的合同
+    if (!form.creditAgreementNo) {
+      ElMessage.warning('请先选择授信协议,将自动带出该协议项下的贷款合同')
+      return
+    }
+    // 存量:分项=当前授信协议项下贷款合同,添加即补回一个未在列的合同
     const used = new Set(form.guarantees.map((g) => g.contractBusinessKey))
-    const rest = creditContracts.value.filter((c) => c.contractNo && !used.has(c.contractNo))
+    const rest = creditContracts.value.filter((c) => c.contractNo && c.agreementNo === form.creditAgreementNo && !used.has(c.contractNo))
     if (!rest.length) {
-      ElMessage.warning('该授信项下全部贷款合同已在列表中')
+      ElMessage.warning('该授信协议项下全部贷款合同已在列表中')
       return
     }
     const g = newGuarantee()
