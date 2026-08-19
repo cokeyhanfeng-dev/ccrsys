@@ -628,7 +628,7 @@ public class VoteServiceImpl implements VoteService {
             }
             // §14.7 流转留痕:计票动作(系统动作,operator_id 记 0)
             insertTrail(pricingItemId, pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
-                    0L, countNote + ",结果 " + result.getResult(),
+                    0L, countNote + ",结果 " + ("PASS".equals(result.getResult()) ? "通过" : "未通过"),
                     PricingItemStatus.VOTING.getCode(), item.getStatus());
         }
         log.info("分项 {} 计票完成: 赞成{} 否决{}, 结果 {}", pricingItemId,

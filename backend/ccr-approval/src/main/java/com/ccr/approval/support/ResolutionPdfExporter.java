@@ -13,8 +13,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 /**
  * 利率定价决议书 PDF 生成(§决议,替代 docx)
@@ -115,6 +117,269 @@ public final class ResolutionPdfExporter {
         return s == null ? "" : s;
     }
 
+    // ---------- 决议书中文展示字典(§用户要求:决议书全部中文,不写英文编码) ----------
+    // 与前端 utils/dict.ts 展示口径对齐;编号类(分项编号/决议编号/申请号/合同号)不映射,仅映射枚举/编码。
+
+    /** 审批节点→职务名(决议书专用:六人小组用全称「存贷款利率与审批小组」) */
+    private static String nodeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "BRANCH_MANAGER" -> "支行行长";
+            case "DEPT_GENERAL_MANAGER" -> "公司金融部总经理";
+            case "VICE_PRESIDENT" -> "分管行领导";
+            case "SIX_PEOPLE_GROUP" -> "存贷款利率与审批小组";
+            case "PRESIDENT" -> "总行行长";
+            case "SECRETARY" -> "贷审会秘书岗";
+            default -> code;
+        };
+    }
+
+    /** 审批动作→中文 */
+    private static String actionText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "SUBMIT" -> "提交";
+            case "APPROVE" -> "通过";
+            case "REJECT" -> "否决";
+            case "ADJUST" -> "调价";
+            case "RETURN" -> "退回";
+            case "VETO" -> "一票否决";
+            case "AGREE" -> "同意";
+            case "COUNT_PASS" -> "计票通过";
+            case "ESCALATE" -> "上送";
+            case "PRESIDENT_APPROVE" -> "行长决策同意";
+            case "VOTE_APPROVED" -> "小组表决通过";
+            default -> code;
+        };
+    }
+
+    /** 操作角色(role_code)→职务 */
+    private static String roleText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "customer_manager" -> "客户经理";
+            case "branch_manager" -> "支行行长";
+            case "dept_gm" -> "公司金融部总经理";
+            case "vice_president" -> "分管行领导";
+            case "committee_member" -> "审批小组成员";
+            case "president" -> "总行行长";
+            case "secretary" -> "贷审会秘书岗";
+            case "admin" -> "系统管理员";
+            case "auditor" -> "审计员";
+            default -> code;
+        };
+    }
+
+    /** 行长决策:APPROVE/AGREE→同意,VETO→一票否决 */
+    private static String decisionText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "APPROVE", "AGREE" -> "同意";
+            case "VETO" -> "一票否决";
+            default -> code;
+        };
+    }
+
+    /** 表决计票结果 */
+    private static String voteResultText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "PASS" -> "通过";
+            case "FAIL" -> "未通过";
+            default -> code;
+        };
+    }
+
+    /** 产品编码→产品名 */
+    private static String productText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "LOAN_A" -> "对公贷款";
+            case "LOAN_P" -> "个人经营性贷款";
+            case "CORP_TIME_DEPOSIT" -> "对公定期存款";
+            case "AGREEMENT_DEPOSIT" -> "协定存款";
+            case "NOTICE_DEPOSIT" -> "通知存款";
+            case "BILL_MARGIN", "BANK_ACCEPTANCE_MARGIN" -> "银票保证金";
+            case "CREDIT_MARGIN", "LC_MARGIN" -> "信用证保证金";
+            default -> code;
+        };
+    }
+
+    /** 期限单位(兼容存量中文「月」) */
+    private static String termUnitText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "YEAR", "Y" -> "年";
+            case "MONTH", "M", "月" -> "个月";
+            case "DAY", "D" -> "天";
+            default -> code;
+        };
+    }
+
+    /** 币种 */
+    private static String currencyText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "CNY" -> "人民币";
+            case "USD" -> "美元";
+            case "HKD" -> "港币";
+            default -> code;
+        };
+    }
+
+    /** 担保方式 */
+    private static String guaranteeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "MORTGAGE" -> "抵押";
+            case "PLEDGE" -> "质押";
+            case "GUARANTEE" -> "保证";
+            case "CREDIT" -> "信用";
+            case "BILL_MARGIN" -> "银票保证金";
+            case "CREDIT_MARGIN" -> "信用证保证金";
+            case "CERTIFICATE_DEPOSIT" -> "存单质押";
+            default -> code;
+        };
+    }
+
+    /** 贡献度指标编码→中文名(与指标字典口径一致) */
+    private static String metricText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "TOTAL" -> "综合贡献总额";
+            case "GM_LOAN_CONTRIBUTION" -> "贷款贡献";
+            case "GM_DEPOSIT_CONTRIBUTION" -> "存款贡献";
+            case "PUBLIC_DEPOSIT_AVG" -> "存款日均";
+            case "PUBLIC_LOAN_AVG" -> "流贷日均";
+            case "PUBLIC_PROJECT_LOAN_AVG" -> "贷款日均";
+            case "PUBLIC_DISCOUNT" -> "贴现利差收益";
+            case "PUBLIC_DISCOUNT_SPREAD" -> "贴现规模";
+            case "PUBLIC_INTERMEDIATE", "PUBLIC_OFF_BALANCE_INCOME" -> "对公中间业务收入";
+            case "PUBLIC_EXCHANGE" -> "汇兑利差收益";
+            case "PUBLIC_EXCHANGE_SPREAD" -> "结售汇业务总量";
+            case "PUBLIC_PAYROLL" -> "代发贡献度";
+            case "PUBLIC_PAYROLL_CONTRIBUTION" -> "代发客户数";
+            case "PUBLIC_PAYROLL_AMOUNT" -> "代发金额";
+            case "PUBLIC_WEALTH", "PUBLIC_WEALTH_INCOME" -> "对公财富中收";
+            case "PRIVATE_DEPOSIT_AVG" -> "对私存款日均";
+            case "PRIVATE_LOAN_AVG" -> "对私贷款日均";
+            case "PRIVATE_WEALTH", "PRIVATE_WEALTH_INCOME" -> "对私财富中收";
+            case "OTHER" -> "其它";
+            default -> code;
+        };
+    }
+
+    /** 承诺目标类型 */
+    private static String targetTypeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "TARGET_BALANCE" -> "目标余额";
+            case "INCREMENT" -> "承诺新增";
+            case "CUMULATIVE" -> "期间累计";
+            default -> code;
+        };
+    }
+
+    /** 承诺单位 */
+    private static String commitmentUnitText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "WAN_YUAN" -> "万元";
+            case "COUNT" -> "户/笔";
+            default -> code;
+        };
+    }
+
+    /** 指标适用范围 */
+    private static String metricScopeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "PUBLIC" -> "对公";
+            case "PRIVATE_SELF" -> "本人";
+            case "RELATED" -> "关联人";
+            case "GROUP" -> "集团";
+            case "GROUP_MEMBER" -> "集团成员";
+            default -> code;
+        };
+    }
+
+    /** 决议执行状态 */
+    private static String execStatusText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "ISSUED" -> "已签发";
+            case "CONTRACT_PENDING" -> "待签合同";
+            case "CONTRACT_BOUND" -> "已绑定合同";
+            case "EXECUTED" -> "已执行";
+            case "RECONCILE_EXCEPTION" -> "对账异常";
+            case "CLOSED" -> "已关闭";
+            case "VOID" -> "已作废";
+            default -> code;
+        };
+    }
+
+    /** 执行核验结果 */
+    private static String reconcileText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "PASS" -> "通过";
+            case "WARN" -> "预警";
+            case "FAIL", "EXCEPTION" -> "异常";
+            default -> code;
+        };
+    }
+
+    /** 企业性质 */
+    private static String customerTypeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "SOE" -> "国企";
+            case "NON_SOE" -> "非国企";
+            case "PERSONAL" -> "个人";
+            default -> code;
+        };
+    }
+
+    /** 操作人兜底中文化:六人小组计票留痕含英文结果(如「结果 PASS」),存量数据在此替换,新数据已在生成处改中文 */
+    private static String operatorText(String v) {
+        if (v == null) {
+            return null;
+        }
+        return v.replace("结果 PASS", "结果 通过").replace("结果 FAIL", "结果 未通过");
+    }
+
     /**
      * 生成只读 PDF 决议书
      *
@@ -124,6 +389,15 @@ public final class ResolutionPdfExporter {
     public static byte[] build(Map<String, Object> archive) throws IOException {
         Map<String, Object> app = map(archive.get("application"));
         Map<String, Object> customer = first(archive.get("customer"));
+        // 客户号→客户名称映射(§用户要求:决议书有客户的一律写客户名称,定价分项「定价客户」列按此转换)
+        Map<String, String> customerNameByNo = new HashMap<>();
+        for (Map<String, Object> cust : list(archive.get("customer"))) {
+            String no = pick(cust, "customerNo", "cust_no");
+            String name = pick(cust, "customerName", "cust_nm");
+            if (no != null && name != null) {
+                customerNameByNo.putIfAbsent(no, name);
+            }
+        }
         List<Map<String, Object>> items = list(archive.get("pricingItems"));
         List<Map<String, Object>> resolutions = list(archive.get("resolutions"));
         List<Map<String, Object>> actions = list(archive.get("approvalActions"));
@@ -165,7 +439,7 @@ public final class ResolutionPdfExporter {
                     {"客户号", pick(customer, "customerNo", "cust_no")},
                     {"客户类型", "CORP".equals(pick(customer, "custType")) ? "对公" : "INDIV".equals(pick(customer, "custType")) ? "个人" : pick(customer, "custType")},
                     {"证件号码", pick(customer, "certNo")},
-                    {"企业性质", pick(customer, "entpCharic")},
+                    {"企业性质", customerTypeText(pick(customer, "entpCharic"))},
                     {"企业规模", pick(customer, "entpScale")},
                     {"所属行业", pick(customer, "industry", "blgd_idsty")},
                     {"内部信用等级", pick(customer, "creditLevel")},
@@ -195,6 +469,11 @@ public final class ResolutionPdfExporter {
                     {"提交时间", pick(app, "submit_time", "submitTime")},
                     {"客户经理备注", pick(app, "application_remark", "applicationRemark")},
             });
+            Map<String, UnaryOperator<String>> itemFmt = new HashMap<>();
+            itemFmt.put("pricing_customer_no", no -> customerNameByNo.getOrDefault(no, no));
+            itemFmt.put("product_code", ResolutionPdfExporter::productText);
+            itemFmt.put("term_unit", ResolutionPdfExporter::termUnitText);
+            itemFmt.put("currency", ResolutionPdfExporter::currencyText);
             ctx.dataTable("定价分项", items, new String[][]{
                     {"分项编号", "pricing_item_no", "pricingItemNo"},
                     {"定价客户", "pricing_customer_no", "pricingCustomerNo"},
@@ -203,7 +482,7 @@ public final class ResolutionPdfExporter {
                     {"期限", "term_value", "termValue"},
                     {"期限单位", "term_unit", "termUnit"},
                     {"币种", "currency"},
-            });
+            }, itemFmt);
             ctx.gap(8);
 
             // ---- 三、利率调整 ----
@@ -215,7 +494,7 @@ public final class ResolutionPdfExporter {
                     {"申请利率(%)", "requested_rate", "requestedRate"},
                     {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
                     {"最终决议利率(%)", "final_rate", "finalRate"},
-            });
+            }, Map.of("product_code", ResolutionPdfExporter::productText));
             for (Map<String, Object> item : items) {
                 String no = pick(item, "pricing_item_no", "pricingItemNo");
                 String original = pick(item, "original_rate", "originalRate");
@@ -243,7 +522,7 @@ public final class ResolutionPdfExporter {
                         {"决策", "decision"},
                         {"意见", "opinion"},
                         {"决策时间", "decisionTime", "decision_time"},
-                });
+                }, Map.of("decision", ResolutionPdfExporter::decisionText));
             }
             if (voteResults != null && !voteResults.isEmpty()) {
                 ctx.dataTable("表决计票", voteResults, new String[][]{
@@ -251,8 +530,16 @@ public final class ResolutionPdfExporter {
                         {"否决票", "rejectCount", "reject_count"},
                         {"计票结果", "result"},
                         {"计票时间", "countTime", "count_time"},
-                });
+                }, Map.of("result", ResolutionPdfExporter::voteResultText));
             }
+            // 审批轨迹:节点按职务名(六人小组=存贷款利率与审批小组)、动作/角色中文化,操作人已有姓名(nick_name)直接展示
+            Map<String, UnaryOperator<String>> actionFmt = new HashMap<>();
+            actionFmt.put("node_code", ResolutionPdfExporter::nodeText);
+            actionFmt.put("action_type", ResolutionPdfExporter::actionText);
+            actionFmt.put("operator_role", ResolutionPdfExporter::roleText);
+            // 操作人/意见列兜底:六人小组计票串存 action_comment(如「计票:赞成 5/6,结果 PASS」),存量英文结果在此替换
+            actionFmt.put("operatorName", ResolutionPdfExporter::operatorText);
+            actionFmt.put("action_comment", ResolutionPdfExporter::operatorText);
             ctx.dataTable("审批轨迹", actions, new String[][]{
                     {"节点", "node_code", "nodeCode"},
                     {"动作", "action_type", "actionType"},
@@ -262,7 +549,7 @@ public final class ResolutionPdfExporter {
                     {"调整后利率(%)", "after_rate", "afterRate"},
                     {"意见", "action_comment", "actionComment"},
                     {"时间", "operation_time", "operationTime"},
-            });
+            }, actionFmt);
             ctx.gap(8);
 
             // ---- 五、其他信息 ----
@@ -281,9 +568,15 @@ public final class ResolutionPdfExporter {
                         }
                     }
                 }
-                ctx.para("担保方式:" + String.join("、", types), 9, 0);
+                ctx.para("担保方式:" + String.join("、",
+                        types.stream().map(ResolutionPdfExporter::guaranteeText).toList()), 9, 0);
             }
             if (commitments != null && !commitments.isEmpty()) {
+                Map<String, UnaryOperator<String>> commitmentFmt = new HashMap<>();
+                commitmentFmt.put("metricCode", ResolutionPdfExporter::metricText);
+                commitmentFmt.put("targetType", ResolutionPdfExporter::targetTypeText);
+                commitmentFmt.put("unit", ResolutionPdfExporter::commitmentUnitText);
+                commitmentFmt.put("metricScope", ResolutionPdfExporter::metricScopeText);
                 ctx.dataTable("拟达成贡献度承诺", commitments, new String[][]{
                         {"指标", "metricCode", "metric_code"},
                         {"目标类型", "targetType", "target_type"},
@@ -292,7 +585,7 @@ public final class ResolutionPdfExporter {
                         {"单位", "unit"},
                         {"范围", "metricScope", "metric_scope"},
                         {"截止日期", "endDate", "end_date"},
-                });
+                }, commitmentFmt);
             }
             if (execs != null && !execs.isEmpty()) {
                 ctx.dataTable("决议执行核验", execs, new String[][]{
@@ -302,7 +595,8 @@ public final class ResolutionPdfExporter {
                         {"执行状态", "executionStatus", "execution_status"},
                         {"核验结果", "reconcileResult", "reconcile_result"},
                         {"核验时间", "reconcileTime", "reconcile_time"},
-                });
+                }, Map.of("executionStatus", ResolutionPdfExporter::execStatusText,
+                        "reconcileResult", ResolutionPdfExporter::reconcileText));
             }
             ctx.gap(12);
 
@@ -423,6 +717,15 @@ public final class ResolutionPdfExporter {
 
         /** 数据表: 表头浅灰底纹黑体,数据仿宋 */
         private void dataTable(String title, List<Map<String, Object>> rows, String[][] cols) throws IOException {
+            dataTable(title, rows, cols, null);
+        }
+
+        /**
+         * 数据表(可带列中文格式化):fmt 按「第一字段名」映射编码→中文(决议书全部中文要求),
+         * 未配置的列原样展示;fmt 为 null 时与三参版本行为一致。
+         */
+        private void dataTable(String title, List<Map<String, Object>> rows, String[][] cols,
+                               Map<String, UnaryOperator<String>> fmt) throws IOException {
             if (rows == null || rows.isEmpty()) {
                 return;
             }
@@ -439,7 +742,14 @@ public final class ResolutionPdfExporter {
                 for (int c = 0; c < cols.length; c++) {
                     String[] keys = new String[cols[c].length - 1];
                     System.arraycopy(cols[c], 1, keys, 0, keys.length);
-                    grid[r + 1][c] = pick(data, keys);
+                    String v = pick(data, keys);
+                    if (fmt != null) {
+                        UnaryOperator<String> fn = fmt.get(cols[c][1]);
+                        if (fn != null) {
+                            v = fn.apply(v);
+                        }
+                    }
+                    grid[r + 1][c] = v;
                 }
             }
             float[] w = new float[cols.length];
