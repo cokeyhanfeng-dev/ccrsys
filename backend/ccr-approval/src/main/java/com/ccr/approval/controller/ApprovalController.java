@@ -669,13 +669,20 @@ public class ApprovalController {
         // 六人小组节点:返回当前表决轮次匿名汇总 + 登录人本人票(审批页内联同意/否决 + 链路进度)
         result.put("voteRound", buildVoteRound(pricingItemId));
 
-        // 表决汇总(行长/审计/超管可见,§12.7/T4-02/T4-10):按申请返回全部分项计票结果(voteResults),
+        // 表决汇总(行长/审计/超管可见,§12.7/T4-02/T4-10):按申请返回轮次/分项计票/行长决策结果,
         // 供行长决策页展示六人表决结果并按轮次加载匿名审批意见;其余角色不返回,保持委员匿名。
+        // 与 ApprovalServiceImpl(历史/档案详情)三字段口径一致:voteRounds 轮次列表 + voteResults 分项计票 + presidentDecisions 行长决策。
         try {
             String roleCode = appLoginUser.requireCurrentUser().getRoleCode();
             if (AppLoginUser.ROLE_PRESIDENT.equals(roleCode)
                     || AppLoginUser.ROLE_AUDITOR.equals(roleCode)
                     || AppLoginUser.ROLE_ADMIN.equals(roleCode)) {
+                result.put("voteRounds", jdbcTemplate.queryForList(
+                        "SELECT id, round_no roundNo, round_name roundName, status,"
+                                + " voter_count voterCount, required_count requiredCount,"
+                                + " round_start_time roundStartTime, round_end_time roundEndTime"
+                                + " FROM ccr_vote_round WHERE application_id = ? AND del_flag = '0' ORDER BY round_no",
+                        appId));
                 result.put("voteResults", jdbcTemplate.queryForList(
                         "SELECT vr.round_id roundId, vr.pricing_item_id pricingItemId,"
                                 + " vr.approve_count approveCount, vr.reject_count rejectCount,"
@@ -683,6 +690,11 @@ public class ApprovalController {
                                 + " vr.result, vr.count_time countTime"
                                 + " FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
                                 + " WHERE pi.application_id = ? AND vr.del_flag = '0'",
+                        appId));
+                result.put("presidentDecisions", jdbcTemplate.queryForList(
+                        "SELECT pd.pricing_item_id pricingItemId, pd.decision, pd.opinion, pd.decision_time decisionTime"
+                                + " FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
+                                + " WHERE pi.application_id = ? AND pd.del_flag = '0'",
                         appId));
             }
         } catch (Exception ignored) {
