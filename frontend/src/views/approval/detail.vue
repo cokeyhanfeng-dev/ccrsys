@@ -81,7 +81,7 @@
           <div><span class="dg-label">客户类型</span>对公</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
           <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
-          <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ customer.entpScale }}</div>
+          <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
           <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
@@ -102,10 +102,10 @@
           <div><span class="dg-label">客户类型</span>个人</div>
           <div v-if="customer.certType || customer.certNo"><span class="dg-label">证件类型</span>{{ certTypeText(customer.certType) }}</div>
           <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.gender"><span class="dg-label">性别</span>{{ customer.gender }}</div>
+          <div v-if="customer.gender"><span class="dg-label">性别</span>{{ genderText(customer.gender) }}</div>
           <div v-if="customer.occupation"><span class="dg-label">职业</span>{{ customer.occupation }}</div>
           <div v-if="customer.annualIncome != null"><span class="dg-label">年收入(万元)</span>{{ customer.annualIncome }}</div>
-          <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ customer.maritalStatus }}</div>
+          <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
           <div v-if="customer.address"><span class="dg-label">居住地址</span>{{ customer.address }}</div>
           <div v-if="customer.phone"><span class="dg-label">联系电话</span>{{ customer.phone }}</div>
           <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
@@ -174,7 +174,7 @@
               <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
             </td>
             <td>{{ agreementTypeText(a.agreementType) }}</td>
-            <td>{{ a.currency || 'CNY' }}</td>
+            <td>{{ currencyText(a.currency || 'CNY') }}</td>
             <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
             <td>{{ a.startDate || '—' }}</td>
             <td>{{ a.endDate || '—' }}</td>
@@ -199,7 +199,7 @@
             <td class="num">{{ f.contractAmount ?? '—' }}</td>
             <td class="num">{{ f.loanBalance ?? '—' }}</td>
             <td class="num">{{ fmtRate(f.contractRate) }}</td>
-            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${f.lprTerm}` : '' }}</td>
+            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${termTierText(f.lprTerm)}` : '' }}</td>
             <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
             <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
             <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
@@ -271,7 +271,7 @@
             <td>{{ r.certNo || '—' }}</td>
             <td>{{ relationTypeText(r.relationType) }}</td>
             <td>{{ r.relatedCustomerNo || '—' }}</td>
-            <td v-if="r.custType === 'CORP'">{{ r.entpCharic || '—' }}</td>
+            <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
             <td v-else>—</td>
             <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
             <td v-else>—</td>
@@ -298,7 +298,7 @@
               <td>{{ r.relatedCustomerNo }}</td>
               <td>{{ relationTypeText(r.relationType) }}</td>
               <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
-              <td v-if="r.custType === 'CORP'">{{ r.entpCharic || '—' }}</td>
+              <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
               <td v-else>—</td>
@@ -455,7 +455,7 @@
           <tr v-for="(r, i) in resolutions" :key="i">
             <td>{{ r.resolutionNo || '—' }}</td>
             <td class="num">{{ fmtRate(r.finalRate) }}</td>
-            <td>{{ r.decisionSource || '—' }}</td>
+            <td>{{ decisionSourceText(r.decisionSource || '—') }}</td>
             <td>{{ fmtDate(r.issueTime) }}</td>
             <td><span class="badge" :class="resolutionStatusBadge(r.status)">{{ execStatusText(r.status) }}</span></td>
           </tr>
@@ -815,7 +815,7 @@
               <td>{{ n.loanNoteNo || '—' }}</td>
               <td class="num">{{ n.loanBalance ?? '—' }}</td>
               <td class="num">{{ n.executionRate != null ? `${n.executionRate}%` : '—' }}</td>
-              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${n.lprTerm}` : '' }}</td>
+              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${termTierText(n.lprTerm)}` : '' }}</td>
               <td>{{ n.startDate || '—' }}</td>
               <td>{{ n.maturityDate || '—' }}</td>
               <td><span class="badge" :class="n.noteStatus === 'NORMAL' ? 'badge--success' : n.noteStatus === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'">{{ noteStatusText(n.noteStatus) }}</span></td>
@@ -847,7 +847,8 @@ import {
   execStatusText, roundStatusText, evalResultText, ruleLevelText, voteChoiceText,
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
-  customerClassText, certTypeText, contractStatusText, currencyText
+  customerClassText, certTypeText, contractStatusText, currencyText,
+  entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -1070,10 +1071,6 @@ const groupContributionText = computed(() => {
   return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
 })
 
-// P1-2:借据状态文案(数仓 note_status)
-function noteStatusText(code?: string) {
-  return code === 'NORMAL' ? '正常' : code === 'SETTLED' ? '已结清' : code === 'OVERDUE' ? '逾期' : (code || '—')
-}
 
 // 本行融资合同状态徽标(数仓 contract_status)
 function contractStatusBadge(s?: string) {

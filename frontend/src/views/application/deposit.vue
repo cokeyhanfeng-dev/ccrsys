@@ -174,7 +174,7 @@
           <div class="form-field">
             <label class="form-field__label">币种</label>
             <select class="form-select" v-model="d.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
             </select>
           </div>
         </div>
@@ -283,7 +283,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()

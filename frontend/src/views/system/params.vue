@@ -189,7 +189,7 @@
               <td>{{ p.businessBigType === 'LOAN' ? '贷款' : '存款' }}</td>
               <td>{{ p.productCategory || '—' }}</td>
               <td>{{ p.customerType ? productCustomerTypeText(p.customerType) : '—' }}</td>
-              <td>{{ p.currency || 'CNY' }}</td>
+              <td>{{ currencyText(p.currency || 'CNY') }}</td>
               <td class="num">{{ p.defaultMinRate != null || p.defaultMaxRate != null ? `${p.defaultMinRate ?? '—'} ~ ${p.defaultMaxRate ?? '—'}` : '—' }}</td>
               <td class="num">{{ p.defaultMinTermMonths != null || p.defaultMaxTermMonths != null ? `${p.defaultMinTermMonths ?? '—'} ~ ${p.defaultMaxTermMonths ?? '—'}` : '—' }}</td>
               <td>{{ fmtTime(p.effectiveDate) }}</td>
@@ -1422,7 +1422,7 @@ import { useMetricDict } from '@/store/metricDict'
 import {
   configStatusText, configActionText, configTypeText, businessBigTypeText,
   nodeLabel, customerTypeText, amountTierText, termTierText, rateDirectionText,
-  businessTypeText, productName
+  businessTypeText, productName, currencyText
 } from '@/utils/dict'
 import {
   listTrackingPolicies, createTrackingPolicy, createPolicyVersion,

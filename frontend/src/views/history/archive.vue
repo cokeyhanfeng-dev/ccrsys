@@ -59,7 +59,7 @@
           <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ customer.certNo || '—' }}</div>
           <div v-if="isIndivCustomer" class="desc-item"><span class="desc-label">证件号码</span>{{ customer.certNo || '—' }}</div>
           <div v-if="customer.entpCharic" class="desc-item"><span class="desc-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
-          <div v-if="customer.entpScale" class="desc-item"><span class="desc-label">企业规模</span>{{ customer.entpScale }}</div>
+          <div v-if="customer.entpScale" class="desc-item"><span class="desc-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry" class="desc-item"><span class="desc-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel" class="desc-item"><span class="desc-label">内部信用等级</span>{{ customer.creditLevel }}</div>
           <div v-if="customer.fiveLevelClass" class="desc-item"><span class="desc-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
@@ -70,7 +70,7 @@
           <div v-if="customer.restAddr" class="desc-item"><span class="desc-label">注册地址</span>{{ customer.restAddr }}</div>
           <div v-if="customer.occupation" class="desc-item"><span class="desc-label">职业</span>{{ customer.occupation }}</div>
           <div v-if="customer.annualIncome != null" class="desc-item"><span class="desc-label">年收入(万元)</span>{{ customer.annualIncome }}</div>
-          <div v-if="customer.maritalStatus" class="desc-item"><span class="desc-label">婚姻状况</span>{{ customer.maritalStatus }}</div>
+          <div v-if="customer.maritalStatus" class="desc-item"><span class="desc-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
           <div v-if="customer.address" class="desc-item"><span class="desc-label">居住地址</span>{{ customer.address }}</div>
           <div v-if="customer.phone" class="desc-item"><span class="desc-label">联系电话</span>{{ customer.phone }}</div>
           <div v-if="customer.openOrgName" class="desc-item"><span class="desc-label">开户机构</span>{{ customer.openOrgName }}</div>
@@ -102,7 +102,7 @@
           <div class="desc-item"><span class="desc-label">已用额度</span>{{ groupCredit[0].usedAmount ?? '—' }}</div>
           <div class="desc-item"><span class="desc-label">可用额度</span>{{ groupCredit[0].availableAmount ?? '—' }}</div>
           <div class="desc-item"><span class="desc-label">授信到期日</span>{{ groupCredit[0].creditEnd || '—' }}</div>
-          <div class="desc-item"><span class="desc-label">授信状态</span>{{ groupCredit[0].creditStatus || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">授信状态</span>{{ creditStatusText(groupCredit[0].creditStatus || '—') }}</div>
           <div class="desc-item"><span class="desc-label">集团贡献度</span>{{ groupContributionText }}</div>
         </div>
       </div>
@@ -119,7 +119,7 @@
                 <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
               </td>
               <td>{{ agreementTypeText(a.agreementType) }}</td>
-              <td>{{ a.currency || 'CNY' }}</td>
+              <td>{{ currencyText(a.currency || 'CNY') }}</td>
               <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
               <td>{{ a.startDate || '—' }}</td>
               <td>{{ a.endDate || '—' }}</td>
@@ -144,7 +144,7 @@
               <td class="num">{{ f.contractAmount ?? '—' }}</td>
               <td class="num">{{ f.loanBalance ?? '—' }}</td>
               <td class="num">{{ rateText(f.contractRate) }}</td>
-              <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${f.lprTerm}` : '' }}</td>
+              <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${termTierText(f.lprTerm)}` : '' }}</td>
               <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
               <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
               <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
@@ -344,7 +344,7 @@
               <td>{{ val(r, 'certNo') }}</td>
               <td>{{ relationTypeText(val(r, 'relationType')) }}</td>
               <td>{{ val(r, 'relatedCustomerNo') }}</td>
-              <td v-if="r.custType === 'CORP'">{{ val(r, 'entpCharic') }}</td>
+              <td v-if="r.custType === 'CORP'">{{ customerTypeText(val(r, 'entpCharic')) }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ val(r, 'industry') }}</td>
               <td v-else>—</td>
@@ -371,7 +371,7 @@
           <tbody>
             <tr v-for="b in archive.snapshotBundles" :key="val(b, 'id')">
               <td>{{ val(b, 'bundleNo', 'bundle_no') }}</td>
-              <td>{{ val(b, 'status') }}</td>
+              <td>{{ snapshotStatusText(val(b, 'status')) }}</td>
               <td>{{ fmtTime(val(b, 'freezeTime', 'freeze_time')) }}</td>
               <td class="num">{{ val(b, 'recordCount', 'record_count') }}</td>
               <td class="hash-cell">{{ val(b, 'bundleHash', 'bundle_hash') }}</td>
@@ -391,9 +391,9 @@
           <thead><tr><th>校验规则</th><th>级别</th><th>对象</th><th>提示</th><th>校验时间</th></tr></thead>
           <tbody>
             <tr v-for="(q, i) in archive.qualityResults" :key="i">
-              <td>{{ val(q, 'ruleCode', 'rule_code') }}</td>
+              <td>{{ ruleCodeText(val(q, 'ruleCode', 'rule_code')) }}</td>
               <td><span class="badge" :class="ruleLevelBadge(val(q, 'ruleLevel', 'rule_level'))">{{ ruleLevelText(val(q, 'ruleLevel', 'rule_level')) }}</span></td>
-              <td>{{ val(q, 'subjectType', 'subject_type') }} · {{ val(q, 'subjectId', 'subject_id') }}</td>
+              <td>{{ subjectTypeText(val(q, 'subjectType', 'subject_type')) }} · {{ val(q, 'subjectId', 'subject_id') }}</td>
               <td>{{ val(q, 'message') }}</td>
               <td>{{ fmtTime(val(q, 'checkedTime', 'checked_time')) }}</td>
             </tr>
@@ -478,7 +478,7 @@
             <tr v-for="(r, i) in archive.resolutions" :key="i">
               <td>{{ val(r, 'resolutionNo', 'resolution_no') }}</td>
               <td class="num"><b>{{ rateText(val(r, 'finalRate', 'final_rate')) }}</b></td>
-              <td>{{ val(r, 'decisionSource', 'decision_source') }}</td>
+              <td>{{ decisionSourceText(val(r, 'decisionSource', 'decision_source')) }}</td>
               <td>{{ fmtDate(val(r, 'issueTime', 'issue_time')) }}</td>
               <td><span class="badge" :class="resolutionStatusBadge(val(r, 'status'))">{{ execStatusText(val(r, 'status')) }}</span></td>
             </tr>
@@ -558,7 +558,8 @@ import {
   roundStatusText, execStatusText, ruleLevelText,
   evalResultText, planStatusText,
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText
+  rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
+  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge
 } from '@/utils/dict'
 
 const route = useRoute()
@@ -709,13 +710,6 @@ function actionBadge(a: any) {
     ADJUST: 'badge badge--warning', RETURN: 'badge badge--warning'
   }
   return map[a] || 'badge badge--info'
-}
-// 借据状态(数仓 note_status):正常/逾期/已结清
-function noteStatusText(code?: any) {
-  return code === 'NORMAL' ? '正常' : code === 'SETTLED' ? '已结清' : code === 'OVERDUE' ? '逾期' : (code || '—')
-}
-function noteStatusBadge(s?: any) {
-  return s === 'NORMAL' ? 'badge--success' : s === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 // 校验级别徽标(简式,配合 <span class="badge">)
 function ruleLevelBadge(l?: any) {

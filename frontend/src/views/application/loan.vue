@@ -91,7 +91,7 @@
         </div>
         <div v-if="groupInfo" class="group-summary">
           <div class="group-summary__item"><span>集团名称</span><b>{{ groupInfo.groupName || '暂无数据' }}</b></div>
-          <div class="group-summary__item"><span>集团状态</span><b>{{ groupInfo.groupStatus === 'NORMAL' ? '正常' : (groupInfo.groupStatus || '暂无数据') }}</b></div>
+          <div class="group-summary__item"><span>集团状态</span><b>{{ groupStatusText(groupInfo.groupStatus) }}</b></div>
           <div class="group-summary__item"><span>授信总额(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>已分配额度(万元)</span><b>{{ groupAllocatedTotal ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
@@ -130,7 +130,7 @@
                     :value="memberInput(m.memberCustomerNo)?.currency || 'CNY'"
                     @change="setMemberField(m.memberCustomerNo, 'currency', ($event.target as HTMLSelectElement).value)"
                   >
-                    <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+                    <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
                   </select>
                 </td>
               </tr>
@@ -194,7 +194,13 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">婚姻状况</label>
-            <input class="form-input" v-model="form.maritalStatus" placeholder="数仓带出,可修改" />
+            <select class="form-select" v-model="form.maritalStatus">
+              <option value="" disabled>选择婚姻状况</option>
+              <option value="MARRIED">已婚</option>
+              <option value="SINGLE">未婚</option>
+              <option value="DIVORCED">离异</option>
+              <option value="WIDOWED">丧偶</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">联系电话</label>
@@ -347,15 +353,25 @@
           <div class="credit-overview__item credit-overview__item--static"><span>授信协议号</span><b>{{ form.creditInfo.agreementNo }}</b></div>
           <div class="credit-overview__item">
             <span>授信类型</span>
-            <input class="form-input" v-model="form.creditInfo.agreementType" placeholder="可修正" />
+            <select class="form-select" v-model="form.creditInfo.agreementType">
+              <option value="" disabled>选择授信类型</option>
+              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>币种</span>
-            <input class="form-input" v-model="form.creditInfo.currency" placeholder="CNY" />
+            <select class="form-select" v-model="form.creditInfo.currency">
+              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>协议状态</span>
-            <input class="form-input" v-model="form.creditInfo.agreementStatus" placeholder="可修正" />
+            <select class="form-select" v-model="form.creditInfo.agreementStatus">
+              <option value="" disabled>选择协议状态</option>
+              <option value="EFFECTIVE">有效</option>
+              <option value="EXPIRED">已到期</option>
+              <option value="CLOSED">已终止</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>授信额度(万元)</span>
@@ -386,15 +402,25 @@
           </div>
           <div class="credit-overview__item">
             <span>授信类型</span>
-            <input class="form-input" v-model="form.creditInfo.agreementType" placeholder="手工录入" />
+            <select class="form-select" v-model="form.creditInfo.agreementType">
+              <option value="" disabled>选择授信类型</option>
+              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>币种</span>
-            <input class="form-input" v-model="form.creditInfo.currency" placeholder="CNY" />
+            <select class="form-select" v-model="form.creditInfo.currency">
+              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>协议状态</span>
-            <input class="form-input" v-model="form.creditInfo.agreementStatus" placeholder="可空" />
+            <select class="form-select" v-model="form.creditInfo.agreementStatus">
+              <option value="" disabled>选择协议状态</option>
+              <option value="EFFECTIVE">有效</option>
+              <option value="EXPIRED">已到期</option>
+              <option value="CLOSED">已终止</option>
+            </select>
           </div>
           <div class="credit-overview__item">
             <span>授信额度(万元)</span>
@@ -523,7 +549,7 @@
           <div class="form-field">
             <label class="form-field__label">币种</label>
             <select class="form-select" v-model="g.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
             </select>
           </div>
         </div>
@@ -859,7 +885,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
-  AGREEMENT_TYPES, certTypeText
+  AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1074,7 +1100,7 @@ async function loadCustomerDetail() {
     form.idNo = basic.certNo || ''
     form.occupation = basic.occupation || ''
     form.annualIncome = basic.annualIncome || ''
-    form.maritalStatus = basic.maritalStatus || ''
+    form.maritalStatus = maritalStatusCode(basic.maritalStatus)
     form.phone = basic.phone || ''
     form.customerNature = basic.customerClass === 'EXISTING' ? 'EXISTING' : 'NEW'
     // 企业性质带出(数仓 entp_charic 仅 SOE 判国企,其余非国企,与后端 resolveCustomerType 同口径)
@@ -1913,7 +1939,7 @@ async function loadDraftIntoForm(id: number | string) {
   form.idNo = custInfo?.idNo || ''
   form.occupation = custInfo?.occupation || ''
   form.annualIncome = custInfo?.annualIncome || ''
-  form.maritalStatus = custInfo?.maritalStatus || ''
+  form.maritalStatus = maritalStatusCode(custInfo?.maritalStatus)
   form.phone = custInfo?.phone || ''
   form.openOrg = custInfo?.openOrg || ''
   form.openDate = custInfo?.openDate || ''

@@ -29,11 +29,11 @@
       />
       <div class="query-bar">
         <div class="query-field">
-          <label class="query-label">表决批次(roundId)</label>
+          <label class="query-label">表决批次</label>
           <el-input v-model="ballotQuery.roundId" placeholder="表决批次主键" clearable class="query-input" />
         </div>
         <div class="query-field">
-          <label class="query-label">分项(pricingItemId)</label>
+          <label class="query-label">分项主键</label>
           <el-input v-model="ballotQuery.pricingItemId" placeholder="分项主键" clearable class="query-input" />
         </div>
         <button class="btn btn--primary" :disabled="ballotLoading" @click="queryBallot">

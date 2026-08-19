@@ -17,7 +17,7 @@
           </thead>
           <tbody>
             <tr v-for="(row, i) in batches" :key="row.table || i">
-              <td>{{ row.table || '—' }}</td>
+              <td>{{ datasetName(row.table) }}</td>
               <td>{{ row.sourceName || '—' }}</td>
               <td>{{ fmtDate(row.latestDataDt) }}</td>
               <td class="num">{{ row.batchRows ?? '—' }}</td>
@@ -41,7 +41,7 @@
             <span class="source-dot" :class="isStale(row.status) ? 'source-dot--stale' : 'source-dot--ok'"></span>
             <div class="source-item__body">
               <div class="source-item__name">
-                {{ row.sourceName || row.table || '—' }}
+                {{ row.sourceName || datasetName(row.table) }}
                 <span :class="isStale(row.status) ? 'badge badge--danger' : 'badge badge--success'">
                   {{ isStale(row.status) ? '已过期' : '正常' }}
                 </span>
@@ -65,6 +65,7 @@ import {
   type BatchLandingRow,
   type SourceStatusRow
 } from '@/api/datacenter'
+import { datasetName } from '@/utils/dict'
 
 const batches = ref<BatchLandingRow[]>([])
 const sources = ref<SourceStatusRow[]>([])
