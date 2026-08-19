@@ -117,45 +117,57 @@ public class AuditController {
 
     /**
      * 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;auditor/admin)。
-     * 可按 日志类型/操作人/时间范围/关键词 过滤,时间倒序,上限 500。
+     * 可按 日志类型/操作人/时间范围/关键词 过滤,时间倒序;分页返回 {total, records},单页上限 100。
      */
     @GetMapping("/logs")
-    public R<List<Map<String, Object>>> logs(@RequestParam(required = false) String logType,
-                                             @RequestParam(required = false) String operator,
-                                             @RequestParam(required = false) String startTime,
-                                             @RequestParam(required = false) String endTime,
-                                             @RequestParam(required = false) String keyword) {
+    public R<Map<String, Object>> logs(@RequestParam(required = false) String logType,
+                                       @RequestParam(required = false) String operator,
+                                       @RequestParam(required = false) String startTime,
+                                       @RequestParam(required = false) String endTime,
+                                       @RequestParam(required = false) String keyword,
+                                       @RequestParam(defaultValue = "1") int pageNum,
+                                       @RequestParam(defaultValue = "20") int pageSize) {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR, CurrentLoginUser.ROLE_ADMIN);
-        StringBuilder sql = new StringBuilder("""
-                SELECT log_type logType, biz_id bizId, content, operator_id operatorId,
-                       operator_name operatorName, operate_time operateTime
-                FROM ccr_audit_log
-                WHERE del_flag = '0'
-                """);
+        StringBuilder where = new StringBuilder(" WHERE del_flag = '0'");
         List<Object> args = new ArrayList<>();
         if (StrUtil.isNotBlank(logType)) {
-            sql.append(" AND log_type = ?");
+            where.append(" AND log_type = ?");
             args.add(logType);
         }
         if (StrUtil.isNotBlank(operator)) {
-            sql.append(" AND operator_name LIKE ?");
+            where.append(" AND operator_name LIKE ?");
             args.add("%" + operator + "%");
         }
         if (StrUtil.isNotBlank(startTime)) {
-            sql.append(" AND operate_time >= ?");
+            where.append(" AND operate_time >= ?");
             args.add(startTime);
         }
         if (StrUtil.isNotBlank(endTime)) {
-            sql.append(" AND operate_time <= ?");
+            where.append(" AND operate_time <= ?");
             args.add(endTime);
         }
         if (StrUtil.isNotBlank(keyword)) {
-            sql.append(" AND (biz_id LIKE ? OR content LIKE ?)");
+            where.append(" AND (biz_id LIKE ? OR content LIKE ?)");
             args.add("%" + keyword + "%");
             args.add("%" + keyword + "%");
         }
-        sql.append(" ORDER BY operate_time DESC LIMIT 500");
-        return R.ok(jdbcTemplate.queryForList(sql.toString(), args.toArray()));
+        int page = Math.max(pageNum, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_audit_log" + where, Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size);
+        pageArgs.add((page - 1) * size);
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                """
+                        SELECT log_type logType, biz_id bizId, content, operator_id operatorId,
+                               operator_name operatorName, operate_time operateTime
+                        FROM ccr_audit_log""" + where + " ORDER BY operate_time DESC LIMIT ? OFFSET ?",
+                pageArgs.toArray());
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", total == null ? 0L : total);
+        data.put("records", records);
+        return R.ok(data);
     }
 
     /** 审计留痕;表不存在(未执行 03f)时仅记日志,不阻断查询 */

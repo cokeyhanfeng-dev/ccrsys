@@ -25,11 +25,13 @@ export const listExportRecords = () => get<any[]>('/ccr/audit/export-records')
 export const listConfigChangeLog = (params?: { configType?: string; configId?: number }) =>
   get<any[]>('/system/flow/thresholds/change-log', params || {})
 
-/** 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;可按类型/操作人/时间/关键词过滤) */
+/** 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;可按类型/操作人/时间/关键词过滤,分页) */
 export const listAuditLogs = (params?: {
   logType?: string
   operator?: string
   startTime?: string
   endTime?: string
   keyword?: string
-}) => get<any[]>('/ccr/audit/logs', params || {})
+  pageNum?: number
+  pageSize?: number
+}) => get<{ total: number; records: any[] }>('/ccr/audit/logs', params || {})
