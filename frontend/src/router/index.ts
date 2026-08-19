@@ -128,6 +128,13 @@ const routes: RouteRecordRaw[] = [
         name: 'SysCache',
         component: () => import('@/views/system/cache.vue'),
         meta: { title: '缓存配置', roles: ['admin'] }
+      },
+      {
+        // 手工集团主数据(数仓未统计集团/成员手动补录 + 批复总额度,合并查询用;仅 admin)
+        path: 'system/group',
+        name: 'SysGroup',
+        component: () => import('@/views/system/group.vue'),
+        meta: { title: '集团管理', roles: ['admin'] }
       }
     ]
   },

@@ -289,3 +289,36 @@ export const updateMetricDefinition = (id: number, data: object) => put(`/system
 // 启停为 query 参数(后端 @RequestParam)
 export const changeMetricStatus = (id: number, status: string) =>
   post(`/system/metric-definitions/${id}/status?status=${encodeURIComponent(status)}`)
+
+// ---------- 手工集团主数据(系统级;数仓未统计集团/成员手动补录,合并查询用;仅 admin) ----------
+export interface ManualGroup {
+  id?: number
+  groupNo: string
+  groupName: string
+  groupType?: string
+  managerOrgId?: number | ''
+  groupStatus?: string
+  approvedTotalAmount: number | string
+  currency?: string
+  remark?: string
+  createTime?: string
+}
+export interface ManualGroupMember {
+  id?: number
+  groupNo?: string
+  memberCustomerNo: string
+  memberName: string
+  memberRole?: string // CORE/GENERAL
+  controlRelation?: string
+  relationStart?: string
+  relationEnd?: string
+}
+export const listManualGroups = (params: { keyword?: string; pageNum?: number; pageSize?: number }) =>
+  get<{ total: number; records: ManualGroup[] }>('/system/manual-group/page', params)
+export const getManualGroupDetail = (groupNo: string) =>
+  get<{ group: ManualGroup; members: ManualGroupMember[] }>(`/system/manual-group/${groupNo}`)
+export const saveManualGroup = (data: object) => post<ManualGroup>('/system/manual-group', data)
+export const deleteManualGroup = (groupNo: string) => post(`/system/manual-group/${groupNo}/delete`)
+export const saveManualGroupMembers = (groupNo: string, members: ManualGroupMember[]) =>
+  post(`/system/manual-group/${groupNo}/members`, members)
+export const deleteManualGroupMember = (id: number) => post(`/system/manual-group/member/${id}/delete`)

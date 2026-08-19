@@ -9,6 +9,8 @@ import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrApplicationRelation;
+import com.ccr.application.domain.CcrGroup;
+import com.ccr.application.domain.CcrGroupMember;
 import com.ccr.application.domain.CcrGuaranteeMeasure;
 import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
@@ -34,6 +36,7 @@ import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.ApplicationSubmitService;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
@@ -113,6 +116,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private CcrApplicationCommitmentMapper commitmentMapper;
     @Resource
     private DataWarehouseService dataWarehouseService;
+    @Resource
+    private ManualGroupService manualGroupService;
     @Resource
     private SnapshotGateway snapshotGateway;
     @Resource
@@ -259,20 +264,20 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         List<SubmitCheckResponse.QualityPrecheckItem> items = new ArrayList<>();
         boolean groupScope = "GROUP".equals(app.getCustomerScope());
         if (groupScope) {
-            if (dataWarehouseService.findGroup(app.getGroupNo()) == null) {
-                items.add(precheckItem("SUBJECT_EXISTS", "BLOCK", app.getGroupNo(), "集团主数据快照缺失"));
+            // 集团主数据:数仓优先,手工集团(ccr_group)回退
+            if (!groupExists(app.getGroupNo())) {
+                items.add(precheckItem("SUBJECT_EXISTS", "BLOCK", app.getGroupNo(), "集团主数据缺失(数仓与手工集团均无)"));
             }
-            if (dataWarehouseService.findGroupCredit(app.getGroupNo()) == null) {
-                items.add(precheckItem("GROUP_CREDIT_EXISTS", "BLOCK", app.getGroupNo(), "集团授信快照缺失"));
+            // 授信/批复总额度:数仓授信快照优先,手工集团回退补录批复总额度
+            if (mergedApprovedTotal(app.getGroupNo()) == null) {
+                items.add(precheckItem("GROUP_CREDIT_EXISTS", "BLOCK", app.getGroupNo(),
+                        "集团授信快照缺失(手工集团请先补录批复总额度)"));
             }
-            List<Map<String, Object>> dwMembers = dataWarehouseService.groupMembers(app.getGroupNo());
-            Map<String, Map<String, Object>> dwMemberMap = new HashMap<>();
-            for (Map<String, Object> row : dwMembers) {
-                dwMemberMap.put(String.valueOf(row.get("member_customer_no")), row);
-            }
+            // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行
+            Map<String, Map<String, Object>> dwMemberMap = dwMemberMap(app.getGroupNo());
+            Map<String, CcrGroupMember> manualMemberMap = manualMemberMap(app.getGroupNo());
             for (CcrApplicationMember member : applicationMembers(app.getId())) {
-                Map<String, Object> dwMember = dwMemberMap.get(member.getMemberCustomerNo());
-                if (dwMember == null || !memberInGroup(dwMember)) {
+                if (!memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
                     items.add(precheckItem("GROUP_MEMBER_VALID", "BLOCK", member.getMemberCustomerNo(),
                             "涉及成员不在集团有效成员快照中"));
                 }
@@ -619,27 +624,30 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         if (!"GROUP".equals(app.getCustomerScope())) {
             return null;
         }
-        if (dataWarehouseService.findGroup(app.getGroupNo()) == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团[" + app.getGroupNo() + "]主数据快照不存在");
+        if (!groupExists(app.getGroupNo())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "集团[" + app.getGroupNo() + "]主数据不存在(数仓与手工集团均无)");
         }
         Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
-        if (credit == null) {
+        // 批复总额度:数仓授信快照优先,手工集团回退补录值(路由定档/额度勾稽基准)
+        BigDecimal approvedTotal = mergedApprovedTotal(app.getGroupNo());
+        if (approvedTotal == null) {
             throw new ServiceException(ErrorCode.LIMIT_INCONSISTENT.getCode(),
-                    "集团[" + app.getGroupNo() + "]授信快照不存在");
+                    "集团[" + app.getGroupNo() + "]授信快照不存在且未补录批复总额度");
         }
-        Map<String, Map<String, Object>> dwMemberMap = new HashMap<>();
-        for (Map<String, Object> row : dataWarehouseService.groupMembers(app.getGroupNo())) {
-            dwMemberMap.put(String.valueOf(row.get("member_customer_no")), row);
-        }
+        // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行
+        Map<String, Map<String, Object>> dwMemberMap = dwMemberMap(app.getGroupNo());
+        Map<String, CcrGroupMember> manualMemberMap = manualMemberMap(app.getGroupNo());
         for (CcrApplicationMember member : applicationMembers(app.getId())) {
-            Map<String, Object> dwMember = dwMemberMap.get(member.getMemberCustomerNo());
-            if (dwMember == null || !memberInGroup(dwMember)) {
+            if (!memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "成员[" + member.getMemberCustomerNo() + "]不在集团有效成员快照中");
             }
         }
-        // 额度勾稽:EXCLUSIVE 加总 + SHARED 按共享组取最大一条,不得超过批复总额度
-        List<Map<String, Object>> limits = dataWarehouseService.memberLimitsByGroup(String.valueOf(credit.get("group_credit_no")));
+        // 额度勾稽:数仓成员额度(EXCLUSIVE 加总 + SHARED 按共享组取最大一条)
+        //        + 手工成员本次申请金额合计 ≤ 批复总额度
+        List<Map<String, Object>> limits = credit == null ? new ArrayList<>()
+                : dataWarehouseService.memberLimitsByGroup(String.valueOf(credit.get("group_credit_no")));
         BigDecimal allocatedSum = BigDecimal.ZERO;
         Map<String, BigDecimal> sharedGroups = new HashMap<>();
         for (Map<String, Object> limit : limits) {
@@ -654,10 +662,16 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (BigDecimal shared : sharedGroups.values()) {
             allocatedSum = allocatedSum.add(shared);
         }
-        BigDecimal approvedTotal = toBigDecimal(credit.get("approved_total_amount"));
+        // 手工成员(不在数仓成员快照,无数仓额度)本次申请金额计入额度占用
+        for (CcrApplicationMember member : applicationMembers(app.getId())) {
+            if (!dwMemberMap.containsKey(member.getMemberCustomerNo())
+                    && member.getRequestAmount() != null) {
+                allocatedSum = allocatedSum.add(member.getRequestAmount());
+            }
+        }
         if (allocatedSum.compareTo(approvedTotal) > 0) {
             throw new ServiceException(ErrorCode.LIMIT_INCONSISTENT.getCode(),
-                    "成员分配额度合计 " + allocatedSum + " 超过集团批复总额度 " + approvedTotal);
+                    "成员额度合计 " + allocatedSum + " 超过集团批复总额度 " + approvedTotal);
         }
         return approvedTotal;
     }
@@ -762,8 +776,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 集团链采集:集团→成员→额度→分项→合同→借据 */
     private void collectGroupChain(CcrApplication app, Long bundleId, SnapshotCollect collect) {
         Map<String, Object> group = dataWarehouseService.findGroup(app.getGroupNo());
-        Long groupRecordId = group == null ? null
-                : addSnapshotRecord(bundleId, "dw_customer_group_snapshot", "GROUP", app.getGroupNo(), group);
+        // 手工集团(数仓未统计)回退 ccr_group 构造集团快照行,保证 GROUP 记录与 GROUP_TO_MEMBER 关系成立
+        Long groupRecordId = group != null
+                ? addSnapshotRecord(bundleId, "dw_customer_group_snapshot", "GROUP", app.getGroupNo(), group)
+                : addManualGroupRecord(bundleId, app.getGroupNo());
         Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
         if (groupRecordId != null && credit != null) {
             Long creditRecordId = addSnapshotRecord(bundleId, "dw_group_credit_snapshot", "GROUP_CREDIT",
@@ -775,14 +791,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (CcrApplicationMember member : applicationMembers(app.getId())) {
             memberSeq++;
             String memberNo = member.getMemberCustomerNo();
-            // 成员快照(补充 record_status/valid_to 供快照质量规则判定成员有效性)
+            // 成员快照(补充 record_status/valid_to 供快照质量规则判定成员有效性;数仓无成员时手工成员回退)
             Map<String, Object> dwMember = dataWarehouseService.findGroupMember(app.getGroupNo(), memberNo);
             Long memberRecordId = null;
-            if (dwMember != null) {
-                Map<String, Object> core = new LinkedHashMap<>(dwMember);
-                core.put("record_status", memberInGroup(dwMember) ? "ACTIVE" : "INACTIVE");
-                if (dwMember.get("relation_end") != null) {
-                    core.put("valid_to", String.valueOf(dwMember.get("relation_end")).substring(0, 10));
+            Map<String, Object> core = dwMember != null ? new LinkedHashMap<>(dwMember)
+                    : manualMemberCore(app.getGroupNo(), memberNo);
+            if (core != null) {
+                core.put("record_status", memberInGroup(core) ? "ACTIVE" : "INACTIVE");
+                if (core.get("relation_end") != null) {
+                    core.put("valid_to", String.valueOf(core.get("relation_end")).substring(0, 10));
                 }
                 memberRecordId = addSnapshotRecord(bundleId, "dw_customer_group_member_snapshot", "MEMBER", memberNo, core);
                 if (groupRecordId != null) {
@@ -1299,6 +1316,97 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         LocalDate end = LocalDate.parse(String.valueOf(relationEnd).substring(0, 10));
         return !end.isBefore(LocalDate.now());
+    }
+
+    // ---------- 手工集团(ccr_group/ccr_group_member)合并辅助 ----------
+
+    /** 集团主数据合并判定:数仓快照优先,手工集团回退 */
+    private boolean groupExists(String groupNo) {
+        return dataWarehouseService.findGroup(groupNo) != null
+                || manualGroupService.findGroup(groupNo) != null;
+    }
+
+    /** 集团批复总额度:数仓授信快照优先,手工集团回退补录值(路由定档/额度勾稽基准) */
+    private BigDecimal mergedApprovedTotal(String groupNo) {
+        Map<String, Object> credit = dataWarehouseService.findGroupCredit(groupNo);
+        if (credit != null && credit.get("approved_total_amount") != null) {
+            return toBigDecimal(credit.get("approved_total_amount"));
+        }
+        CcrGroup manual = manualGroupService.findGroup(groupNo);
+        return manual == null ? null : manual.getApprovedTotalAmount();
+    }
+
+    /** 数仓成员快照 map(成员客户号→行) */
+    private Map<String, Map<String, Object>> dwMemberMap(String groupNo) {
+        Map<String, Map<String, Object>> map = new HashMap<>();
+        for (Map<String, Object> row : dataWarehouseService.groupMembers(groupNo)) {
+            map.put(String.valueOf(row.get("member_customer_no")), row);
+        }
+        return map;
+    }
+
+    /** 手工成员 map(成员客户号→实体) */
+    private Map<String, CcrGroupMember> manualMemberMap(String groupNo) {
+        Map<String, CcrGroupMember> map = new HashMap<>();
+        for (CcrGroupMember m : manualGroupService.listMembers(groupNo)) {
+            map.put(m.getMemberCustomerNo(), m);
+        }
+        return map;
+    }
+
+    /** 成员在团校验:数仓命中且在团,或手工命中且在团(任一侧有效即放行) */
+    private boolean memberValid(Map<String, Map<String, Object>> dwMap,
+                                Map<String, CcrGroupMember> manualMap, String memberNo) {
+        Map<String, Object> dw = dwMap.get(memberNo);
+        if (dw != null && memberInGroup(dw)) {
+            return true;
+        }
+        CcrGroupMember manual = manualMap.get(memberNo);
+        if (manual != null && manual.getRelationEnd() == null) {
+            return true;
+        }
+        return manual != null && manual.getRelationEnd() != null
+                && !manual.getRelationEnd().isBefore(LocalDate.now());
+    }
+
+    /** 手工集团快照记录(数仓无集团主数据时;含补录批复总额度) */
+    private Long addManualGroupRecord(Long bundleId, String groupNo) {
+        CcrGroup g = manualGroupService.findGroup(groupNo);
+        if (g == null) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        // 手工集团无数据仓批次:etl_md5 用 MANUAL- 前缀标识来源,data_dt 用补录当日(快照 source_data_dt 必填)
+        // 日期一律字符串(快照内容哈希 HASH_MAPPER 未注册 JavaTimeModule,LocalDate 序列化失败)
+        row.put("etl_md5", "MANUAL-GROUP-" + g.getGroupNo());
+        row.put("data_dt", String.valueOf(LocalDate.now()));
+        row.put("group_no", g.getGroupNo());
+        row.put("group_name", g.getGroupName());
+        row.put("group_type", g.getGroupType());
+        row.put("manager_org_id", g.getManagerOrgId());
+        row.put("group_status", g.getGroupStatus());
+        row.put("approved_total_amount", g.getApprovedTotalAmount());
+        return addSnapshotRecord(bundleId, "dw_customer_group_snapshot", "GROUP", g.getGroupNo(), row);
+    }
+
+    /** 手工成员快照行(数仓无成员时;含补录名称;relation_end 空=在团) */
+    private Map<String, Object> manualMemberCore(String groupNo, String memberNo) {
+        CcrGroupMember m = manualGroupService.findGroupMember(groupNo, memberNo);
+        if (m == null) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        // 日期一律字符串(快照内容哈希 HASH_MAPPER 未注册 JavaTimeModule,LocalDate 序列化失败)
+        row.put("etl_md5", "MANUAL-MEMBER-" + m.getGroupNo() + "-" + m.getMemberCustomerNo());
+        row.put("data_dt", String.valueOf(LocalDate.now()));
+        row.put("group_no", m.getGroupNo());
+        row.put("member_customer_no", m.getMemberCustomerNo());
+        row.put("member_name", m.getMemberName());
+        row.put("member_role", m.getMemberRole());
+        row.put("control_relation", m.getControlRelation());
+        row.put("relation_start", m.getRelationStart() == null ? null : String.valueOf(m.getRelationStart()));
+        row.put("relation_end", m.getRelationEnd() == null ? null : String.valueOf(m.getRelationEnd()));
+        return row;
     }
 
     /** 刷新数据日期基线(不触发乐观锁版本递增,仅记录比对基准) */

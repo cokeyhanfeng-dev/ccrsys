@@ -38,3 +38,6 @@ db/publish_full.sql
 # 增量发布包产物(大文件 jar/dist,不入库;由 scripts/incr-release.sh 生成)
 release/
 frontend/dist.zip
+
+# 本地 maven 依赖缓存(验证用临时目录,不入库)
+.m2cache/

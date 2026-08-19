@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrApplicationRelation;
+import com.ccr.application.domain.CcrGroup;
+import com.ccr.application.domain.CcrGroupMember;
 import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.domain.CcrPricingItemContractRel;
@@ -24,6 +26,7 @@ import com.ccr.application.mapper.CcrPricingItemDepositRelMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ApplicationAccessService;
+import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.application.service.impl.ApplicationSubmitServiceImpl;
 import com.ccr.common.exception.ServiceException;
@@ -43,7 +46,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +111,8 @@ class ApplicationSubmitServiceImplTest {
     private CcrCacheUtil cacheUtil;
     @Mock
     private ApplicationAccessService applicationAccessService;
+    @Mock
+    private ManualGroupService manualGroupService;
 
     @InjectMocks
     private ApplicationSubmitServiceImpl service;
@@ -190,6 +197,39 @@ class ApplicationSubmitServiceImplTest {
         return limit;
     }
 
+    // ---------- 手工集团(ccr_group 回退;数仓无主数据/授信) ----------
+
+    private CcrApplication manualGroupApp() {
+        CcrApplication app = groupApp();
+        app.setGroupNo("GROUP9001");
+        return app;
+    }
+
+    /** 手工集团:数仓无主数据/授信快照,回退 ccr_group 补录批复总额度;成员为手工成员(ccr_group_member) */
+    private void stubManualGroup(String groupNo, BigDecimal approvedTotal, CcrGroupMember... manualMembers) {
+        CcrGroup g = new CcrGroup();
+        g.setGroupNo(groupNo);
+        g.setGroupName("手工集团" + groupNo);
+        g.setGroupType("INDUSTRY_GROUP");
+        g.setGroupStatus("NORMAL");
+        g.setApprovedTotalAmount(approvedTotal);
+        lenient().when(dataWarehouseService.findGroup(groupNo)).thenReturn(null);
+        lenient().when(dataWarehouseService.findGroupCredit(groupNo)).thenReturn(null);
+        lenient().when(dataWarehouseService.groupMembers(groupNo)).thenReturn(new ArrayList<>());
+        lenient().when(manualGroupService.findGroup(groupNo)).thenReturn(g);
+        lenient().when(manualGroupService.listMembers(groupNo)).thenReturn(List.of(manualMembers));
+    }
+
+    private CcrGroupMember manualMember(String memberNo, LocalDate relationEnd) {
+        CcrGroupMember m = new CcrGroupMember();
+        m.setGroupNo("GROUP9001");
+        m.setMemberCustomerNo(memberNo);
+        m.setMemberName("手工公司" + memberNo);
+        m.setMemberRole("GENERAL");
+        m.setRelationEnd(relationEnd);
+        return m;
+    }
+
     // ---------- 集团额度超总额阻断 ----------
 
     @Test
@@ -206,6 +246,101 @@ class ApplicationSubmitServiceImplTest {
 
         ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
         assertEquals(ErrorCode.LIMIT_INCONSISTENT.getCode(), e.getCode());
+    }
+
+    // ---------- 手工集团提交(数仓无主数据,回退 ccr_group 补录批复总额度) ----------
+
+    @Test
+    void manualGroupSubmitSucceedsAndCollectsGroupChain() {
+        CcrApplication app = manualGroupApp();
+        CcrPricingItem item = loanItem(11L, "MGROUP1");
+        CcrGroupMember manualMember = manualMember("MGROUP1", null);
+        stubManualGroup("GROUP9001", new BigDecimal("10000"), manualMember);
+        lenient().when(manualGroupService.findGroupMember("GROUP9001", "MGROUP1")).thenReturn(manualMember);
+
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MGROUP1")));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel())) // 唯一性:本项关系
+                .thenReturn(List.of())                                // 唯一性:无冲突
+                .thenReturn(List.of(new CcrPricingItemContractRel())); // 快照回填
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        SubmitResponse response = service.submit(1L);
+
+        assertTrue(response.getSubmitted());
+        // 快照:建包→采集→校验→冻结
+        verify(snapshotGateway).createBundle(1L);
+        verify(snapshotGateway).validate(7001L);
+        verify(snapshotGateway).freeze(7001L);
+        verify(snapshotGateway, atLeastOnce()).addRecord(eq(7001L), any());
+        // 手工集团回退路径:数仓无主数据,提交链路取 ccr_group 补录批复总额度
+        // (groupExists/mergedApprovedTotal/addManualGroupRecord 各命中一次)
+        verify(manualGroupService, atLeastOnce()).findGroup("GROUP9001");
+        verify(manualGroupService, atLeastOnce()).listMembers("GROUP9001");
+    }
+
+    @Test
+    void manualGroupSubmitBlocksWhenMemberRequestsExceedApprovedTotal() {
+        CcrApplication app = manualGroupApp();
+        CcrPricingItem item = loanItem(11L, "MGROUP1");
+        stubManualGroup("GROUP9001", new BigDecimal("10000"),
+                manualMember("MGROUP1", null), manualMember("MGROUP2", null));
+
+        CcrApplicationMember m1 = member("MGROUP1");
+        CcrApplicationMember m2 = member("MGROUP2");
+        m2.setRequestAmount(new BigDecimal("20000")); // 1500+20000=21500 > 批复 10000
+
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(m1, m2));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+
+        // 手工成员(无数仓额度)本次申请金额计入额度占用,超批复总额度阻断
+        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
+        assertEquals(ErrorCode.LIMIT_INCONSISTENT.getCode(), e.getCode());
+    }
+
+    @Test
+    void manualGroupSubmitBlocksWhenMemberRelationExpired() {
+        CcrApplication app = manualGroupApp();
+        CcrPricingItem item = loanItem(11L, "MGROUP1");
+        // 手工成员 relation_end 已过 → 不在团,成员存在性校验阻断
+        stubManualGroup("GROUP9001", new BigDecimal("10000"),
+                manualMember("MGROUP1", LocalDate.now().minusDays(1)));
+
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MGROUP1")));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+
+        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
     }
 
     // ---------- 一合同一有效分项(跨申请阻断) ----------
