@@ -271,15 +271,18 @@ const todoItems = computed(() => {
     })
   }
   for (const p of presidentTodos.value) {
+    // 后端按申请聚合:申请级字段在顶层,分项级(利率/计票/编号)在 items[0]——取首待决策分项展示(§行长待我处理字段修复)
+    const first = (p.items || [])[0] || {}
     items.push({
-      key: `president-${p.pricingItemId}`, kindText: '待决策', kindBadge: 'badge--info',
+      key: `president-${p.applicationId || first.pricingItemId || 'x'}`,
+      kindText: '待决策', kindBadge: 'badge--info',
       title: p.customerNo || '—',
-      itemNo: p.pricingItemNo || p.pricingItemId, nodeText: nodeLabel('PRESIDENT'),
-      amount: '—',
-      rate: p.requestedRate != null ? `${p.requestedRate}%` : '—',
-      product: '—',
+      itemNo: first.pricingItemNo || first.pricingItemId, nodeText: nodeLabel('PRESIDENT'),
+      amount: first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—',
+      rate: first.requestedRate != null ? `${first.requestedRate}%` : '—',
+      product: productName(first.productCode),
       time: '', to: '/president', actionText: '去决策',
-      extra: { label: '表决结果', value: `赞成 ${p.approveCount ?? 0} / 反对 ${p.rejectCount ?? 0}` }
+      extra: { label: '表决结果', value: `赞成 ${first.approveCount ?? 0} / 反对 ${first.rejectCount ?? 0}` }
     })
   }
   return items
