@@ -28,7 +28,7 @@
           {{ ballotLoading ? '查询中…' : '查询' }}
         </button>
       </div>
-      <table class="table" v-if="ballotRows.length">
+      <table class="table table--full" v-if="ballotRows.length">
         <thead>
           <tr>
             <th>真实投票人</th><th>岗位</th><th>机构</th><th>票型</th><th>匿名码对照</th><th>投票时间</th>
@@ -51,7 +51,7 @@
     <!-- ② 导出记录:档案导出留痕(导出人/机构/时间/对象) -->
     <div class="card">
       <div class="card-title">导出记录</div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>导出对象</th><th>导出类型</th><th>导出人</th><th>所属机构</th><th>导出时间</th><th>水印标识</th>
@@ -91,7 +91,7 @@
           {{ changeLogLoading ? '查询中…' : '查询' }}
         </button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>配置域</th><th>配置ID</th><th>动作</th><th>操作人</th><th>操作时间</th><th>复核意见</th>
@@ -143,7 +143,7 @@
           {{ logsLoading ? '查询中…' : '查询' }}
         </button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>类型</th><th>操作人</th><th>操作时间</th><th>对象</th><th>内容</th>

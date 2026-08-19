@@ -6,7 +6,7 @@
     </div>
 
     <div class="card">
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>申请号</th><th>业务类型</th><th>客户/集团</th><th>提交时间</th>

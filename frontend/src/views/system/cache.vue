@@ -18,7 +18,7 @@
           "刷新数据"调用所选数据加载器把最新数据写入该缓存项(带 loader 的项须为精确 key 类型)。
         </InfoTip>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>缓存项</th>
