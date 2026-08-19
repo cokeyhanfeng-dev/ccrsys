@@ -814,8 +814,8 @@
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 4">上一步</button>
         <div style="display:flex;gap:12px">
-          <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
-          <button class="btn btn--secondary" :disabled="saving" @click="onRoutePreview">路由预览</button>
+          <button class="btn btn--secondary" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
+          <button class="btn btn--secondary" :disabled="saving || submitted" @click="onRoutePreview">路由预览</button>
           <button class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
         </div>
       </div>
@@ -828,8 +828,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { listEnabledProducts } from '@/api/system'
 import {
@@ -867,6 +867,7 @@ import ContributionPanel from '@/components/ContributionPanel.vue'
 
 const userStore = useUserStore()
 const route = useRoute()
+const router = useRouter()
 
 // ---------- 步骤条(§14.1) ----------
 const steps = ['客户信息', '融资情况', '利率申请', '贡献承诺', '材料附件', '提交预览']
@@ -1850,13 +1851,9 @@ async function onConfirmSubmit() {
     const result = await submitApplication(draft.id)
     checkDialogVisible.value = false
     submitted.value = true
-    const firstNode = nodeLabel(result.items?.[0]?.currentNodeCode)
-    const finalNode = nodeLabel(result.items?.[0]?.routeCode)
-    ElMessageBox.alert(
-      `申请号:${result.applicationNo}\n当前节点:${firstNode}\n终审岗位:${finalNode}\n提交时间:${result.submitTime || '—'}\n\n该申请已提交,无需重复提交。`,
-      result.submitted === false ? '申请已提交(幂等返回)' : '提交成功',
-      { confirmButtonText: '知道了' }
-    )
+    // 提交成功直接跳回工作台首页(§用户要求);不再停留申请页,底部操作按钮同步置灰
+    ElMessage.success(`申请 ${result.applicationNo} 已提交,当前节点:${nodeLabel(result.items?.[0]?.currentNodeCode)}`)
+    router.push('/overview')
   } catch {
     // 拦截器已提示
   } finally {

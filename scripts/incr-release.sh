@@ -51,7 +51,7 @@ if [ "$#" -gt 0 ]; then
 else
   if compgen -G "db/incr/${DATE}_*.sql" > /dev/null; then
     # 只收集未在历史增量包(release/incr_*/db/)收录过的本日增量 SQL,避免跨包重复交付
-    PACKED="$(for f in release/incr_*/db/*.sql; do [ -f "$f" ] && basename "$f"; done)"
+    PACKED="$(for f in release/incr_*/db/*.sql; do [ -f "$f" ] && basename "$f"; done; true)"
     for f in db/incr/${DATE}_*.sql; do
       b="$(basename "$f")"
       if ! printf '%s\n' "$PACKED" | grep -qx "$b"; then
@@ -69,7 +69,7 @@ fi
 
 # ── 4) 生成 README(部署说明 + 本轮改动清单)
 echo "==> [4/4] 生成 README..."
-SQL_LIST="$(for f in "$OUT"/db/*.sql; do [ -f "$f" ] && echo "- \`$(basename "$f")\`"; done)"
+SQL_LIST="$(for f in "$OUT"/db/*.sql; do [ -f "$f" ] && echo "- \`$(basename "$f")\`"; done; true)"
 GIT_FILES="$(git -c core.quotepath=false status --short | grep -v -E 'db/incr/|release/' || true)"
 {
 cat <<EOF
