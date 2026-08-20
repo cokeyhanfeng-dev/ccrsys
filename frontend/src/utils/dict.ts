@@ -307,11 +307,28 @@ export function currencyText(code?: string, fallback = '—'): string {
 
 // ---------- 数仓客户字段 / 快照 / 校验(后端原始码透传,页面中文展示;兼容数仓中文直存) ----------
 
-/** 集团状态(dw_customer_group_snapshot.group_status) */
-export const GROUP_STATUS: Record<string, string> = { NORMAL: '正常', ABNORMAL: '异常', CLOSED: '已关闭' }
+/** 集团状态(dw_customer_group_snapshot.group_status;数仓定稿:NORMAL 正常 / DISSOLVED 解散) */
+export const GROUP_STATUS: Record<string, string> = { NORMAL: '正常', DISSOLVED: '解散' }
 export function groupStatusText(code?: string, fallback = '暂无数据'): string {
   return textOf(GROUP_STATUS, code, fallback)
 }
+
+/** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存) */
+export const FIVE_LEVEL_CLASS: Record<string, string> = {
+  '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失'
+}
+export function fiveLevelClassText(code?: string, fallback = '—'): string {
+  return textOf(FIVE_LEVEL_CLASS, code, fallback)
+}
+/** 五级分类归一化到码值(数仓/补录可能直存中文「正常」,下拉回显/提交需码值) */
+export function normalizeFiveLevelClass(v?: string): string {
+  if (!v) return ''
+  if (v in FIVE_LEVEL_CLASS) return v
+  const hit = (Object.entries(FIVE_LEVEL_CLASS) as [string, string][]).find(([, zh]) => zh === v)
+  return hit ? hit[0] : v
+}
+/** 五级分类下拉选项(010-050) */
+export const FIVE_LEVEL_OPTIONS: DictItem[] = Object.entries(FIVE_LEVEL_CLASS).map(([code, name]) => ({ code, name }))
 
 /** 企业规模(caps_corp_cust_basic_info.entp_scale;数仓直存中文「大型/中型/小型」,兼容英文码) */
 export const ENTP_SCALE: Record<string, string> = { LARGE: '大型', MEDIUM: '中型', SMALL: '小型', MICRO: '微型' }

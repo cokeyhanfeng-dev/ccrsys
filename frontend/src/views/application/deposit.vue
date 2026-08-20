@@ -67,7 +67,10 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
-            <input class="form-input" v-model="form.fiveLevelClass" placeholder="数仓带出,可修改" />
+            <select class="form-select" v-model="form.fiveLevelClass">
+              <option value="">请选择</option>
+              <option v-for="f in FIVE_LEVEL_OPTIONS" :key="f.code" :value="f.code">{{ f.name }}</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">内部信用等级</label>
@@ -283,7 +286,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -414,7 +417,7 @@ async function loadCustomerDetail() {
     const detail = await getCustomerDetail(form.customerNo)
     const basic = detail.basic || {}
     form.ucrCode = basic.certNo || ''
-    form.fiveLevelClass = basic.fiveLevelClass || ''
+    form.fiveLevelClass = normalizeFiveLevelClass(basic.fiveLevelClass || '')
     form.creditLevel = basic.creditLevel || ''
     form.openOrg = basic.openOrgName || ''
     form.openDate = basic.openDate || ''

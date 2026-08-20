@@ -62,7 +62,7 @@
           <div v-if="customer.entpScale" class="desc-item"><span class="desc-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry" class="desc-item"><span class="desc-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel" class="desc-item"><span class="desc-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass" class="desc-item"><span class="desc-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass" class="desc-item"><span class="desc-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.empeNum != null" class="desc-item"><span class="desc-label">员工人数</span>{{ customer.empeNum }}</div>
           <div v-if="customer.totalAssets != null" class="desc-item"><span class="desc-label">总资产(万元)</span>{{ customer.totalAssets }}</div>
           <div v-if="customer.registeredCapital != null" class="desc-item"><span class="desc-label">注册资本(万元)</span>{{ customer.registeredCapital }}</div>
@@ -350,7 +350,7 @@
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ val(r, 'creditLevel') }}</td>
               <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ val(r, 'fiveLevelClass') }}</td>
+              <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(val(r, 'fiveLevelClass')) }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'INDIV'">{{ val(r, 'occupation') }}</td>
               <td v-else>—</td>
@@ -559,7 +559,8 @@ import {
   evalResultText, planStatusText,
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
   rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
-  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge
+  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge,
+  fiveLevelClassText
 } from '@/utils/dict'
 
 const route = useRoute()

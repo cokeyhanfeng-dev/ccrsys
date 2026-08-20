@@ -84,7 +84,7 @@
           <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.empeNum != null"><span class="dg-label">员工人数</span>{{ customer.empeNum }}</div>
           <div v-if="customer.totalAssets != null"><span class="dg-label">总资产(万元)</span>{{ customer.totalAssets }}</div>
           <div v-if="customer.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ customer.registeredCapital }}</div>
@@ -108,7 +108,7 @@
           <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
           <div v-if="customer.address"><span class="dg-label">居住地址</span>{{ customer.address }}</div>
           <div v-if="customer.phone"><span class="dg-label">联系电话</span>{{ customer.phone }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.openDate"><span class="dg-label">开户日期</span>{{ customer.openDate }}</div>
           <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
@@ -120,7 +120,7 @@
           <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
         </template>
@@ -277,7 +277,7 @@
             <td v-else>—</td>
             <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
             <td v-else>—</td>
-            <td v-if="r.custType === 'CORP'">{{ r.fiveLevelClass || '—' }}</td>
+            <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
             <td v-else>—</td>
             <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
             <td v-else>—</td>
@@ -304,7 +304,7 @@
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
               <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ r.fiveLevelClass || '—' }}</td>
+              <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
               <td v-else>—</td>
@@ -848,7 +848,8 @@ import {
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText,
-  entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText
+  entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
+  fiveLevelClassText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'

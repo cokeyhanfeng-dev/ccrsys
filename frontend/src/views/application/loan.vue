@@ -110,7 +110,10 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">五级分类</label>
-              <input class="form-input" v-model="groupSupplement.fiveLevelClass" placeholder="可空" />
+              <select class="form-select" v-model="groupSupplement.fiveLevelClass">
+                <option value="">可空</option>
+                <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+              </select>
             </div>
             <div class="form-field">
               <label class="form-field__label">内部信用等级</label>
@@ -223,7 +226,10 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">五级分类</label>
-              <input class="form-input" v-model="m.fiveLevelClass" placeholder="可空" />
+              <select class="form-select" v-model="m.fiveLevelClass">
+                <option value="">可空</option>
+                <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+              </select>
             </div>
             <div class="form-field">
               <label class="form-field__label">信用等级</label>
@@ -293,7 +299,10 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
-            <input class="form-input" v-model="form.fiveLevelClass" placeholder="数仓带出,可修改" />
+            <select class="form-select" v-model="form.fiveLevelClass">
+              <option value="">请选择</option>
+              <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">内部信用等级</label>
@@ -1022,7 +1031,8 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
-  AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode
+  AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode,
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1040,6 +1050,8 @@ const step = ref(0)
 const guaranteeTypes = GUARANTEE_TYPES
 const agreementTypes = AGREEMENT_TYPES
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
+// 五级分类下拉(数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;补录与对公可修改表单统一)
+const fiveLevelOptions = FIVE_LEVEL_OPTIONS
 // 贷款产品(与规则/硬边界配置中的 product_code 对齐)
 // P2-4:以产品目录 ccr_product 为权威来源,目录为空时回退内置字典(避免新建环境缺目录不可用)
 const loanProducts = ref<Array<{ code: string; name: string }>>(
@@ -1249,7 +1261,7 @@ async function loadCustomerDetail() {
     const detail = await getCustomerDetail(form.customerNo)
     const basic = detail.basic || {}
     form.ucrCode = basic.certNo || ''
-    form.fiveLevelClass = basic.fiveLevelClass || ''
+    form.fiveLevelClass = normalizeFiveLevelClass(basic.fiveLevelClass || '')
     form.creditLevel = basic.creditLevel || ''
     form.industry = basic.industry || ''
     form.registeredCapital = basic.registeredCapital || ''
@@ -2215,7 +2227,7 @@ async function loadDraftIntoForm(id: number | string) {
   const custInfo = parseExtJson(app.customerInfoJson)
   if (custInfo?.customerName) form.customerName = custInfo.customerName
   form.ucrCode = custInfo?.ucrCode || ''
-  form.fiveLevelClass = custInfo?.fiveLevelClass || ''
+  form.fiveLevelClass = normalizeFiveLevelClass(custInfo?.fiveLevelClass || '')
   form.creditLevel = custInfo?.creditLevel || ''
   form.industry = custInfo?.industry || ''
   form.registeredCapital = custInfo?.registeredCapital || ''
@@ -2242,7 +2254,7 @@ async function loadDraftIntoForm(id: number | string) {
     if (isNewGroup.value && gInfo?.groupName) {
       groupSupplement.groupName = gInfo.groupName
       groupSupplement.ucrCode = gInfo.ucrCode || ''
-      groupSupplement.fiveLevelClass = gInfo.fiveLevelClass || ''
+      groupSupplement.fiveLevelClass = normalizeFiveLevelClass(gInfo.fiveLevelClass || '')
       groupSupplement.creditLevel = gInfo.creditLevel || ''
       groupSupplement.industry = gInfo.industry || ''
       groupSupplement.registeredCapital = gInfo.registeredCapital != null ? String(gInfo.registeredCapital) : ''
