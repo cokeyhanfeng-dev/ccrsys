@@ -128,6 +128,23 @@ public class ManualGroupService {
         }
     }
 
+    /** 幂等 upsert 成员(存在则更新,不存在则插入;申请提交链路落表用,最新覆盖) */
+    @Transactional(rollbackFor = Exception.class)
+    public void upsertMember(CcrGroupMember member) {
+        if (StrUtil.isBlank(member.getGroupNo()) || StrUtil.isBlank(member.getMemberCustomerNo())
+                || StrUtil.isBlank(member.getMemberName())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "所属集团、成员客户号与成员名称必填");
+        }
+        CcrGroupMember exists = findGroupMember(member.getGroupNo(), member.getMemberCustomerNo());
+        if (exists == null) {
+            member.setId(null);
+            memberMapper.insert(member);
+        } else {
+            member.setId(exists.getId());
+            memberMapper.updateById(member);
+        }
+    }
+
     /** 删除单个成员 */
     public void deleteMember(Long id) {
         memberMapper.deleteById(id);

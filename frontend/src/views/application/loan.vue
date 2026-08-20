@@ -72,7 +72,7 @@
         </template>
       </div>
 
-      <!-- 集团客户区块:集团号查询 → 集团授信总额(只读) + 有效成员列表 -->
+      <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 申请额度 + 有效成员列表(数仓带出/手工补录) -->
       <template v-if="form.customerScope === 'GROUP'">
         <div class="form-grid">
           <div class="form-field" style="grid-column: span 2">
@@ -82,20 +82,74 @@
               :fetch-suggestions="queryGroupSuggestions"
               :trigger-on-focus="false"
               clearable
-              placeholder="输入集团编号或集团名称自动联想,下拉选择集团"
+              placeholder="输入集团编号或集团名称自动联想;数仓未收录的集团可直接输入编号后回车,就地补录"
               style="width:100%"
               @select="selectGroup"
               @keyup.enter="queryGroup"
             />
           </div>
         </div>
-        <div v-if="groupInfo" class="group-summary">
+        <!-- 新增集团(数仓未收录):就地补录集团基本信息,与对公客户信息要求一致(数据以数仓为准,数仓无即按新集团) -->
+        <div v-if="isNewGroup" class="form-card group-supplement" style="margin-top:12px">
+          <div class="form-card__title">
+            新增集团补录 <span class="badge badge--warning">数仓未收录</span>
+            <InfoTip content="数仓未收录该集团,按新集团对待:补录集团基本信息(与对公客户一致),授信以本次申请额度为准。" />
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label">集团编号 <span class="req">*</span></label>
+              <input class="form-input" :value="form.groupNo" disabled />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">集团名称 <span class="req">*</span></label>
+              <input class="form-input" v-model="groupSupplement.groupName" placeholder="必填" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">统一社会信用代码</label>
+              <input class="form-input" v-model="groupSupplement.ucrCode" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">五级分类</label>
+              <input class="form-input" v-model="groupSupplement.fiveLevelClass" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">内部信用等级</label>
+              <input class="form-input" v-model="groupSupplement.creditLevel" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">所属行业</label>
+              <input class="form-input" v-model="groupSupplement.industry" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">注册资本(万元)</label>
+              <input class="form-input form-input--amount" v-model="groupSupplement.registeredCapital" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">开户机构</label>
+              <input class="form-input" v-model="groupSupplement.openOrg" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">开户日期</label>
+              <input class="form-input" v-model="groupSupplement.openDate" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">基本户账户</label>
+              <input class="form-input" v-model="groupSupplement.basicAccount" placeholder="可空" />
+            </div>
+          </div>
+        </div>
+        <div v-if="groupInfo" class="group-summary" style="margin-top:12px">
           <div class="group-summary__item"><span>集团名称</span><b>{{ groupInfo.groupName || '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>集团状态</span><b>{{ groupStatusText(groupInfo.groupStatus) }}</b></div>
           <div class="group-summary__item"><span>授信总额(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>已分配额度(万元)</span><b>{{ groupAllocatedTotal ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>授信到期日</span><b>{{ groupCredit?.creditEnd || '暂无数据' }}</b></div>
+        </div>
+        <!-- 申请额度(本次申请新增授信,必填;所有集团申请统一,数仓批复授信仅作展示参考) -->
+        <div v-if="groupQueried" class="form-field" style="margin-top:12px">
+          <label class="form-field__label">本次申请额度(万元) <span class="req">*</span></label>
+          <input class="form-input form-input--amount" v-model="groupApplyAmount" placeholder="集团本次申请新增授信额度,必填" />
         </div>
         <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
           <label class="form-field__label">涉及成员(勾选并逐成员录入本次申请金额) <span class="req">*</span></label>
@@ -110,7 +164,10 @@
             <tbody>
               <tr v-for="m in groupMembers" :key="m.memberCustomerNo">
                 <td><input type="checkbox" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m)" /></td>
-                <td>{{ m.memberCustomerNo }}</td>
+                <td>
+                  {{ m.memberCustomerNo }}
+                  <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
+                </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td><span class="badge badge--neutral">{{ m.memberRole === 'CORE' ? '核心' : '一般' }}</span></td>
                 <td class="num">{{ m.creditLimit?.allocatedAmount ?? '暂无数据' }}</td>
@@ -136,8 +193,88 @@
               </tr>
             </tbody>
           </table>
+          <button class="btn btn--secondary" style="margin-top:8px" @click="showSupplementMember = !showSupplementMember">
+            {{ showSupplementMember ? '收起成员补录' : '＋ 添加手工成员(数仓未收录)' }}
+          </button>
         </div>
-        <div v-else-if="groupQueried" class="empty">该集团暂无有效成员数据</div>
+        <div v-else-if="groupQueried" class="empty">
+          该集团暂无有效成员数据
+          <button class="btn btn--text" @click="showSupplementMember = true">＋ 添加手工成员(数仓未收录)</button>
+        </div>
+
+        <!-- 手工成员补录(数仓未收录成员,补录信息与对公客户申请要求一致:企业要素 + 成员要素,不含授信) -->
+        <div v-if="showSupplementMember" class="form-card" style="margin-top:12px">
+          <div class="form-card__title">
+            手工成员补录 <span class="badge badge--warning">数仓未收录</span>
+            <InfoTip content="补录成员信息与对公客户申请要求一致(客户号/名称/统一社会信用代码/五级分类/信用等级/行业/注册资本/开户机构/开户日期/基本账户);成员授信不做补录,授信集团级在申请额度补录。" />
+          </div>
+          <div v-for="(m, i) in supplementMembers" :key="i" class="form-grid" style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:var(--radius);padding:10px 14px">
+            <div class="form-field">
+              <label class="form-field__label">成员客户号 <span class="req">*</span></label>
+              <input class="form-input" v-model="m.memberCustomerNo" placeholder="必填" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">成员名称 <span class="req">*</span></label>
+              <input class="form-input" v-model="m.memberName" placeholder="必填" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">统一社会信用代码</label>
+              <input class="form-input" v-model="m.ucrCode" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">五级分类</label>
+              <input class="form-input" v-model="m.fiveLevelClass" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">信用等级</label>
+              <input class="form-input" v-model="m.creditLevel" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">行业</label>
+              <input class="form-input" v-model="m.industry" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">注册资本(万元)</label>
+              <input class="form-input form-input--amount" v-model="m.registeredCapital" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">开户机构</label>
+              <input class="form-input" v-model="m.openOrg" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">开户日期</label>
+              <input class="form-input" v-model="m.openDate" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">基本账户</label>
+              <input class="form-input" v-model="m.basicAccount" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">成员角色</label>
+              <select class="form-select" v-model="m.memberRole">
+                <option value="CORE">核心</option>
+                <option value="GENERAL">一般</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">控制关系</label>
+              <input class="form-input" v-model="m.controlRelation" placeholder="可空" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">关系起止(空=在团)</label>
+              <div class="credit-overview__range">
+                <input class="form-input" type="date" v-model="m.relationStart" />
+                <span class="credit-overview__range-sep">至</span>
+                <input class="form-input" type="date" v-model="m.relationEnd" />
+              </div>
+            </div>
+            <div class="form-field" style="display:flex;align-items:flex-end;gap:8px">
+              <button class="btn btn--primary" @click="confirmSupplementMember(i)">加入成员列表</button>
+              <button class="btn btn--text" @click="supplementMembers.splice(i, 1)">删除</button>
+            </div>
+          </div>
+          <button class="btn btn--secondary" @click="addSupplementMember">＋ 添加成员行</button>
+        </div>
       </template>
 
       <!-- 单户基本信息(数仓带出,只读) -->
@@ -1038,6 +1175,29 @@ const groupMembers = ref<any[]>([])
 const groupQueried = ref(false)
 const selectedMembers = ref<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>([])
 const memberContracts = ref<Record<string, any[]>>({})
+// 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 本次申请额度 + 手工补录成员
+/** 本次申请额度(万元,集团本次申请新增授信,必填;数仓批复授信仅展示参考,勾稽基准读本字段) */
+const groupApplyAmount = ref('')
+/** 数仓未收录该集团(按新增集团对待,就地补录集团基本信息,与对公客户一致) */
+const isNewGroup = ref(false)
+/** 新增集团补录表单(集团对公全套:与对公客户基本信息一致 + 集团特有要素) */
+const groupSupplement = reactive({
+  groupName: '',
+  ucrCode: '',
+  fiveLevelClass: '',
+  creditLevel: '',
+  industry: '',
+  registeredCapital: '',
+  openOrg: '',
+  openDate: '',
+  basicAccount: '',
+  groupType: 'INDUSTRY_GROUP',
+  currency: 'CNY',
+})
+/** 成员补录区展开开关 */
+const showSupplementMember = ref(false)
+/** 手工补录成员行(对公客户申请要素全套 + 成员要素;不含授信) */
+const supplementMembers = ref<Array<Record<string, any>>>([])
 
 // 承诺与附件
 const commitments = ref<CommitmentRow[]>([])
@@ -1168,22 +1328,33 @@ async function queryGroup() {
     return
   }
   const no = form.groupNo.trim()
+  // 数仓未收录(404)→ 按新增集团就地补录(§docs/19 §4.1);命中(数仓/手工落表)→ 存量带出
   try {
-    const [g, members] = await Promise.all([getGroup(no), getGroupMembers(no)])
+    const g = await getGroup(no)
+    isNewGroup.value = false
     groupInfo.value = g.group || null
     groupCredit.value = g.groupCredit || null
     groupAllocatedTotal.value = g.allocatedTotal ?? null
-    groupMembers.value = members || []
-    groupQueried.value = true
-    // 已勾选但已不在有效成员列表中的成员剔除
-    selectedMembers.value = selectedMembers.value.filter((s) =>
-      groupMembers.value.some((m) => m.memberCustomerNo === s.memberCustomerNo)
-    )
   } catch {
+    isNewGroup.value = true
     groupInfo.value = null
     groupCredit.value = null
+    groupAllocatedTotal.value = null
+  }
+  groupQueried.value = true
+  // 成员:数仓有效成员 + 已落表手工成员(§4.4);未收录则置空(新增集团可手工补录成员)
+  try {
+    const members = await getGroupMembers(no)
+    groupMembers.value = (members || []).map((m: any) => ({ ...m, source: 'DW' }))
+  } catch {
     groupMembers.value = []
-    groupQueried.value = false
+  }
+  // 已勾选但已不在有效成员列表中的成员剔除(就地补录的 MANUAL 行保留在列表内)
+  selectedMembers.value = selectedMembers.value.filter((s) =>
+    groupMembers.value.some((m) => m.memberCustomerNo === s.memberCustomerNo)
+  )
+  if (isNewGroup.value) {
+    ElMessage.info('数仓未收录该集团,请补录集团基本信息并录入本次申请额度')
   }
 }
 
@@ -1219,6 +1390,49 @@ async function toggleMember(m: any) {
       memberContracts.value[m.memberCustomerNo] = []
     }
   }
+}
+
+// ---------- 手工成员补录(§docs/19 §4.4 成员补录=对公客户申请要素全套+成员要素,不含授信) ----------
+
+/** 追加一条空成员补录行 */
+function addSupplementMember() {
+  supplementMembers.value.push({
+    memberCustomerNo: '', memberName: '', ucrCode: '', fiveLevelClass: '', creditLevel: '',
+    industry: '', registeredCapital: '', openOrg: '', openDate: '', basicAccount: '',
+    memberRole: 'GENERAL', controlRelation: '', relationStart: '', relationEnd: '',
+  })
+}
+
+/** 补录成员确认:校验必填 → 去重 → 加入可勾选成员列表(标 MANUAL,随申请落 ccr_group_member) */
+function confirmSupplementMember(i: number) {
+  const m = supplementMembers.value[i]
+  if (!m) return
+  if (!m.memberCustomerNo || !m.memberCustomerNo.trim()) {
+    ElMessage.warning('成员客户号必填')
+    return
+  }
+  if (!m.memberName || !m.memberName.trim()) {
+    ElMessage.warning('成员名称必填')
+    return
+  }
+  const no = m.memberCustomerNo.trim()
+  if (groupMembers.value.some((gm) => gm.memberCustomerNo === no)) {
+    ElMessage.warning(`成员[${no}]已在成员列表中,请勿重复添加`)
+    return
+  }
+  groupMembers.value.push({
+    memberCustomerNo: no,
+    memberName: m.memberName.trim(),
+    memberRole: m.memberRole || 'GENERAL',
+    creditLimit: null,
+    source: 'MANUAL',
+    ucrCode: m.ucrCode, fiveLevelClass: m.fiveLevelClass, creditLevel: m.creditLevel,
+    industry: m.industry, registeredCapital: m.registeredCapital, openOrg: m.openOrg,
+    openDate: m.openDate, basicAccount: m.basicAccount,
+    controlRelation: m.controlRelation, relationStart: m.relationStart, relationEnd: m.relationEnd,
+  })
+  supplementMembers.value.splice(i, 1)
+  ElMessage.success(`成员[${no}]已加入成员列表,请勾选并录入本次申请金额`)
 }
 function memberNameOf(no: string) {
   if (!no) return '—'
@@ -1465,8 +1679,24 @@ function onCustomerScopeChange() {
   if (form.customerScope !== 'GROUP') {
     selectedMembers.value = []
     groupInfo.value = null
+    groupCredit.value = null
+    groupAllocatedTotal.value = null
     groupMembers.value = []
     groupQueried.value = false
+    // 集团补录状态一并重置(§docs/19 §4.1)
+    groupApplyAmount.value = ''
+    isNewGroup.value = false
+    groupSupplement.groupName = ''
+    groupSupplement.ucrCode = ''
+    groupSupplement.fiveLevelClass = ''
+    groupSupplement.creditLevel = ''
+    groupSupplement.industry = ''
+    groupSupplement.registeredCapital = ''
+    groupSupplement.openOrg = ''
+    groupSupplement.openDate = ''
+    groupSupplement.basicAccount = ''
+    showSupplementMember.value = false
+    supplementMembers.value = []
   }
 }
 
@@ -1556,10 +1786,17 @@ function isBlank(v: any) {
 function validateStep(s: number): string | null {
   if (s === 0) {
     if (form.customerScope === 'GROUP') {
-      if (isBlank(form.groupNo) || !groupInfo.value) return '请录入集团编号并查询加载集团信息'
+      if (isBlank(form.groupNo) || !groupQueried.value) return '请录入集团编号并查询加载集团信息'
+      // 新增集团(数仓未收录):就地补录集团名称必填(§docs/19 §4.3)
+      if (isNewGroup.value && isBlank(groupSupplement.groupName)) return '请补录集团名称(数仓未收录,新增集团必填)'
+      // 本次申请额度必填(集团本次申请新增授信,§4.5;存量集团补申请额度同理)
+      if (isBlank(groupApplyAmount.value) || Number(groupApplyAmount.value) <= 0) return '请录入本次申请额度(集团新增授信,必填)'
       if (!selectedMembers.value.length) return '请至少勾选一名集团成员'
       const bad = selectedMembers.value.find((m) => isBlank(m.requestAmount) || Number(m.requestAmount) <= 0)
       if (bad) return `成员 ${bad.memberCustomerNo} 未录入本次申请金额`
+      // 勾稽:成员申请金额合计 ≤ 本次申请额度(§4.5,后端提交时同口径复核)
+      const sum = selectedMembers.value.reduce((acc, m) => acc + (Number(m.requestAmount) || 0), 0)
+      if (sum > Number(groupApplyAmount.value)) return `成员申请金额合计 ${sum} 超过本次申请额度 ${groupApplyAmount.value}`
     } else if (isBlank(form.customerNo)) {
       return '请查询并选择客户'
     }
@@ -1784,7 +2021,9 @@ function buildPayload(): ApplicationPayload {
       basicAccount: form.basicAccount
     }),
     // 授信协议补录/修正快照(存量=协议带出可修正;新增=手工补录,协议号可空;审批详情优先展示补录值)
-    creditInfoJson: serializeCreditInfo() ? JSON.stringify(serializeCreditInfo()) : undefined
+    creditInfoJson: serializeCreditInfo() ? JSON.stringify(serializeCreditInfo()) : undefined,
+    // 集团补录/申请额度快照(集团对公全套 + 本次申请额度 + 手工补录成员;提交时落表,§docs/19 §4.5;审批详情优先展示)
+    groupInfoJson: serializeGroupInfo() ? JSON.stringify(serializeGroupInfo()) : undefined
   }
 }
 
@@ -1803,6 +2042,51 @@ function serializeCreditInfo(): Record<string, unknown> | undefined {
   if (c.startDate) out.startDate = c.startDate
   if (c.endDate) out.endDate = c.endDate
   return Object.keys(out).length ? out : undefined
+}
+
+/** 集团补录/申请额度快照序列化(§docs/19 §4.5 申请额度必填存 group_info_json 多条并存;手工补录成员随单落表;无补录内容不随单提交) */
+function serializeGroupInfo(): Record<string, unknown> | undefined {
+  if (form.customerScope !== 'GROUP') return undefined
+  const out: Record<string, unknown> = { groupNo: form.groupNo.trim() }
+  // 新增集团就地补录的集团基本信息(与对公客户申请要求一致;数仓已收录则忽略,数据以数仓为准)
+  if (isNewGroup.value) {
+    if (groupSupplement.groupName) out.groupName = groupSupplement.groupName
+    out.groupType = groupSupplement.groupType || 'INDUSTRY_GROUP'
+    out.groupStatus = 'NORMAL'
+    out.currency = groupSupplement.currency || 'CNY'
+    if (groupSupplement.ucrCode) out.ucrCode = groupSupplement.ucrCode
+    if (groupSupplement.fiveLevelClass) out.fiveLevelClass = groupSupplement.fiveLevelClass
+    if (groupSupplement.creditLevel) out.creditLevel = groupSupplement.creditLevel
+    if (groupSupplement.industry) out.industry = groupSupplement.industry
+    if (groupSupplement.registeredCapital) out.registeredCapital = groupSupplement.registeredCapital
+    if (groupSupplement.openOrg) out.openOrg = groupSupplement.openOrg
+    if (groupSupplement.openDate) out.openDate = groupSupplement.openDate
+    if (groupSupplement.basicAccount) out.basicAccount = groupSupplement.basicAccount
+  }
+  // 本次申请额度(集团本次申请新增授信,必填;每次申请一条,随申请上下文保存不覆盖历史)
+  if (groupApplyAmount.value) out.applyAmount = groupApplyAmount.value
+  // 手工补录成员(对公客户申请要素 + 成员要素,不含授信;数仓已有成员不在此列)
+  const manualMembers = groupMembers.value.filter((m) => m.source === 'MANUAL')
+  if (manualMembers.length) {
+    out.supplementMembers = manualMembers.map((m) => ({
+      memberCustomerNo: m.memberCustomerNo,
+      memberName: m.memberName,
+      memberRole: m.memberRole || 'GENERAL',
+      controlRelation: m.controlRelation || undefined,
+      relationStart: m.relationStart || undefined,
+      relationEnd: m.relationEnd || undefined,
+      ucrCode: m.ucrCode || undefined,
+      fiveLevelClass: m.fiveLevelClass || undefined,
+      creditLevel: m.creditLevel || undefined,
+      industry: m.industry || undefined,
+      registeredCapital: m.registeredCapital || undefined,
+      openOrg: m.openOrg || undefined,
+      openDate: m.openDate || undefined,
+      basicAccount: m.basicAccount || undefined
+    }))
+  }
+  const hasContent = !!(out.groupName || out.applyAmount || manualMembers.length)
+  return hasContent ? out : undefined
 }
 
 /** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
@@ -1951,6 +2235,27 @@ async function loadDraftIntoForm(id: number | string) {
 
   if (app.customerScope === 'GROUP' && app.groupNo) {
     await queryGroup()
+    // 集团补录/申请额度快照回填(§docs/19 §4.5):本次申请额度 + 手工补录成员(数仓带出优先,补录成员仅并入可勾选列表)
+    const gInfo = parseExtJson(app.groupInfoJson)
+    if (gInfo?.applyAmount != null) groupApplyAmount.value = String(gInfo.applyAmount)
+    // 新增集团:集团基本信息从快照回填(数仓仍未收录时,避免客户经理二次录入)
+    if (isNewGroup.value && gInfo?.groupName) {
+      groupSupplement.groupName = gInfo.groupName
+      groupSupplement.ucrCode = gInfo.ucrCode || ''
+      groupSupplement.fiveLevelClass = gInfo.fiveLevelClass || ''
+      groupSupplement.creditLevel = gInfo.creditLevel || ''
+      groupSupplement.industry = gInfo.industry || ''
+      groupSupplement.registeredCapital = gInfo.registeredCapital != null ? String(gInfo.registeredCapital) : ''
+      groupSupplement.openOrg = gInfo.openOrg || ''
+      groupSupplement.openDate = gInfo.openDate || ''
+      groupSupplement.basicAccount = gInfo.basicAccount || ''
+    }
+    // 手工补录成员并入可勾选列表(标 MANUAL;数仓已带出同客户号则跳过)
+    for (const sm of gInfo?.supplementMembers || []) {
+      if (sm?.memberCustomerNo && !groupMembers.value.some((gm) => gm.memberCustomerNo === sm.memberCustomerNo)) {
+        groupMembers.value.push({ ...sm, source: 'MANUAL', creditLimit: null })
+      }
+    }
     selectedMembers.value = (d.members || []).map((m) => ({
       memberCustomerNo: m.memberCustomerNo,
       memberName: groupMembers.value.find((g) => g.memberCustomerNo === m.memberCustomerNo)?.memberName || m.memberCustomerNo,

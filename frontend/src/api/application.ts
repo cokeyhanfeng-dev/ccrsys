@@ -100,6 +100,10 @@ export interface ApplicationPayload {
   versionNo?: number
   /** 客户信息人工修正快照(JSON 字符串;数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示) */
   customerInfoJson?: string | null
+  /** 授信协议补录/修正快照(JSON 字符串;存量=协议带出可修正,新增=手工补录;审批详情授信信息区优先展示) */
+  creditInfoJson?: string | null
+  /** 集团补录/申请额度快照(JSON 字符串;集团对公全套 + 本次申请额度 + 手工补录成员;审批详情优先展示) */
+  groupInfoJson?: string | null
 }
 
 // ---------- 响应类型 ----------

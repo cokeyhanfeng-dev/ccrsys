@@ -12,6 +12,7 @@ import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.domain.CcrPricingItemContractRel;
 import com.ccr.application.dto.SnapshotBundleResult;
+import com.ccr.application.dto.SubmitCheckResponse;
 import com.ccr.application.dto.SubmitResponse;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
@@ -64,6 +65,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -202,6 +204,15 @@ class ApplicationSubmitServiceImplTest {
     private CcrApplication manualGroupApp() {
         CcrApplication app = groupApp();
         app.setGroupNo("GROUP9001");
+        // 数仓未收录 → 新增集团,申请额度(本次新增授信)随申请补录(§docs/19 §4.5)
+        app.setGroupInfoJson("{\"applyAmount\":\"10000\",\"groupNo\":\"GROUP9001\",\"groupName\":\"手工集团GROUP9001\"}");
+        return app;
+    }
+
+    /** 存量集团申请上下文(数仓已收录,补录本次申请额度) */
+    private CcrApplication existingGroupApp(String applyAmount) {
+        CcrApplication app = groupApp();
+        app.setGroupInfoJson("{\"applyAmount\":\"" + applyAmount + "\",\"groupNo\":\"GROUP001\",\"groupName\":\"集团001\"}");
         return app;
     }
 
@@ -230,22 +241,24 @@ class ApplicationSubmitServiceImplTest {
         return m;
     }
 
-    // ---------- 集团额度超总额阻断 ----------
+    // ---------- 集团额度勾稽:成员申请金额合计 ≤ 本次申请额度(§docs/19 §4.5) ----------
 
     @Test
-    void submitBlocksWhenMemberAllocatedExceedsGroupApprovedTotal() {
-        CcrApplication app = groupApp();
+    void submitBlocksWhenMemberRequestsExceedApplyAmount() {
+        CcrApplication app = existingGroupApp("10000");
         CcrPricingItem item = loanItem(11L, "MEMBER_A");
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
-        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        CcrApplicationMember m = member("MEMBER_A");
+        m.setRequestAmount(new BigDecimal("12000")); // 12000 > 本次申请额度 10000
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(m));
         lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
-        // EXCLUSIVE 6000+5000=11000 > 批复 10000
-        stubGroupDw(new BigDecimal("10000"),
-                List.of(exclusiveLimit("MEMBER_A", "6000"), exclusiveLimit("MEMBER_B", "5000")));
+        // 数仓已收录集团(存量);批复授信 50000 仅展示参考,勾稽基准为本次申请额度 10000
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
 
         ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
         assertEquals(ErrorCode.LIMIT_INCONSISTENT.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("超过本次申请额度"));
     }
 
     // ---------- 手工集团提交(数仓无主数据,回退 ccr_group 补录批复总额度) ----------
@@ -327,27 +340,173 @@ class ApplicationSubmitServiceImplTest {
     }
 
     @Test
-    void manualGroupSubmitBlocksWhenMemberRelationExpired() {
+    void submitBlocksWhenDwMemberRelationExpired() {
+        CcrApplication app = existingGroupApp("10000");
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        // 数仓已收录集团(存量),但成员 relation_end 已过 → 不在团,成员存在性校验阻断(新增集团豁免)
+        Map<String, Object> group = new HashMap<>();
+        group.put("group_no", "GROUP001");
+        group.put("group_status", "NORMAL");
+        lenient().when(dataWarehouseService.findGroup("GROUP001")).thenReturn(group);
+        Map<String, Object> memberRow = new HashMap<>();
+        memberRow.put("member_customer_no", "MEMBER_A");
+        memberRow.put("relation_end", LocalDate.now().minusDays(1).toString());
+        lenient().when(dataWarehouseService.groupMembers("GROUP001")).thenReturn(List.of(memberRow));
+
+        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("不在集团有效成员快照"));
+    }
+
+    // ---------- 新增集团:提交时落表(ccr_group/ccr_group_member,§docs/19 §4.6) ----------
+
+    @Test
+    void newGroupSubmitPersistsSupplementThenSucceeds() {
         CcrApplication app = manualGroupApp();
+        // 补录成员随申请提交(数仓无该集团/成员,全部按手工补录)
+        app.setGroupInfoJson("{\"applyAmount\":\"10000\",\"groupNo\":\"GROUP9001\",\"groupName\":\"新集团9001\","
+                + "\"supplementMembers\":[{\"memberCustomerNo\":\"MGROUP1\",\"memberName\":\"手工公司MGROUP1\"}]}");
         CcrPricingItem item = loanItem(11L, "MGROUP1");
-        // 手工成员 relation_end 已过 → 不在团,成员存在性校验阻断
-        stubManualGroup("GROUP9001", new BigDecimal("10000"),
-                manualMember("MGROUP1", LocalDate.now().minusDays(1)));
+        when(dataWarehouseService.findGroup("GROUP9001")).thenReturn(null);
+        when(dataWarehouseService.findGroupCredit("GROUP9001")).thenReturn(null);
+        when(dataWarehouseService.groupMembers("GROUP9001")).thenReturn(new ArrayList<>());
+        when(dataWarehouseService.findGroupMember("GROUP9001", "MGROUP1")).thenReturn(null);
+        when(manualGroupService.findGroup("GROUP9001")).thenReturn(null);
+        when(manualGroupService.listMembers("GROUP9001")).thenReturn(new ArrayList<>());
 
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
         when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MGROUP1")));
         lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new CcrPricingItemContractRel()));
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
 
-        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
-        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        SubmitResponse response = service.submit(1L);
+
+        assertTrue(response.getSubmitted());
+        // 提交时落表:新增集团 saveGroup + 补录成员 upsertMember(申请额度同步至 approved_total_amount 作展示参考)
+        ArgumentCaptor<CcrGroup> groupCaptor = ArgumentCaptor.forClass(CcrGroup.class);
+        verify(manualGroupService).saveGroup(groupCaptor.capture());
+        assertEquals("GROUP9001", groupCaptor.getValue().getGroupNo());
+        assertEquals("新集团9001", groupCaptor.getValue().getGroupName());
+        assertEquals(new BigDecimal("10000"), groupCaptor.getValue().getApprovedTotalAmount());
+        ArgumentCaptor<CcrGroupMember> memberCaptor = ArgumentCaptor.forClass(CcrGroupMember.class);
+        verify(manualGroupService).upsertMember(memberCaptor.capture());
+        assertEquals("MGROUP1", memberCaptor.getValue().getMemberCustomerNo());
+        assertEquals("手工公司MGROUP1", memberCaptor.getValue().getMemberName());
+    }
+
+    // ---------- 存量集团补申请额度:数仓优先不落手工表(§4.1/§4.6) ----------
+
+    @Test
+    void existingGroupSubmitWithApplyAmountSucceedsAndSkipsManualTables() {
+        CcrApplication app = existingGroupApp("3000");
+        // 手工补录成员与数仓已有成员同号 → 数仓优先,不落手工表
+        app.setGroupInfoJson("{\"applyAmount\":\"3000\",\"groupNo\":\"GROUP001\",\"groupName\":\"集团001\","
+                + "\"supplementMembers\":[{\"memberCustomerNo\":\"MEMBER_A\",\"memberName\":\"A公司(数仓已有)\"}]}");
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A"))); // 1500 ≤ 3000
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new CcrPricingItemContractRel()));
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+        // 数仓已收录集团与成员 → persistGroupSupplement 不落 ccr_group/ccr_group_member
+        when(dataWarehouseService.findGroupMember("GROUP001", "MEMBER_A"))
+                .thenReturn(Map.of("member_customer_no", "MEMBER_A"));
+
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        SubmitResponse response = service.submit(1L);
+
+        assertTrue(response.getSubmitted());
+        // 数仓优先:已收录集团与成员,不落手工表(撞数仓自动归存量,不拒绝不覆盖)
+        verify(manualGroupService, never()).saveGroup(any());
+        verify(manualGroupService, never()).upsertMember(any());
+    }
+
+    // ---------- 申请额度预检:未补录 BLOCK(§docs/19 §4.5) ----------
+
+    @Test
+    void submitCheckBlocksWhenApplyAmountMissing() {
+        CcrApplication app = groupApp(); // 数仓已收录集团,但未补录本次申请额度
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        lenient().when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        when(dataWarehouseService.latestDataDates(any())).thenReturn(new HashMap<>());
+        lenient().when(dataWarehouseService.contribution(anyString())).thenReturn(new ArrayList<>());
+
+        SubmitCheckResponse resp = service.submitCheck(1L);
+
+        boolean blockApplyAmount = resp.getQualityPrecheck().stream()
+                .anyMatch(p -> "GROUP_APPLY_AMOUNT".equals(p.getRuleCode()) && "BLOCK".equals(p.getLevel()));
+        assertTrue(blockApplyAmount);
     }
 
     // ---------- 一合同一有效分项(跨申请阻断) ----------
 
     @Test
     void submitBlocksWhenContractOccupiedByNonTerminalItemAcrossApplications() {
-        CcrApplication app = groupApp();
+        CcrApplication app = existingGroupApp("10000");
         CcrPricingItem item = loanItem(11L, "MEMBER_A");
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
@@ -378,7 +537,7 @@ class ApplicationSubmitServiceImplTest {
 
     @Test
     void submitBlocksWhenHardBoundaryBreached() {
-        CcrApplication app = groupApp();
+        CcrApplication app = existingGroupApp("10000");
         CcrPricingItem item = loanItem(11L, "MEMBER_A");
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
@@ -522,6 +681,8 @@ class ApplicationSubmitServiceImplTest {
     void reapplyInheritsApprovedItemsAndReroutesRejected() {
         CcrApplication source = groupApp();
         source.setStatus("FINAL");
+        // 关联重提跨申请带出补录信息(§4.5):新增集团重提免二次补录
+        source.setGroupInfoJson("{\"applyAmount\":\"10000\",\"groupNo\":\"GROUP001\",\"groupName\":\"集团001\"}");
         when(applicationMapper.selectById(1L)).thenReturn(source);
         lenient().when(applicationMapper.insert(any(CcrApplication.class))).thenAnswer(inv -> {
             inv.getArgument(0, CcrApplication.class).setId(2L);
@@ -545,6 +706,9 @@ class ApplicationSubmitServiceImplTest {
         assertEquals("DRAFT", target.getStatus());
         assertEquals(1L, target.getSourceApplicationId());
         assertEquals("GROUP001", target.getGroupNo());
+        // 跨申请带出:reapply 复制 groupInfoJson,新增集团重提无需二次补录
+        assertEquals("{\"applyAmount\":\"10000\",\"groupNo\":\"GROUP001\",\"groupName\":\"集团001\"}",
+            target.getGroupInfoJson());
 
         ArgumentCaptor<CcrPricingItem> itemCaptor = ArgumentCaptor.forClass(CcrPricingItem.class);
         verify(pricingItemMapper, org.mockito.Mockito.times(2)).insert(itemCaptor.capture());

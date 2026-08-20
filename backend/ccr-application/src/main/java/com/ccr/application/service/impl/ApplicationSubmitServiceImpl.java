@@ -2,6 +2,8 @@ package com.ccr.application.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -264,22 +266,28 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         List<SubmitCheckResponse.QualityPrecheckItem> items = new ArrayList<>();
         boolean groupScope = "GROUP".equals(app.getCustomerScope());
         if (groupScope) {
-            // 集团主数据:数仓优先,手工集团(ccr_group)回退
-            if (!groupExists(app.getGroupNo())) {
-                items.add(precheckItem("SUBJECT_EXISTS", "BLOCK", app.getGroupNo(), "集团主数据缺失(数仓与手工集团均无)"));
+            // 数据以数仓为准(§docs/19 §4.1):数仓收录=存量(数仓优先),数仓无=新增(补录数据生效)
+            boolean newGroup = dataWarehouseService.findGroup(app.getGroupNo()) == null;
+            // 集团主数据:存量需在团(数仓/手工);新增集团客户经理补录 group_info_json 即视为人工确权,降 WARN 放行
+            if (!groupExistsForSubmit(app)) {
+                items.add(precheckItem("SUBJECT_EXISTS", "BLOCK", app.getGroupNo(),
+                        "集团主数据缺失(数仓与手工集团均无,请补录集团信息)"));
+            } else if (newGroup && StrUtil.isNotBlank(app.getGroupInfoJson())) {
+                items.add(precheckItem("SUBJECT_EXISTS", "WARN", app.getGroupNo(),
+                        "集团主数据快照缺失(新增集团,已按人工补录提交,请确认无误)"));
             }
-            // 授信/批复总额度:数仓授信快照优先,手工集团回退补录批复总额度
-            if (mergedApprovedTotal(app.getGroupNo()) == null) {
-                items.add(precheckItem("GROUP_CREDIT_EXISTS", "BLOCK", app.getGroupNo(),
-                        "集团授信快照缺失(手工集团请先补录批复总额度)"));
+            // 申请额度(本次新增授信)必填:所有集团申请统一;数仓批复授信仅作展示参考,不参与勾稽
+            if (applyAmountOf(app) == null) {
+                items.add(precheckItem("GROUP_APPLY_AMOUNT", "BLOCK", app.getGroupNo(),
+                        "请录入本次申请额度(集团新增授信,必填)"));
             }
-            // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行
+            // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行;新增集团成员手工录入即放行
             Map<String, Map<String, Object>> dwMemberMap = dwMemberMap(app.getGroupNo());
             Map<String, CcrGroupMember> manualMemberMap = manualMemberMap(app.getGroupNo());
             for (CcrApplicationMember member : applicationMembers(app.getId())) {
-                if (!memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
+                if (!newGroup && !memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
                     items.add(precheckItem("GROUP_MEMBER_VALID", "BLOCK", member.getMemberCustomerNo(),
-                            "涉及成员不在集团有效成员快照中"));
+                            "涉及成员不在集团有效成员快照中(可手工补录成员)"));
                 }
                 if (dataWarehouseService.contribution(member.getMemberCustomerNo()).isEmpty()) {
                     items.add(precheckItem("CONTRIBUTION_EXISTS", "WARN", member.getMemberCustomerNo(),
@@ -344,7 +352,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         List<CcrPricingItem> items = routableItems(id);
         // b) 完整性校验
         checkCompleteness(app, items);
-        // c) 集团场景校验(返回批复总额度供路由定档,§B18)
+        // b1) 提交时落表(§docs/19 §4.6):解析 group_info_json 补录数据落 ccr_group/ccr_group_member(幂等、数仓优先、最新覆盖)
+        persistGroupSupplement(app);
+        // c) 集团场景校验(返回申请额度供路由定档,§B18)
         BigDecimal groupCreditTotal = checkGroupConstraints(app);
         // d) 一合同一有效分项/一账户一有效分项(跨申请,非终态阻断)
         checkCarrierUniqueness(app, items);
@@ -615,65 +625,45 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * c) 集团校验:集团/授信快照存在、成员在团、成员分配额度合计≤集团批复总额度
-     * (EXCLUSIVE 加总;SHARED 按 shared_limit_group_no 分组取其一不加总)
+     * c) 集团校验(§docs/19 §4.7):集团主数据存在、成员在团、申请额度必填 + 成员申请金额合计≤本次申请额度。
+     * 数据以数仓为准:数仓收录=存量(数仓优先),数仓无=新增(补录数据生效,豁免存量校验);
+     * 申请额度为本次新增授信(必填),随申请存 group_info_json 多条并存,数仓批复授信仅展示参考不参与勾稽。
      *
-     * @return 集团批复总额度(路由金额定档基准,§B18)
+     * @return 本次申请额度(路由展示/定档基准,§B18)
      */
     private BigDecimal checkGroupConstraints(CcrApplication app) {
         if (!"GROUP".equals(app.getCustomerScope())) {
             return null;
         }
-        if (!groupExists(app.getGroupNo())) {
+        if (!groupExistsForSubmit(app)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "集团[" + app.getGroupNo() + "]主数据不存在(数仓与手工集团均无)");
+                    "集团[" + app.getGroupNo() + "]主数据缺失(请先补录集团信息)");
         }
-        Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
-        // 批复总额度:数仓授信快照优先,手工集团回退补录值(路由定档/额度勾稽基准)
-        BigDecimal approvedTotal = mergedApprovedTotal(app.getGroupNo());
-        if (approvedTotal == null) {
+        boolean newGroup = dataWarehouseService.findGroup(app.getGroupNo()) == null;
+        BigDecimal applyAmount = applyAmountOf(app);
+        if (applyAmount == null) {
             throw new ServiceException(ErrorCode.LIMIT_INCONSISTENT.getCode(),
-                    "集团[" + app.getGroupNo() + "]授信快照不存在且未补录批复总额度");
+                    "请录入本次申请额度(集团新增授信,必填)");
         }
-        // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行
+        // 成员存在性:数仓成员快照 ∪ 手工成员,任一侧在团即放行;新增集团成员手工录入即放行
         Map<String, Map<String, Object>> dwMemberMap = dwMemberMap(app.getGroupNo());
         Map<String, CcrGroupMember> manualMemberMap = manualMemberMap(app.getGroupNo());
         for (CcrApplicationMember member : applicationMembers(app.getId())) {
-            if (!memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
+            if (!newGroup && !memberValid(dwMemberMap, manualMemberMap, member.getMemberCustomerNo())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "成员[" + member.getMemberCustomerNo() + "]不在集团有效成员快照中");
+                        "成员[" + member.getMemberCustomerNo() + "]不在集团有效成员快照中(可手工补录成员)");
             }
         }
-        // 额度勾稽:数仓成员额度(EXCLUSIVE 加总 + SHARED 按共享组取最大一条)
-        //        + 手工成员本次申请金额合计 ≤ 批复总额度
-        List<Map<String, Object>> limits = credit == null ? new ArrayList<>()
-                : dataWarehouseService.memberLimitsByGroup(String.valueOf(credit.get("group_credit_no")));
-        BigDecimal allocatedSum = BigDecimal.ZERO;
-        Map<String, BigDecimal> sharedGroups = new HashMap<>();
-        for (Map<String, Object> limit : limits) {
-            BigDecimal allocated = toBigDecimal(limit.get("allocated_amount"));
-            if ("SHARED".equals(String.valueOf(limit.get("allocation_mode")))) {
-                String sharedGroupNo = String.valueOf(limit.get("shared_limit_group_no"));
-                sharedGroups.merge(sharedGroupNo, allocated, BigDecimal::max);
-            } else {
-                allocatedSum = allocatedSum.add(allocated);
-            }
-        }
-        for (BigDecimal shared : sharedGroups.values()) {
-            allocatedSum = allocatedSum.add(shared);
-        }
-        // 手工成员(不在数仓成员快照,无数仓额度)本次申请金额计入额度占用
-        for (CcrApplicationMember member : applicationMembers(app.getId())) {
-            if (!dwMemberMap.containsKey(member.getMemberCustomerNo())
-                    && member.getRequestAmount() != null) {
-                allocatedSum = allocatedSum.add(member.getRequestAmount());
-            }
-        }
-        if (allocatedSum.compareTo(approvedTotal) > 0) {
+        // 额度勾稽:成员申请金额合计 ≤ 本次申请额度(所有集团申请统一)
+        BigDecimal allocatedSum = applicationMembers(app.getId()).stream()
+                .filter(m -> m.getRequestAmount() != null)
+                .map(CcrApplicationMember::getRequestAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (allocatedSum.compareTo(applyAmount) > 0) {
             throw new ServiceException(ErrorCode.LIMIT_INCONSISTENT.getCode(),
-                    "成员额度合计 " + allocatedSum + " 超过集团批复总额度 " + approvedTotal);
+                    "成员申请金额合计 " + allocatedSum + " 超过本次申请额度 " + applyAmount);
         }
-        return approvedTotal;
+        return applyAmount;
     }
 
     /** d) 一合同/一账户一有效分项:同载体存在非终态分项则阻断(跨申请) */
@@ -1008,6 +998,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 + IdUtil.fastSimpleUUID().substring(0, 4).toUpperCase());
         target.setStatus(ApplicationStatus.DRAFT.getCode());
         target.setDataBaselineJson(buildBaselineJson(source));
+        // 集团补录/申请额度快照随重提草稿保留(新增集团数仓未收录时,重提免二次补录;§docs/19 §4.5 跨申请带出)
+        target.setGroupInfoJson(source.getGroupInfoJson());
         if (target.getVersionNo() == null) {
             target.setVersionNo(1); // 与 DB DEFAULT 一致,保证重提草稿返回体携带版本号
         }
@@ -1334,6 +1326,109 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         CcrGroup manual = manualGroupService.findGroup(groupNo);
         return manual == null ? null : manual.getApprovedTotalAmount();
+    }
+
+    /** 本次申请额度(集团申请:从 group_info_json 读,新增授信必填;非集团/未补录返回 null) */
+    private BigDecimal applyAmountOf(CcrApplication app) {
+        if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupInfoJson())) {
+            return null;
+        }
+        try {
+            return toBigDecimal(JSONUtil.parseObj(app.getGroupInfoJson()).get("applyAmount"));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 提交判定集团存在:数仓收录 ∨ 手工表 ∨ 申请上下文 group_info_json 已补录(数据以数仓为准,数仓无则补录数据生效) */
+    private boolean groupExistsForSubmit(CcrApplication app) {
+        if (groupExists(app.getGroupNo())) {
+            return true;
+        }
+        if (StrUtil.isNotBlank(app.getGroupInfoJson())) {
+            try {
+                JSONObject json = JSONUtil.parseObj(app.getGroupInfoJson());
+                return StrUtil.isNotBlank(json.getStr("groupNo")) && StrUtil.isNotBlank(json.getStr("groupName"));
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 提交时落表(§docs/19 §4.6):解析 group_info_json,新增集团(数仓无)落 ccr_group、补录成员(数仓无该成员)落 ccr_group_member。
+     * 幂等、数仓优先、最新覆盖;申请额度不落主表(随申请存多条),仅同步至 ccr_group.approved_total_amount 作展示参考。
+     */
+    private void persistGroupSupplement(CcrApplication app) {
+        if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupInfoJson())) {
+            return;
+        }
+        JSONObject json;
+        try {
+            json = JSONUtil.parseObj(app.getGroupInfoJson());
+        } catch (Exception e) {
+            return;
+        }
+        String groupNo = app.getGroupNo();
+        // 新增集团:数仓未收录则落 ccr_group(最新覆盖;approved_total_amount=本次申请额度,展示参考)
+        if (dataWarehouseService.findGroup(groupNo) == null) {
+            BigDecimal applyAmount = applyAmountOf(app);
+            if (applyAmount == null) {
+                return; // 申请额度未录,交 checkGroupConstraints 拦截报错,不落表(同事务回滚)
+            }
+            CcrGroup g = manualGroupService.findGroup(groupNo);
+            if (g == null) {
+                g = new CcrGroup();
+            }
+            g.setGroupNo(groupNo);
+            g.setGroupName(StrUtil.blankToDefault(json.getStr("groupName"), "集团-" + groupNo));
+            g.setGroupType(StrUtil.blankToDefault(json.getStr("groupType"), "INDUSTRY_GROUP"));
+            g.setGroupStatus(StrUtil.blankToDefault(json.getStr("groupStatus"), "NORMAL"));
+            g.setCurrency(StrUtil.blankToDefault(json.getStr("currency"), "CNY"));
+            g.setManagerOrgId(json.getLong("managerOrgId"));
+            g.setApprovedTotalAmount(applyAmount);
+            manualGroupService.saveGroup(g);
+        }
+        // 补录成员:数仓无该成员的补录成员落 ccr_group_member(最新覆盖)
+        JSONArray supplementMembers = json.getJSONArray("supplementMembers");
+        if (supplementMembers == null) {
+            return;
+        }
+        for (int i = 0; i < supplementMembers.size(); i++) {
+            JSONObject m = supplementMembers.getJSONObject(i);
+            String memberNo = m.getStr("memberCustomerNo");
+            if (StrUtil.isBlank(memberNo)) {
+                continue;
+            }
+            if (dataWarehouseService.findGroupMember(groupNo, memberNo) != null) {
+                continue; // 数仓优先:数仓已有该成员,不落手工表
+            }
+            CcrGroupMember gm = manualGroupService.findGroupMember(groupNo, memberNo);
+            if (gm == null) {
+                gm = new CcrGroupMember();
+            }
+            gm.setGroupNo(groupNo);
+            gm.setMemberCustomerNo(memberNo);
+            gm.setMemberName(StrUtil.blankToDefault(m.getStr("memberName"), memberNo));
+            gm.setMemberRole(StrUtil.blankToDefault(m.getStr("memberRole"), "GENERAL"));
+            gm.setControlRelation(m.getStr("controlRelation"));
+            gm.setRelationStart(parseLocalDate(m.getStr("relationStart")));
+            gm.setRelationEnd(parseLocalDate(m.getStr("relationEnd")));
+            manualGroupService.upsertMember(gm);
+        }
+    }
+
+    /** 字符串日期转 LocalDate(空/非法返回 null) */
+    private static LocalDate parseLocalDate(String value) {
+        if (StrUtil.isBlank(value)) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.substring(0, 10));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 数仓成员快照 map(成员客户号→行) */
