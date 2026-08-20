@@ -286,16 +286,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             result.setFinalNodeCode(GROUP_NODE);
             result.setRouteChain(buildChain(matched, GROUP_NODE));
             result.setMessage("产品链路" + ("Y".equals(route.getMandatoryVote()) ? "强制上会" : "命中上会条件")
-                    + ":必经六人小组表决(≥4票)" + ("Y".equals(route.getPresidentDecision()) ? ",并经总行行长决策" : ""));
+                    + ":必经六人小组表决(≥4票),并经总行行长决策");
         }
         return applyPresident(result, route);
     }
 
     /**
-     * 必经总行行长决策(§8A.5② president_decision/B11/D20a):终审为六人小组时链路追加 PRESIDENT。
+     * 必经总行行长决策(§7.7/D20a):凡上会申请(终审为六人小组)表决通过后必经总行行长最终决议,
+     * 全局强制(与产品 president_decision 配置无关),链路在小组后追加 PRESIDENT。
      */
     private RouteResult applyPresident(RouteResult result, CcrProductRoute route) {
-        if (route != null && "Y".equals(route.getPresidentDecision()) && GROUP_NODE.equals(result.getFinalNodeCode())) {
+        // 凡上会(终审为六人小组)必经总行行长决策;权限内终审不经过(§D20a)
+        if (GROUP_NODE.equals(result.getFinalNodeCode())) {
             List<String> chain = new ArrayList<>(result.getRouteChain() == null ? List.of() : result.getRouteChain());
             if (!chain.contains(PRESIDENT_NODE)) {
                 chain.add(PRESIDENT_NODE);
@@ -307,7 +309,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
 
     /**
      * 组装直接上会/强制上会结果(§8A.5②):首节点恒为支行行长,终审=六人小组,
-     * 必经行长决策时追加 PRESIDENT;不参与链式优先级(链路固定,不含中间层级)。
+     * 凡上会必经总行行长决策(D20a)追加 PRESIDENT;不参与链式优先级(链路固定,不含中间层级)。
      */
     private RouteResult buildVoteResult(List<CcrRateMatrix> matched, CcrProductRoute route,
                                         BigDecimal hardBoundary, boolean isLoan, String msg) {
@@ -318,9 +320,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         List<String> chain = new ArrayList<>();
         chain.add(FIRST_NODE);
         chain.add(GROUP_NODE);
-        if ("Y".equals(route.getPresidentDecision())) {
-            chain.add(PRESIDENT_NODE);
-        }
+        // 凡上会必经总行行长决策(D20a):小组表决通过后行长同意/一票否决
+        chain.add(PRESIDENT_NODE);
         result.setRouteChain(chain);
         result.setRateDirection(isLoan ? "LOWER_BETTER" : "HIGHER_BETTER");
         result.setMatchedRuleCode(row.getMatrixNo());
