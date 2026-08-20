@@ -1135,9 +1135,14 @@ function initialCreditInfo(): CreditInfo {
 function newGuarantee(): GuaranteeRow {
   return {
     memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
-    productCode: '', termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
+    productCode: defaultProductByScope(), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
     originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
+}
+
+/** 贷款产品按客户类型默认:个人客户→个人经营性贷款(LOAN_P),对公/集团(成员为企业)→对公贷款(LOAN_A) */
+function defaultProductByScope(): string {
+  return form.customerScope === 'INDIVIDUAL' ? 'LOAN_P' : 'LOAN_A'
 }
 
 const form = reactive({
@@ -1709,6 +1714,11 @@ function onCustomerScopeChange() {
     groupSupplement.basicAccount = ''
     showSupplementMember.value = false
     supplementMembers.value = []
+  }
+  // 贷款产品默认值跟随客户类型:仅补未选择产品的分项(已选产品不覆盖)
+  const defaultProduct = defaultProductByScope()
+  for (const g of form.guarantees) {
+    if (!g.productCode) g.productCode = defaultProduct
   }
 }
 
