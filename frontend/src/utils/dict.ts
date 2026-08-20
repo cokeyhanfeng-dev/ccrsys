@@ -313,6 +313,12 @@ export function groupStatusText(code?: string, fallback = '暂无数据'): strin
   return textOf(GROUP_STATUS, code, fallback)
 }
 
+/** 集团类型(dw_customer_group_snapshot.group_type;系统固定 INDUSTRY_GROUP) */
+export const GROUP_TYPE: Record<string, string> = { INDUSTRY_GROUP: '产业集团' }
+export function groupTypeText(code?: string, fallback = '—'): string {
+  return textOf(GROUP_TYPE, code, fallback)
+}
+
 /** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存) */
 export const FIVE_LEVEL_CLASS: Record<string, string> = {
   '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失'

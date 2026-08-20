@@ -77,8 +77,12 @@
         <!-- 对公客户(§20 ①:名称/客户号/统一社会信用代码/企业性质/行业/信用等级/五级分类等) -->
         <template v-if="isCorpCustomer">
           <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
-          <div><span class="dg-label">行内客户号</span>{{ customer.customerNo || '—' }}</div>
-          <div><span class="dg-label">客户类型</span>对公</div>
+          <div><span class="dg-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
+          <div><span class="dg-label">客户类型</span>{{ isGroup ? '集团' : '对公' }}</div>
+          <div v-if="isGroup && customer.groupType"><span class="dg-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
+          <div v-if="isGroup && customer.groupStatus"><span class="dg-label">集团状态</span>{{ groupStatusText(customer.groupStatus) }}</div>
+          <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
+          <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
           <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
           <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
@@ -139,8 +143,9 @@
         <div><span class="dg-label">集团贡献度</span>{{ groupContributionText }}</div>
       </div>
       <el-collapse v-if="groupMembers.length" style="margin-top:12px">
-        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="`成员 ${m.memberCustomerNo}(${memberRoleText(m.memberRole, '成员')})`" :name="i">
+        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
           <div class="detail-grid">
+            <div v-if="m.memberName"><span class="dg-label">成员名称</span>{{ m.memberName }}</div>
             <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
@@ -849,7 +854,7 @@ import {
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText,
   entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
-  fiveLevelClassText
+  fiveLevelClassText, groupTypeText, groupStatusText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -1064,6 +1069,12 @@ function collectRateAdjustments(): Record<string, number | string> | undefined {
 
 const groupTotalAmount = computed(() =>
   groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
+
+// 集团成员折叠标题:有名称显示「名称(客户号)」,无数仓/手工名称回退客户号
+function memberTitle(m: any): string {
+  const who = m.memberName ? `${m.memberName}(${m.memberCustomerNo})` : m.memberCustomerNo
+  return `成员 ${who}(${memberRoleText(m.memberRole, '成员')})`
+}
 
 // P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额,万元)
 const groupContributionText = computed(() => {

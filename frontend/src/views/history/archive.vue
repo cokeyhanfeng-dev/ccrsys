@@ -54,8 +54,12 @@
         <div class="card__head"><span>客户基本信息</span></div>
         <div class="desc-grid" v-if="hasCustomer">
           <div class="desc-item"><span class="desc-label">客户名称</span>{{ customerName }}</div>
-          <div class="desc-item"><span class="desc-label">行内客户号</span>{{ customer.customerNo || '—' }}</div>
-          <div class="desc-item"><span class="desc-label">客户类型</span>{{ isCorpCustomer ? '对公' : isIndivCustomer ? '个人' : '—' }}</div>
+          <div class="desc-item"><span class="desc-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
+          <div class="desc-item"><span class="desc-label">客户类型</span>{{ isGroup ? '集团' : (isCorpCustomer ? '对公' : isIndivCustomer ? '个人' : '—') }}</div>
+          <div v-if="isGroup && customer.groupType" class="desc-item"><span class="desc-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
+          <div v-if="isGroup && customer.groupStatus" class="desc-item"><span class="desc-label">集团状态</span>{{ groupStatusText(customer.groupStatus) }}</div>
+          <div v-if="isGroup && customer.currency" class="desc-item"><span class="desc-label">币种</span>{{ currencyText(customer.currency) }}</div>
+          <div v-if="isGroup && customer.applyAmount != null" class="desc-item"><span class="desc-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ customer.certNo || '—' }}</div>
           <div v-if="isIndivCustomer" class="desc-item"><span class="desc-label">证件号码</span>{{ customer.certNo || '—' }}</div>
           <div v-if="customer.entpCharic" class="desc-item"><span class="desc-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
@@ -85,9 +89,10 @@
       <div class="card" v-if="isGroup">
         <div class="card__head"><span>集团成员</span></div>
         <table class="table table--full" v-if="archive.members?.length">
-          <thead><tr><th>成员客户号</th><th>成员角色</th><th>申请金额(万元)</th></tr></thead>
+          <thead><tr><th>成员名称</th><th>成员客户号</th><th>成员角色</th><th>申请金额(万元)</th></tr></thead>
           <tbody>
             <tr v-for="(m, i) in archive.members" :key="i">
+              <td>{{ val(m, 'member_name', 'memberName') || '—' }}</td>
               <td>{{ val(m, 'member_customer_no', 'memberCustomerNo') }}</td>
               <td>{{ memberRoleText(val(m, 'member_role', 'memberRole')) }}</td>
               <td class="num">{{ val(m, 'request_amount', 'requestAmount') }}</td>
@@ -560,7 +565,7 @@ import {
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
   rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
   entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge,
-  fiveLevelClassText
+  fiveLevelClassText, groupTypeText, groupStatusText
 } from '@/utils/dict'
 
 const route = useRoute()

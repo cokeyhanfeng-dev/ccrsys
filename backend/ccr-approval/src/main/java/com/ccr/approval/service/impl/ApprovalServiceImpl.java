@@ -578,8 +578,11 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("application", application);
-        result.put("members", jdbcTemplate.queryForList(
-                "SELECT * FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", applicationId));
+        List<Map<String, Object>> members = jdbcTemplate.queryForList(
+                "SELECT * FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", applicationId);
+        // 集团成员名称补充:快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表
+        enrichArchiveMemberNames(members, application.get("snapshot_bundle_id"));
+        result.put("members", members);
         result.put("pricingItems", jdbcTemplate.queryForList(
                 "SELECT * FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY create_time", applicationId));
 
@@ -688,6 +691,9 @@ public class ApprovalServiceImpl implements ApprovalService {
     private void assembleApplicationContent(Map<String, Object> result, Map<String, Object> application, Long applicationId) {
         Object custNo = application.get("customer_no");
         String custNoStr = custNo == null ? "" : custNo.toString();
+        Object groupNo = application.get("group_no");
+        // 集团场景:customer 展示集团本身(集团名 + 集团补录对公要素),不按成员客户号查(集团申请 customer_no 为空)
+        boolean groupScene = groupNo != null && StrUtil.isNotBlank(groupNo.toString());
         Object bundleId = application.get("snapshot_bundle_id");
         List<Map<String, Object>> snapshotRecords = bundleId == null ? List.of()
                 : jdbcTemplate.queryForList(
@@ -696,12 +702,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (!snapshotRecords.isEmpty()) {
             result.put("source", "SNAPSHOT");
             result.put("snapshotInfo", snapshotInfo(bundleId, snapshotRecords));
-            result.put("customer", snapshotCustomer(snapshotRecords, custNoStr));
+            result.put("customer", groupScene
+                    ? groupCustomerOf(groupNo.toString(), snapshotRecords, application)
+                    : snapshotCustomer(snapshotRecords, custNoStr));
             result.put("financing", snapshotFinancing(snapshotRecords, custNoStr));
             result.put("contribution", snapshotContribution(snapshotRecords, custNoStr));
         } else {
             result.put("source", "REALTIME");
-            result.put("customer", realtimeCustomer(custNoStr));
+            result.put("customer", groupScene
+                    ? groupCustomerOf(groupNo.toString(), List.of(), application)
+                    : realtimeCustomer(custNoStr));
             result.put("financing", realtimeFinancing(custNoStr));
             result.put("contribution", realtimeContribution(custNoStr));
         }
@@ -722,7 +732,6 @@ public class ApprovalServiceImpl implements ApprovalService {
         result.put("attachments", jdbcTemplate.queryForList(
                 "SELECT id, file_name fileName, file_size fileSize, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
         // 集团信息(集团授信总额/到期日 + 集团贡献度,仅集团场景)
-        Object groupNo = application.get("group_no");
         if (groupNo != null && StrUtil.isNotBlank(groupNo.toString())) {
             String gno = groupNo.toString();
             result.put("groupCredit", jdbcTemplate.queryForList(
@@ -911,6 +920,128 @@ public class ApprovalServiceImpl implements ApprovalService {
             return (Map<String, Object>) map;
         }
         return JSONUtil.parseObj(coreJson.toString());
+    }
+
+    /**
+     * 集团场景客户信息行:集团申请 customer_no 为空,客户信息展示集团本身。
+     * 数据源优先级:提交快照 GROUP 记录(集团主数据 core_json,含 group_name/group_type/group_status)
+     * → 数仓实时集团主数据 → 申请上下文 group_info_json(新增集团补录;补录对公要素仅此来源) → 集团号兜底。
+     * 键名对齐前端对公模板(customerName/certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。
+     */
+    private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
+                                                      Map<String, Object> application) {
+        String groupName = null, groupType = null, groupStatus = null;
+        for (Map<String, Object> record : snapshotRecords) {
+            if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
+                continue;
+            }
+            Map<String, Object> core = coreOf(record);
+            groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
+            groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
+            groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
+            break;
+        }
+        if (groupName == null) {
+            Map<String, Object> dw = dataWarehouseService.findGroup(groupNo);
+            if (dw != null) {
+                groupName = dw.get("group_name") == null ? null : String.valueOf(dw.get("group_name"));
+                groupType = dw.get("group_type") == null ? null : String.valueOf(dw.get("group_type"));
+                groupStatus = dw.get("group_status") == null ? null : String.valueOf(dw.get("group_status"));
+            }
+        }
+        cn.hutool.json.JSONObject gi = null;
+        Object gij = application == null ? null : application.get("group_info_json");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                gi = JSONUtil.parseObj(gij.toString());
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,集团名仍可来自快照/数仓
+            }
+        }
+        if (groupName == null && gi != null) {
+            groupName = gi.getStr("groupName");
+        }
+        if (groupName == null) {
+            groupName = "集团-" + groupNo;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("customerNo", groupNo);
+        row.put("customerName", groupName);
+        row.put("certType", "USCC");
+        if (gi != null) {
+            row.put("certNo", gi.getStr("ucrCode"));
+            row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
+            row.put("creditLevel", gi.getStr("creditLevel"));
+            row.put("industry", gi.getStr("industry"));
+            row.put("registeredCapital", gi.get("registeredCapital"));
+            row.put("openOrgName", gi.getStr("openOrg"));
+            row.put("openDate", gi.getStr("openDate"));
+            row.put("basicAccount", gi.getStr("basicAccount"));
+            row.put("currency", gi.getStr("currency"));
+            row.put("applyAmount", gi.get("applyAmount"));
+        }
+        row.put("groupNo", groupNo);
+        row.put("groupName", groupName);
+        row.put("groupType", groupType == null ? "INDUSTRY_GROUP" : groupType);
+        row.put("groupStatus", groupStatus);
+        row.put("custType", "CORP");
+        return List.of(row);
+    }
+
+    /** 档案集团成员名称补充(成员行 snake_case):快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表 */
+    private void enrichArchiveMemberNames(List<Map<String, Object>> members, Object bundleId) {
+        if (members.isEmpty()) {
+            return;
+        }
+        Map<String, String> nameByNo = new HashMap<>();
+        if (bundleId != null) {
+            List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                    "SELECT subject_type subjectType, subject_id subjectId, core_json coreJson"
+                            + " FROM ccr_snapshot_record WHERE bundle_id = ? AND del_flag = '0'", bundleId);
+            for (Map<String, Object> record : records) {
+                Object sid = record.get("subjectId");
+                if (sid == null || nameByNo.containsKey(sid.toString())) {
+                    continue;
+                }
+                Map<String, Object> core = coreOf(record);
+                if ("CORPORATE".equals(record.get("subjectType")) && core.get("cust_name") != null) {
+                    nameByNo.put(sid.toString(), String.valueOf(core.get("cust_name")));
+                } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
+                    nameByNo.put(sid.toString(), String.valueOf(core.get("member_name")));
+                }
+            }
+        }
+        for (Map<String, Object> m : members) {
+            Object mno = m.get("member_customer_no");
+            if (mno == null) {
+                continue;
+            }
+            String name = nameByNo.get(mno.toString());
+            if (name == null) {
+                name = realtimeMemberName(mno.toString());
+            }
+            m.put("member_name", name);
+        }
+    }
+
+    /** 成员名称实时降级:数仓对公主数据 → 对私主数据 → 手工成员表(补录成员名) */
+    private String realtimeMemberName(String memberNo) {
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT cust_name FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!corp.isEmpty() && corp.get(0).get("cust_name") != null) {
+            return String.valueOf(corp.get(0).get("cust_name"));
+        }
+        List<Map<String, Object>> indv = jdbcTemplate.queryForList(
+                "SELECT cust_nm FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!indv.isEmpty() && indv.get(0).get("cust_nm") != null) {
+            return String.valueOf(indv.get(0).get("cust_nm"));
+        }
+        List<Map<String, Object>> manual = jdbcTemplate.queryForList(
+                "SELECT member_name FROM ccr_group_member WHERE member_customer_no = ? AND del_flag = '0' LIMIT 1", memberNo);
+        if (!manual.isEmpty() && manual.get(0).get("member_name") != null) {
+            return String.valueOf(manual.get(0).get("member_name"));
+        }
+        return null;
     }
 
     /** Hutool JSON 解析 null 值为 JSONNull 包装对象,统一转 Java null */

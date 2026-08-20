@@ -263,7 +263,7 @@ public class ApprovalController {
         // 申请概要
         if (appId != null) {
             List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                    "SELECT id, application_no applicationNo, business_type businessType, customer_no customerNo, group_no groupNo, application_remark applicationRemark, snapshot_bundle_id snapshotBundleId, customer_info_json customerInfoJson, credit_info_json creditInfoJson, submit_time submitTime, applicant_user_id applicantUserId FROM ccr_application WHERE id = ?", appId);
+                    "SELECT id, application_no applicationNo, business_type businessType, customer_no customerNo, group_no groupNo, application_remark applicationRemark, snapshot_bundle_id snapshotBundleId, customer_info_json customerInfoJson, credit_info_json creditInfoJson, submit_time submitTime, applicant_user_id applicantUserId, group_info_json groupInfoJson FROM ccr_application WHERE id = ?", appId);
             result.put("application", apps);
             if (!apps.isEmpty()) {
                 businessType = apps.get(0).get("businessType") == null ? null : apps.get(0).get("businessType").toString();
@@ -370,28 +370,39 @@ public class ApprovalController {
                 : jdbcTemplate.queryForList(
                         "SELECT subject_type subjectType, subject_id subjectId, source_data_dt sourceDataDt, core_json coreJson"
                                 + " FROM ccr_snapshot_record WHERE bundle_id = ? AND del_flag = '0'", bundleId);
+        // 集团场景:customer 展示集团本身(集团名 + 集团补录对公要素),不按成员客户号查(集团申请 customer_no 为空)
+        Map<String, Object> appRow0 = appBrief == null || appBrief.isEmpty() ? null : appBrief.get(0);
+        Object groupNoObj = appRow0 == null ? null : appRow0.get("groupNo");
+        boolean groupScene = groupNoObj != null && StrUtil.isNotBlank(groupNoObj.toString());
+        String groupNoStr = groupScene ? groupNoObj.toString() : null;
         if (!snapshotRecords.isEmpty()) {
             result.put("source", "SNAPSHOT");
-            result.put("customer", snapshotCustomer(snapshotRecords, custNo));
+            result.put("customer", groupScene
+                    ? groupCustomerOf(groupNoStr, snapshotRecords, appRow0)
+                    : snapshotCustomer(snapshotRecords, custNo));
             result.put("financing", snapshotFinancing(snapshotRecords, custNo));
             result.put("contribution", snapshotContribution(snapshotRecords, custNo));
             result.put("snapshotInfo", snapshotInfo(bundleId, snapshotRecords));
         } else {
             // 降级:数仓实时查询
             result.put("source", "REALTIME");
-            List<Map<String, Object>> corp = jdbcTemplate.queryForList(
-                    "SELECT cust_no customerNo, cust_name customerName, cert_no certNo, entp_charic entpCharic, entp_scale entpScale,"
-                            + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass, entp_empe_num empeNum,"
-                            + " rest_asts totalAssets, estp_estb_dt estbDate, rest_addr restAddr, openact_org_nm openOrgName,"
-                            + " openact_dt openDate, cust_class customerClass, 'CORP' custType"
-                            + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo);
-            result.put("customer", corp.isEmpty()
-                    ? jdbcTemplate.queryForList("SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo,"
-                            + " gnd gender, ocupn occupation, whlyr_incm annualIncome, mrrg_sittn maritalStatus, rsd_addr address,"
-                            + " tel_no phone, opnact_org_nm openOrgName, opnact_dt openDate, ffthlv_class fiveLevelClass,"
-                            + " cust_class customerClass, 'INDIV' custType"
-                            + " FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo)
-                    : corp);
+            if (groupScene) {
+                result.put("customer", groupCustomerOf(groupNoStr, List.of(), appRow0));
+            } else {
+                List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                        "SELECT cust_no customerNo, cust_name customerName, cert_no certNo, entp_charic entpCharic, entp_scale entpScale,"
+                                + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass, entp_empe_num empeNum,"
+                                + " rest_asts totalAssets, estp_estb_dt estbDate, rest_addr restAddr, openact_org_nm openOrgName,"
+                                + " openact_dt openDate, cust_class customerClass, 'CORP' custType"
+                                + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo);
+                result.put("customer", corp.isEmpty()
+                        ? jdbcTemplate.queryForList("SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo,"
+                                + " gnd gender, ocupn occupation, whlyr_incm annualIncome, mrrg_sittn maritalStatus, rsd_addr address,"
+                                + " tel_no phone, opnact_org_nm openOrgName, opnact_dt openDate, ffthlv_class fiveLevelClass,"
+                                + " cust_class customerClass, 'INDIV' custType"
+                                + " FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", custNo)
+                        : corp);
+            }
             result.put("financing", jdbcTemplate.queryForList(
                     "SELECT contract_no contractNo, agreement_no agreementNo, tranche_no trancheNo, borrower_customer_no borrowerCustomerNo,"
                     + " contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType, currency,"
@@ -400,6 +411,12 @@ public class ApprovalController {
                     + " FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?", custNo));
             result.put("contribution", jdbcTemplate.queryForList(
                     "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType FROM dw_contribution_metric WHERE cust_no = ?", custNo));
+        }
+        // 集团成员名称补充:快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> groupMemberRows = (List<Map<String, Object>>) result.get("groupMembers");
+        if (groupMemberRows != null) {
+            enrichMemberNames(groupMemberRows, snapshotRecords);
         }
 
         // 客户信息人工修正(ccr_application.customer_info_json):数仓带出后人工调整,新增客户后台拉不出时手工填写;审批优先展示人工值
@@ -1058,6 +1075,124 @@ public class ApprovalController {
             return (Map<String, Object>) map;
         }
         return JSONUtil.parseObj(coreJson.toString());
+    }
+
+    /**
+     * 集团场景客户信息行:集团申请 customer_no 为空,客户信息展示集团本身。
+     * 数据源优先级:提交快照 GROUP 记录(集团主数据 core_json,含 group_name/group_type/group_status)
+     * → 数仓实时集团主数据 → 申请上下文 group_info_json(新增集团补录;补录对公要素仅此来源) → 集团号兜底。
+     * 键名对齐前端对公模板(customerName/certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。
+     */
+    private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
+                                                      Map<String, Object> application) {
+        String groupName = null, groupType = null, groupStatus = null;
+        for (Map<String, Object> record : snapshotRecords) {
+            if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
+                continue;
+            }
+            Map<String, Object> core = coreOf(record);
+            groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
+            groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
+            groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
+            break;
+        }
+        if (groupName == null) {
+            List<Map<String, Object>> dw = jdbcTemplate.queryForList(
+                    "SELECT group_name, group_type, group_status FROM dw_customer_group_snapshot"
+                            + " WHERE group_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
+                    groupNo, groupNo);
+            if (!dw.isEmpty() && dw.get(0).get("group_name") != null) {
+                groupName = String.valueOf(dw.get(0).get("group_name"));
+                groupType = dw.get(0).get("group_type") == null ? null : String.valueOf(dw.get(0).get("group_type"));
+                groupStatus = dw.get(0).get("group_status") == null ? null : String.valueOf(dw.get(0).get("group_status"));
+            }
+        }
+        cn.hutool.json.JSONObject gi = null;
+        Object gij = application == null ? null : application.get("groupInfoJson");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                gi = JSONUtil.parseObj(gij.toString());
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,集团名仍可来自快照/数仓
+            }
+        }
+        if (groupName == null && gi != null) {
+            groupName = gi.getStr("groupName");
+        }
+        if (groupName == null) {
+            groupName = "集团-" + groupNo;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("customerNo", groupNo);
+        row.put("customerName", groupName);
+        row.put("certType", "USCC");
+        if (gi != null) {
+            row.put("certNo", gi.getStr("ucrCode"));
+            row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
+            row.put("creditLevel", gi.getStr("creditLevel"));
+            row.put("industry", gi.getStr("industry"));
+            row.put("registeredCapital", gi.get("registeredCapital"));
+            row.put("openOrgName", gi.getStr("openOrg"));
+            row.put("openDate", gi.getStr("openDate"));
+            row.put("basicAccount", gi.getStr("basicAccount"));
+            row.put("currency", gi.getStr("currency"));
+            row.put("applyAmount", gi.get("applyAmount"));
+        }
+        row.put("groupNo", groupNo);
+        row.put("groupName", groupName);
+        row.put("groupType", groupType == null ? "INDUSTRY_GROUP" : groupType);
+        row.put("groupStatus", groupStatus);
+        row.put("custType", "CORP");
+        return List.of(row);
+    }
+
+    /** 集团成员名称补充:快照成员主数据(CORPORATE.cust_name)/手工成员快照(MEMBER.member_name)优先,降级实时数仓/手工成员表 */
+    private void enrichMemberNames(List<Map<String, Object>> members, List<Map<String, Object>> snapshotRecords) {
+        Map<String, String> nameByNo = new HashMap<>();
+        for (Map<String, Object> record : snapshotRecords) {
+            Object sid = record.get("subjectId");
+            if (sid == null) {
+                continue;
+            }
+            String no = sid.toString();
+            if (nameByNo.containsKey(no)) {
+                continue;
+            }
+            Map<String, Object> core = coreOf(record);
+            if ("CORPORATE".equals(record.get("subjectType")) && core.get("cust_name") != null) {
+                nameByNo.put(no, String.valueOf(core.get("cust_name")));
+            } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
+                nameByNo.put(no, String.valueOf(core.get("member_name")));
+            }
+        }
+        for (Map<String, Object> m : members) {
+            String no = String.valueOf(m.get("memberCustomerNo"));
+            String name = nameByNo.get(no);
+            if (name == null) {
+                name = realtimeMemberName(no);
+            }
+            m.put("memberName", name);
+        }
+    }
+
+    /** 成员名称实时降级:数仓对公主数据 → 对私主数据 → 手工成员表(补录成员名) */
+    private String realtimeMemberName(String memberNo) {
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT cust_name FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!corp.isEmpty() && corp.get(0).get("cust_name") != null) {
+            return String.valueOf(corp.get(0).get("cust_name"));
+        }
+        List<Map<String, Object>> indv = jdbcTemplate.queryForList(
+                "SELECT cust_nm FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!indv.isEmpty() && indv.get(0).get("cust_nm") != null) {
+            return String.valueOf(indv.get(0).get("cust_nm"));
+        }
+        List<Map<String, Object>> manual = jdbcTemplate.queryForList(
+                "SELECT member_name FROM ccr_group_member WHERE member_customer_no = ? AND del_flag = '0' LIMIT 1", memberNo);
+        if (!manual.isEmpty() && manual.get(0).get("member_name") != null) {
+            return String.valueOf(manual.get(0).get("member_name"));
+        }
+        return null;
     }
 
     /** 存款分项账户视图(§12.7):分项-账户关系 + 快照 DEPOSIT_ACCOUNT 记录,无快照降级数仓按明文账号;账号明文展示 */
