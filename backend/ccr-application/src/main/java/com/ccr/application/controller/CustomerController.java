@@ -1,6 +1,7 @@
 package com.ccr.application.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.ContributionMerger;
@@ -25,7 +26,7 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/ccr/customers")
-@SaCheckRole("customer_manager")
+@SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
 public class CustomerController {
 
     @Resource

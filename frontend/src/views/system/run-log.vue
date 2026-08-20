@@ -343,6 +343,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 查询栏(label 在上/控件在下,与 audit 等页一致,避免字与框紧贴) */
+.query-bar { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.query-field { display: flex; flex-direction: column; gap: 4px; }
+.query-label { font-size: 12px; color: var(--color-text-sub); }
 .error-stats {
   display: flex;
   align-items: center;
