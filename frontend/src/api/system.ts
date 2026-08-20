@@ -210,7 +210,7 @@ export interface DeptVp {
   id: number
   deptCode: string
   deptName?: string
-  vpUserId: number
+  vpUserId: string
   vpUsername?: string
   vpNickName?: string
   status: string

@@ -287,7 +287,8 @@ public class AssigneeController {
     public R<Long> createDeptVp(@RequestBody Map<String, Object> body) {
         SysUserRead operator = requireAdmin();
         String deptCode = str(body.get("deptCode"));
-        Long vpUserId = body.get("vpUserId") == null ? null : ((Number) body.get("vpUserId")).longValue();
+        // vpUserId 前端传字符串雪花id(JS精度),兼容数字/字符串解析(2026-08-20 #016)
+        Long vpUserId = body.get("vpUserId") == null ? null : Long.valueOf(String.valueOf(body.get("vpUserId")).trim());
         validateDeptVp(deptCode, vpUserId);
         long id = IdUtil.getSnowflakeNextId();
         jdbcTemplate.update("""
@@ -310,7 +311,8 @@ public class AssigneeController {
     public R<Void> updateDeptVp(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         SysUserRead operator = requireAdmin();
         String deptCode = str(body.get("deptCode"));
-        Long vpUserId = body.get("vpUserId") == null ? null : ((Number) body.get("vpUserId")).longValue();
+        // vpUserId 前端传字符串雪花id(JS精度),兼容数字/字符串解析(2026-08-20 #016)
+        Long vpUserId = body.get("vpUserId") == null ? null : Long.valueOf(String.valueOf(body.get("vpUserId")).trim());
         validateDeptVp(deptCode, vpUserId);
         Object versionNo = body.get("versionNo");
         if (versionNo == null) {

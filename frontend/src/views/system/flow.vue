@@ -548,7 +548,7 @@ async function saveDeptVp() {
   }
   const payload = {
     deptCode: f.deptCode,
-    vpUserId: Number(f.vpUserId),
+    vpUserId: f.vpUserId, // 雪花id直接传字符串,避免 JS Number() 丢精度(2026-08-20 #016)
     status: f.status,
     validFrom: f.validFrom || undefined,
     validTo: f.validTo || undefined
