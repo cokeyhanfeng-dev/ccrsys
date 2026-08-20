@@ -47,10 +47,11 @@
         <div><span class="dg-label">申请授信总额(万元)</span>{{ appliedCredit.creditAmount != null ? appliedCredit.creditAmount : '—' }}</div>
       </div>
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
+        <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
             <td>{{ it.pricingItemNo || '—' }}</td>
+            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
             <td>{{ productName(it.productCode) }}</td>
             <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
@@ -149,6 +150,14 @@
             <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
+            <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
+            <div v-if="m.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(m.fiveLevelClass) }}</div>
+            <div v-if="m.creditLevel"><span class="dg-label">内部信用等级</span>{{ m.creditLevel }}</div>
+            <div v-if="m.industry"><span class="dg-label">所属行业</span>{{ m.industry }}</div>
+            <div v-if="m.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ m.registeredCapital }}</div>
+            <div v-if="m.openOrgName"><span class="dg-label">开户机构</span>{{ m.openOrgName }}</div>
+            <div v-if="m.openDate"><span class="dg-label">开户日期</span>{{ m.openDate }}</div>
+            <div v-if="m.basicAccount"><span class="dg-label">基本户账户</span>{{ m.basicAccount }}</div>
           </div>
           <table class="table" style="margin-top:8px" v-if="memberCommitments(m.memberCustomerNo).length">
             <thead><tr><th>承诺指标</th><th>基线</th><th>目标</th><th>单位</th></tr></thead>
@@ -1046,7 +1055,21 @@ function itemApproved(it: any): boolean {
 function itemName(it: any): string {
   const carrier = carrierTypeText(it.carrierType)
   const amount = it.pricingAmount != null ? `${it.pricingAmount} 万` : ''
-  return `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
+  let name = `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
+  // 集团场景:审批决定区标明是哪家成员申请的、申请利率是多少(成员级定价,非整个集团)
+  const memberNo = it.memberCustomerNo || it.member_customer_no
+  if (isGroup.value && memberNo) {
+    name = `成员 ${memberLabel(memberNo)} · 申请利率 ${fmtRate(it.requestedRate)} · ${name}`
+  }
+  return name
+}
+
+// 集团成员标签:优先成员名称,无名称回退客户号(分项成员列/审批决定区共用)
+function memberLabel(memberNo?: string): string {
+  if (!memberNo) return '—'
+  const m = groupMembers.value.find((x) => String(x.memberCustomerNo) === String(memberNo))
+  if (m) return m.memberName ? `${m.memberName}(${m.memberCustomerNo})` : memberNo
+  return memberNo
 }
 
 // 分项调整利率相对基线是否变化(决定是否传 adjustRate)

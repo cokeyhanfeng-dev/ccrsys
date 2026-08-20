@@ -1,5 +1,6 @@
 package com.ccr.approval.controller;
 
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
@@ -416,7 +417,7 @@ public class ApprovalController {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> groupMemberRows = (List<Map<String, Object>>) result.get("groupMembers");
         if (groupMemberRows != null) {
-            enrichMemberNames(groupMemberRows, snapshotRecords);
+            enrichMemberNames(groupMemberRows, snapshotRecords, appRow0);
         }
 
         // 客户信息人工修正(ccr_application.customer_info_json):数仓带出后人工调整,新增客户后台拉不出时手工填写;审批优先展示人工值
@@ -543,6 +544,7 @@ public class ApprovalController {
                             + " pi.requested_rate requestedRate, pi.current_approval_rate currentApprovalRate, pi.current_node_code currentNodeCode,"
                             + " pi.status, pi.version_no versionNo, pi.original_rate originalRate,"
                             + " pi.term_value termValue, pi.term_unit termUnit, pi.product_code productCode, pi.dept_code deptCode,"
+                            + " pi.member_customer_no memberCustomerNo,"
                             + " rel.loan_contract_no contractNo"
                             + " FROM ccr_pricing_item pi"
                             + " LEFT JOIN ccr_pricing_item_contract_rel rel ON rel.pricing_item_id = pi.id AND rel.del_flag = '0'"
@@ -1146,32 +1148,133 @@ public class ApprovalController {
         return List.of(row);
     }
 
-    /** 集团成员名称补充:快照成员主数据(CORPORATE.cust_name)/手工成员快照(MEMBER.member_name)优先,降级实时数仓/手工成员表 */
-    private void enrichMemberNames(List<Map<String, Object>> members, List<Map<String, Object>> snapshotRecords) {
+    /** 集团成员信息补充:成员名称 + 完整对公要素。
+     * 名称/对公要素优先级一致:快照数仓成员主数据(CORPORATE core_json) → 申请补录 group_info_json.supplementMembers(手工成员) → 实时数仓降级。
+     * 输出键对齐前端对公模板(certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。 */
+    private void enrichMemberNames(List<Map<String, Object>> members, List<Map<String, Object>> snapshotRecords,
+                                   Map<String, Object> application) {
         Map<String, String> nameByNo = new HashMap<>();
+        Map<String, Map<String, Object>> corpCoreByNo = new HashMap<>();
         for (Map<String, Object> record : snapshotRecords) {
             Object sid = record.get("subjectId");
             if (sid == null) {
                 continue;
             }
             String no = sid.toString();
-            if (nameByNo.containsKey(no)) {
-                continue;
-            }
             Map<String, Object> core = coreOf(record);
-            if ("CORPORATE".equals(record.get("subjectType")) && core.get("cust_name") != null) {
-                nameByNo.put(no, String.valueOf(core.get("cust_name")));
+            if ("CORPORATE".equals(record.get("subjectType"))) {
+                if (core.get("cust_name") != null) {
+                    nameByNo.putIfAbsent(no, String.valueOf(core.get("cust_name")));
+                }
+                corpCoreByNo.putIfAbsent(no, core);
             } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
-                nameByNo.put(no, String.valueOf(core.get("member_name")));
+                nameByNo.putIfAbsent(no, String.valueOf(core.get("member_name")));
             }
         }
-        for (Map<String, Object> m : members) {
-            String no = String.valueOf(m.get("memberCustomerNo"));
+        // 手工成员对公要素仅存在于申请上下文 group_info_json.supplementMembers(未落业务表)
+        Map<String, cn.hutool.json.JSONObject> manualByNo = new HashMap<>();
+        Object gij = application == null ? null : application.get("groupInfoJson");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                cn.hutool.json.JSONObject gi = JSONUtil.parseObj(gij.toString());
+                Object supp = gi.get("supplementMembers");
+                if (supp instanceof cn.hutool.json.JSONArray arr) {
+                    for (Object item : arr) {
+                        if (!(item instanceof cn.hutool.json.JSONObject m)) {
+                            continue;
+                        }
+                        String no = m.getStr("memberCustomerNo");
+                        if (no == null) {
+                            continue;
+                        }
+                        manualByNo.put(no, m);
+                        if (m.getStr("memberName") != null) {
+                            nameByNo.putIfAbsent(no, m.getStr("memberName"));
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,成员名称仍可来自快照/实时数仓
+            }
+        }
+        for (Map<String, Object> member : members) {
+            String no = String.valueOf(member.get("memberCustomerNo"));
             String name = nameByNo.get(no);
             if (name == null) {
                 name = realtimeMemberName(no);
             }
-            m.put("memberName", name);
+            member.put("memberName", name);
+            Map<String, Object> corp = corpCoreByNo.get(no);
+            if (corp != null) {
+                applyCorpMember(member, corp);
+            } else {
+                cn.hutool.json.JSONObject manual = manualByNo.get(no);
+                if (manual != null) {
+                    applyManualMember(member, manual);
+                } else {
+                    applyRealtimeMember(member, no);
+                }
+            }
+        }
+    }
+
+    /** 数仓成员对公要素(快照 CORPORATE core_json)映射到前端对公模板键;epoch 毫秒日期统一归一 */
+    private void applyCorpMember(Map<String, Object> member, Map<String, Object> core) {
+        member.put("certNo", core.get("cert_no"));
+        member.put("certType", core.get("cert_tp"));
+        member.put("fiveLevelClass", core.get("ffthlv_class"));
+        member.put("creditLevel", core.get("crdt_grd"));
+        member.put("industry", core.get("blgd_idsty"));
+        member.put("registeredCapital", core.get("reg_cap"));
+        member.put("openOrgName", core.get("openact_org_nm"));
+        member.put("openDate", snapshotDate(core.get("openact_dt")));
+        member.put("basicAccount", core.get("basic_account_no"));
+        member.put("customerClass", core.get("cust_class"));
+        member.put("empeNum", core.get("entp_empe_num"));
+        member.put("estbDate", snapshotDate(core.get("estp_estb_dt")));
+        member.put("totalAssets", core.get("rest_asts"));
+        member.put("restAddr", core.get("rest_addr"));
+    }
+
+    /** 快照日期归一:数仓 DATE 列被快照冻结为 epoch 毫秒(数字或13位数字串),统一转 yyyy-MM-dd;字符串原样返回 */
+    private static Object snapshotDate(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n && n.longValue() > 0) {
+            return DateUtil.format(DateUtil.date(n.longValue()), "yyyy-MM-dd");
+        }
+        String s = v.toString().trim();
+        if (s.matches("\\d{13}")) {
+            return DateUtil.format(DateUtil.date(Long.parseLong(s)), "yyyy-MM-dd");
+        }
+        return v;
+    }
+
+    /** 手工成员对公要素(申请补录 group_info_json.supplementMembers)映射到前端对公模板键;证件类型统一 USCC */
+    private void applyManualMember(Map<String, Object> member, cn.hutool.json.JSONObject m) {
+        member.put("certNo", m.getStr("ucrCode"));
+        member.put("certType", "USCC");
+        member.put("fiveLevelClass", m.getStr("fiveLevelClass"));
+        member.put("creditLevel", m.getStr("creditLevel"));
+        member.put("industry", m.getStr("industry"));
+        member.put("registeredCapital", m.get("registeredCapital"));
+        member.put("openOrgName", m.getStr("openOrg"));
+        member.put("openDate", m.getStr("openDate"));
+        member.put("basicAccount", m.getStr("basicAccount"));
+    }
+
+    /** 成员对公要素实时降级:数仓对公客户主数据(快照/补录均缺失时兜底) */
+    private void applyRealtimeMember(Map<String, Object> member, String memberNo) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT cert_no certNo, cert_tp certType, entp_charic entpCharic, entp_scale entpScale,"
+                        + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass,"
+                        + " reg_cap registeredCapital, openact_org_nm openOrgName, openact_dt openDate,"
+                        + " basic_account_no basicAccount, cust_class customerClass, entp_empe_num empeNum,"
+                        + " estp_estb_dt estbDate, rest_asts totalAssets, rest_addr restAddr"
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!rows.isEmpty()) {
+            member.putAll(rows.get(0));
         }
     }
 

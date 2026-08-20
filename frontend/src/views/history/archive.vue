@@ -100,6 +100,27 @@
           </tbody>
         </table>
         <div v-else class="empty-block">暂无数据</div>
+        <!-- 每个成员完整基本信息(对公要素:统一社会信用代码/五级分类/信用等级/行业/注册资本/开户机构/开户日期/基本户) -->
+        <div v-for="(m, i) in archive.members" :key="'info-' + i" style="margin-top:12px">
+          <div class="plan-block__head">
+            <span class="badge badge--info">成员 {{ memberName(m) }}</span>
+            <span class="section-tip">基本信息</span>
+          </div>
+          <div class="desc-grid">
+            <div class="desc-item"><span class="desc-label">成员名称</span>{{ memberName(m) }}</div>
+            <div class="desc-item"><span class="desc-label">成员客户号</span>{{ val(m, 'member_customer_no', 'memberCustomerNo') }}</div>
+            <div class="desc-item"><span class="desc-label">成员角色</span>{{ memberRoleText(val(m, 'member_role', 'memberRole')) }}</div>
+            <div class="desc-item"><span class="desc-label">申请金额(万元)</span>{{ val(m, 'request_amount', 'requestAmount') }}</div>
+            <div v-if="m.certNo" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ m.certNo }}</div>
+            <div v-if="m.fiveLevelClass" class="desc-item"><span class="desc-label">五级分类</span>{{ fiveLevelClassText(m.fiveLevelClass) }}</div>
+            <div v-if="m.creditLevel" class="desc-item"><span class="desc-label">内部信用等级</span>{{ m.creditLevel }}</div>
+            <div v-if="m.industry" class="desc-item"><span class="desc-label">所属行业</span>{{ m.industry }}</div>
+            <div v-if="m.registeredCapital != null" class="desc-item"><span class="desc-label">注册资本(万元)</span>{{ m.registeredCapital }}</div>
+            <div v-if="m.openOrgName" class="desc-item"><span class="desc-label">开户机构</span>{{ m.openOrgName }}</div>
+            <div v-if="m.openDate" class="desc-item"><span class="desc-label">开户日期</span>{{ m.openDate }}</div>
+            <div v-if="m.basicAccount" class="desc-item"><span class="desc-label">基本户账户</span>{{ m.basicAccount }}</div>
+          </div>
+        </div>
         <!-- 集团授信与贡献度(§12.4 集团场景) -->
         <div class="desc-grid" v-if="groupCredit.length" style="margin-top:12px">
           <div class="desc-item"><span class="desc-label">集团授信总额(万元)</span>{{ groupCredit[0].approvedTotalAmount ?? '—' }}</div>
@@ -265,14 +286,14 @@
         <table class="table table--full" v-if="archive.pricingItems?.length">
           <thead>
             <tr>
-              <th>分项号</th><th>定价客户</th><th>产品</th><th>金额(万元)</th><th>期限</th>
+              <th>分项号</th><th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>金额(万元)</th><th>期限</th>
               <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>终审岗位</th><th>状态</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="p in archive.pricingItems" :key="val(p, 'id')">
               <td>{{ val(p, 'pricing_item_no', 'pricingItemNo') }}</td>
-              <td>{{ val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
+              <td>{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
               <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
               <td class="num">{{ val(p, 'pricing_amount', 'pricingAmount') }}</td>
               <td>{{ termText(p) }}</td>
@@ -638,6 +659,17 @@ const hasGuarantees = computed(() => {
 function guaranteesOf(p: any): any[] {
   const map = archive.value.guaranteesByItem || {}
   return map[String(val(p, 'id'))] || []
+}
+// 集团成员名称(档案成员行 snake_case/camel 兼容,缺失回退客户号)
+function memberName(m: any): string {
+  return val(m, 'member_name', 'memberName') || val(m, 'member_customer_no', 'memberCustomerNo') || '—'
+}
+// 定价分项成员标签(GROUP 场景):按成员客户号匹配成员名,无匹配回退客户号
+function pricingMemberLabel(p: any): string {
+  const no = val(p, 'member_customer_no', 'memberCustomerNo')
+  if (!no) return val(p, 'pricing_customer_no', 'pricingCustomerNo') || '—'
+  const m = (archive.value.members || []).find((x) => String(val(x, 'member_customer_no', 'memberCustomerNo')) === String(no))
+  return m ? (val(m, 'member_name', 'memberName') || no) : no
 }
 function extOf(g: any): any {
   const j = g?.extJson

@@ -580,8 +580,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         result.put("application", application);
         List<Map<String, Object>> members = jdbcTemplate.queryForList(
                 "SELECT * FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", applicationId);
-        // 集团成员名称补充:快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表
-        enrichArchiveMemberNames(members, application.get("snapshot_bundle_id"));
+        // 集团成员信息补充:名称 + 完整对公要素(快照数仓成员主数据 → 申请补录 → 实时降级)
+        enrichArchiveMemberNames(members, application);
         result.put("members", members);
         result.put("pricingItems", jdbcTemplate.queryForList(
                 "SELECT * FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY create_time", applicationId));
@@ -988,39 +988,130 @@ public class ApprovalServiceImpl implements ApprovalService {
         return List.of(row);
     }
 
-    /** 档案集团成员名称补充(成员行 snake_case):快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表 */
-    private void enrichArchiveMemberNames(List<Map<String, Object>> members, Object bundleId) {
+    /** 档案集团成员信息补充(成员行 snake_case + 对公模板驼峰键):成员名称 + 完整对公要素。
+     * 名称/对公要素优先级一致:快照数仓成员主数据(CORPORATE core_json) → 申请补录 group_info_json.supplementMembers(手工成员) → 实时数仓降级。
+     * 输出键对齐前端对公模板(certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。 */
+    private void enrichArchiveMemberNames(List<Map<String, Object>> members, Map<String, Object> application) {
         if (members.isEmpty()) {
             return;
         }
         Map<String, String> nameByNo = new HashMap<>();
+        Map<String, Map<String, Object>> corpCoreByNo = new HashMap<>();
+        Object bundleId = application == null ? null : application.get("snapshot_bundle_id");
         if (bundleId != null) {
             List<Map<String, Object>> records = jdbcTemplate.queryForList(
                     "SELECT subject_type subjectType, subject_id subjectId, core_json coreJson"
                             + " FROM ccr_snapshot_record WHERE bundle_id = ? AND del_flag = '0'", bundleId);
             for (Map<String, Object> record : records) {
                 Object sid = record.get("subjectId");
-                if (sid == null || nameByNo.containsKey(sid.toString())) {
+                if (sid == null) {
                     continue;
                 }
+                String no = sid.toString();
                 Map<String, Object> core = coreOf(record);
-                if ("CORPORATE".equals(record.get("subjectType")) && core.get("cust_name") != null) {
-                    nameByNo.put(sid.toString(), String.valueOf(core.get("cust_name")));
+                if ("CORPORATE".equals(record.get("subjectType"))) {
+                    if (core.get("cust_name") != null) {
+                        nameByNo.putIfAbsent(no, String.valueOf(core.get("cust_name")));
+                    }
+                    corpCoreByNo.putIfAbsent(no, core);
                 } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
-                    nameByNo.put(sid.toString(), String.valueOf(core.get("member_name")));
+                    nameByNo.putIfAbsent(no, String.valueOf(core.get("member_name")));
                 }
             }
         }
-        for (Map<String, Object> m : members) {
-            Object mno = m.get("member_customer_no");
+        // 手工成员对公要素仅存在于申请上下文 group_info_json.supplementMembers(未落业务表)
+        Map<String, cn.hutool.json.JSONObject> manualByNo = new HashMap<>();
+        Object gij = application == null ? null : application.get("group_info_json");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                cn.hutool.json.JSONObject gi = JSONUtil.parseObj(gij.toString());
+                Object supp = gi.get("supplementMembers");
+                if (supp instanceof cn.hutool.json.JSONArray arr) {
+                    for (Object item : arr) {
+                        if (!(item instanceof cn.hutool.json.JSONObject m)) {
+                            continue;
+                        }
+                        String no = m.getStr("memberCustomerNo");
+                        if (no == null) {
+                            continue;
+                        }
+                        manualByNo.put(no, m);
+                        if (m.getStr("memberName") != null) {
+                            nameByNo.putIfAbsent(no, m.getStr("memberName"));
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,成员名称仍可来自快照/实时数仓
+            }
+        }
+        for (Map<String, Object> member : members) {
+            Object mno = member.get("member_customer_no");
             if (mno == null) {
                 continue;
             }
-            String name = nameByNo.get(mno.toString());
+            String no = mno.toString();
+            String name = nameByNo.get(no);
             if (name == null) {
-                name = realtimeMemberName(mno.toString());
+                name = realtimeMemberName(no);
             }
-            m.put("member_name", name);
+            member.put("member_name", name);
+            Map<String, Object> corp = corpCoreByNo.get(no);
+            if (corp != null) {
+                applyCorpMember(member, corp);
+            } else {
+                cn.hutool.json.JSONObject manual = manualByNo.get(no);
+                if (manual != null) {
+                    applyManualMember(member, manual);
+                } else {
+                    applyRealtimeMember(member, no);
+                }
+            }
+        }
+    }
+
+    /** 数仓成员对公要素(快照 CORPORATE core_json)映射到前端对公模板键 */
+    private void applyCorpMember(Map<String, Object> member, Map<String, Object> core) {
+        member.put("certNo", core.get("cert_no"));
+        member.put("certType", core.get("cert_tp"));
+        member.put("fiveLevelClass", core.get("ffthlv_class"));
+        member.put("creditLevel", core.get("crdt_grd"));
+        member.put("industry", core.get("blgd_idsty"));
+        member.put("registeredCapital", core.get("reg_cap"));
+        member.put("openOrgName", core.get("openact_org_nm"));
+        member.put("openDate", snapshotDate(core.get("openact_dt")));
+        member.put("basicAccount", core.get("basic_account_no"));
+        member.put("customerClass", core.get("cust_class"));
+        member.put("empeNum", core.get("entp_empe_num"));
+        member.put("estbDate", snapshotDate(core.get("estp_estb_dt")));
+        member.put("totalAssets", core.get("rest_asts"));
+        member.put("restAddr", core.get("rest_addr"));
+    }
+
+    /** 手工成员对公要素(申请补录 group_info_json.supplementMembers)映射到前端对公模板键;证件类型统一 USCC */
+    private void applyManualMember(Map<String, Object> member, cn.hutool.json.JSONObject m) {
+        member.put("certNo", m.getStr("ucrCode"));
+        member.put("certType", "USCC");
+        member.put("fiveLevelClass", m.getStr("fiveLevelClass"));
+        member.put("creditLevel", m.getStr("creditLevel"));
+        member.put("industry", m.getStr("industry"));
+        member.put("registeredCapital", m.get("registeredCapital"));
+        member.put("openOrgName", m.getStr("openOrg"));
+        member.put("openDate", m.getStr("openDate"));
+        member.put("basicAccount", m.getStr("basicAccount"));
+    }
+
+    /** 成员对公要素实时降级:数仓对公客户主数据(快照/补录均缺失时兜底) */
+    private void applyRealtimeMember(Map<String, Object> member, String memberNo) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT cert_no certNo, cert_tp certType, entp_charic entpCharic, entp_scale entpScale,"
+                        + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass,"
+                        + " reg_cap registeredCapital, openact_org_nm openOrgName, openact_dt openDate,"
+                        + " basic_account_no basicAccount, cust_class customerClass, entp_empe_num empeNum,"
+                        + " estp_estb_dt estbDate, rest_asts totalAssets, rest_addr restAddr"
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!rows.isEmpty()) {
+            member.putAll(rows.get(0));
         }
     }
 
