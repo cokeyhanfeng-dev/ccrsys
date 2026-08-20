@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 运行日志监控日志配置(Spring Boot 扩展版,支持 springProperty 注入 ccr.run-log.*):
+     1) FILE 滚动文件 appender → ${LOG_PATH}/ccr-run.log(应用全量日志 + CCR_SQL 的 SQL 行),满足"后台有文件";
+     2) ERROR_DB 自定义 appender → ERROR/WARN 报错(含完整堆栈)异步落库 ccr_error_log,供前台"运行日志监控"查询;
+     3) CCR_SQL logger:RunSqlInterceptor 把全部 MyBatis SQL(含参数)以 INFO 打出;
+        JdbcTemplate 原生 SQL 走 DEBUG(StatementCreatorUtils TRACE 出参数)同样落文件。
+     注意:根级别 INFO,避免放开业务 DEBUG;SQL 走专用 logger 落文件,不落库、不进报错采集。 -->
+<configuration>
+    <springProperty scope="context" name="LOG_PATH" source="ccr.run-log.logs-path" defaultValue="logs"/>
+    <springProperty scope="context" name="MIN_LEVEL" source="ccr.run-log.min-level" defaultValue="ERROR"/>
+    <springProperty scope="context" name="QUEUE_SIZE" source="ccr.run-log.queue-size" defaultValue="10000"/>
+    <springProperty scope="context" name="FLUSH_MS" source="ccr.run-log.flush-interval-ms" defaultValue="3000"/>
+    <springProperty scope="context" name="BATCH_SIZE" source="ccr.run-log.batch-size" defaultValue="50"/>
+
+    <property name="PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/ccr-run.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/ccr-run.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="ERROR_DB" class="com.ccr.admin.config.ErrorLogDbAppender">
+        <minLevel>${MIN_LEVEL}</minLevel>
+        <queueSize>${QUEUE_SIZE}</queueSize>
+        <flushIntervalMs>${FLUSH_MS}</flushIntervalMs>
+        <batchSize>${BATCH_SIZE}</batchSize>
+    </appender>
+
+    <!-- 运行日志监控:全部 MyBatis SQL 由 RunSqlInterceptor 打到此 logger(INFO,落文件;不落库不采集) -->
+    <logger name="CCR_SQL" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </logger>
+    <!-- JdbcTemplate 原生 SQL(参数)打印到同一文件 -->
+    <logger name="org.springframework.jdbc.core.JdbcTemplate" level="DEBUG"/>
+    <logger name="org.springframework.jdbc.core.StatementCreatorUtils" level="TRACE"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="ERROR_DB"/>
+    </root>
+</configuration>

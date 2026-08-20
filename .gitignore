@@ -16,6 +16,7 @@ Thumbs.db
 
 # 日志与临时
 *.log
+logs/
 
 # 内部临时脚本/工具与认证 token(不入库)
 .scratch/
