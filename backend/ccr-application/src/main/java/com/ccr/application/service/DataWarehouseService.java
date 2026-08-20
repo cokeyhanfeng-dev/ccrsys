@@ -55,6 +55,24 @@ public class DataWarehouseService {
                 WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)""", customerNo);
     }
 
+    /** 对公客户按证件号反查(统一社会信用代码→真实客户号,最新批次;新增客户占位号回填用,2026-08-20 #017) */
+    public Map<String, Object> findCorpByCertNo(String certNo) {
+        return queryOne("""
+                SELECT * FROM caps_corp_cust_basic_info
+                WHERE cert_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cert_no = caps_corp_cust_basic_info.cert_no)
+                ORDER BY etl_md5 DESC
+                LIMIT 1""", certNo);
+    }
+
+    /** 对私客户按证件号反查(证件号→真实客户号,最新批次;新增客户占位号回填用,2026-08-20 #017) */
+    public Map<String, Object> findIndvByCertNo(String certNo) {
+        return queryOne("""
+                SELECT * FROM caps_indv_cust_basic_info
+                WHERE cert_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cert_no = caps_indv_cust_basic_info.cert_no)
+                ORDER BY etl_md5 DESC
+                LIMIT 1""", certNo);
+    }
+
     /** 本行融资/存量贷款(贷款合同,最新批次;2026-08-11 去冗余:原 dw_own_financing 并入贷款合同) */
     public List<Map<String, Object>> ownFinancing(String customerNo) {
         return jdbcTemplate.queryForList("""

@@ -37,7 +37,10 @@
       <div class="detail-grid">
         <div><span class="dg-label">申请号</span>{{ application.applicationNo || '—' }}</div>
         <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
-        <div><span class="dg-label">客户号</span>{{ application.customerNo || pi.pricing_customer_no || '—' }}</div>
+        <div><span class="dg-label">客户号</span>{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}
+          <button v-if="isPlaceholderCustomerNo(application.customerNo || pi.pricing_customer_no) && canBackfill"
+                  class="btn btn--primary" @click="openBackfillDlg">回填客户号</button>
+        </div>
         <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
       </div>
       <!-- 本次申请补录/新增授信(§用户要求:与存量授信分开展示,不在"本行授信情况"里以空值混排) -->
@@ -147,7 +150,10 @@
         <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
           <div class="detail-grid">
             <div v-if="m.memberName"><span class="dg-label">成员名称</span>{{ m.memberName }}</div>
-            <div><span class="dg-label">成员客户号</span>{{ customerNoText(m.memberCustomerNo) }}</div>
+            <div><span class="dg-label">成员客户号</span>{{ customerNoText(m.memberCustomerNo) }}
+              <button v-if="isPlaceholderCustomerNo(m.memberCustomerNo) && canBackfill"
+                      class="btn btn--primary" @click="openMemberBackfillDlg(m.memberCustomerNo)">回填客户号</button>
+            </div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
             <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
@@ -838,6 +844,23 @@
         </table>
         <div v-if="!notesDialog.items.length" class="empty">暂无借据数据</div>
       </el-dialog>
+
+      <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
+      <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
+        <div class="dlg-tip">该申请为客户经理登记的新增客户,提交时数仓尚未收录客户号。数仓生成客户号后请在此回填真实客户号,系统将同步申请/分项/快照与后续承诺数据;也可输入证件号自动反查数仓。</div>
+        <div class="form-field">
+          <label class="form-field__label">真实客户号</label>
+          <input class="form-input" v-model="backfillForm.customerNo" placeholder="数仓生成的客户号(优先)" />
+        </div>
+        <div class="form-field" style="margin-top:10px">
+          <label class="form-field__label">证件号(或)</label>
+          <input class="form-input" v-model="backfillForm.certNo" placeholder="统一社会信用代码 / 身份证号,自动反查数仓客户号" />
+        </div>
+        <div class="dlg-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+          <button class="btn btn--secondary" @click="backfillVisible = false">取消</button>
+          <button class="btn btn--primary" :disabled="backfilling" @click="doBackfill">确认回填</button>
+        </div>
+      </el-dialog>
     </div>
     <div class="card" v-else-if="pi.status === 'ROUTING'">
       <div class="empty">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
@@ -850,7 +873,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getApprovalDetail, approveTask, rejectTask, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
+import { getApprovalDetail, approveTask, rejectTask, backfillCustomerNo, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
 import { submitBallot, submitPresidentDecision } from '@/api/vote'
 import { listRoundOpinions } from '@/api/approval2'
 import { download } from '@/api/request'
@@ -863,7 +886,7 @@ import {
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText,
   entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
-  fiveLevelClassText, groupTypeText, groupStatusText, customerNoText
+  fiveLevelClassText, groupTypeText, groupStatusText, customerNoText, isPlaceholderCustomerNo
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -1029,6 +1052,57 @@ function canOperate(it: any): boolean {
     return it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP' && !myBallotChoice(it)
   }
   return it.status === 'ROUTING' && !!it.currentNodeCode && currentRoleNode.value === it.currentNodeCode
+}
+
+// 审批中客户号回填权限(2026-08-20 #017):申请内存在占位客户号/占位成员
+// (单户主客户号,或集团任一成员号),且当前节点可操作(审批人)或行长/审计/admin
+const hasPlaceholderCustomer = computed(() =>
+  isPlaceholderCustomerNo(application.value.customerNo || pi.value.pricing_customer_no)
+  || groupMembers.value.some((m) => isPlaceholderCustomerNo(m.memberCustomerNo)))
+const canBackfill = computed(() =>
+  hasPlaceholderCustomer.value
+  && (canOperate(pi.value) || ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || '')))
+
+const backfillVisible = ref(false)
+const backfilling = ref(false)
+const backfillForm = ref<{ customerNo: string; certNo: string }>({ customerNo: '', certNo: '' })
+const backfillTargetId = ref<number | string>('') // 回填目标分项(集团按成员定位分项)
+function openBackfillDlg() {
+  backfillTargetId.value = pricingItemId.value
+  backfillForm.value = { customerNo: '', certNo: '' }
+  backfillVisible.value = true
+}
+/** 集团成员回填:定位该成员对应分项(后端按申请+占位号整单替换,任一分项即可) */
+function openMemberBackfillDlg(memberNo: string) {
+  const target = siblingItems.value.find((it) => (it.memberCustomerNo || it.member_customer_no) === memberNo)
+  if (!target) {
+    ElMessage.warning('未找到该成员的定价分项,无法回填')
+    return
+  }
+  backfillTargetId.value = target.id
+  backfillForm.value = { customerNo: '', certNo: '' }
+  backfillVisible.value = true
+}
+async function doBackfill() {
+  const { customerNo, certNo } = backfillForm.value
+  if (!customerNo.trim() && !certNo.trim()) {
+    ElMessage.warning('请输入真实客户号或证件号(二选一)')
+    return
+  }
+  backfilling.value = true
+  try {
+    await backfillCustomerNo(backfillTargetId.value, {
+      customerNo: customerNo.trim() || undefined,
+      certNo: certNo.trim() || undefined
+    })
+    ElMessage.success('客户号回填成功')
+    backfillVisible.value = false
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '回填失败')
+  } finally {
+    backfilling.value = false
+  }
 }
 
 // 委员本人票型(已投分项显示"已投:同意/否决"并禁用)

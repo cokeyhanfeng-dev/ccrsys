@@ -55,6 +55,15 @@ export function pageApprovalHistory<T = any>(pageNum = 1, pageSize = 10): Promis
   return get<T>('/ccr/approval/history', { pageNum, pageSize })
 }
 
+/** 审批中客户号回填(2026-08-20 #017):占位号→真实号;body 传 customerNo 或 certNo 二选一 */
+export function backfillCustomerNo(pricingItemId: number | string, body: { customerNo?: string; certNo?: string }): Promise<void> {
+  return request<void>({
+    url: `/ccr/approval/${pricingItemId}/backfill-customer-no`,
+    method: 'post',
+    data: body
+  })
+}
+
 /** 生成幂等键(浏览器原生 uuid) */
 export function newIdempotencyKey(): string {
   return crypto.randomUUID()

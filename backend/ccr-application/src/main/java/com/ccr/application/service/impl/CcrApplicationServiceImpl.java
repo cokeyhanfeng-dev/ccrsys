@@ -46,6 +46,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.read.SysUserRead;
 import com.ccr.application.support.AppLoginUser;
+import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -359,13 +360,24 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (groupScope && StrUtil.isBlank(memberCustomerNo)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景定价分项必须指定成员客户号(memberCustomerNo)");
         }
-        if (!groupScope && StrUtil.isBlank(entity.getCustomerNo())) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景创建分项前必须填写客户号(customerNo)");
+        String pricingCustomerNo;
+        if (groupScope) {
+            pricingCustomerNo = memberCustomerNo;
+        } else {
+            pricingCustomerNo = entity.getCustomerNo();
+            // 新增客户无客户号:按证件号生成占位号兜底 NOT NULL(pricing_customer_no),提交时反查数仓回填真实号(2026-08-20 #017)
+            if (StrUtil.isBlank(pricingCustomerNo)) {
+                String certNo = CustomerNoUtil.certNoFromInfoJson(entity.getCustomerInfoJson(), entity.getCustomerScope());
+                pricingCustomerNo = CustomerNoUtil.placeholderCustomerNo(certNo);
+                if (StrUtil.isBlank(pricingCustomerNo)) {
+                    throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景创建分项前必须填写客户号或证件号(customerNo/certNo)");
+                }
+            }
         }
         CcrPricingItem pi = new CcrPricingItem();
         pi.setApplicationId(entity.getId());
         pi.setPricingItemNo("PI-" + IdUtil.fastSimpleUUID().substring(0, 8).toUpperCase());
-        pi.setPricingCustomerNo(groupScope ? memberCustomerNo : entity.getCustomerNo());
+        pi.setPricingCustomerNo(pricingCustomerNo);
         pi.setMemberCustomerNo(groupScope ? memberCustomerNo : null);
         pi.setStatus(PricingItemStatus.DRAFT.getCode());
         pi.setInheritFlag("N");

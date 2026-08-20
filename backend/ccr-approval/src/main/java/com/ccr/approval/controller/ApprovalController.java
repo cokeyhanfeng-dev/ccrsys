@@ -1420,6 +1420,21 @@ public class ApprovalController {
         return R.ok();
     }
 
+    /**
+     * 审批中客户号回填(2026-08-20 #017):新增客户提交时数仓未收录 → 占位号,审批中数仓已收录后回填真实号。
+     * body 支持 customerNo(真实客户号)或 certNo(按证件号反查数仓),二选一。
+     */
+    @PostMapping("/{pricingItemId}/backfill-customer-no")
+    public R<Void> backfillCustomerNo(@PathVariable Long pricingItemId, @RequestBody Map<String, Object> body) {
+        String customerNo = body.get("customerNo") == null ? null : body.get("customerNo").toString().trim();
+        String certNo = body.get("certNo") == null ? null : body.get("certNo").toString().trim();
+        if (StrUtil.isBlank(customerNo) && StrUtil.isBlank(certNo)) {
+            throw new ServiceException(400, "回填需提供真实客户号或证件号(customerNo/certNo)");
+        }
+        approvalService.backfillCustomerNo(pricingItemId, customerNo, certNo);
+        return R.ok();
+    }
+
     /** 已办:当前登录人办理过的任务列表(§11.4) */
     @GetMapping("/done")
     public R<List<Map<String, Object>>> done() {

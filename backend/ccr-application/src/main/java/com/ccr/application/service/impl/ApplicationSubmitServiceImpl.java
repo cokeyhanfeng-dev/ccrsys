@@ -40,6 +40,7 @@ import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
+import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -350,6 +351,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
 
         List<CcrPricingItem> items = routableItems(id);
+        // b0) 新增客户无客户号(§2026-08-20 #017):先按证件号反查数仓回填真实客户号(未命中回填占位号),
+        //     补号后走完整性校验/快照采集/审批/承诺,保证全链路客户号一致
+        resolvePlaceholderCustomerNo(app, items);
+        // b0-集团) 集团成员占位号回填(§2026-08-20 #017,与单户对称):补录成员按 ucrCode 反查数仓回填真实号,
+        //     未命中保留占位号(memberValid 对 NEW 前缀放行);须在 persistGroupSupplement 之前,落手工表用真实号
+        resolveGroupMemberPlaceholder(app, items);
         // b) 完整性校验
         checkCompleteness(app, items);
         // b1) 提交时落表(§docs/19 §4.6):解析 group_info_json 补录数据落 ccr_group/ccr_group_member(幂等、数仓优先、最新覆盖)
@@ -420,6 +427,145 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         SubmitResponse response = buildSubmitResponse(fresh, items, true);
         response.setItems(itemRoutes);
         return response;
+    }
+
+    /**
+     * b0) 新增客户无客户号支持(2026-08-20 #017):
+     * 单户场景 customer_no 为空时,按 customer_info_json 证件号反查数仓 caps_*_cust_basic_info.cert_no:
+     *   - 命中 → 回填真实客户号(ccr_application.customer_no + 各分项 pricing_customer_no),快照/审批/决议/承诺全链路一致
+     *   - 未命中 → 回填占位号(NEW+证件后6位),走人工快照(MANUAL)通道,WARN 放行
+     * 集团场景成员客户号必填,无此问题。补号在 checkCompleteness 之前,使"单户场景客户号必填"校验自然通过。
+     */
+    private void resolvePlaceholderCustomerNo(CcrApplication app, List<CcrPricingItem> items) {
+        if ("GROUP".equals(app.getCustomerScope()) || StrUtil.isNotBlank(app.getCustomerNo())) {
+            return; // 集团(成员号必填)或已有客户号,无需占位处理
+        }
+        String certNo = CustomerNoUtil.certNoFromInfoJson(app.getCustomerInfoJson(), app.getCustomerScope());
+        if (StrUtil.isBlank(certNo)) {
+            return; // 无客户号也无证件号:后续 checkCompleteness 拦截提示"客户号必填"
+        }
+        Map<String, Object> dw = "INDIVIDUAL".equals(app.getCustomerScope())
+                ? dataWarehouseService.findIndvByCertNo(certNo)
+                : dataWarehouseService.findCorpByCertNo(certNo);
+        String resolvedNo = dw == null ? CustomerNoUtil.placeholderCustomerNo(certNo)
+                : String.valueOf(dw.get("cust_no"));
+
+        // 回填主申请 customer_no
+        app.setCustomerNo(resolvedNo);
+        applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                .eq(CcrApplication::getId, app.getId())
+                .set(CcrApplication::getCustomerNo, resolvedNo));
+
+        // 同步分项 pricing_customer_no(保存草稿时已生成占位号,替换为真实号/确认占位号)
+        for (CcrPricingItem item : items) {
+            if (CustomerNoUtil.isPlaceholder(item.getPricingCustomerNo())) {
+                item.setPricingCustomerNo(resolvedNo);
+                pricingItemMapper.updateById(item);
+            }
+        }
+
+        // 同步人工快照 JSON 的 customerNo(审批详情 overwriteCustomer 仅非空覆盖,保证展示真实号/占位号)
+        if (StrUtil.isNotBlank(app.getCustomerInfoJson())) {
+            try {
+                JSONObject json = JSONUtil.parseObj(app.getCustomerInfoJson());
+                json.set("customerNo", resolvedNo);
+                app.setCustomerInfoJson(json.toString());
+                applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                        .eq(CcrApplication::getId, app.getId())
+                        .set(CcrApplication::getCustomerInfoJson, json.toString()));
+            } catch (Exception e) {
+                log.warn("回填 customer_info_json.customerNo 失败,忽略:{}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * b0-集团) 集团成员占位号回填(2026-08-20 #017,与单户对称)。
+     *
+     * <p>前端补录新增客户成员(有证件号无客户号)时生成 {@code NEW+完整证件号} 占位号落
+     * {@code ccr_application_member};提交时从 {@code group_info_json.supplementMembers[].ucrCode}
+     * 取证件号 → {@code findCorpByCertNo} 反查数仓 → 命中回填真实客户号,未命中保留占位号
+     * ({@link #memberValid} 对 NEW 前缀放行,审批中可回填)。须在 {@link #persistGroupSupplement}
+     * 之前执行,保证手工集团落表/快照/承诺全链路客户号一致。</p>
+     */
+    private void resolveGroupMemberPlaceholder(CcrApplication app, List<CcrPricingItem> items) {
+        if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupInfoJson())) {
+            return;
+        }
+        // 1) 解析 group_info_json 补录成员:占位号 → 证件号(ucrCode)
+        JSONObject json;
+        Map<String, String> certByPlaceholder = new HashMap<>();
+        try {
+            json = JSONUtil.parseObj(app.getGroupInfoJson());
+            JSONArray supplementMembers = json.getJSONArray("supplementMembers");
+            if (supplementMembers != null) {
+                for (int i = 0; i < supplementMembers.size(); i++) {
+                    JSONObject m = supplementMembers.getJSONObject(i);
+                    String no = m.getStr("memberCustomerNo");
+                    String certNo = m.getStr("ucrCode");
+                    if (CustomerNoUtil.isPlaceholder(no) && StrUtil.isNotBlank(certNo)) {
+                        certByPlaceholder.put(no, certNo.trim());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析 group_info_json 补录成员证件号失败,集团占位回填跳过:{}", e.getMessage());
+            return;
+        }
+        if (certByPlaceholder.isEmpty()) {
+            return;
+        }
+        // 2) 遍历占位成员:反查数仓 → 回填 member 表(未命中保留占位号,memberValid 放行)
+        Map<String, String> resolvedMap = new HashMap<>();
+        for (CcrApplicationMember member : applicationMembers(app.getId())) {
+            String certNo = certByPlaceholder.get(member.getMemberCustomerNo());
+            if (StrUtil.isBlank(certNo)) {
+                continue;
+            }
+            Map<String, Object> dw = dataWarehouseService.findCorpByCertNo(certNo);
+            if (dw == null || dw.get("cust_no") == null) {
+                continue;
+            }
+            String resolved = String.valueOf(dw.get("cust_no"));
+            if (resolved.equals(member.getMemberCustomerNo())) {
+                continue;
+            }
+            resolvedMap.put(member.getMemberCustomerNo(), resolved);
+            member.setMemberCustomerNo(resolved);
+            applicationMemberMapper.updateById(member);
+        }
+        if (resolvedMap.isEmpty()) {
+            return;
+        }
+        // 3) 分项同步(集团分项 member_customer_no = pricing_customer_no = 成员号,占位→真实)
+        for (CcrPricingItem item : items) {
+            String resolved = resolvedMap.get(item.getMemberCustomerNo());
+            if (StrUtil.isBlank(resolved)) {
+                continue;
+            }
+            item.setMemberCustomerNo(resolved);
+            item.setPricingCustomerNo(resolved);
+            pricingItemMapper.updateById(item);
+        }
+        // 4) group_info_json.supplementMembers 占位号替换为真实号(使 persistGroupSupplement 落手工表用真实号)
+        try {
+            JSONArray supplementMembers = json.getJSONArray("supplementMembers");
+            if (supplementMembers != null) {
+                for (int i = 0; i < supplementMembers.size(); i++) {
+                    JSONObject m = supplementMembers.getJSONObject(i);
+                    String resolved = resolvedMap.get(m.getStr("memberCustomerNo"));
+                    if (StrUtil.isNotBlank(resolved)) {
+                        m.set("memberCustomerNo", resolved);
+                    }
+                }
+            }
+            app.setGroupInfoJson(json.toString());
+            applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                    .eq(CcrApplication::getId, app.getId())
+                    .set(CcrApplication::getGroupInfoJson, json.toString()));
+        } catch (Exception e) {
+            log.warn("同步 group_info_json 补录成员客户号失败,忽略:{}", e.getMessage());
+        }
     }
 
     /**
@@ -1453,7 +1599,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     private boolean memberValid(Map<String, Map<String, Object>> dwMap,
                                 Map<String, CcrGroupMember> manualMap, String memberNo) {
         // 内部合成号(MANUAL- 前缀):本次手工补录的非我行客户成员,视为在团放行(数仓无该客户数据)
-        if (memberNo != null && memberNo.startsWith("MANUAL-")) {
+        // 占位号(NEW 前缀,2026-08-20 #017):新增客户成员(有证件号无客户号),提交时未命中数仓保留占位,放行待审批中回填
+        if (memberNo != null && (memberNo.startsWith("MANUAL-") || CustomerNoUtil.isPlaceholder(memberNo))) {
             return true;
         }
         Map<String, Object> dw = dwMap.get(memberNo);

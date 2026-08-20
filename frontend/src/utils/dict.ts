@@ -607,8 +607,14 @@ export function isManualCustomerNo(no?: string | null): boolean {
   return !!no && no.startsWith('MANUAL-')
 }
 
-/** 客户号展示:内部合成号→"非我行客户",其余原样;空→"—"(手工补录非我行客户成员统一用) */
+/** 占位客户号识别(NEW 前缀):新增客户无客户号,提交时/审批中按证件号反查数仓回填真实号(2026-08-20 #017) */
+export function isPlaceholderCustomerNo(no?: string | null): boolean {
+  return !!no && no.startsWith('NEW')
+}
+
+/** 客户号展示:内部合成号→"非我行客户";占位号→"新增客户(待回填)";其余原样;空→"—" */
 export function customerNoText(no?: string | null): string {
   if (isManualCustomerNo(no)) return '非我行客户'
+  if (isPlaceholderCustomerNo(no)) return '新增客户(待回填)'
   return no || '—'
 }

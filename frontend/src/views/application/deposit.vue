@@ -488,7 +488,10 @@ function isBlank(v: any) {
 }
 
 function validateForDraft(): string | null {
-  if (isBlank(form.customerNo)) return '请先查询并选择客户'
+  // 新增客户无客户号:允许先录证件号(对私 idNo / 对公 ucrCode),提交时后端反查数仓/占位(2026-08-20 #017)
+  const hasIdentity = !isBlank(form.customerNo)
+    || (form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode))
+  if (!hasIdentity) return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   if (!items.value.length) return '请至少录入一条存款分项'
   for (let i = 0; i < items.value.length; i++) {
     const d = items.value[i]

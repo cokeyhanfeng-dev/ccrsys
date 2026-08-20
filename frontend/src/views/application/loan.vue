@@ -1431,8 +1431,14 @@ function confirmSupplementMember(i: number) {
   const name = m.memberName.trim()
   let no = m.memberCustomerNo.trim()
   const manualBlank = !no // 非我行客户无客户号:客户号可空
-  if (!no) {
-    // 落库要求非空唯一客户号:生成内部合成号(MANUAL-前缀),展示层识别后显示"非我行客户"
+  const ucr = (m.ucrCode || '').trim()
+  if (!no && ucr) {
+    // 新增客户(有证件号无客户号):生成占位号 NEW+完整证件号(2026-08-20 #017),
+    // 提交时按证件号反查数仓回填真实客户号;展示层识别 NEW 前缀显示"新增客户(待回填)"
+    no = 'NEW' + ucr
+    m.memberCustomerNo = no
+  } else if (!no) {
+    // 非我行客户(无客户号亦无证件号):生成内部合成号(MANUAL-前缀),展示层识别后显示"非我行客户"
     no = 'MANUAL-' + crypto.randomUUID()
     m.memberCustomerNo = no
   }
@@ -1815,6 +1821,12 @@ function isBlank(v: any) {
 }
 
 // ---------- 分步校验(点击下一步/跳步时提示当前必填项) ----------
+// 单户场景客户身份:已查客户或有证件号(新增客户无客户号,允许先录证件号,提交时后端反查数仓/占位,2026-08-20 #017)
+function hasCustomerIdentity(): boolean {
+  if (!isBlank(form.customerNo)) return true
+  return form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode)
+}
+
 function validateStep(s: number): string | null {
   if (s === 0) {
     if (form.customerScope === 'GROUP') {
@@ -1829,8 +1841,8 @@ function validateStep(s: number): string | null {
       // 勾稽:成员申请金额合计 ≤ 本次申请额度(§4.5,后端提交时同口径复核)
       const sum = selectedMembers.value.reduce((acc, m) => acc + (Number(m.requestAmount) || 0), 0)
       if (sum > Number(groupApplyAmount.value)) return `成员申请金额合计 ${sum} 超过本次申请额度 ${groupApplyAmount.value}`
-    } else if (isBlank(form.customerNo)) {
-      return '请查询并选择客户'
+    } else if (!hasCustomerIdentity()) {
+      return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
   }
   if (s === 2) {
@@ -1889,8 +1901,8 @@ function validateForDraft(): string | null {
     if (!selectedMembers.value.length) return '集团场景请至少勾选一名涉及成员'
     const noAmount = selectedMembers.value.find((m) => isBlank(m.requestAmount))
     if (noAmount) return `成员 ${noAmount.memberName} 未录入本次申请金额`
-  } else if (isBlank(form.customerNo)) {
-    return '请先查询并选择客户'
+  } else if (!hasCustomerIdentity()) {
+    return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   }
   if (!form.guarantees.length) return '请至少录入一条担保分项'
   for (let i = 0; i < form.guarantees.length; i++) {
