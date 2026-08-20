@@ -601,3 +601,14 @@ export function agreementStatusBadge(code?: string): string {
   }
   return map[code || ''] || 'badge badge--neutral'
 }
+
+/** 内部合成客户号识别(MANUAL- 前缀):非我行客户手工补录成员的内部落库标识(表结构客户号列 NOT NULL 要求) */
+export function isManualCustomerNo(no?: string | null): boolean {
+  return !!no && no.startsWith('MANUAL-')
+}
+
+/** 客户号展示:内部合成号→"非我行客户",其余原样;空→"—"(手工补录非我行客户成员统一用) */
+export function customerNoText(no?: string | null): string {
+  if (isManualCustomerNo(no)) return '非我行客户'
+  return no || '—'
+}

@@ -1452,6 +1452,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 成员在团校验:数仓命中且在团,或手工命中且在团(任一侧有效即放行) */
     private boolean memberValid(Map<String, Map<String, Object>> dwMap,
                                 Map<String, CcrGroupMember> manualMap, String memberNo) {
+        // 内部合成号(MANUAL- 前缀):本次手工补录的非我行客户成员,视为在团放行(数仓无该客户数据)
+        if (memberNo != null && memberNo.startsWith("MANUAL-")) {
+            return true;
+        }
         Map<String, Object> dw = dwMap.get(memberNo);
         if (dw != null && memberInGroup(dw)) {
             return true;

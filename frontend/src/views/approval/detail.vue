@@ -147,7 +147,7 @@
         <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
           <div class="detail-grid">
             <div v-if="m.memberName"><span class="dg-label">成员名称</span>{{ m.memberName }}</div>
-            <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
+            <div><span class="dg-label">成员客户号</span>{{ customerNoText(m.memberCustomerNo) }}</div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
             <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
@@ -863,7 +863,7 @@ import {
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText,
   entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
-  fiveLevelClassText, groupTypeText, groupStatusText
+  fiveLevelClassText, groupTypeText, groupStatusText, customerNoText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -1064,12 +1064,12 @@ function itemName(it: any): string {
   return name
 }
 
-// 集团成员标签:优先成员名称,无名称回退客户号(分项成员列/审批决定区共用)
+// 集团成员标签:优先成员名称,无名称回退客户号(分项成员列/审批决定区共用;内部合成号显示"非我行客户")
 function memberLabel(memberNo?: string): string {
   if (!memberNo) return '—'
   const m = groupMembers.value.find((x) => String(x.memberCustomerNo) === String(memberNo))
-  if (m) return m.memberName ? `${m.memberName}(${m.memberCustomerNo})` : memberNo
-  return memberNo
+  if (m) return m.memberName ? `${m.memberName}(${customerNoText(m.memberCustomerNo)})` : customerNoText(memberNo)
+  return customerNoText(memberNo)
 }
 
 // 分项调整利率相对基线是否变化(决定是否传 adjustRate)

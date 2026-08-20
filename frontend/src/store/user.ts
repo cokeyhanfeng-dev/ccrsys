@@ -8,6 +8,8 @@ export interface UserInfo {
   nickName: string
   roles: string[]
   orgId: number
+  /** 机构中文名称(登录时后端按 orgId 查 ccr_sys_dept.dept_name 带出;兼容旧缓存无字段) */
+  orgName?: string
   /** 是否需强制改密:1需改密/0已改(兼容旧缓存无字段) */
   pwdChangeFlag?: string
 }

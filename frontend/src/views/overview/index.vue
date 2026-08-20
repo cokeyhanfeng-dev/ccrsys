@@ -10,7 +10,7 @@
       <div class="welcome-card__main">
         <div class="welcome-card__greet">{{ greeting }},{{ nickName }}</div>
         <div class="welcome-card__meta">
-          {{ roleName }}<span v-if="orgId"> · 机构 #{{ orgId }}</span>
+          {{ roleName }}<span v-if="orgId"> · 机构 {{ orgName || '#' + orgId }}</span>
         </div>
       </div>
       <div class="welcome-card__date">
@@ -164,6 +164,7 @@ const role = computed(() => userStore.userInfo?.roles?.[0] || 'customer_manager'
 const isCommittee = computed(() => (userStore.userInfo?.roles || []).includes('committee_member'))
 const nickName = computed(() => userStore.userInfo?.nickName || userStore.userInfo?.userName || '同事')
 const orgId = computed(() => userStore.userInfo?.orgId)
+const orgName = computed(() => userStore.userInfo?.orgName)
 const roleName = computed(() => roleText(role.value, role.value))
 
 const APPROVAL_ROLES = ['branch_manager', 'dept_gm', 'vice_president']

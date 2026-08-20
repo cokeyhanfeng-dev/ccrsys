@@ -168,7 +168,7 @@
               <tr v-for="m in groupMembers" :key="m.memberCustomerNo">
                 <td><input type="checkbox" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m)" /></td>
                 <td>
-                  {{ m.memberCustomerNo }}
+                  {{ customerNoText(m.memberCustomerNo) }}
                   <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
                 </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
@@ -213,8 +213,8 @@
           </div>
           <div v-for="(m, i) in supplementMembers" :key="i" class="form-grid" style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:var(--radius);padding:10px 14px">
             <div class="form-field">
-              <label class="form-field__label">成员客户号 <span class="req">*</span></label>
-              <input class="form-input" v-model="m.memberCustomerNo" placeholder="必填" />
+              <label class="form-field__label">成员客户号</label>
+              <input class="form-input" v-model="m.memberCustomerNo" placeholder="可空(非我行客户可留空)" />
             </div>
             <div class="form-field">
               <label class="form-field__label">成员名称 <span class="req">*</span></label>
@@ -1032,7 +1032,7 @@ import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
   AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1424,22 +1424,32 @@ function addSupplementMember() {
 function confirmSupplementMember(i: number) {
   const m = supplementMembers.value[i]
   if (!m) return
-  if (!m.memberCustomerNo || !m.memberCustomerNo.trim()) {
-    ElMessage.warning('成员客户号必填')
-    return
-  }
   if (!m.memberName || !m.memberName.trim()) {
     ElMessage.warning('成员名称必填')
     return
   }
-  const no = m.memberCustomerNo.trim()
-  if (groupMembers.value.some((gm) => gm.memberCustomerNo === no)) {
-    ElMessage.warning(`成员[${no}]已在成员列表中,请勿重复添加`)
+  const name = m.memberName.trim()
+  let no = m.memberCustomerNo.trim()
+  const manualBlank = !no // 非我行客户无客户号:客户号可空
+  if (!no) {
+    // 落库要求非空唯一客户号:生成内部合成号(MANUAL-前缀),展示层识别后显示"非我行客户"
+    no = 'MANUAL-' + crypto.randomUUID()
+    m.memberCustomerNo = no
+  }
+  // 去重:有客户号按客户号;无客户号(合成号唯一不可比)按 名称+统一社会信用代码
+  const dup = groupMembers.value.some((gm) => {
+    if (!manualBlank) {
+      return gm.memberCustomerNo === no
+    }
+    return (gm.memberName || '').trim() === name && (gm.ucrCode || '') === (m.ucrCode || '').trim()
+  })
+  if (dup) {
+    ElMessage.warning(`成员[${name}]已在成员列表中,请勿重复添加`)
     return
   }
   groupMembers.value.push({
     memberCustomerNo: no,
-    memberName: m.memberName.trim(),
+    memberName: name,
     memberRole: m.memberRole || 'GENERAL',
     creditLimit: null,
     source: 'MANUAL',
@@ -1449,7 +1459,7 @@ function confirmSupplementMember(i: number) {
     controlRelation: m.controlRelation, relationStart: m.relationStart, relationEnd: m.relationEnd,
   })
   supplementMembers.value.splice(i, 1)
-  ElMessage.success(`成员[${no}]已加入成员列表,请勾选并录入本次申请金额`)
+  ElMessage.success(`成员[${name}]已加入成员列表,请勾选并录入本次申请金额`)
 }
 function memberNameOf(no: string) {
   if (!no) return '—'
