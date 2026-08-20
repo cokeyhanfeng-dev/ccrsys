@@ -497,32 +497,33 @@ export function datasetName(code?: string, fallback = '—'): string {
 
 // ---------- 贡献度指标 ----------
 
-/** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径) */
+/** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径)
+ * 权威来源为 ccr_metric_definition(enabled 接口),此处为接口加载失败/历史码展示的回退映射。
+ * 对公启用指标已收敛为恰好 8 项(20260820 增量),历史码(如 TOTAL/GM_* 等对私码)保留映射仅用于历史数据名称回退。 */
 export const METRIC_CODES: DictItem[] = [
+  { code: 'PUBLIC_DEPOSIT_AVG', name: '存款年日均' },
+  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '贷款年日均' },
+  { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现年日均' },
+  { code: 'PUBLIC_DEPOSIT_LOAN_RATIO', name: '存贷款比' },
+  { code: 'PUBLIC_PAYROLL_AMOUNT', name: '当年代发金额' },
+  { code: 'PUBLIC_PAYROLL_CONTRIBUTION', name: '当年代发户数' },
+  { code: 'PUBLIC_WEALTH_INCOME', name: '理财年日均余额' },
+  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇余额' },
+  // ---- 以下为历史/系统内部码,仅作历史数据名称回退,不进启用下拉 ----
   { code: 'TOTAL', name: '综合贡献总额' },
   { code: 'GM_LOAN_CONTRIBUTION', name: '贷款贡献' },
   { code: 'GM_DEPOSIT_CONTRIBUTION', name: '存款贡献' },
-  { code: 'PUBLIC_DEPOSIT_AVG', name: '存款日均' },
   { code: 'PUBLIC_LOAN_AVG', name: '流贷日均' },
-  { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '贷款日均' },
   { code: 'PUBLIC_DISCOUNT', name: '贴现利差收益' },
-  { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现规模' },
   { code: 'PUBLIC_INTERMEDIATE', name: '对公中间业务收入' },
   { code: 'PUBLIC_OFF_BALANCE_INCOME', name: '对公中间业务收入' },
   { code: 'PUBLIC_EXCHANGE', name: '汇兑利差收益' },
-  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇业务总量' },
   { code: 'PUBLIC_PAYROLL', name: '代发贡献度' },
-  { code: 'PUBLIC_PAYROLL_CONTRIBUTION', name: '代发客户数' },
-  { code: 'PUBLIC_PAYROLL_AMOUNT', name: '代发金额' },
   { code: 'PUBLIC_WEALTH', name: '对公财富中收' },
-  { code: 'PUBLIC_WEALTH_INCOME', name: '对公财富中收' },
   { code: 'PRIVATE_DEPOSIT_AVG', name: '对私存款日均' },
   { code: 'PRIVATE_LOAN_AVG', name: '对私贷款日均' },
   { code: 'PRIVATE_WEALTH', name: '对私财富中收' },
   { code: 'PRIVATE_WEALTH_INCOME', name: '对私财富中收' },
-  // 派生指标(docs/15 A06):存贷比,数仓派生,不参与勾稽
-  { code: 'PUBLIC_DEPOSIT_LOAN_RATIO', name: '存贷比' },
-  // §6.4 承诺类型"其它":手工录入(金额或文本),数仓无指标,无数值达成率、不参与机构达成率(D19)
   { code: 'OTHER', name: '其它(手工录入,无数值达成率)' }
 ]
 const METRIC_NAME_MAP: Record<string, string> = Object.fromEntries(METRIC_CODES.map((m) => [m.code, m.name]))

@@ -27,6 +27,7 @@ import com.ccr.approval.mapper.DwLoanNoteReadMapper;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
+import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
@@ -714,6 +715,21 @@ public class ApprovalServiceImpl implements ApprovalService {
                     : realtimeCustomer(custNoStr));
             result.put("financing", realtimeFinancing(custNoStr));
             result.put("contribution", realtimeContribution(custNoStr));
+        }
+        // 关联人贡献度归并:关联人(申请录入)同 metric_code 值加总进主客户贡献度(§关联人贡献度归并)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> contributionRows = (List<Map<String, Object>>) result.get("contribution");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> relPersons = (List<Map<String, Object>>) result.get("relatedPersons");
+        if (contributionRows != null && relPersons != null) {
+            Set<String> relatedCustomerNos = new LinkedHashSet<>();
+            for (Map<String, Object> rp : relPersons) {
+                Object no = rp.get("relatedCustomerNo");
+                if (no != null && !no.toString().isBlank()) {
+                    relatedCustomerNos.add(no.toString());
+                }
+            }
+            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contributionRows, relatedCustomerNos);
         }
         // 客户信息人工修正(ccr_application.customer_info_json):数仓带出后人工调整/新增客户手工录入,档案保留人工值
         applyCustomerOverride(result, application);

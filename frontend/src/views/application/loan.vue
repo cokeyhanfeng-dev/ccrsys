@@ -1132,17 +1132,17 @@ function initialCreditInfo(): CreditInfo {
   }
 }
 
-function newGuarantee(): GuaranteeRow {
+function newGuarantee(scope?: string): GuaranteeRow {
   return {
     memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
-    productCode: defaultProductByScope(), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
+    productCode: defaultProductByScope(scope ?? form.customerScope), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
     originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
 }
 
-/** 贷款产品按客户类型默认:个人客户→个人经营性贷款(LOAN_P),对公/集团(成员为企业)→对公贷款(LOAN_A) */
-function defaultProductByScope(): string {
-  return form.customerScope === 'INDIVIDUAL' ? 'LOAN_P' : 'LOAN_A'
+/** 贷款产品按客户类型默认:个人客户→个人经营性贷款(LOAN_P),对公/集团(成员为企业)→对公贷款(LOAN_A);scope 入参避免 form 初始化前 TDZ 崩溃 */
+function defaultProductByScope(scope: string): string {
+  return scope === 'INDIVIDUAL' ? 'LOAN_P' : 'LOAN_A'
 }
 
 const form = reactive({
@@ -1166,7 +1166,7 @@ const form = reactive({
   // 集团
   groupNo: '',
   applicationRemark: '',
-  guarantees: [newGuarantee()] as GuaranteeRow[]
+  guarantees: [newGuarantee('CORPORATE')] as GuaranteeRow[]
 })
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
@@ -1716,7 +1716,7 @@ function onCustomerScopeChange() {
     supplementMembers.value = []
   }
   // 贷款产品默认值跟随客户类型:仅补未选择产品的分项(已选产品不覆盖)
-  const defaultProduct = defaultProductByScope()
+  const defaultProduct = defaultProductByScope(form.customerScope)
   for (const g of form.guarantees) {
     if (!g.productCode) g.productCode = defaultProduct
   }

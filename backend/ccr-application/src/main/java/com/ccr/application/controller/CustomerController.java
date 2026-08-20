@@ -3,6 +3,7 @@ package com.ccr.application.controller;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,8 +14,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 客户查询接口(数仓数据:申请按姓名模糊查询带出客户/融资/贡献度)
@@ -82,10 +85,10 @@ public class CustomerController {
                        contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,
                        execution_rate contractRate, currency
                 FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?""", customerNo));
-        // 3. 当前贡献度
-        result.put("contribution", jdbcTemplate.queryForList("""
+        // 3. 当前贡献度(关联人贡献度归并:数仓有效关联人同码值加总,§关联人贡献度归并)
+        result.put("contribution", mergeWithRelated(jdbcTemplate.queryForList("""
                 SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
-                FROM dw_contribution_metric WHERE cust_no = ?""", customerNo));
+                FROM dw_contribution_metric WHERE cust_no = ?""", customerNo), customerNo));
         // 4. 他行融资概要 + 明细
         result.put("creditSummary", jdbcTemplate.queryForList("""
                 SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal,
@@ -97,6 +100,26 @@ public class CustomerController {
                 SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate
                 FROM dw_credit_financing_detail WHERE customer_no = ?""", customerNo));
         return R.ok(result);
+    }
+
+    /** 当前贡献度归并关联人:数仓客户关系快照有效关联人,同 metric_code 值加总进主客户(§关联人贡献度归并) */
+    private List<Map<String, Object>> mergeWithRelated(List<Map<String, Object>> contribution, String customerNo) {
+        if (contribution == null || contribution.isEmpty()) {
+            return contribution;
+        }
+        List<Map<String, Object>> relations = jdbcTemplate.queryForList(
+                "SELECT related_customer_no relatedCustomerNo FROM dw_customer_relation_snapshot"
+                        + " WHERE customer_no = ? AND relation_status = 'VALID'"
+                        + " AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", customerNo, customerNo);
+        Set<String> relatedNos = new LinkedHashSet<>();
+        for (Map<String, Object> rel : relations) {
+            Object no = rel.get("relatedCustomerNo");
+            if (no != null && !no.toString().isBlank()) {
+                relatedNos.add(no.toString());
+            }
+        }
+        ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
+        return contribution;
     }
 
     /** 存款账号反查(输入明文账号,查数仓最新批次;命中返回账户信息,未命中返回 null) */

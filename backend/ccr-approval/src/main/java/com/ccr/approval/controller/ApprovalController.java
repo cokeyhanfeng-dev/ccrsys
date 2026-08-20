@@ -11,6 +11,7 @@ import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -672,6 +673,30 @@ public class ApprovalController {
                 "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", custNo, custNo);
         enrichRelated(relations);
         result.put("relations", relations);
+
+        // 关联人贡献度归并:关联人(申请录入 + 数仓关系)同 metric_code 值加总进主客户贡献度(§关联人贡献度归并)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> contributionRows = (List<Map<String, Object>>) result.get("contribution");
+        if (contributionRows != null) {
+            Set<String> relatedCustomerNos = new LinkedHashSet<>();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> relPersons = (List<Map<String, Object>>) result.get("relatedPersons");
+            if (relPersons != null) {
+                for (Map<String, Object> rp : relPersons) {
+                    Object no = rp.get("relatedCustomerNo");
+                    if (no != null && !no.toString().isBlank()) {
+                        relatedCustomerNos.add(no.toString());
+                    }
+                }
+            }
+            for (Map<String, Object> rel : relations) {
+                Object no = rel.get("relatedCustomerNo");
+                if (no != null && !no.toString().isBlank()) {
+                    relatedCustomerNos.add(no.toString());
+                }
+            }
+            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contributionRows, relatedCustomerNos);
+        }
 
         // 决议与执行核验(§12.7 ⑪:审批终态后签发;决议日期=issue_time,无有效期周期)
         result.put("resolutions", jdbcTemplate.queryForList(

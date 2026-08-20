@@ -133,7 +133,7 @@
       <!-- 总体跟踪进度(Σ实际 / Σ目标,按各项指标加总计算) -->
       <div class="card">
         <div class="card__head">
-          <span>总体跟踪进度 <InfoTip content="按各项指标实际值与目标值加总计算(不含&quot;其它&quot;手工承诺)" style="margin-left:6px" /></span>
+          <span>总体跟踪进度 <InfoTip content="按各项指标达成率的平均值计算(不含&quot;其它&quot;手工承诺)" style="margin-left:6px" /></span>
         </div>
         <div v-if="overall" class="overall">
           <div class="overall__sum">
@@ -561,26 +561,20 @@ const deadlineTip = computed(() => {
   return { cls: 'badge badge--info', text: `剩余 ${days} 天` }
 })
 
-// 总体跟踪进度(用户诉求③):Σ实际值 / Σ目标值,仅数值指标(不含 OTHER)
+// 总体跟踪进度(用户诉求③):各指标达成率(achievementRatio)的算术平均,不含 OTHER
 const overall = computed(() => {
   const items = planMetrics.value.filter((m: any) => m.metricCode !== 'OTHER')
-  let sumActual = 0
-  let sumTarget = 0
-  let hasTarget = false
-  for (const m of items) {
-    const target = Number(m.targetValue)
-    const actual = Number(m.actualValue)
-    if (Number.isFinite(target) && target > 0) {
-      sumTarget += target
-      hasTarget = true
-    }
-    if (Number.isFinite(actual)) sumActual += actual
-  }
-  if (!hasTarget) return null
+  const ratios = items
+    .map((m: any) => Number(m.achievementRatio))
+    .filter((r: number) => Number.isFinite(r))
+  if (!ratios.length) return null
+  const ratio = Number((ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length).toFixed(1))
+  const sumActual = items.reduce((s: number, m: any) => s + (Number.isFinite(Number(m.actualValue)) ? Number(m.actualValue) : 0), 0)
+  const sumTarget = items.reduce((s: number, m: any) => s + (Number.isFinite(Number(m.targetValue)) ? Number(m.targetValue) : 0), 0)
   return {
     sumActual: Number(sumActual.toFixed(2)),
     sumTarget: Number(sumTarget.toFixed(2)),
-    ratio: sumTarget ? Number((sumActual / sumTarget * 100).toFixed(1)) : 0
+    ratio
   }
 })
 
