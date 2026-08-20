@@ -281,7 +281,7 @@ async function queryBallot() {
       pageSize: ballotPageSize.value
     })
     ballotRows.value = data?.records || []
-    ballotTotal.value = data?.total || 0
+    ballotTotal.value = Number(data?.total) || 0
     ballotQueried.value = true
   } catch {
     ballotRows.value = []
@@ -318,7 +318,7 @@ async function loadExportRecords() {
   try {
     const data = await listExportRecords({ pageNum: exportPageNum.value, pageSize: exportPageSize.value })
     exportRecords.value = data?.records || []
-    exportTotal.value = data?.total || 0
+    exportTotal.value = Number(data?.total) || 0
   } catch {
     exportRecords.value = []
     exportTotal.value = 0
@@ -347,7 +347,7 @@ async function loadChangeLog() {
       pageSize: changeLogPageSize.value
     })
     changeLogs.value = data?.records || []
-    changeLogTotal.value = data?.total || 0
+    changeLogTotal.value = Number(data?.total) || 0
   } catch {
     changeLogs.value = []
     changeLogTotal.value = 0
@@ -490,7 +490,7 @@ async function loadLogs() {
   try {
     const data = await listAuditLogs({ ...logQuery, pageNum: logPageNum.value, pageSize: logPageSize.value })
     auditLogs.value = data?.records || []
-    logTotal.value = data?.total || 0
+    logTotal.value = Number(data?.total) || 0
   } catch {
     auditLogs.value = []
     logTotal.value = 0
