@@ -114,8 +114,9 @@ public class ApplicationAccessService {
                 || hasHistoricalParticipation(application.getId(), user.getId()))) {
             return;
         }
-        if (AppLoginUser.ROLE_COMMITTEE_MEMBER.equals(role)
-                && hasVoteAssignment(application.getId(), user.getId())) {
+        // 委员(含兼岗:委员常由部门总经理/分管行长兼任,主角色非 committee_member,登录才推导兼岗角色):
+        // 该申请有本人表决指派即可查看——指派为授权权威,不依赖主角色(§兼岗委员无权查看修复)
+        if (hasVoteAssignment(application.getId(), user.getId())) {
             return;
         }
         if (AppLoginUser.ROLE_CONTRACT_OPERATOR.equals(role)

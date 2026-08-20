@@ -32,7 +32,7 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openLprCreate">＋ 新增 LPR 草稿</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>版本号</th><th>一年期 LPR</th><th>五年期以上 LPR</th><th>生效时间</th><th>失效时间</th>
@@ -74,7 +74,7 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>行编码</th><th>业务大类</th><th>存量/新增</th><th>客户类型</th><th>产品</th>
@@ -119,7 +119,7 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>产品编码</th><th>产品名称</th><th>业务类型</th><th>硬边界利率</th><th>利率方向</th>
@@ -175,7 +175,7 @@
           </div>
           <button v-if="canMaintain" class="btn btn--primary" @click="openProductCreate">＋ 新增产品</button>
         </div>
-        <table class="table">
+        <table class="table table--full">
           <thead>
             <tr>
               <th>产品编码</th><th>产品名称</th><th>业务大类</th><th>产品线</th><th>客户类型</th><th>币种</th>
@@ -189,7 +189,7 @@
               <td>{{ p.businessBigType === 'LOAN' ? '贷款' : '存款' }}</td>
               <td>{{ p.productCategory || '—' }}</td>
               <td>{{ p.customerType ? productCustomerTypeText(p.customerType) : '—' }}</td>
-              <td>{{ p.currency || 'CNY' }}</td>
+              <td>{{ currencyText(p.currency || 'CNY') }}</td>
               <td class="num">{{ p.defaultMinRate != null || p.defaultMaxRate != null ? `${p.defaultMinRate ?? '—'} ~ ${p.defaultMaxRate ?? '—'}` : '—' }}</td>
               <td class="num">{{ p.defaultMinTermMonths != null || p.defaultMaxTermMonths != null ? `${p.defaultMinTermMonths ?? '—'} ~ ${p.defaultMaxTermMonths ?? '—'}` : '—' }}</td>
               <td>{{ fmtTime(p.effectiveDate) }}</td>
@@ -225,7 +225,7 @@
           </div>
           <button v-if="canMaintain" class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
         </div>
-        <table class="table">
+        <table class="table table--full">
           <thead>
             <tr>
               <th>产品</th><th>业务大类</th><th>路由模式</th><th>起始节点</th><th>强制上会</th><th>行长决策</th>
@@ -268,7 +268,7 @@
         <span>利率规则集(发布前自动连续性校验:区间连续、无空档、无重叠)</span>
         <button v-if="canMaintain" class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>规则集编码</th><th>名称</th><th>状态</th><th>生效时间</th><th>失效时间</th>
@@ -309,7 +309,7 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>策略编号</th><th>策略名称</th><th>指标</th><th>业务类型</th><th>机构编码</th>
@@ -349,7 +349,7 @@
         </div>
         <div v-if="simulateResult" class="trial-result">
           <div class="result-row"><span class="dg-label">计划</span>{{ simulateResult.planNo }} · 冻结策略版本 {{ simulateResult.frozenPolicyVersionId || '—' }}</div>
-          <table class="table" style="margin-top:8px" v-if="simulateResult.metrics?.length">
+          <table class="table table--full" style="margin-top:8px" v-if="simulateResult.metrics?.length">
             <thead>
               <tr>
                 <th>指标</th><th>命中策略</th><th>达成率</th><th>时间进度</th><th>阈值线(达成/风险)</th>
@@ -389,7 +389,7 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openMetricCreate">＋ 新增指标</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>指标编码</th><th>指标名称</th><th>值类型</th><th>适用范围</th><th>单位</th><th>折算版本</th><th>状态</th><th>操作</th>
@@ -428,7 +428,7 @@
           <button class="btn btn--secondary" @click="loadChangeLogs">查询</button>
         </div>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr>
             <th>操作时间</th><th>配置域</th><th>记录ID</th><th>版本号</th><th>动作</th>
@@ -606,7 +606,7 @@
           </div>
 
           <div class="sub-title" style="margin-top:14px">阈值配置</div>
-          <table class="table">
+          <table class="table table--full">
             <thead>
               <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
             </thead>
@@ -658,7 +658,7 @@
           <span style="font-size:12px;color:var(--color-text-sub);margin-left:8px">生效区间不得重叠;置生效即对该策略生效</span>
         </div>
         <div class="modal__body">
-          <table class="table">
+          <table class="table table--full">
             <thead>
               <tr>
                 <th>版本号</th><th>生效时间</th><th>失效时间</th><th>校验频率</th><th>容忍天数</th><th>状态</th><th>操作</th>
@@ -685,7 +685,7 @@
 
           <div v-if="versionMgr.thrPanel.show" style="margin-top:16px;border-top:1px dashed var(--color-border);padding-top:12px">
             <div class="sub-title">阈值明细:版本 {{ versionMgr.thrPanel.versionCode }}</div>
-            <table class="table" v-if="versionMgr.thrPanel.rows.length">
+            <table class="table table--full" v-if="versionMgr.thrPanel.rows.length">
               <thead><tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th></tr></thead>
               <tbody>
                 <tr v-for="(t, i) in versionMgr.thrPanel.rows" :key="i">
@@ -728,7 +728,7 @@
               </div>
             </div>
             <div class="sub-title" style="margin-top:10px">阈值</div>
-            <table class="table">
+            <table class="table table--full">
               <thead>
                 <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
               </thead>
@@ -1133,7 +1133,7 @@
           <span style="font-size:12px;color:var(--color-text-sub);margin-left:8px">值域 0.5%–8% 且 0.05 整数倍;空值=该产品该期限不维护,路由回退版本头表</span>
         </div>
         <div class="modal__body">
-          <table class="table">
+          <table class="table table--full">
             <thead>
               <tr>
                 <th>产品编码</th><th>产品名称</th><th>产品线</th>
@@ -1422,7 +1422,7 @@ import { useMetricDict } from '@/store/metricDict'
 import {
   configStatusText, configActionText, configTypeText, businessBigTypeText,
   nodeLabel, customerTypeText, amountTierText, termTierText, rateDirectionText,
-  businessTypeText, productName
+  businessTypeText, productName, currencyText
 } from '@/utils/dict'
 import {
   listTrackingPolicies, createTrackingPolicy, createPolicyVersion,

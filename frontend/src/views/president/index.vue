@@ -30,7 +30,6 @@
         </div>
         <div class="todo-card__action">
           <button class="btn btn--primary" @click="openDetail(c)">进入行长决策</button>
-          <button class="btn btn--secondary" @click="openDetail(c)">查看完整轨迹</button>
         </div>
       </div>
       <div class="empty" v-if="!cards.length">暂无待决策申请</div>

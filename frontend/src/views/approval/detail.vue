@@ -47,16 +47,17 @@
         <div><span class="dg-label">申请授信总额(万元)</span>{{ appliedCredit.creditAmount != null ? appliedCredit.creditAmount : '—' }}</div>
       </div>
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th>担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
+        <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
             <td>{{ it.pricingItemNo || '—' }}</td>
+            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
             <td>{{ productName(it.productCode) }}</td>
             <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
             <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
             <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
-            <td>{{ guaranteesText(it.guarantees) }}</td>
+            <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
             <td>{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</td>
             <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
             <td>{{ itemStatusText(it.status) }}</td>
@@ -77,14 +78,18 @@
         <!-- 对公客户(§20 ①:名称/客户号/统一社会信用代码/企业性质/行业/信用等级/五级分类等) -->
         <template v-if="isCorpCustomer">
           <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
-          <div><span class="dg-label">行内客户号</span>{{ customer.customerNo || '—' }}</div>
-          <div><span class="dg-label">客户类型</span>对公</div>
+          <div><span class="dg-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
+          <div><span class="dg-label">客户类型</span>{{ isGroup ? '集团' : '对公' }}</div>
+          <div v-if="isGroup && customer.groupType"><span class="dg-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
+          <div v-if="isGroup && customer.groupStatus"><span class="dg-label">集团状态</span>{{ groupStatusText(customer.groupStatus) }}</div>
+          <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
+          <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
           <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
-          <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ customer.entpScale }}</div>
+          <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.empeNum != null"><span class="dg-label">员工人数</span>{{ customer.empeNum }}</div>
           <div v-if="customer.totalAssets != null"><span class="dg-label">总资产(万元)</span>{{ customer.totalAssets }}</div>
           <div v-if="customer.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ customer.registeredCapital }}</div>
@@ -102,13 +107,13 @@
           <div><span class="dg-label">客户类型</span>个人</div>
           <div v-if="customer.certType || customer.certNo"><span class="dg-label">证件类型</span>{{ certTypeText(customer.certType) }}</div>
           <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.gender"><span class="dg-label">性别</span>{{ customer.gender }}</div>
+          <div v-if="customer.gender"><span class="dg-label">性别</span>{{ genderText(customer.gender) }}</div>
           <div v-if="customer.occupation"><span class="dg-label">职业</span>{{ customer.occupation }}</div>
           <div v-if="customer.annualIncome != null"><span class="dg-label">年收入(万元)</span>{{ customer.annualIncome }}</div>
-          <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ customer.maritalStatus }}</div>
+          <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
           <div v-if="customer.address"><span class="dg-label">居住地址</span>{{ customer.address }}</div>
           <div v-if="customer.phone"><span class="dg-label">联系电话</span>{{ customer.phone }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.openDate"><span class="dg-label">开户日期</span>{{ customer.openDate }}</div>
           <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
@@ -120,7 +125,7 @@
           <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ customer.fiveLevelClass }}</div>
+          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
           <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
         </template>
@@ -139,11 +144,20 @@
         <div><span class="dg-label">集团贡献度</span>{{ groupContributionText }}</div>
       </div>
       <el-collapse v-if="groupMembers.length" style="margin-top:12px">
-        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="`成员 ${m.memberCustomerNo}(${memberRoleText(m.memberRole, '成员')})`" :name="i">
+        <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
           <div class="detail-grid">
+            <div v-if="m.memberName"><span class="dg-label">成员名称</span>{{ m.memberName }}</div>
             <div><span class="dg-label">成员客户号</span>{{ m.memberCustomerNo }}</div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
             <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
+            <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
+            <div v-if="m.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(m.fiveLevelClass) }}</div>
+            <div v-if="m.creditLevel"><span class="dg-label">内部信用等级</span>{{ m.creditLevel }}</div>
+            <div v-if="m.industry"><span class="dg-label">所属行业</span>{{ m.industry }}</div>
+            <div v-if="m.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ m.registeredCapital }}</div>
+            <div v-if="m.openOrgName"><span class="dg-label">开户机构</span>{{ m.openOrgName }}</div>
+            <div v-if="m.openDate"><span class="dg-label">开户日期</span>{{ m.openDate }}</div>
+            <div v-if="m.basicAccount"><span class="dg-label">基本户账户</span>{{ m.basicAccount }}</div>
           </div>
           <table class="table" style="margin-top:8px" v-if="memberCommitments(m.memberCustomerNo).length">
             <thead><tr><th>承诺指标</th><th>基线</th><th>目标</th><th>单位</th></tr></thead>
@@ -162,8 +176,8 @@
       </el-collapse>
     </div>
 
-    <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用) -->
-    <div class="card">
+    <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用;仅贷款场景,存款无授信) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
       <table class="table" v-if="creditAgreements.length">
         <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
@@ -174,7 +188,7 @@
               <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
             </td>
             <td>{{ agreementTypeText(a.agreementType) }}</td>
-            <td>{{ a.currency || 'CNY' }}</td>
+            <td>{{ currencyText(a.currency || 'CNY') }}</td>
             <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
             <td>{{ a.startDate || '—' }}</td>
             <td>{{ a.endDate || '—' }}</td>
@@ -187,8 +201,8 @@
       <div v-else class="empty">暂无授信协议数据</div>
     </div>
 
-    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白) -->
-    <div class="card">
+    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白;仅贷款场景) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>本行融资</span><span class="badge badge--info">数仓</span></div>
       <table class="table" v-if="financing.length">
         <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
@@ -199,7 +213,7 @@
             <td class="num">{{ f.contractAmount ?? '—' }}</td>
             <td class="num">{{ f.loanBalance ?? '—' }}</td>
             <td class="num">{{ fmtRate(f.contractRate) }}</td>
-            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${f.lprTerm}` : '' }}</td>
+            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${termTierText(f.lprTerm)}` : '' }}</td>
             <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
             <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
             <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
@@ -271,13 +285,13 @@
             <td>{{ r.certNo || '—' }}</td>
             <td>{{ relationTypeText(r.relationType) }}</td>
             <td>{{ r.relatedCustomerNo || '—' }}</td>
-            <td v-if="r.custType === 'CORP'">{{ r.entpCharic || '—' }}</td>
+            <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
             <td v-else>—</td>
             <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
             <td v-else>—</td>
             <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
             <td v-else>—</td>
-            <td v-if="r.custType === 'CORP'">{{ r.fiveLevelClass || '—' }}</td>
+            <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
             <td v-else>—</td>
             <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
             <td v-else>—</td>
@@ -298,13 +312,13 @@
               <td>{{ r.relatedCustomerNo }}</td>
               <td>{{ relationTypeText(r.relationType) }}</td>
               <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
-              <td v-if="r.custType === 'CORP'">{{ r.entpCharic || '—' }}</td>
+              <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
               <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ r.fiveLevelClass || '—' }}</td>
+              <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
               <td v-else>—</td>
               <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
               <td v-else>—</td>
@@ -455,13 +469,13 @@
           <tr v-for="(r, i) in resolutions" :key="i">
             <td>{{ r.resolutionNo || '—' }}</td>
             <td class="num">{{ fmtRate(r.finalRate) }}</td>
-            <td>{{ r.decisionSource || '—' }}</td>
+            <td>{{ decisionSourceText(r.decisionSource || '—') }}</td>
             <td>{{ fmtDate(r.issueTime) }}</td>
             <td><span class="badge" :class="resolutionStatusBadge(r.status)">{{ execStatusText(r.status) }}</span></td>
           </tr>
         </tbody>
       </table>
-      <table class="table" style="margin-top:8px" v-if="resolutionExecutions.length">
+      <table class="table" style="margin-top:8px" v-if="isLoan && resolutionExecutions.length">
         <thead><tr><th>贷款合同号</th><th>补充协议号</th><th>执行利率</th><th>执行状态</th><th>核验结果</th><th>核验时间</th></tr></thead>
         <tbody>
           <tr v-for="(e, i) in resolutionExecutions" :key="i">
@@ -631,17 +645,21 @@
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
-          <!-- 贷款合同信息(要审批的内容:合同号/拟签订 + 金额/期限/产品;借据仅作参考,链接弹窗查看,不占主表空间) -->
-          <div class="op-item__subhead">贷款合同</div>
+          <!-- 合同信息(要审批的内容:贷款=合同号/拟签订+借据,存款=仅金额/期限/产品;借据仅作参考,链接弹窗查看) -->
+          <div class="op-item__subhead">{{ isLoan ? '贷款合同' : '存款信息' }}</div>
           <table class="table">
-            <thead><tr><th>贷款合同</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>借据</th></tr></thead>
+            <thead><tr>
+              <th v-if="isLoan">贷款合同</th>
+              <th>金额(万元)</th><th>期限</th><th>产品</th>
+              <th v-if="isLoan">借据</th>
+            </tr></thead>
             <tbody>
               <tr>
-                <td>{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
+                <td v-if="isLoan">{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
                 <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
                 <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
                 <td>{{ productName(it.productCode) }}</td>
-                <td>
+                <td v-if="isLoan">
                   <template v-if="it.contractNo && itemNotes(it).length">
                     <a class="link" href="javascript:;" @click.prevent="openNotes(it)">查看借据({{ itemNotes(it).length }} 笔)</a>
                   </template>
@@ -651,7 +669,8 @@
               </tr>
             </tbody>
           </table>
-          <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容) -->
+          <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容;仅贷款场景,存款无担保) -->
+          <template v-if="isLoan">
           <div class="op-item__subhead">担保信息</div>
           <table class="table" v-if="(it.guarantees || []).length">
             <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th></tr></thead>
@@ -735,6 +754,7 @@
             </tbody>
           </table>
           <div v-else class="op-item__empty-tip">无担保明细</div>
+          </template>
           <!-- 利率对比:原执行 / 申请 / 审批后(可调),要审批的利率一目了然 -->
           <div class="op-item__rates">
             <span class="op-rate"><span class="dg-label">原执行利率</span><b>{{ fmtRate(it.originalRate) }}</b></span>
@@ -809,7 +829,7 @@
               <td>{{ n.loanNoteNo || '—' }}</td>
               <td class="num">{{ n.loanBalance ?? '—' }}</td>
               <td class="num">{{ n.executionRate != null ? `${n.executionRate}%` : '—' }}</td>
-              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${n.lprTerm}` : '' }}</td>
+              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${termTierText(n.lprTerm)}` : '' }}</td>
               <td>{{ n.startDate || '—' }}</td>
               <td>{{ n.maturityDate || '—' }}</td>
               <td><span class="badge" :class="n.noteStatus === 'NORMAL' ? 'badge--success' : n.noteStatus === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'">{{ noteStatusText(n.noteStatus) }}</span></td>
@@ -841,7 +861,9 @@ import {
   execStatusText, roundStatusText, evalResultText, ruleLevelText, voteChoiceText,
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
-  customerClassText, certTypeText, contractStatusText, currencyText
+  customerClassText, certTypeText, contractStatusText, currencyText,
+  entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
+  fiveLevelClassText, groupTypeText, groupStatusText
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
@@ -1033,7 +1055,21 @@ function itemApproved(it: any): boolean {
 function itemName(it: any): string {
   const carrier = carrierTypeText(it.carrierType)
   const amount = it.pricingAmount != null ? `${it.pricingAmount} 万` : ''
-  return `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
+  let name = `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
+  // 集团场景:审批决定区标明是哪家成员申请的、申请利率是多少(成员级定价,非整个集团)
+  const memberNo = it.memberCustomerNo || it.member_customer_no
+  if (isGroup.value && memberNo) {
+    name = `成员 ${memberLabel(memberNo)} · 申请利率 ${fmtRate(it.requestedRate)} · ${name}`
+  }
+  return name
+}
+
+// 集团成员标签:优先成员名称,无名称回退客户号(分项成员列/审批决定区共用)
+function memberLabel(memberNo?: string): string {
+  if (!memberNo) return '—'
+  const m = groupMembers.value.find((x) => String(x.memberCustomerNo) === String(memberNo))
+  if (m) return m.memberName ? `${m.memberName}(${m.memberCustomerNo})` : memberNo
+  return memberNo
 }
 
 // 分项调整利率相对基线是否变化(决定是否传 adjustRate)
@@ -1057,6 +1093,12 @@ function collectRateAdjustments(): Record<string, number | string> | undefined {
 const groupTotalAmount = computed(() =>
   groupMembers.value.reduce((sum, m) => sum + (Number(m.requestAmount) || 0), 0))
 
+// 集团成员折叠标题:有名称显示「名称(客户号)」,无数仓/手工名称回退客户号
+function memberTitle(m: any): string {
+  const who = m.memberName ? `${m.memberName}(${m.memberCustomerNo})` : m.memberCustomerNo
+  return `成员 ${who}(${memberRoleText(m.memberRole, '成员')})`
+}
+
 // P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额,万元)
 const groupContributionText = computed(() => {
   const g = groupContribution.value
@@ -1064,10 +1106,6 @@ const groupContributionText = computed(() => {
   return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
 })
 
-// P1-2:借据状态文案(数仓 note_status)
-function noteStatusText(code?: string) {
-  return code === 'NORMAL' ? '正常' : code === 'SETTLED' ? '已结清' : code === 'OVERDUE' ? '逾期' : (code || '—')
-}
 
 // 本行融资合同状态徽标(数仓 contract_status)
 function contractStatusBadge(s?: string) {

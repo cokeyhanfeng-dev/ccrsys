@@ -147,14 +147,8 @@ public class RuleEngineImpl implements RuleEngine {
         if (limit == null || rate == null) {
             return null;
         }
-        boolean pass = isLoan
-                ? rate.compareTo(limit.getHardBoundaryRate()) >= 0   // 贷款不得低于
-                : rate.compareTo(limit.getHardBoundaryRate()) <= 0;  // 存款不得高于
-        if (!pass) {
-            throw new ServiceException(ErrorCode.HARD_BOUNDARY.getCode(),
-                    "突破业务硬边界:产品[" + productCode + "] 硬边界利率 " + limit.getHardBoundaryRate()
-                            + ",申请利率 " + rate);
-        }
+        // §用户要求:取消硬边界限制——任何利率均可申请/审批,突破边界不再抛异常阻断;
+        // 仅返回边界值供前端展示(路由预览/提交前校验/审批调价可见边界,不拦截)。
         return limit.getHardBoundaryRate();
     }
 

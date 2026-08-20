@@ -1,6 +1,7 @@
 package com.ccr.approval.service.impl;
 
 import cn.hutool.core.convert.Convert;
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
@@ -577,8 +578,11 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("application", application);
-        result.put("members", jdbcTemplate.queryForList(
-                "SELECT * FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", applicationId));
+        List<Map<String, Object>> members = jdbcTemplate.queryForList(
+                "SELECT * FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", applicationId);
+        // 集团成员信息补充:名称 + 完整对公要素(快照数仓成员主数据 → 申请补录 → 实时降级)
+        enrichArchiveMemberNames(members, application);
+        result.put("members", members);
         result.put("pricingItems", jdbcTemplate.queryForList(
                 "SELECT * FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY create_time", applicationId));
 
@@ -687,6 +691,9 @@ public class ApprovalServiceImpl implements ApprovalService {
     private void assembleApplicationContent(Map<String, Object> result, Map<String, Object> application, Long applicationId) {
         Object custNo = application.get("customer_no");
         String custNoStr = custNo == null ? "" : custNo.toString();
+        Object groupNo = application.get("group_no");
+        // 集团场景:customer 展示集团本身(集团名 + 集团补录对公要素),不按成员客户号查(集团申请 customer_no 为空)
+        boolean groupScene = groupNo != null && StrUtil.isNotBlank(groupNo.toString());
         Object bundleId = application.get("snapshot_bundle_id");
         List<Map<String, Object>> snapshotRecords = bundleId == null ? List.of()
                 : jdbcTemplate.queryForList(
@@ -695,12 +702,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (!snapshotRecords.isEmpty()) {
             result.put("source", "SNAPSHOT");
             result.put("snapshotInfo", snapshotInfo(bundleId, snapshotRecords));
-            result.put("customer", snapshotCustomer(snapshotRecords, custNoStr));
+            result.put("customer", groupScene
+                    ? groupCustomerOf(groupNo.toString(), snapshotRecords, application)
+                    : snapshotCustomer(snapshotRecords, custNoStr));
             result.put("financing", snapshotFinancing(snapshotRecords, custNoStr));
             result.put("contribution", snapshotContribution(snapshotRecords, custNoStr));
         } else {
             result.put("source", "REALTIME");
-            result.put("customer", realtimeCustomer(custNoStr));
+            result.put("customer", groupScene
+                    ? groupCustomerOf(groupNo.toString(), List.of(), application)
+                    : realtimeCustomer(custNoStr));
             result.put("financing", realtimeFinancing(custNoStr));
             result.put("contribution", realtimeContribution(custNoStr));
         }
@@ -721,7 +732,6 @@ public class ApprovalServiceImpl implements ApprovalService {
         result.put("attachments", jdbcTemplate.queryForList(
                 "SELECT id, file_name fileName, file_size fileSize, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
         // 集团信息(集团授信总额/到期日 + 集团贡献度,仅集团场景)
-        Object groupNo = application.get("group_no");
         if (groupNo != null && StrUtil.isNotBlank(groupNo.toString())) {
             String gno = groupNo.toString();
             result.put("groupCredit", jdbcTemplate.queryForList(
@@ -782,7 +792,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             row.put("empeNum", corp.get("entp_empe_num"));
             row.put("totalAssets", corp.get("rest_asts"));
             row.put("registeredCapital", corp.get("reg_cap"));
-            row.put("estbDate", corp.get("estp_estb_dt"));
+            row.put("estbDate", snapshotDate(corp.get("estp_estb_dt")));
             row.put("restAddr", corp.get("rest_addr"));
             row.put("openOrgName", corp.get("openact_org_nm"));
             row.put("openDate", corp.get("openact_dt"));
@@ -811,6 +821,22 @@ public class ApprovalServiceImpl implements ApprovalService {
             return List.of(row);
         }
         return List.of();
+    }
+
+    /** 快照日期归一:数仓 DATE 列被快照冻结为 epoch 毫秒(数字或13位数字串),统一转 yyyy-MM-dd。
+     *  字符串日期(如 openact_dt)原样返回;非日期值原样返回。 */
+    private static Object snapshotDate(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n && n.longValue() > 0) {
+            return DateUtil.format(DateUtil.date(n.longValue()), "yyyy-MM-dd");
+        }
+        String s = v.toString().trim();
+        if (s.matches("\\d{13}")) {
+            return DateUtil.format(DateUtil.date(Long.parseLong(s)), "yyyy-MM-dd");
+        }
+        return v;
     }
 
     /** 快照内本行融资(CONTRACT/FINANCING 记录,按借款客户过滤,core_json 字段归一) */
@@ -894,6 +920,219 @@ public class ApprovalServiceImpl implements ApprovalService {
             return (Map<String, Object>) map;
         }
         return JSONUtil.parseObj(coreJson.toString());
+    }
+
+    /**
+     * 集团场景客户信息行:集团申请 customer_no 为空,客户信息展示集团本身。
+     * 数据源优先级:提交快照 GROUP 记录(集团主数据 core_json,含 group_name/group_type/group_status)
+     * → 数仓实时集团主数据 → 申请上下文 group_info_json(新增集团补录;补录对公要素仅此来源) → 集团号兜底。
+     * 键名对齐前端对公模板(customerName/certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。
+     */
+    private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
+                                                      Map<String, Object> application) {
+        String groupName = null, groupType = null, groupStatus = null;
+        for (Map<String, Object> record : snapshotRecords) {
+            if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
+                continue;
+            }
+            Map<String, Object> core = coreOf(record);
+            groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
+            groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
+            groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
+            break;
+        }
+        if (groupName == null) {
+            Map<String, Object> dw = dataWarehouseService.findGroup(groupNo);
+            if (dw != null) {
+                groupName = dw.get("group_name") == null ? null : String.valueOf(dw.get("group_name"));
+                groupType = dw.get("group_type") == null ? null : String.valueOf(dw.get("group_type"));
+                groupStatus = dw.get("group_status") == null ? null : String.valueOf(dw.get("group_status"));
+            }
+        }
+        cn.hutool.json.JSONObject gi = null;
+        Object gij = application == null ? null : application.get("group_info_json");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                gi = JSONUtil.parseObj(gij.toString());
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,集团名仍可来自快照/数仓
+            }
+        }
+        if (groupName == null && gi != null) {
+            groupName = gi.getStr("groupName");
+        }
+        if (groupName == null) {
+            groupName = "集团-" + groupNo;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("customerNo", groupNo);
+        row.put("customerName", groupName);
+        row.put("certType", "USCC");
+        if (gi != null) {
+            row.put("certNo", gi.getStr("ucrCode"));
+            row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
+            row.put("creditLevel", gi.getStr("creditLevel"));
+            row.put("industry", gi.getStr("industry"));
+            row.put("registeredCapital", gi.get("registeredCapital"));
+            row.put("openOrgName", gi.getStr("openOrg"));
+            row.put("openDate", gi.getStr("openDate"));
+            row.put("basicAccount", gi.getStr("basicAccount"));
+            row.put("currency", gi.getStr("currency"));
+            row.put("applyAmount", gi.get("applyAmount"));
+        }
+        row.put("groupNo", groupNo);
+        row.put("groupName", groupName);
+        row.put("groupType", groupType == null ? "INDUSTRY_GROUP" : groupType);
+        row.put("groupStatus", groupStatus);
+        row.put("custType", "CORP");
+        return List.of(row);
+    }
+
+    /** 档案集团成员信息补充(成员行 snake_case + 对公模板驼峰键):成员名称 + 完整对公要素。
+     * 名称/对公要素优先级一致:快照数仓成员主数据(CORPORATE core_json) → 申请补录 group_info_json.supplementMembers(手工成员) → 实时数仓降级。
+     * 输出键对齐前端对公模板(certNo/fiveLevelClass/creditLevel/industry/registeredCapital/openOrgName/openDate/basicAccount)。 */
+    private void enrichArchiveMemberNames(List<Map<String, Object>> members, Map<String, Object> application) {
+        if (members.isEmpty()) {
+            return;
+        }
+        Map<String, String> nameByNo = new HashMap<>();
+        Map<String, Map<String, Object>> corpCoreByNo = new HashMap<>();
+        Object bundleId = application == null ? null : application.get("snapshot_bundle_id");
+        if (bundleId != null) {
+            List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                    "SELECT subject_type subjectType, subject_id subjectId, core_json coreJson"
+                            + " FROM ccr_snapshot_record WHERE bundle_id = ? AND del_flag = '0'", bundleId);
+            for (Map<String, Object> record : records) {
+                Object sid = record.get("subjectId");
+                if (sid == null) {
+                    continue;
+                }
+                String no = sid.toString();
+                Map<String, Object> core = coreOf(record);
+                if ("CORPORATE".equals(record.get("subjectType"))) {
+                    if (core.get("cust_name") != null) {
+                        nameByNo.putIfAbsent(no, String.valueOf(core.get("cust_name")));
+                    }
+                    corpCoreByNo.putIfAbsent(no, core);
+                } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
+                    nameByNo.putIfAbsent(no, String.valueOf(core.get("member_name")));
+                }
+            }
+        }
+        // 手工成员对公要素仅存在于申请上下文 group_info_json.supplementMembers(未落业务表)
+        Map<String, cn.hutool.json.JSONObject> manualByNo = new HashMap<>();
+        Object gij = application == null ? null : application.get("group_info_json");
+        if (gij != null && StrUtil.isNotBlank(gij.toString())) {
+            try {
+                cn.hutool.json.JSONObject gi = JSONUtil.parseObj(gij.toString());
+                Object supp = gi.get("supplementMembers");
+                if (supp instanceof cn.hutool.json.JSONArray arr) {
+                    for (Object item : arr) {
+                        if (!(item instanceof cn.hutool.json.JSONObject m)) {
+                            continue;
+                        }
+                        String no = m.getStr("memberCustomerNo");
+                        if (no == null) {
+                            continue;
+                        }
+                        manualByNo.put(no, m);
+                        if (m.getStr("memberName") != null) {
+                            nameByNo.putIfAbsent(no, m.getStr("memberName"));
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+                // 补录 JSON 非法时忽略,成员名称仍可来自快照/实时数仓
+            }
+        }
+        for (Map<String, Object> member : members) {
+            Object mno = member.get("member_customer_no");
+            if (mno == null) {
+                continue;
+            }
+            String no = mno.toString();
+            String name = nameByNo.get(no);
+            if (name == null) {
+                name = realtimeMemberName(no);
+            }
+            member.put("member_name", name);
+            Map<String, Object> corp = corpCoreByNo.get(no);
+            if (corp != null) {
+                applyCorpMember(member, corp);
+            } else {
+                cn.hutool.json.JSONObject manual = manualByNo.get(no);
+                if (manual != null) {
+                    applyManualMember(member, manual);
+                } else {
+                    applyRealtimeMember(member, no);
+                }
+            }
+        }
+    }
+
+    /** 数仓成员对公要素(快照 CORPORATE core_json)映射到前端对公模板键 */
+    private void applyCorpMember(Map<String, Object> member, Map<String, Object> core) {
+        member.put("certNo", core.get("cert_no"));
+        member.put("certType", core.get("cert_tp"));
+        member.put("fiveLevelClass", core.get("ffthlv_class"));
+        member.put("creditLevel", core.get("crdt_grd"));
+        member.put("industry", core.get("blgd_idsty"));
+        member.put("registeredCapital", core.get("reg_cap"));
+        member.put("openOrgName", core.get("openact_org_nm"));
+        member.put("openDate", snapshotDate(core.get("openact_dt")));
+        member.put("basicAccount", core.get("basic_account_no"));
+        member.put("customerClass", core.get("cust_class"));
+        member.put("empeNum", core.get("entp_empe_num"));
+        member.put("estbDate", snapshotDate(core.get("estp_estb_dt")));
+        member.put("totalAssets", core.get("rest_asts"));
+        member.put("restAddr", core.get("rest_addr"));
+    }
+
+    /** 手工成员对公要素(申请补录 group_info_json.supplementMembers)映射到前端对公模板键;证件类型统一 USCC */
+    private void applyManualMember(Map<String, Object> member, cn.hutool.json.JSONObject m) {
+        member.put("certNo", m.getStr("ucrCode"));
+        member.put("certType", "USCC");
+        member.put("fiveLevelClass", m.getStr("fiveLevelClass"));
+        member.put("creditLevel", m.getStr("creditLevel"));
+        member.put("industry", m.getStr("industry"));
+        member.put("registeredCapital", m.get("registeredCapital"));
+        member.put("openOrgName", m.getStr("openOrg"));
+        member.put("openDate", m.getStr("openDate"));
+        member.put("basicAccount", m.getStr("basicAccount"));
+    }
+
+    /** 成员对公要素实时降级:数仓对公客户主数据(快照/补录均缺失时兜底) */
+    private void applyRealtimeMember(Map<String, Object> member, String memberNo) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT cert_no certNo, cert_tp certType, entp_charic entpCharic, entp_scale entpScale,"
+                        + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass,"
+                        + " reg_cap registeredCapital, openact_org_nm openOrgName, openact_dt openDate,"
+                        + " basic_account_no basicAccount, cust_class customerClass, entp_empe_num empeNum,"
+                        + " estp_estb_dt estbDate, rest_asts totalAssets, rest_addr restAddr"
+                        + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!rows.isEmpty()) {
+            member.putAll(rows.get(0));
+        }
+    }
+
+    /** 成员名称实时降级:数仓对公主数据 → 对私主数据 → 手工成员表(补录成员名) */
+    private String realtimeMemberName(String memberNo) {
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT cust_name FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!corp.isEmpty() && corp.get(0).get("cust_name") != null) {
+            return String.valueOf(corp.get(0).get("cust_name"));
+        }
+        List<Map<String, Object>> indv = jdbcTemplate.queryForList(
+                "SELECT cust_nm FROM caps_indv_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
+        if (!indv.isEmpty() && indv.get(0).get("cust_nm") != null) {
+            return String.valueOf(indv.get(0).get("cust_nm"));
+        }
+        List<Map<String, Object>> manual = jdbcTemplate.queryForList(
+                "SELECT member_name FROM ccr_group_member WHERE member_customer_no = ? AND del_flag = '0' LIMIT 1", memberNo);
+        if (!manual.isEmpty() && manual.get(0).get("member_name") != null) {
+            return String.valueOf(manual.get(0).get("member_name"));
+        }
+        return null;
     }
 
     /** Hutool JSON 解析 null 值为 JSONNull 包装对象,统一转 Java null */
@@ -1301,13 +1540,18 @@ public class ApprovalServiceImpl implements ApprovalService {
                                    String deptCode) {
         List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
                 application.getApplicantOrgId(), deptCode);
-        if (!assignees.isEmpty() && !assignees.contains(operator.getId())) {
+        if (assignees.isEmpty()) {
+            // 未配置指定审批人:按节点角色校验兜底(§5.5.1)
+            currentLoginUser.requireNodeRole(nodeCode);
+        } else if (!assignees.contains(operator.getId())) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "节点[" + nodeCode + "]已配置指定审批人,当前登录人不在指派范围内");
         }
+        // assignees 含当前登录人:指派命中即放行——兼岗节点(如秘书岗=计划财务部总经理兼任,指派 dept_gm)
+        // 不再强制节点角色;§D16a 固定机构节点即此形态
     }
 
-    /** 身份与节点校验:小组/行长节点不走普通审批通道;登录人须具备节点角色 */
+    /** 身份与节点校验:小组/行长节点不走普通审批通道;节点角色在 guardNodeAssignee 中按「指派优先」校验 */
     private SysUserRead checkOperatorAndNode(String nodeCode) {
         if (StrUtil.isBlank(nodeCode)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "节点编码必填");
@@ -1317,9 +1561,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                     "节点[" + nodeCode + "]不属于普通审批通道");
         }
-        SysUserRead operator = currentLoginUser.requireCurrentUser();
-        currentLoginUser.requireNodeRole(nodeCode);
-        return operator;
+        return currentLoginUser.requireCurrentUser();
     }
 
     /** 幂等键防护:同键已处理直接拒绝(uk_action_idem 兜底) */

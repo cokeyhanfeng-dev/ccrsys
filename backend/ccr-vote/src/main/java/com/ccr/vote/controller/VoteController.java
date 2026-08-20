@@ -57,6 +57,7 @@ public class VoteController {
                        a.business_type businessType, pi.pricing_customer_no customerNo,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.requested_rate requestedRate, pi.current_approval_rate approvalRate,
+                       pi.pricing_amount pricingAmount, pi.product_code productCode,
                        pi.status status, a.applicant_org_id applicantOrgId,
                        COALESCE(vr.round_id,0) roundId,
                        COALESCE(vr.approve_count,0) approveCount, COALESCE(vr.reject_count,0) rejectCount
@@ -86,6 +87,8 @@ public class VoteController {
             item.put("pricingItemNo", row.get("pricingItemNo"));
             item.put("requestedRate", row.get("requestedRate"));
             item.put("approvalRate", row.get("approvalRate"));
+            item.put("pricingAmount", row.get("pricingAmount"));
+            item.put("productCode", row.get("productCode"));
             item.put("status", row.get("status"));
             item.put("roundId", row.get("roundId"));
             item.put("approveCount", row.get("approveCount"));

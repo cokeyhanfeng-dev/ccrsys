@@ -47,8 +47,10 @@ public class AuditController {
      * @param pricingItemId 分项id(可选,缺省整批)
      */
     @GetMapping("/ballot-detail")
-    public R<List<Map<String, Object>>> ballotDetail(@RequestParam Long roundId,
-                                                     @RequestParam(required = false) Long pricingItemId) {
+    public R<Map<String, Object>> ballotDetail(@RequestParam Long roundId,
+                                               @RequestParam(required = false) Long pricingItemId,
+                                               @RequestParam(defaultValue = "1") int pageNum,
+                                               @RequestParam(defaultValue = "20") int pageSize) {
         SysUserRead auditor = currentLoginUser.requireCurrentUser();
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR);
 
@@ -63,20 +65,25 @@ public class AuditController {
             hashToVoter.putIfAbsent(DigestUtil.sha256Hex(String.valueOf(uid)), assignment);
         }
 
-        StringBuilder sql = new StringBuilder("""
-                SELECT b.pricing_item_id pricingItemId, b.voter_user_hash voterUserHash,
-                       b.vote_choice voteChoice, b.vote_comment voteComment, b.submit_time submitTime
-                FROM ccr_ballot b
-                WHERE b.round_id = ? AND b.del_flag = '0'
-                """);
+        StringBuilder where = new StringBuilder(" WHERE b.round_id = ? AND b.del_flag = '0'");
         List<Object> args = new ArrayList<>();
         args.add(roundId);
         if (pricingItemId != null) {
-            sql.append(" AND b.pricing_item_id = ?");
+            where.append(" AND b.pricing_item_id = ?");
             args.add(pricingItemId);
         }
-        sql.append(" ORDER BY b.pricing_item_id, b.submit_time");
-        List<Map<String, Object>> ballots = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        int page = Math.max(pageNum, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM ccr_ballot b" + where,
+                Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size);
+        pageArgs.add((page - 1) * size);
+        List<Map<String, Object>> ballots = jdbcTemplate.queryForList(
+                "SELECT b.pricing_item_id pricingItemId, b.voter_user_hash voterUserHash,"
+                        + " b.vote_choice voteChoice, b.vote_comment voteComment, b.submit_time submitTime"
+                        + " FROM ccr_ballot b" + where + " ORDER BY b.pricing_item_id, b.submit_time LIMIT ? OFFSET ?",
+                pageArgs.toArray());
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map<String, Object> ballot : ballots) {
@@ -97,65 +104,87 @@ public class AuditController {
         writeAuditLog("BALLOT_DETAIL", String.valueOf(roundId),
                 "票据反查:批次=" + roundId + (pricingItemId == null ? "" : ",分项=" + pricingItemId)
                         + ",还原票据 " + result.size() + " 张", auditor);
-        return R.ok(result);
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", total == null ? 0L : total);
+        data.put("records", result);
+        return R.ok(data);
     }
 
-    /** 导出记录查询(auditor/admin;可按申请过滤) */
+    /** 导出记录查询(auditor/admin;可按申请过滤,分页) */
     @GetMapping("/export-records")
-    public R<List<Map<String, Object>>> exportRecords(@RequestParam(required = false) Long applicationId) {
+    public R<Map<String, Object>> exportRecords(@RequestParam(required = false) Long applicationId,
+                                                @RequestParam(defaultValue = "1") int pageNum,
+                                                @RequestParam(defaultValue = "20") int pageSize) {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR, CurrentLoginUser.ROLE_ADMIN);
-        String sql = """
-                SELECT export_no exportNo, application_id applicationId, export_type exportType,
-                       file_name fileName, operator_id operatorId, operator_name operatorName,
-                       org_id orgId, export_time exportTime
-                FROM ccr_export_record
-                WHERE del_flag = '0'
-                """ + (applicationId == null ? "" : " AND application_id = " + applicationId)
-                + " ORDER BY export_time DESC";
-        return R.ok(jdbcTemplate.queryForList(sql));
+        String base = " FROM ccr_export_record WHERE del_flag = '0'"
+                + (applicationId == null ? "" : " AND application_id = " + applicationId);
+        int page = Math.max(pageNum, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) " + base, Long.class);
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                "SELECT export_no exportNo, application_id applicationId, export_type exportType,"
+                        + " file_name fileName, operator_id operatorId, operator_name operatorName,"
+                        + " org_id orgId, export_time exportTime" + base
+                        + " ORDER BY export_time DESC LIMIT ? OFFSET ?", size, (page - 1) * size);
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", total == null ? 0L : total);
+        data.put("records", records);
+        return R.ok(data);
     }
 
     /**
      * 审计日志查询(§12.14/§15.2:登录/提交/字段级修改/配置/反查等全程留痕;auditor/admin)。
-     * 可按 日志类型/操作人/时间范围/关键词 过滤,时间倒序,上限 500。
+     * 可按 日志类型/操作人/时间范围/关键词 过滤,时间倒序;分页返回 {total, records},单页上限 100。
      */
     @GetMapping("/logs")
-    public R<List<Map<String, Object>>> logs(@RequestParam(required = false) String logType,
-                                             @RequestParam(required = false) String operator,
-                                             @RequestParam(required = false) String startTime,
-                                             @RequestParam(required = false) String endTime,
-                                             @RequestParam(required = false) String keyword) {
+    public R<Map<String, Object>> logs(@RequestParam(required = false) String logType,
+                                       @RequestParam(required = false) String operator,
+                                       @RequestParam(required = false) String startTime,
+                                       @RequestParam(required = false) String endTime,
+                                       @RequestParam(required = false) String keyword,
+                                       @RequestParam(defaultValue = "1") int pageNum,
+                                       @RequestParam(defaultValue = "20") int pageSize) {
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR, CurrentLoginUser.ROLE_ADMIN);
-        StringBuilder sql = new StringBuilder("""
-                SELECT log_type logType, biz_id bizId, content, operator_id operatorId,
-                       operator_name operatorName, operate_time operateTime
-                FROM ccr_audit_log
-                WHERE del_flag = '0'
-                """);
+        StringBuilder where = new StringBuilder(" WHERE del_flag = '0'");
         List<Object> args = new ArrayList<>();
         if (StrUtil.isNotBlank(logType)) {
-            sql.append(" AND log_type = ?");
+            where.append(" AND log_type = ?");
             args.add(logType);
         }
         if (StrUtil.isNotBlank(operator)) {
-            sql.append(" AND operator_name LIKE ?");
+            where.append(" AND operator_name LIKE ?");
             args.add("%" + operator + "%");
         }
         if (StrUtil.isNotBlank(startTime)) {
-            sql.append(" AND operate_time >= ?");
+            where.append(" AND operate_time >= ?");
             args.add(startTime);
         }
         if (StrUtil.isNotBlank(endTime)) {
-            sql.append(" AND operate_time <= ?");
+            where.append(" AND operate_time <= ?");
             args.add(endTime);
         }
         if (StrUtil.isNotBlank(keyword)) {
-            sql.append(" AND (biz_id LIKE ? OR content LIKE ?)");
+            where.append(" AND (biz_id LIKE ? OR content LIKE ?)");
             args.add("%" + keyword + "%");
             args.add("%" + keyword + "%");
         }
-        sql.append(" ORDER BY operate_time DESC LIMIT 500");
-        return R.ok(jdbcTemplate.queryForList(sql.toString(), args.toArray()));
+        int page = Math.max(pageNum, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_audit_log" + where, Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size);
+        pageArgs.add((page - 1) * size);
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                """
+                        SELECT log_type logType, biz_id bizId, content, operator_id operatorId,
+                               operator_name operatorName, operate_time operateTime
+                        FROM ccr_audit_log""" + where + " ORDER BY operate_time DESC LIMIT ? OFFSET ?",
+                pageArgs.toArray());
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", total == null ? 0L : total);
+        data.put("records", records);
+        return R.ok(data);
     }
 
     /** 审计留痕;表不存在(未执行 03f)时仅记日志,不阻断查询 */

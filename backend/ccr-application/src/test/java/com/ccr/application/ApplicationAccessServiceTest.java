@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -138,6 +139,20 @@ class ApplicationAccessServiceTest {
     void requireView_allowsCommitteeMemberWithAssignment() {
         when(appLoginUser.requireCurrentUser()).thenReturn(user(1002L, AppLoginUser.ROLE_COMMITTEE_MEMBER, 1003L));
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
+                .thenReturn(1);
+
+        assertDoesNotThrow(() -> accessService.requireView(30L));
+    }
+
+    @Test
+    void requireView_allowsConcurrentCommitteeMemberByVoteAssignment() {
+        // 兼岗委员:主角色 vice_president(由分管行长兼任小组委员),无历史经办,
+        // 仅凭该申请本人表决指派即可查看——授权以表决指派为权威,不依赖主角色
+        when(appLoginUser.requireCurrentUser()).thenReturn(user(1002L, AppLoginUser.ROLE_VICE_PRESIDENT, 1003L));
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(contains("ccr_approval_action"), eq(Integer.class), any(Object[].class)))
+                .thenReturn(0);
+        when(jdbcTemplate.queryForObject(contains("ccr_vote_assignment"), eq(Integer.class), any(Object[].class)))
                 .thenReturn(1);
 
         assertDoesNotThrow(() -> accessService.requireView(30L));

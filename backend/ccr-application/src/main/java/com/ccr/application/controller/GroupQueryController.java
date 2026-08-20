@@ -2,7 +2,10 @@ package com.ccr.application.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.util.StrUtil;
+import com.ccr.application.domain.CcrGroup;
+import com.ccr.application.domain.CcrGroupMember;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ManualGroupService;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -18,6 +21,8 @@ import java.util.Map;
 
 /**
  * 集团/成员查询接口(§13.1;db/02 数仓表最新批次取数,只读)
+ * <p>集团/成员查询合并数仓快照与手工集团主数据(ccr_group/ccr_group_member):
+ * 数仓优先,手工集团(数仓未统计)回退 ccr_group;手工集团无数仓授信,批复总额度补录用于授信概况。</p>
  */
 @RestController
 @SaCheckRole("customer_manager")
@@ -26,33 +31,40 @@ public class GroupQueryController {
     @Resource
     private DataWarehouseService dataWarehouseService;
 
-    /** 集团联想(申请页集团号/集团名下联想选择,§13.1) */
+    @Resource
+    private ManualGroupService manualGroupService;
+
+    /** 集团联想(申请页集团号/集团名下联想选择,§13.1;数仓优先,手工集团回退) */
     @GetMapping("/ccr/groups/suggest")
     public R<List<Map<String, Object>>> suggest(@RequestParam String keyword) {
         if (StrUtil.isBlank(keyword)) {
             return R.ok(new ArrayList<>());
         }
-        List<Map<String, Object>> result = new ArrayList<>();
+        Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
         for (Map<String, Object> row : dataWarehouseService.suggestGroups(keyword.trim())) {
-            result.add(camel(row));
+            Map<String, Object> c = camel(row);
+            merged.put(String.valueOf(c.get("groupNo")), c);
         }
-        return R.ok(result);
+        for (Map<String, Object> row : manualGroupService.suggest(keyword.trim())) {
+            merged.putIfAbsent(String.valueOf(row.get("groupNo")), row);
+        }
+        return R.ok(new ArrayList<>(merged.values()));
     }
 
-    /** 集团 + 集团授信概况 */
+    /** 集团 + 集团授信概况(数仓优先,手工集团回退 ccr_group 补录批复总额度) */
     @GetMapping("/ccr/groups/{groupNo}")
     public R<Map<String, Object>> group(@PathVariable String groupNo) {
-        Map<String, Object> group = dataWarehouseService.findGroup(groupNo);
+        Map<String, Object> group = mergedGroup(groupNo);
         if (group == null) {
             throw new ServiceException(404, "集团不存在:" + groupNo);
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("group", camel(group));
-        Map<String, Object> credit = dataWarehouseService.findGroupCredit(groupNo);
+        Map<String, Object> credit = mergedCredit(groupNo);
         result.put("groupCredit", credit == null ? null : camel(credit));
         if (credit != null) {
-            List<Map<String, Object>> limits =
-                    dataWarehouseService.memberLimitsByGroup(String.valueOf(credit.get("group_credit_no")));
+            List<Map<String, Object>> limits = dataWarehouseService.memberLimitsByGroup(
+                    credit.get("group_credit_no") == null ? null : String.valueOf(credit.get("group_credit_no")));
             result.put("allocatedTotal", limits.stream()
                     .map(l -> l.get("allocated_amount"))
                     .filter(java.util.Objects::nonNull)
@@ -62,17 +74,34 @@ public class GroupQueryController {
         return R.ok(result);
     }
 
-    /** 集团有效成员及额度(在团:relation_end 空或未到期) */
+    /** 集团有效成员及额度(在团:relation_end 空或未到期;数仓优先,手工成员回退带补录名称) */
     @GetMapping("/ccr/groups/{groupNo}/members")
     public R<List<Map<String, Object>>> groupMembers(@PathVariable String groupNo) {
-        Map<String, Object> group = dataWarehouseService.findGroup(groupNo);
-        if (group == null) {
+        if (mergedGroup(groupNo) == null) {
             throw new ServiceException(404, "集团不存在:" + groupNo);
         }
-        Map<String, Object> credit = dataWarehouseService.findGroupCredit(groupNo);
+        Map<String, Object> credit = mergedCredit(groupNo);
         String groupCreditNo = credit == null ? null : String.valueOf(credit.get("group_credit_no"));
         List<Map<String, Object>> members = new ArrayList<>();
-        for (Map<String, Object> member : dataWarehouseService.groupMembers(groupNo)) {
+        List<Map<String, Object>> dwMembers = dataWarehouseService.groupMembers(groupNo);
+        if (dwMembers == null || dwMembers.isEmpty()) {
+            // 手工成员:名称直接取补录值,无数仓额度
+            for (CcrGroupMember m : manualGroupService.listMembers(groupNo)) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("member_customer_no", m.getMemberCustomerNo());
+                row.put("member_role", m.getMemberRole());
+                row.put("control_relation", m.getControlRelation());
+                row.put("is_core_member", "CORE".equals(m.getMemberRole()) ? "Y" : "N");
+                row.put("relation_start", m.getRelationStart());
+                row.put("relation_end", m.getRelationEnd());
+                Map<String, Object> cr = camel(row);
+                cr.put("memberName", m.getMemberName());
+                cr.put("creditLimit", null);
+                members.add(cr);
+            }
+            return R.ok(members);
+        }
+        for (Map<String, Object> member : dwMembers) {
             Map<String, Object> row = camel(member);
             String memberNo = String.valueOf(member.get("member_customer_no"));
             Map<String, Object> corp = dataWarehouseService.findCorpCustomer(memberNo);
@@ -133,6 +162,44 @@ public class GroupQueryController {
             result.add(camel(row));
         }
         return result;
+    }
+
+    /** 集团行(snake 键;数仓优先,手工集团回退 ccr_group) */
+    private Map<String, Object> mergedGroup(String groupNo) {
+        Map<String, Object> dw = dataWarehouseService.findGroup(groupNo);
+        if (dw != null) {
+            return dw;
+        }
+        CcrGroup g = manualGroupService.findGroup(groupNo);
+        if (g == null) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("group_no", g.getGroupNo());
+        row.put("group_name", g.getGroupName());
+        row.put("group_type", g.getGroupType());
+        row.put("manager_org_id", g.getManagerOrgId());
+        row.put("group_status", g.getGroupStatus());
+        return row;
+    }
+
+    /** 集团授信行(snake 键;数仓优先,手工集团无授信快照用补录批复总额度构造) */
+    private Map<String, Object> mergedCredit(String groupNo) {
+        Map<String, Object> dw = dataWarehouseService.findGroupCredit(groupNo);
+        if (dw != null) {
+            return dw;
+        }
+        CcrGroup g = manualGroupService.findGroup(groupNo);
+        if (g == null || g.getApprovedTotalAmount() == null) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("approved_total_amount", g.getApprovedTotalAmount());
+        row.put("allocated_amount", java.math.BigDecimal.ZERO);
+        row.put("used_amount", java.math.BigDecimal.ZERO);
+        row.put("available_amount", g.getApprovedTotalAmount());
+        row.put("currency", g.getCurrency());
+        return row;
     }
 
     /** 数仓行 snake_case 键转 camelCase */

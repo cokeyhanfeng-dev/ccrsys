@@ -706,6 +706,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         target.setApplicationRemark(src.getApplicationRemark());
         target.setCustomerInfoJson(src.getCustomerInfoJson());
         target.setCreditInfoJson(src.getCreditInfoJson());
+        // 集团补录/申请额度快照(集团申请,§docs/19 §4.5;创建时随申请上下文保存多条并存)
+        target.setGroupInfoJson(src.getGroupInfoJson());
     }
 
     private void copyForUpdate(CcrApplication target, CcrApplication src) {
@@ -716,6 +718,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (StrUtil.isNotBlank(src.getApplicationRemark())) target.setApplicationRemark(src.getApplicationRemark());
         if (StrUtil.isNotBlank(src.getCustomerInfoJson())) target.setCustomerInfoJson(src.getCustomerInfoJson());
         if (StrUtil.isNotBlank(src.getCreditInfoJson())) target.setCreditInfoJson(src.getCreditInfoJson());
+        if (StrUtil.isNotBlank(src.getGroupInfoJson())) target.setGroupInfoJson(src.getGroupInfoJson());
     }
 
     @Override

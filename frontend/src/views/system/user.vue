@@ -27,7 +27,7 @@
         <button class="btn btn--primary" @click="openCreate">＋ 新建用户</button>
       </div>
 
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr><th>登录名</th><th>姓名</th><th>角色</th><th>机构</th><th>手机</th><th>状态</th><th>操作</th></tr>
         </thead>
@@ -107,7 +107,7 @@
               <span>机构-岗位绑定 <span class="req">*</span>(必须且仅能有一条默认)</span>
               <button class="btn btn--secondary" @click="addBinding">＋ 添加绑定</button>
             </div>
-            <table class="table">
+            <table class="table table--full">
               <thead>
                 <tr><th style="width:60px">默认</th><th>机构</th><th>岗位/角色</th><th style="width:70px">操作</th></tr>
               </thead>

@@ -16,8 +16,10 @@ import com.ccr.approval.service.impl.ApprovalServiceImpl;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
+import com.ccr.rule.dto.RouteResult;
 import com.ccr.rule.engine.RuleEngine;
 import com.ccr.rule.mapper.CcrNodePermissionMapper;
+import com.ccr.rule.service.RateMatrixRouter;
 import com.ccr.vote.read.SysUserRead;
 import com.ccr.vote.service.ItemFinalizationService;
 import com.ccr.vote.service.VoteService;
@@ -78,6 +80,8 @@ class ApprovalServiceImplTest {
     private com.ccr.workflow.service.WarmFlowService warmFlowService;
     @Mock
     private com.ccr.common.core.assignee.NodeAssigneeResolver nodeAssigneeResolver;
+    @Mock
+    private RateMatrixRouter rateMatrixRouter;
 
     @InjectMocks
     private ApprovalServiceImpl approvalService;
@@ -179,6 +183,9 @@ class ApprovalServiceImplTest {
     @Test
     void approve_reject_whenRoleNotMatchNode() {
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_CUSTOMER_MANAGER));
+        // 分项/申请存在,节点角色校验兜底拒绝(§5.5.1 未配置指派→按角色校验)
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         doThrow(new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "不具备节点角色"))
                 .when(currentLoginUser).requireNodeRole("BRANCH_MANAGER");
 
@@ -324,6 +331,8 @@ class ApprovalServiceImplTest {
         stubBranchManagerLoan();
         item.setCurrentApprovalRate(new BigDecimal("2.800000")); // 低于支行下限 3.0
         CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        // 随行分项终审岗位在小组(非本节点),支行无权就地终审 → 随整单上送留痕
+        item2.setRouteCode("SIX_PEOPLE_GROUP");
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
@@ -389,6 +398,11 @@ class ApprovalServiceImplTest {
     @Test
     void approve_adjustRate_withinBoundary_savedAndFinalized() {
         stubBranchManagerLoan();
+        // 调价后重算矩阵路由:终审岗位仍为本节点(支行),链路上送小组
+        RouteResult rr = new RouteResult();
+        rr.setFinalNodeCode("BRANCH_MANAGER");
+        rr.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(rr);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 

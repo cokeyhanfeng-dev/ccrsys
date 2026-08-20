@@ -31,7 +31,7 @@
       <div class="card__head">
         <span>流程定义(Warm-Flow flow_definition)</span>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr><th>流程编码</th><th>流程名称</th><th>版本</th><th>发布状态</th><th>激活状态</th><th>创建时间</th><th>操作</th></tr>
         </thead>
@@ -72,7 +72,7 @@
         <span>部门-分管行领导映射</span>
         <button class="btn btn--primary" @click="openDeptVpCreate">＋ 新增映射</button>
       </div>
-      <table class="table">
+      <table class="table table--full">
         <thead>
           <tr><th>部门编码</th><th>部门名称</th><th>分管行领导</th><th>状态</th><th>生效期</th><th>操作</th></tr>
         </thead>
@@ -169,7 +169,7 @@
       <!-- 节点列表 -->
       <div class="card node-list">
         <div class="card__head"><span>审批节点</span></div>
-        <table class="table">
+        <table class="table table--full">
           <thead>
             <tr><th>节点</th><th>当前指派数</th></tr>
           </thead>
@@ -203,7 +203,7 @@
             <button class="btn btn--primary" :disabled="!selectedNode" @click="openAssigneeCreate">＋ 新增指派</button>
           </div>
         </div>
-        <table class="table">
+        <table class="table table--full">
           <thead>
             <tr>
               <th>指派方式</th><th>指派对象</th><th>关系</th><th>主指派</th><th>代理人</th><th>代理有效期</th>

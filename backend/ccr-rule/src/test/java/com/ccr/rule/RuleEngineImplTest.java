@@ -397,16 +397,17 @@ class RuleEngineImplTest {
     }
 
     @Test
-    void checkHardBoundary_贷款低于硬边界抛异常() {
+    void checkHardBoundary_贷款低于硬边界不抛异常仅返回边界() {
+        // §用户要求:取消硬边界限制——突破边界不再阻断,仅返回边界值供展示
         CcrProductRateLimit limit = new CcrProductRateLimit();
         limit.setProductCode("P001");
         limit.setBusinessType("LOAN");
         limit.setHardBoundaryRate(new BigDecimal("3.0"));
         when(cacheUtil.get(anyString())).thenReturn(limit);
 
-        ServiceException e = assertThrows(ServiceException.class,
-                () -> engine.checkHardBoundary("LOAN_PUBLIC", "P001", new BigDecimal("2.9")));
-        assertEquals(ErrorCode.HARD_BOUNDARY.getCode(), e.getCode());
+        BigDecimal boundary = engine.checkHardBoundary("LOAN_PUBLIC", "P001", new BigDecimal("2.9"));
+
+        assertEquals(new BigDecimal("3.0"), boundary);
     }
 
     @Test
@@ -423,16 +424,17 @@ class RuleEngineImplTest {
     }
 
     @Test
-    void checkHardBoundary_存款高于硬边界抛异常() {
+    void checkHardBoundary_存款高于硬边界不抛异常仅返回边界() {
+        // §用户要求:取消硬边界限制——突破边界不再阻断,仅返回边界值供展示
         CcrProductRateLimit limit = new CcrProductRateLimit();
         limit.setProductCode("D001");
         limit.setBusinessType("DEPOSIT");
         limit.setHardBoundaryRate(new BigDecimal("2.0"));
         when(cacheUtil.get(anyString())).thenReturn(limit);
 
-        ServiceException e = assertThrows(ServiceException.class,
-                () -> engine.checkHardBoundary("DEPOSIT", "D001", new BigDecimal("2.5")));
-        assertEquals(ErrorCode.HARD_BOUNDARY.getCode(), e.getCode());
+        BigDecimal boundary = engine.checkHardBoundary("DEPOSIT", "D001", new BigDecimal("2.5"));
+
+        assertEquals(new BigDecimal("2.0"), boundary);
     }
 
     @Test

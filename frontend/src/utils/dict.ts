@@ -299,10 +299,119 @@ export function contractStatusBadge(code?: string): string {
     : code === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 
-/** 币种 */
-export const CURRENCY_TEXT: Record<string, string> = { CNY: '人民币', USD: '美元', HKD: '港币' }
+/** 币种(ISO 4217 常用) */
+export const CURRENCY_TEXT: Record<string, string> = { CNY: '人民币', USD: '美元', HKD: '港币', EUR: '欧元', JPY: '日元' }
 export function currencyText(code?: string, fallback = '—'): string {
   return textOf(CURRENCY_TEXT, code, fallback)
+}
+
+// ---------- 数仓客户字段 / 快照 / 校验(后端原始码透传,页面中文展示;兼容数仓中文直存) ----------
+
+/** 集团状态(dw_customer_group_snapshot.group_status;数仓定稿:NORMAL 正常 / DISSOLVED 解散) */
+export const GROUP_STATUS: Record<string, string> = { NORMAL: '正常', DISSOLVED: '解散' }
+export function groupStatusText(code?: string, fallback = '暂无数据'): string {
+  return textOf(GROUP_STATUS, code, fallback)
+}
+
+/** 集团类型(dw_customer_group_snapshot.group_type;系统固定 INDUSTRY_GROUP) */
+export const GROUP_TYPE: Record<string, string> = { INDUSTRY_GROUP: '产业集团' }
+export function groupTypeText(code?: string, fallback = '—'): string {
+  return textOf(GROUP_TYPE, code, fallback)
+}
+
+/** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存) */
+export const FIVE_LEVEL_CLASS: Record<string, string> = {
+  '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失'
+}
+export function fiveLevelClassText(code?: string, fallback = '—'): string {
+  return textOf(FIVE_LEVEL_CLASS, code, fallback)
+}
+/** 五级分类归一化到码值(数仓/补录可能直存中文「正常」,下拉回显/提交需码值) */
+export function normalizeFiveLevelClass(v?: string): string {
+  if (!v) return ''
+  if (v in FIVE_LEVEL_CLASS) return v
+  const hit = (Object.entries(FIVE_LEVEL_CLASS) as [string, string][]).find(([, zh]) => zh === v)
+  return hit ? hit[0] : v
+}
+/** 五级分类下拉选项(010-050) */
+export const FIVE_LEVEL_OPTIONS: DictItem[] = Object.entries(FIVE_LEVEL_CLASS).map(([code, name]) => ({ code, name }))
+
+/** 企业规模(caps_corp_cust_basic_info.entp_scale;数仓直存中文「大型/中型/小型」,兼容英文码) */
+export const ENTP_SCALE: Record<string, string> = { LARGE: '大型', MEDIUM: '中型', SMALL: '小型', MICRO: '微型' }
+export function entpScaleText(code?: string, fallback = '—'): string {
+  return textOf(ENTP_SCALE, code, fallback)
+}
+
+/** 性别(caps_indv_cust_basic_info.gnd;数仓直存 M/F 或中文) */
+export const GENDER: Record<string, string> = { M: '男', F: '女' }
+export function genderText(code?: string, fallback = '—'): string {
+  return textOf(GENDER, code, fallback)
+}
+
+/** 婚姻状况(caps_indv_cust_basic_info.mrrg_sittn;数仓直存 MARRIED 等英文码或中文) */
+export const MARITAL_STATUS: Record<string, string> = { MARRIED: '已婚', SINGLE: '未婚', DIVORCED: '离异', WIDOWED: '丧偶' }
+export function maritalStatusText(code?: string, fallback = '—'): string {
+  return textOf(MARITAL_STATUS, code, fallback)
+}
+/** 婚姻状况归一化到英文 code(数仓可能直存中文,下拉 v-model 需英文 code 才能选中/提交) */
+export function maritalStatusCode(v?: string): string {
+  if (!v) return ''
+  if (v in MARITAL_STATUS) return v
+  const hit = (Object.entries(MARITAL_STATUS) as [string, string][]).find(([, zh]) => zh === v)
+  return hit ? hit[0] : v
+}
+
+/** 集团授信状态(dw_group_credit_snapshot.credit_status;与授信协议状态同口径) */
+export const CREDIT_STATUS: Record<string, string> = { EFFECTIVE: '有效', EXPIRED: '已到期', CLOSED: '已终止' }
+export function creditStatusText(code?: string, fallback = '—'): string {
+  return textOf(CREDIT_STATUS, code, fallback)
+}
+
+/** 决议决策来源(ccr_resolution.decision_source;与决议书导出 ResolutionPdfExporter.decisionSourceText 口径一致) */
+export const DECISION_SOURCE: Record<string, string> = {
+  VOTE_APPROVED: '小组表决通过', PRESIDENT_APPROVED: '行长决策同意',
+  LEVEL_APPROVED: '权限内审批通过', COMMITTEE_REJECT: '小组表决否决'
+}
+export function decisionSourceText(code?: string, fallback = '—'): string {
+  return textOf(DECISION_SOURCE, code, fallback)
+}
+
+/** 快照记录对象类型(ccr_snapshot_record.subject_type;与 ApplicationSubmitServiceImpl 快照采集口径一致) */
+export const SUBJECT_TYPE: Record<string, string> = {
+  CUSTOMER: '客户', CORPORATE: '对公客户', INDIVIDUAL: '个人客户',
+  CONTRIBUTION: '贡献度', CONTRACT: '贷款合同', NOTE: '借据',
+  MEMBER: '集团成员', GROUP: '集团', GROUP_CREDIT: '集团授信',
+  MEMBER_LIMIT: '成员额度', FINANCING: '本行融资', DEPOSIT_ACCOUNT: '存款账户'
+}
+export function subjectTypeText(code?: string, fallback = '—'): string {
+  return textOf(SUBJECT_TYPE, code, fallback)
+}
+
+/** 资料校验规则(ccr_snapshot_quality_result.rule_code) */
+export const RULE_CODE: Record<string, string> = {
+  SNAPSHOT_NOT_EMPTY: '快照非空', RECORD_SOURCE_COMPLETE: '数据源完整',
+  CUSTOMER_SNAPSHOT_REQUIRED: '客户快照必录', CUSTOMER_UNIQUENESS: '客户唯一性',
+  DATA_TIMELINESS: '数据时效', CONTRIBUTION_STAT_CONSISTENCY: '贡献度统计一致性',
+  GROUP_MEMBER_VALID: '集团成员有效', CONTRIBUTION_RECONCILE: '贡献度核对'
+}
+export function ruleCodeText(code?: string, fallback = '—'): string {
+  return textOf(RULE_CODE, code, fallback)
+}
+
+/** 快照包状态(ccr_snapshot_bundle.status) */
+export const SNAPSHOT_STATUS: Record<string, string> = { FROZEN: '已冻结' }
+export function snapshotStatusText(code?: string, fallback = '—'): string {
+  return textOf(SNAPSHOT_STATUS, code, fallback)
+}
+
+/** 借据状态(dw_loan_note_snapshot.note_status;供审批详情/档案复用) */
+export const NOTE_STATUS: Record<string, string> = { NORMAL: '正常', SETTLED: '已结清', OVERDUE: '逾期' }
+export function noteStatusText(code?: string, fallback = '—'): string {
+  return textOf(NOTE_STATUS, code, fallback)
+}
+/** 借据状态徽标变体(配 <span class="badge"> 基类) */
+export function noteStatusBadge(code?: string): string {
+  return code === 'NORMAL' ? 'badge--success' : code === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 
 /** 承诺指标单位(ccr_application_commitment.unit:WAN_YUAN/COUNT) */
@@ -361,6 +470,29 @@ export const DEPOSIT_PRODUCTS: DictItem[] = PRODUCTS.filter((p) =>
 
 export function productName(code?: string, fallback = '—'): string {
   return textOf(PRODUCT_NAME_MAP, code, fallback)
+}
+
+// ---------- 数仓数据集(提交前校验·数据批次差异:表名→中文) ----------
+/** 数仓数据集编码→中文(覆盖 DataWarehouseService.relevantDatasets 全部表名) */
+export const DATASET_NAMES: DictItem[] = [
+  { code: 'caps_corp_cust_basic_info', name: '对公客户基本信息' },
+  { code: 'caps_indv_cust_basic_info', name: '个人客户基本信息' },
+  { code: 'dw_customer_group_snapshot', name: '集团快照' },
+  { code: 'dw_customer_group_member_snapshot', name: '集团成员快照' },
+  { code: 'dw_group_credit_snapshot', name: '集团授信快照' },
+  { code: 'dw_member_credit_limit_snapshot', name: '成员额度快照' },
+  { code: 'dw_loan_contract_snapshot', name: '贷款合同快照' },
+  { code: 'dw_loan_note_snapshot', name: '贷款借据快照' },
+  { code: 'dw_credit_report_snapshot', name: '征信报告快照' },
+  { code: 'dw_credit_financing_summary', name: '授信融资汇总' },
+  { code: 'dw_credit_financing_detail', name: '授信融资明细' },
+  { code: 'dw_contribution_metric', name: '贡献度指标' },
+  { code: 'dw_deposit_account_snapshot', name: '存款账户快照' }
+]
+const DATASET_NAME_MAP: Record<string, string> = Object.fromEntries(DATASET_NAMES.map((d) => [d.code, d.name]))
+
+export function datasetName(code?: string, fallback = '—'): string {
+  return textOf(DATASET_NAME_MAP, code, fallback)
 }
 
 // ---------- 贡献度指标 ----------

@@ -29,3 +29,15 @@ config/application-prod.yml
 
 # 决议书 PDF 嵌入中文字体(约 20MB,不入库,部署前由本地 fonts 提供)
 backend/ccr-approval/src/main/resources/fonts/
+
+# 含真实用户/机构/敏感数据的 SQL:仅本地执行,严禁 push
+db/23_password_change_flag.sql
+db/24_plaintext_sensitive.sql
+db/publish_full.sql
+
+# 增量发布包产物(大文件 jar/dist,不入库;由 scripts/incr-release.sh 生成)
+release/
+frontend/dist.zip
+
+# 本地 maven 依赖缓存(验证用临时目录,不入库)
+.m2cache/
