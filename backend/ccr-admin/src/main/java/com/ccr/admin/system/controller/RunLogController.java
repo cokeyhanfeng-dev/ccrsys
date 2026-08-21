@@ -87,15 +87,15 @@ public class RunLogController {
         return R.ok(data);
     }
 
-    /** 运行报错详情(含完整堆栈) */
+    /** 运行报错详情(含完整堆栈);id 不存在时返回 null(避免空结果抛异常自采集成新错误) */
     @GetMapping("/detail")
     public R<Map<String, Object>> detail(@RequestParam Long id) {
-        Map<String, Object> row = jdbcTemplate.queryForMap(
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT id, error_time errorTime, logger_name loggerName, level, message,"
                         + " stack_trace stackTrace, thread_name threadName, request_uri requestUri,"
                         + " operator_id operatorId, handle_status handleStatus, create_time createTime"
                         + " FROM ccr_error_log WHERE id = ?", id);
-        return R.ok(row);
+        return R.ok(rows.isEmpty() ? null : rows.get(0));
     }
 
     /** 标记处理状态(仅 PENDING/HANDLED/IGNORED;由操作人点击标记,不作身份审计) */

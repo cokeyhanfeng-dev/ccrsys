@@ -2521,8 +2521,7 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 .credit-overview__item--full { grid-column: 1 / -1; }
-/* 向导内容限宽,宽屏下不松散 */
-.wizard-page { max-width: 1360px; }
+/* 向导内容铺满主区(2026-08-21:移除 1360px 限宽,宽屏下页面整体占满不留右侧留白) */
 
 /* 协议项下合同与关联担保 */
 .agreement-detail { background: #f8fafc; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 14px; }

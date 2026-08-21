@@ -16,9 +16,9 @@ import java.time.LocalDate;
 @TableName("dw_contribution_metric")
 public class DwContributionMetric {
 
-    /** ETL 自增主键 */
-    @TableId(value = "etl_md5", type = IdType.AUTO)
-    private Long etlMd5;
+    /** 数仓技术主键(源系统 ETL_MD5,数仓显式推送;VARCHAR(100) 非自增) */
+    @TableId(value = "etl_md5", type = IdType.INPUT)
+    private String etlMd5;
 
     /** 数据日期 */
     private LocalDate dataDt;
