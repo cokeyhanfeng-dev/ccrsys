@@ -33,6 +33,8 @@ import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.util.ContributionMerger;
+import com.ccr.common.core.util.OrgAchievementAssembler;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
@@ -806,7 +808,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
         List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
-                "SELECT person_name personName, cert_no certNo, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+                "SELECT person_name personName, cert_no certNo, cert_type certType, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
         enrichRelated(relatedPersons);
         result.put("relatedPersons", relatedPersons);
 
@@ -860,6 +862,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> relPersons = (List<Map<String, Object>>) result.get("relatedPersons");
         if (contributionRows != null && relPersons != null) {
+            // 空客户号关联人按证件号兜底反查数仓主数据补全(展示与归并共用该列表)
+            RelatedCustomerResolver.resolveBatch(jdbcTemplate, relPersons);
             Set<String> relatedCustomerNos = new LinkedHashSet<>();
             for (Map<String, Object> rp : relPersons) {
                 Object no = rp.get("relatedCustomerNo");
@@ -1473,7 +1477,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         return byItem;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 数仓最新批次(2026-08-14 统一 org_code) */
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 本系统实时组装(增量021 B方案,废弃数仓 dw_org_performance_snapshot) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
@@ -1484,11 +1488,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
             return List.of();
         }
-        return jdbcTemplate.queryForList(
-                "SELECT org_code orgCode, stat_month statMonth, achieved_amount achievedAmount,"
-                        + " expected_amount expectedAmount, completion_rate completionRate, data_dt dataDt"
-                        + " FROM dw_org_performance_snapshot WHERE org_code = ?"
-                        + " ORDER BY data_dt DESC LIMIT 1", orgCodes.get(0).get("orgCode"));
+        return OrgAchievementAssembler.assemble(jdbcTemplate, orgCodes.get(0).get("orgCode").toString());
     }
 
     /** 关联人信息补全(§12.4④):按 relatedCustomerNo 批量反查基本信息(caps_corp/indv)+授信信息(授信协议数/本行贷款余额) */

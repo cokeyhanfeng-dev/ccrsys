@@ -2012,6 +2012,7 @@ function buildPayload(): ApplicationPayload {
       .filter((r) => !isBlank(r.name))
       .map((r) => ({
         personName: r.name,
+        certType: r.certType || undefined,
         certNo: r.certNo || undefined,
         relationType: r.relationType,
         relatedCustomerNo: isBlank(r.customerNo) ? undefined : r.customerNo

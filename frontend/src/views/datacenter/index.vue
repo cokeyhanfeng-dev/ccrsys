@@ -12,12 +12,12 @@
         <table class="table">
           <thead>
             <tr>
-              <th>数据表</th><th>数据源</th><th>最新数据日期</th><th>批次行数</th><th>落地时间</th>
+              <th>table</th><th>source</th><th>latest_data_dt</th><th>batch_rows</th><th>landed_time</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in batches" :key="row.table || i">
-              <td>{{ datasetName(row.table) }}</td>
+              <td>{{ row.table }}</td>
               <td>{{ row.sourceName || '—' }}</td>
               <td>{{ fmtDate(row.latestDataDt) }}</td>
               <td class="num">{{ row.batchRows ?? '—' }}</td>

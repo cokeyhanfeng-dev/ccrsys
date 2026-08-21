@@ -5,6 +5,7 @@ import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.ContributionMerger;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -103,15 +104,19 @@ public class CustomerController {
         return R.ok(result);
     }
 
-    /** 当前贡献度归并关联人:数仓客户关系快照有效关联人,同 metric_code 值加总进主客户(§关联人贡献度归并) */
+    /** 当前贡献度归并关联人:仅前台录入的申请关联人(ccr_application_related_person),同 metric_code 值加总进主客户(§关联人贡献度归并) */
     private List<Map<String, Object>> mergeWithRelated(List<Map<String, Object>> contribution, String customerNo) {
         if (contribution == null || contribution.isEmpty()) {
             return contribution;
         }
+        // 前台录入关联人:按申请客户号反查历史申请的关联人(数仓推的关系不参与归并);
+        // related_customer_no 为空时按证件号兜底反查数仓主数据补全
         List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT related_customer_no relatedCustomerNo FROM dw_customer_relation_snapshot"
-                        + " WHERE customer_no = ? AND relation_status = 'VALID'"
-                        + " AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", customerNo, customerNo);
+                "SELECT rp.related_customer_no relatedCustomerNo, rp.cert_type certType, rp.cert_no certNo"
+                        + " FROM ccr_application_related_person rp"
+                        + " JOIN ccr_application a ON a.id = rp.application_id AND a.del_flag = '0'"
+                        + " WHERE a.customer_no = ? AND rp.del_flag = '0'", customerNo);
+        RelatedCustomerResolver.resolveBatch(jdbcTemplate, relations);
         Set<String> relatedNos = new LinkedHashSet<>();
         for (Map<String, Object> rel : relations) {
             Object no = rel.get("relatedCustomerNo");

@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.annotation.SaMode;
 import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.commitment.domain.CcrCommitmentMemberAlloc;
@@ -177,7 +178,7 @@ public class CommitmentController {
                 || "admin".equals(roleCode) || "auditor".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           a.application_no, a.submit_time,
+                           a.id application_id, a.application_no, a.submit_time,
                            """ + APP_SUMMARY_SELECT + """
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
@@ -200,7 +201,7 @@ public class CommitmentController {
         if ("customer_manager".equals(roleCode)) {
             sql = """
                     SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           a.application_no, a.submit_time,
+                           a.id application_id, a.application_no, a.submit_time,
                            """ + APP_SUMMARY_SELECT + """
                            cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
                            te.actual_value, te.achievement_ratio, te.result_status
@@ -223,7 +224,7 @@ public class CommitmentController {
         // 普通审批人:本人审批过的申请的客户
         sql = """
                 SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                       a.application_no, a.submit_time,
+                       a.id application_id, a.application_no, a.submit_time,
                        """ + APP_SUMMARY_SELECT + """
                        cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value,
                        te.actual_value, te.achievement_ratio, te.result_status
@@ -259,22 +260,22 @@ public class CommitmentController {
         if (rows.isEmpty()) {
             return;
         }
-        Set<String> customers = new LinkedHashSet<>();
+        Set<String> applicationIds = new LinkedHashSet<>();
         for (Map<String, Object> row : rows) {
-            String customerNo = toStr(row.get("customer_no"));
-            if (!isBlank(customerNo)) {
-                customers.add(customerNo);
+            String applicationId = toStr(row.get("application_id"));
+            if (!isBlank(applicationId)) {
+                applicationIds.add(applicationId);
             }
         }
-        if (customers.isEmpty()) {
+        if (applicationIds.isEmpty()) {
             return;
         }
-        Map<String, List<Map<String, Object>>> relationsByCustomer = validRelations(customers);
-        if (relationsByCustomer.isEmpty()) {
+        Map<String, List<Map<String, Object>>> relationsByApplication = validRelations(applicationIds);
+        if (relationsByApplication.isEmpty()) {
             return;
         }
         Set<String> relatedCustomers = new LinkedHashSet<>();
-        for (List<Map<String, Object>> rels : relationsByCustomer.values()) {
+        for (List<Map<String, Object>> rels : relationsByApplication.values()) {
             for (Map<String, Object> rel : rels) {
                 String relNo = toStr(rel.get("relatedCustomerNo"));
                 if (!isBlank(relNo)) {
@@ -295,7 +296,7 @@ public class CommitmentController {
             String metricCode = toStr(row.get("metric_code"));
             BigDecimal relatedSum = BigDecimal.ZERO;
             boolean hasRelated = false;
-            List<Map<String, Object>> rels = relationsByCustomer.get(customerNo);
+            List<Map<String, Object>> rels = relationsByApplication.get(toStr(row.get("application_id")));
             if (rels != null) {
                 // 同一关联人多种关系只并入一次实绩
                 Set<String> seenRelated = new LinkedHashSet<>();
@@ -328,22 +329,21 @@ public class CommitmentController {
         }
     }
 
-    /** 批查主客户有效关联人(数仓 B03 最新批次,按客户自身最新批次;按 customer_no 分组) */
-    private Map<String, List<Map<String, Object>>> validRelations(Set<String> customers) {
+    /** 批查申请关联人(前台录入,ccr_application_related_person;增量021,数仓关系不再参与);按 application_id 分组 */
+    private Map<String, List<Map<String, Object>>> validRelations(Set<String> applicationIds) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT s.customer_no customerNo, s.related_customer_no relatedCustomerNo, s.relation_type relationType "
-                        + "FROM dw_customer_relation_snapshot s "
-                        + "JOIN (SELECT customer_no, MAX(data_dt) max_dt FROM dw_customer_relation_snapshot GROUP BY customer_no) t "
-                        + "ON t.customer_no = s.customer_no AND t.max_dt = s.data_dt "
-                        + "WHERE s.customer_no IN (" + inClause(customers) + ") AND s.relation_status = 'VALID'");
-        Map<String, List<Map<String, Object>>> byCustomer = new HashMap<>();
+                "SELECT application_id applicationId, related_customer_no relatedCustomerNo, relation_type relationType, cert_type certType, cert_no certNo "
+                        + "FROM ccr_application_related_person WHERE application_id IN (" + inClause(applicationIds) + ") AND del_flag = '0'");
+        // 空客户号关联人按证件号兜底反查数仓主数据补全
+        RelatedCustomerResolver.resolveBatch(jdbcTemplate, rows);
+        Map<String, List<Map<String, Object>>> byApplication = new HashMap<>();
         for (Map<String, Object> row : rows) {
-            String customerNo = toStr(row.get("customerNo"));
-            if (!isBlank(customerNo)) {
-                byCustomer.computeIfAbsent(customerNo, k -> new ArrayList<>()).add(row);
+            String applicationId = toStr(row.get("applicationId"));
+            if (!isBlank(applicationId)) {
+                byApplication.computeIfAbsent(applicationId, k -> new ArrayList<>()).add(row);
             }
         }
-        return byCustomer;
+        return byApplication;
     }
 
     /** 批查关联人数仓值:每组 (cust_no, metric_code) 取最新批次,折算贡献度行优先;同编码才并 */

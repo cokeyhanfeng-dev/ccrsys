@@ -34,7 +34,6 @@ public class DatacenterServiceImpl implements DatacenterService {
         // 2026-08-11 去冗余:dw_own_financing_snapshot 并入 dw_loan_contract_snapshot(见下方贷款合同),不再单列
         KNOWN_TABLE_NAMES.put("dw_contribution_metric", "当前贡献度(T3)");
         KNOWN_TABLE_NAMES.put("dw_credit_report_snapshot", "征信报告头(T4)");
-        KNOWN_TABLE_NAMES.put("dw_org_performance_snapshot", "机构达成情况(T5)");
         KNOWN_TABLE_NAMES.put("dw_mortgage_snapshot", "抵押物快照");
         KNOWN_TABLE_NAMES.put("dw_guarantor_snapshot", "担保人快照");
         KNOWN_TABLE_NAMES.put("dw_credit_agreement_snapshot", "授信协议快照");
@@ -42,7 +41,6 @@ public class DatacenterServiceImpl implements DatacenterService {
         KNOWN_TABLE_NAMES.put("dw_credit_financing_detail", "他行融资明细(D20)");
         KNOWN_TABLE_NAMES.put("dw_customer_group_snapshot", "集团主数据");
         KNOWN_TABLE_NAMES.put("dw_customer_group_member_snapshot", "集团成员");
-        KNOWN_TABLE_NAMES.put("dw_customer_relation_snapshot", "客户关系");
         KNOWN_TABLE_NAMES.put("dw_group_credit_snapshot", "集团综合授信");
         KNOWN_TABLE_NAMES.put("dw_member_credit_limit_snapshot", "成员授信额度");
         KNOWN_TABLE_NAMES.put("dw_loan_contract_snapshot", "贷款合同");
@@ -50,8 +48,12 @@ public class DatacenterServiceImpl implements DatacenterService {
         KNOWN_TABLE_NAMES.put("dw_deposit_account_snapshot", "存款账户");
     }
 
-    /** 弃用表(物理表存在也不再纳入动态监控;dw_credit_tranche_snapshot 为已去除的用信分项层存量表) */
-    private static final Set<String> DEPRECATED_TABLES = Set.of("dw_org_dim", "dw_credit_tranche_snapshot");
+    /** 弃用表(物理表存在也不再纳入动态监控;dw_credit_tranche_snapshot 为已去除的用信分项层存量表;
+     *  dw_org_performance_snapshot/dw_customer_relation_snapshot 增量021废弃:机构达成改本系统实时组装、
+     *  关联人贡献度归并改前台录入,数仓不再推送) */
+    private static final Set<String> DEPRECATED_TABLES = Set.of(
+            "dw_org_dim", "dw_credit_tranche_snapshot",
+            "dw_org_performance_snapshot", "dw_customer_relation_snapshot");
 
     /** 表名白名单:字母开头 + 字母数字下划线(防注入,与 DwTableCacheLoader 一致) */
     private static final Pattern TABLE_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]*$");
@@ -62,9 +64,8 @@ public class DatacenterServiceImpl implements DatacenterService {
                     + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                     + "AND (table_name LIKE 'dw\\_%' OR table_name LIKE 'caps\\_%')";
 
-    /** 带落地时间戳列的表(其余表无该列,landedTime 返回 null) */
-    private static final Map<String, String> LANDED_TS_COLUMN = Map.of(
-            "dw_org_performance_snapshot", "snapshot_ts");
+    /** 带落地时间戳列的表(其余表无该列,landedTime 返回 null;增量021后活跃表均无 snapshot_ts) */
+    private static final Map<String, String> LANDED_TS_COLUMN = Map.of();
 
     /** 数据时效容忍天数(与快照质量规则同一配置,默认 3 个自然日) */
     @Value("${ccr.snapshot.data-stale-days:3}")
