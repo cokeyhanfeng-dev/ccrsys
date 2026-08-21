@@ -55,6 +55,16 @@ public class CustomerController {
         return R.ok(jdbcTemplate.queryForList(sql, like, like, like, like));
     }
 
+    /** 开户机构下拉(§用户要求):启用机构列表,客户经理填单选填开户机构(数据源 ccr_sys_dept,与数仓开户机构名对齐) */
+    @GetMapping("/open-orgs")
+    public R<List<Map<String, Object>>> openOrgs() {
+        return R.ok(jdbcTemplate.queryForList("""
+                SELECT id, org_code orgCode, dept_name deptName
+                FROM ccr_sys_dept
+                WHERE del_flag = '0' AND status = 'ENABLE'
+                ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no"""));
+    }
+
     /** 客户详情:基本信息 + 本行融资 + 当前贡献度 + 他行融资(申请带出) */
     @GetMapping("/{customerNo}")
     public R<Map<String, Object>> detail(@PathVariable String customerNo) {

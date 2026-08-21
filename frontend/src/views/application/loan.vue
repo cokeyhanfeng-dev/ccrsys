@@ -129,7 +129,9 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
-              <input class="form-input" v-model="groupSupplement.openOrg" placeholder="可空" />
+              <el-select class="open-org-select" v-model="groupSupplement.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
+                <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+              </el-select>
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
@@ -245,7 +247,9 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
-              <input class="form-input" v-model="m.openOrg" placeholder="可空" />
+              <el-select class="open-org-select" v-model="m.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
+                <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+              </el-select>
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
@@ -355,7 +359,9 @@
         </template>
         <div class="form-field">
           <label class="form-field__label">开户机构</label>
-          <input class="form-input" v-model="form.openOrg" placeholder="数仓带出,可修改" />
+          <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
+            <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+          </el-select>
         </div>
         <div class="form-field">
           <label class="form-field__label">开户日期</label>
@@ -1022,6 +1028,7 @@ import {
   submitApplication,
   reapplyApplication,
   importOtherLoans,
+  getOpenOrgs,
   type ApplicationPayload,
   type GuaranteeMeasureInput,
   type RoutePreview,
@@ -1065,6 +1072,16 @@ async function loadLoanProducts() {
     }
   } catch {
     // 失败保持字典回退
+  }
+}
+// 开户机构下拉匹配(§用户要求):数据源 ccr_sys_dept 启用机构(客户经理可访问接口 /ccr/customers/open-orgs)
+const openOrgOptions = ref<Array<{ id: number; deptName: string }>>([])
+async function loadOpenOrgOptions() {
+  try {
+    const rows = await getOpenOrgs()
+    openOrgOptions.value = (rows || []).map((r) => ({ id: r.id, deptName: r.deptName }))
+  } catch {
+    // 失败保持空,不影响手工输入
   }
 }
 // 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态;当前值由数仓带出,不做静态假定)
@@ -2219,6 +2236,7 @@ async function onConfirmSubmit() {
 // ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
 onMounted(async () => {
   loadLoanProducts()
+  loadOpenOrgOptions()
   useMetricDict().load()
   const src = route.query.reapply
   if (src) {
@@ -2411,6 +2429,15 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
+/* 开户机构下拉(el-select)与 .form-input 对齐(40px 高度/边框/圆角一致) */
+.open-org-select.el-select { width: 100%; }
+.open-org-select.el-select :deep(.el-select__wrapper) {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
+}
+.open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
 .section-head { margin-bottom: 20px; }
 .section-title { font-size: var(--fs-h1); font-weight: 700; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
