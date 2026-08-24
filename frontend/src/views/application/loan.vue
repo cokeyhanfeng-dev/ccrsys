@@ -1456,7 +1456,10 @@ function confirmSupplementMember(i: number) {
     m.memberCustomerNo = no
   } else if (!no) {
     // 非我行客户(无客户号亦无证件号):生成内部合成号(MANUAL-前缀),展示层识别后显示"非我行客户"
-    no = 'MANUAL-' + crypto.randomUUID()
+    // 非 HTTPS(http://IP)下 crypto.randomUUID 不可用,降级为时间戳+随机数兜底(2026-08-21 生产事故同源修复)
+    no = 'MANUAL-' + (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
     m.memberCustomerNo = no
   }
   // 去重:有客户号按客户号;无客户号(合成号唯一不可比)按 名称+统一社会信用代码
