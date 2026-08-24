@@ -55,7 +55,23 @@ export function pageApprovalHistory<T = any>(pageNum = 1, pageSize = 10): Promis
   return get<T>('/ccr/approval/history', { pageNum, pageSize })
 }
 
-/** 生成幂等键(浏览器原生 uuid) */
+/** 审批中客户号回填(2026-08-20 #017):占位号→真实号;body 传 customerNo 或 certNo 二选一 */
+export function backfillCustomerNo(pricingItemId: number | string, body: { customerNo?: string; certNo?: string }): Promise<void> {
+  return request<void>({
+    url: `/ccr/approval/${pricingItemId}/backfill-customer-no`,
+    method: 'post',
+    data: body
+  })
+}
+
+/**
+ * 生成幂等键:优先浏览器原生 uuid;http://IP 明文访问(非 secure context)下
+ * crypto.randomUUID 为 undefined,调用即抛 TypeError——生产审批"点通过没反应"根因
+ * (2026-08-21),此处降级为时间戳+随机数兜底,保证幂等键仍全局唯一。
+ */
 export function newIdempotencyKey(): string {
-  return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `k-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

@@ -129,7 +129,9 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
-              <input class="form-input" v-model="groupSupplement.openOrg" placeholder="可空" />
+              <el-select class="open-org-select" v-model="groupSupplement.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
+                <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+              </el-select>
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
@@ -168,7 +170,7 @@
               <tr v-for="m in groupMembers" :key="m.memberCustomerNo">
                 <td><input type="checkbox" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m)" /></td>
                 <td>
-                  {{ m.memberCustomerNo }}
+                  {{ customerNoText(m.memberCustomerNo) }}
                   <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
                 </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
@@ -213,8 +215,8 @@
           </div>
           <div v-for="(m, i) in supplementMembers" :key="i" class="form-grid" style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:var(--radius);padding:10px 14px">
             <div class="form-field">
-              <label class="form-field__label">成员客户号 <span class="req">*</span></label>
-              <input class="form-input" v-model="m.memberCustomerNo" placeholder="必填" />
+              <label class="form-field__label">成员客户号</label>
+              <input class="form-input" v-model="m.memberCustomerNo" placeholder="可空(非我行客户可留空)" />
             </div>
             <div class="form-field">
               <label class="form-field__label">成员名称 <span class="req">*</span></label>
@@ -245,7 +247,9 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
-              <input class="form-input" v-model="m.openOrg" placeholder="可空" />
+              <el-select class="open-org-select" v-model="m.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
+                <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+              </el-select>
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
@@ -355,7 +359,9 @@
         </template>
         <div class="form-field">
           <label class="form-field__label">开户机构</label>
-          <input class="form-input" v-model="form.openOrg" placeholder="数仓带出,可修改" />
+          <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
+            <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+          </el-select>
         </div>
         <div class="form-field">
           <label class="form-field__label">开户日期</label>
@@ -1022,6 +1028,7 @@ import {
   submitApplication,
   reapplyApplication,
   importOtherLoans,
+  getOpenOrgs,
   type ApplicationPayload,
   type GuaranteeMeasureInput,
   type RoutePreview,
@@ -1032,7 +1039,7 @@ import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
   AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1065,6 +1072,16 @@ async function loadLoanProducts() {
     }
   } catch {
     // 失败保持字典回退
+  }
+}
+// 开户机构下拉匹配(§用户要求):数据源 ccr_sys_dept 启用机构(客户经理可访问接口 /ccr/customers/open-orgs)
+const openOrgOptions = ref<Array<{ id: number; deptName: string }>>([])
+async function loadOpenOrgOptions() {
+  try {
+    const rows = await getOpenOrgs()
+    openOrgOptions.value = (rows || []).map((r) => ({ id: r.id, deptName: r.deptName }))
+  } catch {
+    // 失败保持空,不影响手工输入
   }
 }
 // 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态;当前值由数仓带出,不做静态假定)
@@ -1132,17 +1149,17 @@ function initialCreditInfo(): CreditInfo {
   }
 }
 
-function newGuarantee(): GuaranteeRow {
+function newGuarantee(scope?: string): GuaranteeRow {
   return {
     memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
-    productCode: defaultProductByScope(), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
+    productCode: defaultProductByScope(scope ?? form.customerScope), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
     originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
 }
 
-/** 贷款产品按客户类型默认:个人客户→个人经营性贷款(LOAN_P),对公/集团(成员为企业)→对公贷款(LOAN_A) */
-function defaultProductByScope(): string {
-  return form.customerScope === 'INDIVIDUAL' ? 'LOAN_P' : 'LOAN_A'
+/** 贷款产品按客户类型默认:个人客户→个人经营性贷款(LOAN_P),对公/集团(成员为企业)→对公贷款(LOAN_A);scope 入参避免 form 初始化前 TDZ 崩溃 */
+function defaultProductByScope(scope: string): string {
+  return scope === 'INDIVIDUAL' ? 'LOAN_P' : 'LOAN_A'
 }
 
 const form = reactive({
@@ -1166,7 +1183,7 @@ const form = reactive({
   // 集团
   groupNo: '',
   applicationRemark: '',
-  guarantees: [newGuarantee()] as GuaranteeRow[]
+  guarantees: [newGuarantee('CORPORATE')] as GuaranteeRow[]
 })
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
@@ -1424,22 +1441,41 @@ function addSupplementMember() {
 function confirmSupplementMember(i: number) {
   const m = supplementMembers.value[i]
   if (!m) return
-  if (!m.memberCustomerNo || !m.memberCustomerNo.trim()) {
-    ElMessage.warning('成员客户号必填')
-    return
-  }
   if (!m.memberName || !m.memberName.trim()) {
     ElMessage.warning('成员名称必填')
     return
   }
-  const no = m.memberCustomerNo.trim()
-  if (groupMembers.value.some((gm) => gm.memberCustomerNo === no)) {
-    ElMessage.warning(`成员[${no}]已在成员列表中,请勿重复添加`)
+  const name = m.memberName.trim()
+  let no = m.memberCustomerNo.trim()
+  const manualBlank = !no // 非我行客户无客户号:客户号可空
+  const ucr = (m.ucrCode || '').trim()
+  if (!no && ucr) {
+    // 新增客户(有证件号无客户号):生成占位号 NEW+完整证件号(2026-08-20 #017),
+    // 提交时按证件号反查数仓回填真实客户号;展示层识别 NEW 前缀显示"新增客户(待回填)"
+    no = 'NEW' + ucr
+    m.memberCustomerNo = no
+  } else if (!no) {
+    // 非我行客户(无客户号亦无证件号):生成内部合成号(MANUAL-前缀),展示层识别后显示"非我行客户"
+    // 非 HTTPS(http://IP)下 crypto.randomUUID 不可用,降级为时间戳+随机数兜底(2026-08-21 生产事故同源修复)
+    no = 'MANUAL-' + (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    m.memberCustomerNo = no
+  }
+  // 去重:有客户号按客户号;无客户号(合成号唯一不可比)按 名称+统一社会信用代码
+  const dup = groupMembers.value.some((gm) => {
+    if (!manualBlank) {
+      return gm.memberCustomerNo === no
+    }
+    return (gm.memberName || '').trim() === name && (gm.ucrCode || '') === (m.ucrCode || '').trim()
+  })
+  if (dup) {
+    ElMessage.warning(`成员[${name}]已在成员列表中,请勿重复添加`)
     return
   }
   groupMembers.value.push({
     memberCustomerNo: no,
-    memberName: m.memberName.trim(),
+    memberName: name,
     memberRole: m.memberRole || 'GENERAL',
     creditLimit: null,
     source: 'MANUAL',
@@ -1449,7 +1485,7 @@ function confirmSupplementMember(i: number) {
     controlRelation: m.controlRelation, relationStart: m.relationStart, relationEnd: m.relationEnd,
   })
   supplementMembers.value.splice(i, 1)
-  ElMessage.success(`成员[${no}]已加入成员列表,请勾选并录入本次申请金额`)
+  ElMessage.success(`成员[${name}]已加入成员列表,请勾选并录入本次申请金额`)
 }
 function memberNameOf(no: string) {
   if (!no) return '—'
@@ -1716,7 +1752,7 @@ function onCustomerScopeChange() {
     supplementMembers.value = []
   }
   // 贷款产品默认值跟随客户类型:仅补未选择产品的分项(已选产品不覆盖)
-  const defaultProduct = defaultProductByScope()
+  const defaultProduct = defaultProductByScope(form.customerScope)
   for (const g of form.guarantees) {
     if (!g.productCode) g.productCode = defaultProduct
   }
@@ -1805,6 +1841,12 @@ function isBlank(v: any) {
 }
 
 // ---------- 分步校验(点击下一步/跳步时提示当前必填项) ----------
+// 单户场景客户身份:已查客户或有证件号(新增客户无客户号,允许先录证件号,提交时后端反查数仓/占位,2026-08-20 #017)
+function hasCustomerIdentity(): boolean {
+  if (!isBlank(form.customerNo)) return true
+  return form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode)
+}
+
 function validateStep(s: number): string | null {
   if (s === 0) {
     if (form.customerScope === 'GROUP') {
@@ -1819,8 +1861,8 @@ function validateStep(s: number): string | null {
       // 勾稽:成员申请金额合计 ≤ 本次申请额度(§4.5,后端提交时同口径复核)
       const sum = selectedMembers.value.reduce((acc, m) => acc + (Number(m.requestAmount) || 0), 0)
       if (sum > Number(groupApplyAmount.value)) return `成员申请金额合计 ${sum} 超过本次申请额度 ${groupApplyAmount.value}`
-    } else if (isBlank(form.customerNo)) {
-      return '请查询并选择客户'
+    } else if (!hasCustomerIdentity()) {
+      return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
   }
   if (s === 2) {
@@ -1879,8 +1921,8 @@ function validateForDraft(): string | null {
     if (!selectedMembers.value.length) return '集团场景请至少勾选一名涉及成员'
     const noAmount = selectedMembers.value.find((m) => isBlank(m.requestAmount))
     if (noAmount) return `成员 ${noAmount.memberName} 未录入本次申请金额`
-  } else if (isBlank(form.customerNo)) {
-    return '请先查询并选择客户'
+  } else if (!hasCustomerIdentity()) {
+    return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   }
   if (!form.guarantees.length) return '请至少录入一条担保分项'
   for (let i = 0; i < form.guarantees.length; i++) {
@@ -1990,6 +2032,7 @@ function buildPayload(): ApplicationPayload {
       .filter((r) => !isBlank(r.name))
       .map((r) => ({
         personName: r.name,
+        certType: r.certType || undefined,
         certNo: r.certNo || undefined,
         relationType: r.relationType,
         relatedCustomerNo: isBlank(r.customerNo) ? undefined : r.customerNo
@@ -2196,6 +2239,7 @@ async function onConfirmSubmit() {
 // ---------- 关联重提(?reapply={applicationId}:生成新草稿并加载内容) ----------
 onMounted(async () => {
   loadLoanProducts()
+  loadOpenOrgOptions()
   useMetricDict().load()
   const src = route.query.reapply
   if (src) {
@@ -2388,6 +2432,15 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
+/* 开户机构下拉(el-select)与 .form-input 对齐(40px 高度/边框/圆角一致) */
+.open-org-select.el-select { width: 100%; }
+.open-org-select.el-select :deep(.el-select__wrapper) {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
+}
+.open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
 .section-head { margin-bottom: 20px; }
 .section-title { font-size: var(--fs-h1); font-weight: 700; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
@@ -2499,8 +2552,7 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 .credit-overview__item--full { grid-column: 1 / -1; }
-/* 向导内容限宽,宽屏下不松散 */
-.wizard-page { max-width: 1360px; }
+/* 向导内容铺满主区(2026-08-21:移除 1360px 限宽,宽屏下页面整体占满不留右侧留白) */
 
 /* 协议项下合同与关联担保 */
 .agreement-detail { background: #f8fafc; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 14px; }

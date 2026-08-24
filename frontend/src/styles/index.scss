@@ -1,21 +1,8 @@
-// 全局样式:设计 token 参照 DESIGN.md(金融蓝 #2563eb)
-// 基础 token 与通用组件样式见 design-system.css,本文件负责
-// Element Plus 主题对齐、组件质感精修、滚动条与页面过渡。
+// 全局样式:基础 token(--color-*/--space-*/--radius-* 等)单一来源见 design-system.css
+// (品牌蓝 #1890ff)。本文件负责 Element Plus 主题对齐、组件质感精修、滚动条与页面过渡。
 
 :root {
-  --color-primary: #1890ff;
-  --color-primary-hover: #46a6ff;
-  --color-primary-active: #1682e6;
-  --color-bg: #f4f6f9;
-  --color-surface: #ffffff;
-  --color-text-main: #1f2937;
-  --color-text-sub: #6b7280;
-  --color-border: #e5e7eb;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-
-  // ── Element Plus 主题变量对齐品牌蓝(P3 对齐 dist:主色 #1890ff/hover 亮/active 深) ──
+  // Element Plus 主题变量对齐品牌蓝(P3 对齐 dist:主色 #1890ff/hover 亮/active 深)
   --el-color-primary: #1890ff;
   --el-color-primary-dark-2: #1682e6;
   --el-color-primary-light-3: #69c0ff;
@@ -110,6 +97,10 @@ body,
 .el-button {
   font-weight: 500;
   transition: all 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  &.is-loading {
+    cursor: wait; // 提交中给明确光标反馈,避免"点了没反应"
+  }
 }
 .el-button--primary {
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
@@ -139,6 +130,10 @@ body,
 .el-select__wrapper.is-focused {
   box-shadow: 0 0 0 1px var(--el-color-primary) inset;
 }
+.el-form-item {
+  // 表单项间距统一 5×4px,与卡片内边距节奏一致
+  --el-form-item-margin-bottom: 20px;
+}
 .el-form-item__label {
   font-weight: 500;
   color: var(--color-text-main);
@@ -150,6 +145,7 @@ body,
   --el-table-header-text-color: #6b7280;
   --el-table-row-hover-bg-color: #f5f7fa;
   --el-table-border-color: #eef1f5;
+  --el-table-text-color: #374151; // 正文对比度 4.8:1(默认 #606266 仅 3.8:1)
 
   th.el-table__cell {
     font-weight: 600;
@@ -175,6 +171,10 @@ body,
   .el-dialog__title {
     font-weight: 600;
   }
+
+  .el-dialog__body {
+    padding: 16px 24px; // 与卡片内边距对齐,避免默认留白偏散
+  }
 }
 .el-overlay {
   backdrop-filter: blur(2px);
@@ -189,6 +189,12 @@ body,
 .el-message {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(15, 42, 92, 0.14);
+}
+
+// 全屏加载遮罩:轻微毛玻璃,降低白屏感
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(1px);
 }
 
 // 分页(P3 对齐 dist:激活页蓝底白字 #1890ff)
@@ -218,6 +224,15 @@ body,
   }
   .el-tabs__item:hover {
     color: #46a6ff;
+  }
+}
+
+// 标签(primary 文字加深到白底 6:1 对比,与 .badge--info 观感统一)
+.el-tag {
+  --el-tag-border-radius: 4px;
+
+  &.el-tag--primary {
+    color: #0a5caf;
   }
 }
 
@@ -343,7 +358,7 @@ body,
 
   &.badge-primary {
     background: #eff6ff;
-    color: var(--color-primary);
+    color: #0a5caf; // 白底 6:1,达标 WCAG AA(primary 蓝仅 3.1:1)
   }
 
   &.badge-sub {

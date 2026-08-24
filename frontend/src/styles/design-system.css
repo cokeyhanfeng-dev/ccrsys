@@ -18,11 +18,12 @@
   --color-text-light: #9ca3af;
   --color-border: #e5e7eb;
   --color-border-light: #eef1f5;
-  --color-success: #13ce66;
+  /* 语义色与 index.scss 的 Element Plus 对齐保持单一来源(以 #10b981/#f59e0b/#ef4444 为准) */
+  --color-success: #10b981;
   --color-success-light: #d1fae5;
-  --color-warning: #ffba00;
+  --color-warning: #f59e0b;
   --color-warning-light: #fef3c7;
-  --color-danger: #ff4949;
+  --color-danger: #ef4444;
   --color-danger-light: #fee2e2;
   --color-info: #3b82f6;
   --color-disabled: #f3f4f6;
@@ -329,12 +330,13 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 .badge--success { background: var(--color-success-light); color: #047857; }
 .badge--warning { background: var(--color-warning-light); color: #92400e; }
 .badge--danger  { background: var(--color-danger-light);  color: #b91c1c; }
-.badge--info    { background: var(--color-primary-light); color: var(--color-primary); }
+/* #0a5caf 在浅蓝底对比 6:1(达标 WCAG AA);primary 蓝字本身仅 3.1:1 */
+.badge--info    { background: var(--color-primary-light); color: #0a5caf; }
 .badge--neutral { background: var(--color-disabled);     color: var(--color-text-sub); }
 
 /* 状态徽章（审批状态） */
 .badge--approved   { background: var(--color-success-light); color: #047857; }
-.badge--processing { background: var(--color-primary-light); color: var(--color-primary); }
+.badge--processing { background: var(--color-primary-light); color: #0a5caf; }
 .badge--rejected   { background: var(--color-danger-light);  color: #b91c1c; }
 .badge--returned   { background: var(--color-warning-light); color: #92400e; }
 
