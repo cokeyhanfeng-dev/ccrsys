@@ -334,6 +334,19 @@ export function normalizeFiveLevelClass(v?: string): string {
   return hit ? hit[0] : v
 }
 /** 五级分类下拉选项(010-050) */
+/** 客户号展示文本:NEW 前缀=新增客户(待回填),MANUAL- 前缀=非我行客户,其余原样返回 */
+export function customerNoText(no?: string, fallback = '—'): string {
+  if (!no) return fallback
+  if (no.startsWith('NEW')) return '新增客户(待回填)'
+  if (isManualCustomerNo(no)) return '非我行客户'
+  return no
+}
+
+/** 是否系统合成占位客户号(MANUAL- 前缀,非我行客户无客户号亦无证件号) */
+export function isManualCustomerNo(no?: string): boolean {
+  return !!no && no.startsWith('MANUAL-')
+}
+
 export const FIVE_LEVEL_OPTIONS: DictItem[] = Object.entries(FIVE_LEVEL_CLASS).map(([code, name]) => ({ code, name }))
 
 /** 企业规模(caps_corp_cust_basic_info.entp_scale;数仓直存中文「大型/中型/小型」,兼容英文码) */

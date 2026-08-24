@@ -263,6 +263,11 @@ export function searchCustomers(name: string) {
 }
 
 /** 客户详情:基本信息+本行融资+当前贡献度+他行融资 */
+/** 客户经理可访问的启用机构列表(开户机构下拉):数据源 ccr_sys_dept,接口 /ccr/customers/open-orgs */
+export function getOpenOrgs<T = any[]>(): Promise<T> {
+  return get<T>('/ccr/customers/open-orgs')
+}
+
 export function getCustomerDetail(customerNo: string) {
   return get<any>(`/ccr/customers/${customerNo}`)
 }
