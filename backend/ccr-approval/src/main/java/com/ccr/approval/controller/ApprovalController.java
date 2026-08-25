@@ -1102,7 +1102,7 @@ public class ApprovalController {
      */
     private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
                                                       Map<String, Object> application) {
-        String groupName = null, groupType = null, groupStatus = null;
+        String groupName = null, groupType = null, groupStatus = null, groupStateOwned = null;
         for (Map<String, Object> record : snapshotRecords) {
             if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
                 continue;
@@ -1111,17 +1111,19 @@ public class ApprovalController {
             groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
             groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
             groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
+            groupStateOwned = core.get("state_owned_flag") == null ? null : String.valueOf(core.get("state_owned_flag"));
             break;
         }
         if (groupName == null) {
             List<Map<String, Object>> dw = jdbcTemplate.queryForList(
-                    "SELECT group_name, group_type, group_status FROM dw_customer_group_snapshot"
+                    "SELECT group_name, group_type, group_status, state_owned_flag FROM dw_customer_group_snapshot"
                             + " WHERE group_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
                     groupNo, groupNo);
             if (!dw.isEmpty() && dw.get(0).get("group_name") != null) {
                 groupName = String.valueOf(dw.get(0).get("group_name"));
                 groupType = dw.get(0).get("group_type") == null ? null : String.valueOf(dw.get(0).get("group_type"));
                 groupStatus = dw.get(0).get("group_status") == null ? null : String.valueOf(dw.get(0).get("group_status"));
+                groupStateOwned = dw.get(0).get("state_owned_flag") == null ? null : String.valueOf(dw.get(0).get("state_owned_flag"));
             }
         }
         cn.hutool.json.JSONObject gi = null;
@@ -1159,6 +1161,7 @@ public class ApprovalController {
         row.put("groupName", groupName);
         row.put("groupType", groupType == null ? "INDUSTRY_GROUP" : groupType);
         row.put("groupStatus", groupStatus);
+        row.put("stateOwnedFlag", groupStateOwned);
         row.put("custType", "CORP");
         return List.of(row);
     }

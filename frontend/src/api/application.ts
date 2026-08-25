@@ -93,6 +93,18 @@ export interface ApplicationPayload {
     annualRate?: number | string
     inputMode?: string
   }> | null
+  /** 他行融资概要(数仓带出可编辑快照,提交时与明细对应校验,§2026-08-25) */
+  creditSummary?: Array<{
+    lenderCount?: number | string
+    creditAmountTotal?: number | string
+    usedAmountTotal?: number | string
+    loanAccountCount?: number | string
+    overdueAccountCount?: number | string
+    overdueBalance?: number | string
+    nplBalance?: number | string
+    specialMentionBalance?: number | string
+    externalGuaranteeBalance?: number | string
+  }> | null
   applicantUserId?: number
   applicantOrgId?: number
   orgId?: number
@@ -175,6 +187,18 @@ export interface ApplicationDetail {
     unit?: string
     metricScope?: string
     memberCustomerNo?: string
+  }>
+  /** 他行融资概要(数仓带出可编辑快照,§2026-08-25) */
+  creditSummary?: Array<{
+    lenderCount?: number
+    creditAmountTotal?: number
+    usedAmountTotal?: number
+    loanAccountCount?: number
+    overdueAccountCount?: number
+    overdueBalance?: number
+    nplBalance?: number
+    specialMentionBalance?: number
+    externalGuaranteeBalance?: number
   }>
 }
 
@@ -263,18 +287,13 @@ export function searchCustomers(name: string) {
 }
 
 /** 客户详情:基本信息+本行融资+当前贡献度+他行融资 */
-/** 客户经理可访问的启用机构列表(开户机构下拉):数据源 ccr_sys_dept,接口 /ccr/customers/open-orgs */
-export function getOpenOrgs<T = any[]>(): Promise<T> {
-  return get<T>('/ccr/customers/open-orgs')
-}
-
 export function getCustomerDetail(customerNo: string) {
   return get<any>(`/ccr/customers/${customerNo}`)
 }
 
-/** 开户机构下拉(客户经理填单选填开户机构;数据源 ccr_sys_dept 启用机构) */
-export function getOpenOrgs() {
-  return get<any[]>('/ccr/customers/open-orgs')
+/** 客户经理可访问的启用机构列表(开户机构下拉):数据源 ccr_sys_dept,接口 /ccr/customers/open-orgs */
+export function getOpenOrgs<T = any[]>(): Promise<T> {
+  return get<T>('/ccr/customers/open-orgs')
 }
 
 /** 客户业务视图(账户/授信/合同/借据/担保/贡献度,最新批次) */

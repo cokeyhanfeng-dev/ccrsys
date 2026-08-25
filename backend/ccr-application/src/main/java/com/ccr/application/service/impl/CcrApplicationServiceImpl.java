@@ -17,10 +17,12 @@ import java.util.Set;
 import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
+import com.ccr.application.domain.CcrApplicationCreditSummary;
 import com.ccr.application.domain.CcrApplicationOtherLoan;
 import com.ccr.application.domain.CcrApplicationRelatedPerson;
 import com.ccr.application.mapper.CcrApplicationRelatedPersonMapper;
 import com.ccr.application.mapper.CcrApplicationOtherLoanMapper;
+import com.ccr.application.mapper.CcrApplicationCreditSummaryMapper;
 import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrGuaranteeMeasure;
 import com.ccr.application.domain.CcrGuaranteePackage;
@@ -90,6 +92,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     @Resource
     private CcrApplicationOtherLoanMapper otherLoanMapper;
     @Resource
+    private CcrApplicationCreditSummaryMapper creditSummaryMapper;
+    @Resource
     private CcrApplicationRelatedPersonMapper relatedPersonMapper;
 
     @Resource
@@ -155,6 +159,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         // 人工补录他行融资(§7.1 步骤6,审批详情随申请展示)
         saveOtherLoans(entity.getId(), request.getOtherLoans());
+        // 他行融资概要(数仓带出可编辑快照,§2026-08-25)
+        saveCreditSummary(entity.getId(), request.getCreditSummary());
         // 关联人(§12.4④,按客户经理实际录入保存并展示)
         saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         return entity;
@@ -248,6 +254,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "第" + index + "条担保分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
             }
+            // 申请利率范围兜底(§bug 2026-08-25):落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;
+            // 此处用 0~100 合理利率范围,报清晰中文错误替代
+            if (requestedRate.compareTo(BigDecimal.ZERO) <= 0 || requestedRate.compareTo(new BigDecimal("100")) > 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条担保分项申请利率须在 0~100 之间(当前 " + requestedRate + ")");
+            }
             BigDecimal pricingAmount = toBigDecimal(g.get("amount"));
             if (pricingAmount == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条担保分项金额(amount)必填");
@@ -306,6 +318,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                     || d.getTermValue() == null || StrUtil.isBlank(d.getTermUnit())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "第" + index + "条存款分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
+            }
+            // 申请利率范围兜底(同贷款分项,§bug 2026-08-25)
+            if (d.getRequestedRate().compareTo(BigDecimal.ZERO) <= 0
+                    || d.getRequestedRate().compareTo(new BigDecimal("100")) > 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条存款分项申请利率须在 0~100 之间(当前 " + d.getRequestedRate() + ")");
             }
             boolean planned = "Y".equals(d.getPlannedAccountFlag()) || StrUtil.isBlank(d.getDepositAccountNo());
             if (d.getAmount() == null) {
@@ -424,6 +442,20 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             loan.setInputMode(StrUtil.blankToDefault(loan.getInputMode(), "MANUAL"));
             otherLoanMapper.insert(loan);
         }
+    }
+
+    /** 他行融资概要落库(随申请单条快照;数仓带出可编辑,§2026-08-25;整表重建随 saveDraft 语义) */
+    private void saveCreditSummary(Long applicationId, List<CcrApplicationCreditSummary> creditSummary) {
+        if (creditSummary == null || creditSummary.isEmpty()) {
+            return;
+        }
+        CcrApplicationCreditSummary summary = creditSummary.get(0);
+        if (summary == null) {
+            return;
+        }
+        summary.setId(null);
+        summary.setApplicationId(applicationId);
+        creditSummaryMapper.insert(summary);
     }
 
     private void saveCommitments(Long applicationId, List<CommitmentInput> commitments, List<CcrPricingItem> createdItems) {
@@ -639,6 +671,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 entity, request, entity.getBusinessType(), groupScope);
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         saveOtherLoans(entity.getId(), request.getOtherLoans());
+        saveCreditSummary(entity.getId(), request.getCreditSummary());
         saveRelatedPersons(entity.getId(), request.getRelatedPersons());
     }
 
@@ -658,6 +691,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
 
         otherLoanMapper.delete(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
                 .eq(CcrApplicationOtherLoan::getApplicationId, applicationId));
+        creditSummaryMapper.delete(new LambdaQueryWrapper<CcrApplicationCreditSummary>()
+                .eq(CcrApplicationCreditSummary::getApplicationId, applicationId));
         relatedPersonMapper.delete(new LambdaQueryWrapper<CcrApplicationRelatedPerson>()
                 .eq(CcrApplicationRelatedPerson::getApplicationId, applicationId));
         // 成员:物理删除(uk_app_member(application_id, member_customer_no) 不含 del_flag,MP 逻辑删除 del_flag 0→1
@@ -741,6 +776,9 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         detail.setOtherLoans(otherLoanMapper.selectList(new LambdaQueryWrapper<CcrApplicationOtherLoan>()
                 .eq(CcrApplicationOtherLoan::getApplicationId, id)
                 .orderByAsc(CcrApplicationOtherLoan::getId)));
+        detail.setCreditSummary(creditSummaryMapper.selectList(new LambdaQueryWrapper<CcrApplicationCreditSummary>()
+                .eq(CcrApplicationCreditSummary::getApplicationId, id)
+                .orderByAsc(CcrApplicationCreditSummary::getId)));
         detail.setRelatedPersons(relatedPersonMapper.selectList(new LambdaQueryWrapper<CcrApplicationRelatedPerson>()
                 .eq(CcrApplicationRelatedPerson::getApplicationId, id)
                 .orderByAsc(CcrApplicationRelatedPerson::getId)));

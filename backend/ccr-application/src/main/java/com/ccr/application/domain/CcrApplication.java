@@ -108,6 +108,10 @@ public class CcrApplication extends BaseEntity {
     @TableField(exist = false)
     private List<CcrApplicationOtherLoan> otherLoans;
 
+    /** 他行融资概要(非表字段,仅接收,落 ccr_application_credit_summary;数仓带出可编辑,§2026-08-25) */
+    @TableField(exist = false)
+    private List<CcrApplicationCreditSummary> creditSummary;
+
     /** 关联人(非表字段,仅接收,落 ccr_application_related_person) */
     @TableField(exist = false)
     private List<CcrApplicationRelatedPerson> relatedPersons;

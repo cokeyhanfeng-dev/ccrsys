@@ -320,6 +320,13 @@ export function groupTypeText(code?: string, fallback = '—'): string {
   return textOf(GROUP_TYPE, code, fallback)
 }
 
+/** 集团国企属性(state_owned_flag;属性属集团本身,非旗下企业;§用户要求 2026-08-25)
+ *  Y=国企集团 / N=非国企集团;数仓/手工集团快照 state_owned_flag 透传 */
+export const GROUP_NATURE: Record<string, string> = { Y: '国企集团', N: '非国企集团' }
+export function groupNatureText(code?: string, fallback = '—'): string {
+  return textOf(GROUP_NATURE, code, fallback)
+}
+
 /** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存) */
 export const FIVE_LEVEL_CLASS: Record<string, string> = {
   '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失'
@@ -335,19 +342,6 @@ export function normalizeFiveLevelClass(v?: string): string {
   return hit ? hit[0] : v
 }
 /** 五级分类下拉选项(010-050) */
-/** 客户号展示文本:NEW 前缀=新增客户(待回填),MANUAL- 前缀=非我行客户,其余原样返回 */
-export function customerNoText(no?: string, fallback = '—'): string {
-  if (!no) return fallback
-  if (no.startsWith('NEW')) return '新增客户(待回填)'
-  if (isManualCustomerNo(no)) return '非我行客户'
-  return no
-}
-
-/** 是否系统合成占位客户号(MANUAL- 前缀,非我行客户无客户号亦无证件号) */
-export function isManualCustomerNo(no?: string): boolean {
-  return !!no && no.startsWith('MANUAL-')
-}
-
 export const FIVE_LEVEL_OPTIONS: DictItem[] = Object.entries(FIVE_LEVEL_CLASS).map(([code, name]) => ({ code, name }))
 
 /** 企业规模(caps_corp_cust_basic_info.entp_scale;数仓直存中文「大型/中型/小型」,兼容英文码) */
@@ -579,17 +573,17 @@ export function relationTypeText(code?: string): string {
   return code ? (map[code] || code) : '—'
 }
 
-/** 授信协议类型下拉选项(新增授信手工录入,与 agreementTypeText 对齐) */
+/** 授信协议类型下拉选项(新增授信手工录入,与 agreementTypeText 对齐;2026-08-25 用户要求改为综合授信/临时授信) */
 export const AGREEMENT_TYPES: DictItem[] = [
   { code: 'COMPREHENSIVE', name: '综合授信' },
-  { code: 'SINGLE', name: '单笔单批' },
-  { code: 'REVOLVING', name: '循环授信' }
+  { code: 'TEMPORARY', name: '临时授信' }
 ]
 
-/** 授信协议类型(dw_credit_agreement.agreement_type) */
+/** 授信协议类型(dw_credit_agreement.agreement_type;TEMPORARY 为新录入码值,保留 SINGLE/REVOLVING 兼容存量展示) */
 export function agreementTypeText(code?: string): string {
   const map: Record<string, string> = {
     COMPREHENSIVE: '综合授信',
+    TEMPORARY: '临时授信',
     SINGLE: '单笔单批',
     REVOLVING: '循环授信'
   }

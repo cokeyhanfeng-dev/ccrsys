@@ -65,6 +65,12 @@
                 <artifactId>sa-token-spring-boot3-starter</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
+            <!-- Sa-Token 整合 Redis(jackson 序列化,会话持久化到 Redis,重启/多实例共享登录态) -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-redis-jackson</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
             <!-- 模块依赖 -->
             <dependency>
                 <groupId>com.ccr</groupId>

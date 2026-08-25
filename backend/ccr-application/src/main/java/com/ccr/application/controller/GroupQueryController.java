@@ -181,6 +181,7 @@ public class GroupQueryController {
         row.put("group_type", g.getGroupType());
         row.put("manager_org_id", g.getManagerOrgId());
         row.put("group_status", g.getGroupStatus());
+        row.put("state_owned_flag", g.getStateOwnedFlag());
         return row;
     }
 

@@ -31,6 +31,9 @@ public class CcrGroup extends BaseEntity {
     /** 集团状态(默认 NORMAL) */
     private String groupStatus;
 
+    /** 国企集团属性Y/N(集团本身属性,非旗下企业;§用户要求 2026-08-25) */
+    private String stateOwnedFlag;
+
     /** 批复总额度(万元,手工补录,路由定档/额度勾稽基准) */
     private BigDecimal approvedTotalAmount;
 

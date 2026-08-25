@@ -2,6 +2,7 @@ package com.ccr.application.dto;
 
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
+import com.ccr.application.domain.CcrApplicationCreditSummary;
 import com.ccr.application.domain.CcrApplicationOtherLoan;
 import com.ccr.application.domain.CcrApplicationRelatedPerson;
 import com.ccr.application.domain.CcrApplicationMember;
@@ -43,6 +44,9 @@ public class ApplicationDetailResponse {
 
     /** 人工补录他行融资 */
     private List<CcrApplicationOtherLoan> otherLoans;
+
+    /** 他行融资概要(申请随单可编辑快照,§2026-08-25) */
+    private List<CcrApplicationCreditSummary> creditSummary;
 
     /** 关联人(客户经理录入) */
     private List<CcrApplicationRelatedPerson> relatedPersons;

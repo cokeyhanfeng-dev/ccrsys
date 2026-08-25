@@ -105,6 +105,14 @@
               <input class="form-input" v-model="groupSupplement.groupName" placeholder="必填" />
             </div>
             <div class="form-field">
+              <label class="form-field__label">集团属性 <span class="req">*</span></label>
+              <select class="form-select" v-model="groupSupplement.stateOwnedFlag">
+                <option value="">请选择</option>
+                <option value="Y">国企集团</option>
+                <option value="N">非国企集团</option>
+              </select>
+            </div>
+            <div class="form-field">
               <label class="form-field__label">统一社会信用代码</label>
               <input class="form-input" v-model="groupSupplement.ucrCode" placeholder="可空" />
             </div>
@@ -145,6 +153,7 @@
         </div>
         <div v-if="groupInfo" class="group-summary" style="margin-top:12px">
           <div class="group-summary__item"><span>集团名称</span><b>{{ groupInfo.groupName || '暂无数据' }}</b></div>
+          <div class="group-summary__item"><span>集团属性</span><b>{{ groupNatureText(groupInfo.stateOwnedFlag) }}</b></div>
           <div class="group-summary__item"><span>集团状态</span><b>{{ groupStatusText(groupInfo.groupStatus) }}</b></div>
           <div class="group-summary__item"><span>授信总额(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>已分配额度(万元)</span><b>{{ groupAllocatedTotal ?? '暂无数据' }}</b></div>
@@ -408,7 +417,8 @@
 
       <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
       <div class="sub-title" style="margin-top:20px">他行融资概要</div>
-      <table class="table" v-if="otherSummary">
+      <InfoTip content="概要来自数仓,可编辑;提交时与下方融资明细自动核对(授信机构数/总额/已用额/笔数)" />
+      <table class="table">
         <thead>
           <tr>
             <th>授信机构数</th><th>他行授信总额(万元)</th><th>已用额度合计(万元)</th>
@@ -418,19 +428,18 @@
         </thead>
         <tbody>
           <tr>
-            <td class="num">{{ otherSummary.lenderCount ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.creditAmountTotal ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.usedAmountTotal ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.loanAccountCount ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.overdueAccountCount ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.overdueBalance ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.nplBalance ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.specialMentionBalance ?? '暂无数据' }}</td>
-            <td class="num">{{ otherSummary.externalGuaranteeBalance ?? '暂无数据' }}</td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.lenderCount" type="number" min="0" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.loanAccountCount" type="number" min="0" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueAccountCount" type="number" min="0" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无他行融资概要数据</div>
 
       <div class="sub-title" style="margin-top:20px">他行融资明细</div>
       <table class="table" v-if="otherLoans.length">
@@ -439,11 +448,11 @@
         </thead>
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
-            <td><input class="form-input" v-model="d.lenderName" :disabled="d.inputMode !== 'MANUAL'" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.creditAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.usedAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" :disabled="d.inputMode !== 'MANUAL'" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.annualRate" :disabled="d.inputMode !== 'MANUAL'" /></td>
+            <td><input class="form-input" v-model="d.lenderName" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.creditAmount" type="number" min="0" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.usedAmount" type="number" min="0" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" step="0.000001" /></td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
           </tr>
         </tbody>
@@ -596,7 +605,7 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="g.requestedRate" placeholder="如 3.40" />
+            <input class="form-input form-input--amount" v-model="g.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.40" />
           </div>
           <div class="form-field">
             <label class="form-field__label">币种</label>
@@ -938,7 +947,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode,
+  AGREEMENT_TYPES, certTypeText, groupStatusText, groupNatureText, currencyText, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
@@ -1098,7 +1107,7 @@ const customerNatureText = computed(() => {
 
 // 数仓带出数据
 const ownFinancing = ref<any[]>([])
-const otherSummary = ref<any | null>(null)
+const otherSummary = ref<any>({})
 const otherLoans = ref<any[]>([])
 const contributionCurrent = ref<any[]>([])
 
@@ -1128,6 +1137,8 @@ const groupSupplement = reactive({
   basicAccount: '',
   groupType: 'INDUSTRY_GROUP',
   currency: 'CNY',
+  /** 国企集团属性Y/N(集团本身属性,非旗下企业;§用户要求 2026-08-25,新增集团补录/存量集团回显) */
+  stateOwnedFlag: '',
 })
 /** 成员补录区展开开关 */
 const showSupplementMember = ref(false)
@@ -1222,7 +1233,7 @@ async function loadCustomerDetail() {
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
-    otherSummary.value = detail.creditSummary?.[0] || null
+    otherSummary.value = { ...(detail.creditSummary?.[0] || {}) }
     otherLoans.value = (detail.creditDetail || []).map((d: any) => ({ ...d, inputMode: 'DW' }))
     ElMessage.success(`已带出客户 ${form.customerName || form.customerNo} 信息`)
   } catch {
@@ -1735,8 +1746,9 @@ function validateStep(s: number): string | null {
   if (s === 0) {
     if (form.customerScope === 'GROUP') {
       if (isBlank(form.groupNo) || !groupQueried.value) return '请录入集团编号并查询加载集团信息'
-      // 新增集团(数仓未收录):就地补录集团名称必填(§docs/19 §4.3)
+      // 新增集团(数仓未收录):就地补录集团名称/集团属性必填(§docs/19 §4.3;国企属性 §2026-08-25)
       if (isNewGroup.value && isBlank(groupSupplement.groupName)) return '请补录集团名称(数仓未收录,新增集团必填)'
+      if (isNewGroup.value && isBlank(groupSupplement.stateOwnedFlag)) return '请选择集团属性(国企集团/非国企集团)'
       // 本次申请额度必填(集团本次申请新增授信,§4.5;存量集团补申请额度同理)
       if (isBlank(groupApplyAmount.value) || Number(groupApplyAmount.value) <= 0) return '请录入本次申请额度(集团新增授信,必填)'
       if (!selectedMembers.value.length) return '请至少勾选一名集团成员'
@@ -1747,6 +1759,29 @@ function validateStep(s: number): string | null {
       if (sum > Number(groupApplyAmount.value)) return `成员申请金额合计 ${sum} 超过本次申请额度 ${groupApplyAmount.value}`
     } else if (!hasCustomerIdentity()) {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
+    }
+  }
+  if (s === 1) {
+    // 他行融资概要 vs 明细对应校验(口径与后端 submit checkCreditSummaryConsistency 一致;概要任一要素非空即校验,§2026-08-25)
+    const summary = buildCreditSummary()
+    if (summary) {
+      const rows = otherLoans.value.filter((d) => !isBlank(d.lenderName))
+      if (!rows.length) return '他行融资概要已填写,请同步补录融资明细(概要/明细需对应一致)'
+      const creditTotal = rows.reduce((acc, d) => acc + (Number(d.creditAmount) || 0), 0)
+      const usedTotal = rows.reduce((acc, d) => acc + (Number(d.usedAmount) || 0), 0)
+      const distinctLenders = new Set(rows.map((d) => String(d.lenderName).trim())).size
+      if (summary.creditAmountTotal !== undefined && Math.abs(creditTotal - Number(summary.creditAmountTotal)) > 1) {
+        return `他行融资授信总额(概要 ${summary.creditAmountTotal} 万元)与明细合计(${creditTotal} 万元)不一致`
+      }
+      if (summary.usedAmountTotal !== undefined && Math.abs(usedTotal - Number(summary.usedAmountTotal)) > 1) {
+        return `他行融资已用额合计(概要 ${summary.usedAmountTotal} 万元)与明细合计(${usedTotal} 万元)不一致`
+      }
+      if (summary.lenderCount !== undefined && Number(summary.lenderCount) !== distinctLenders) {
+        return `他行融资授信机构数(概要 ${summary.lenderCount})与明细机构数(${distinctLenders})不一致`
+      }
+      if (summary.loanAccountCount !== undefined && Number(summary.loanAccountCount) !== rows.length) {
+        return `他行融资未结清笔数(概要 ${summary.loanAccountCount})与明细笔数(${rows.length})不一致`
+      }
     }
   }
   if (s === 2) {
@@ -1762,6 +1797,9 @@ function validateStep(s: number): string | null {
       if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限`
       if (isBlank(g.amount) || Number(g.amount) <= 0) return `第 ${i + 1} 条分项未录入金额`
       if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率`
+      // 申请利率范围兜底:落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;合理利率 0~100%(§bug 2026-08-25)
+      const rate = Number(g.requestedRate)
+      if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
     }
   }
   if (s === 3) {
@@ -1774,15 +1812,17 @@ function validateStep(s: number): string | null {
   }
   return null
 }
-function goNext(target: number) {
+async function goNext(target: number) {
   const err = validateStep(step.value)
   if (err) {
     ElMessage.warning(err)
     return
   }
+  // 自动暂存:点"下一步"先把上一步信息存为草稿,未完成可稍后从历史申请继续编辑(§用户要求 2026-08-25)
+  await autoSaveDraft()
   step.value = target
 }
-function goStep(i: number) {
+async function goStep(i: number) {
   if (i <= step.value) {
     step.value = i
     return
@@ -1794,6 +1834,7 @@ function goStep(i: number) {
       return
     }
   }
+  await autoSaveDraft()
   step.value = i
 }
 
@@ -1815,6 +1856,9 @@ function validateForDraft(): string | null {
     if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率申请步骤)`
     if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率申请步骤)`
     if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(利率申请步骤)`
+    // 申请利率范围兜底(同上,草稿/提交共用)
+    const rate = Number(g.requestedRate)
+    if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
   }
   for (let i = 0; i < commitments.value.length; i++) {
     const c = commitments.value[i]
@@ -1919,9 +1963,9 @@ function buildPayload(): ApplicationPayload {
         relationType: r.relationType,
         relatedCustomerNo: isBlank(r.customerNo) ? undefined : r.customerNo
       })),
-    // 人工补录/Excel 导入他行融资(随单持久化,审批详情展示;空行过滤,数仓带出的不回传)
+    // 他行融资明细(人工补录/Excel 导入/数仓带出均可编辑,随单持久化,审批详情展示;空行过滤,§2026-08-25 存量行放开编辑)
     otherLoans: otherLoans.value
-      .filter((d) => d.inputMode !== 'DW' && !isBlank(d.lenderName))
+      .filter((d) => !isBlank(d.lenderName))
       .map((d) => ({
         lenderName: d.lenderName,
         creditAmount: isBlank(d.creditAmount) ? undefined : d.creditAmount,
@@ -1930,6 +1974,8 @@ function buildPayload(): ApplicationPayload {
         annualRate: isBlank(d.annualRate) ? undefined : d.annualRate,
         inputMode: d.inputMode || 'MANUAL'
       })),
+    // 他行融资概要(数仓带出可编辑,随单持久化;任一要素非空才提交,后端与明细对应校验,§2026-08-25)
+    creditSummary: buildCreditSummary() ? [buildCreditSummary() as any] : undefined,
     commitments: commitments.value.map((c) => ({
       metricCode: c.metricCode,
       targetType: c.targetType,
@@ -1974,6 +2020,23 @@ function buildPayload(): ApplicationPayload {
   }
 }
 
+/** 他行融资概要序列化(数仓带出可编辑快照;任一要素非空才随单提交,提交时后端与明细对应校验;§2026-08-25) */
+function buildCreditSummary(): Record<string, unknown> | undefined {
+  const s = otherSummary.value || {}
+  const num = (v: unknown) => (isBlank(v) ? undefined : Number(v))
+  const out: Record<string, unknown> = {}
+  if (num(s.lenderCount) !== undefined) out.lenderCount = num(s.lenderCount)
+  if (num(s.creditAmountTotal) !== undefined) out.creditAmountTotal = num(s.creditAmountTotal)
+  if (num(s.usedAmountTotal) !== undefined) out.usedAmountTotal = num(s.usedAmountTotal)
+  if (num(s.loanAccountCount) !== undefined) out.loanAccountCount = num(s.loanAccountCount)
+  if (num(s.overdueAccountCount) !== undefined) out.overdueAccountCount = num(s.overdueAccountCount)
+  if (num(s.overdueBalance) !== undefined) out.overdueBalance = num(s.overdueBalance)
+  if (num(s.nplBalance) !== undefined) out.nplBalance = num(s.nplBalance)
+  if (num(s.specialMentionBalance) !== undefined) out.specialMentionBalance = num(s.specialMentionBalance)
+  if (num(s.externalGuaranteeBalance) !== undefined) out.externalGuaranteeBalance = num(s.externalGuaranteeBalance)
+  return Object.keys(out).length ? out : undefined
+}
+
 /** 授信协议补录/修正快照序列化(任一要素非空才随单提交;全空返回 undefined 不落库) */
 function serializeCreditInfo(): Record<string, unknown> | undefined {
   const c = form.creditInfo
@@ -2000,6 +2063,8 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
     if (groupSupplement.groupName) out.groupName = groupSupplement.groupName
     out.groupType = groupSupplement.groupType || 'INDUSTRY_GROUP'
     out.groupStatus = 'NORMAL'
+    // 国企属性(集团本身,§2026-08-25;新增集团必填)
+    if (groupSupplement.stateOwnedFlag) out.stateOwnedFlag = groupSupplement.stateOwnedFlag
     out.currency = groupSupplement.currency || 'CNY'
     if (groupSupplement.ucrCode) out.ucrCode = groupSupplement.ucrCode
     if (groupSupplement.fiveLevelClass) out.fiveLevelClass = groupSupplement.fiveLevelClass
@@ -2058,6 +2123,31 @@ async function ensureDraft(): Promise<boolean> {
     return true
   } catch {
     return false
+  } finally {
+    saving.value = false
+  }
+}
+
+/** 自动暂存(点"下一步"/跳步触发):宽松保存当前表单为草稿,不做严格必填校验;
+ *  后端 createDraft/saveDraft 仅校验业务类型/客户范围,允许保存不完整草稿(§12.1 DRAFT)。
+ *  已填完的步骤内容落库,未完成申请可从历史申请"继续编辑"接着填(§用户要求 2026-08-25)。
+ *  失败静默不打断下一步(用户仍可手动点"存草稿"或提交时严格校验)。 */
+async function autoSaveDraft() {
+  if (saving.value || submitted.value) return
+  saving.value = true
+  try {
+    const payload = buildPayload()
+    if (draft.id) {
+      const saved = await saveApplication(draft.id, { ...payload, versionNo: draft.versionNo ?? undefined })
+      draft.versionNo = saved.versionNo
+    } else {
+      const created = await createApplication(payload)
+      draft.id = created.id
+      draft.versionNo = created.versionNo ?? 1
+      draft.applicationNo = created.applicationNo
+    }
+  } catch {
+    // 自动暂存失败不阻塞切步;提交/路由预览走 ensureDraft 严格校验并已做错误提示
   } finally {
     saving.value = false
   }
@@ -2189,6 +2279,7 @@ async function loadDraftIntoForm(id: number | string) {
     // 新增集团:集团基本信息从快照回填(数仓仍未收录时,避免客户经理二次录入)
     if (isNewGroup.value && gInfo?.groupName) {
       groupSupplement.groupName = gInfo.groupName
+      groupSupplement.stateOwnedFlag = gInfo.stateOwnedFlag || ''
       groupSupplement.ucrCode = gInfo.ucrCode || ''
       groupSupplement.fiveLevelClass = normalizeFiveLevelClass(gInfo.fiveLevelClass || '')
       groupSupplement.creditLevel = gInfo.creditLevel || ''

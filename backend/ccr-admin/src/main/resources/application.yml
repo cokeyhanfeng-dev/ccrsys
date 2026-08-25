@@ -47,6 +47,8 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 # Sa-Token 配置(§5.1 会话活跃超时 2 小时:任意合法请求自动续期;连续 2 小时无操作会话失效强制退出)
+# 会话持久化:引入 sa-token-redis-jackson 后 token/Session 自动落 Redis(§5.1 2026-08-25),
+#   后端重启/浏览器关闭重开不失效;Redis 连接复用下方 spring.data.redis(容器内 ccr-redis,db0)
 sa-token:
   token-name: Authorization
   timeout: 86400
