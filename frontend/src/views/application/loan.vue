@@ -43,25 +43,29 @@
         <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;全部字段等宽 span1,4列 grid 自动对齐,联想面板跟随输入框不拉宽) -->
         <template v-if="form.customerScope === 'GROUP'">
           <div class="form-field">
-            <label class="form-field__label">集团客户 <span class="req">*</span></label>
+            <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
             <el-autocomplete
-              v-model="form.groupNo"
+              v-model="form.groupName"
               :fetch-suggestions="queryGroupSuggestions"
               :trigger-on-focus="false"
               clearable
-              placeholder="编号/名称联想;未收录回车补录"
+              placeholder="输入集团名称联想选择;未收录回车补录"
               style="width:100%"
               @select="selectGroup"
               @keyup.enter="queryGroup"
             />
           </div>
           <div class="form-field">
-            <label class="form-field__label">集团名称</label>
-            <input class="form-input" :value="groupInfo?.groupName || ''" readonly placeholder="查询后带出" />
+            <label class="form-field__label">集团客户编号</label>
+            <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" />
           </div>
           <div class="form-field">
             <label class="form-field__label">集团属性</label>
-            <input class="form-input" :value="groupNatureText(groupInfo?.stateOwnedFlag)" readonly placeholder="查询后带出" />
+            <select class="form-select" v-model="form.stateOwnedFlag">
+              <option value="">请选择</option>
+              <option value="Y">国企</option>
+              <option value="N">非国企</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">集团状态</label>
@@ -86,7 +90,7 @@
 
         <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
         <template v-else>
-          <div class="form-field">
+          <div class="form-field form-field--span2">
             <label class="form-field__label">客户名称 <span class="req">*</span></label>
             <el-autocomplete
               v-model="form.customerName"
@@ -169,7 +173,7 @@
           </div>
         </div>
         <!-- 集团成员:第一步勾选本次申请涉及成员(勾选集合供第三步分项「涉及成员」下拉选择);标题文字不展示(§2026-08-25),表格拉满整宽 -->
-        <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
+        <div v-if="groupMembers.length" class="member-block" style="margin-top:12px">
           <div class="member-head member-head--bare">
             <span class="badge badge--neutral">{{ selectedMembers.length }}/{{ groupMembers.length }} 已选</span>
             <button class="btn btn--text" @click="showSupplementMember = !showSupplementMember">
@@ -179,7 +183,7 @@
           <table class="table member-table">
             <thead>
               <tr>
-                <th>成员客户号</th><th>成员名称</th><th>证件号码</th><th style="width:96px"></th>
+                <th>成员客户号</th><th>成员名称</th><th>证件号码</th><th style="width:40px"></th>
               </tr>
             </thead>
             <tbody>
@@ -191,9 +195,7 @@
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td>{{ m.idNo || m.ucrCode || '—' }}</td>
                 <td>
-                  <button class="btn member-btn" :class="isMemberChecked(m.memberCustomerNo) ? 'btn--primary' : 'btn--ghost'" @click="toggleMember(m.memberCustomerNo)">
-                    {{ isMemberChecked(m.memberCustomerNo) ? '已涉及' : '涉及成员' }}
-                  </button>
+                  <input type="checkbox" class="member-check" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m.memberCustomerNo)" />
                 </td>
               </tr>
             </tbody>
@@ -293,7 +295,7 @@
               <option value="SOE">国企</option>
             </select>
           </div>
-          <div class="form-field">
+          <div class="form-field form-field--span2">
             <label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
           </div>
@@ -356,7 +358,7 @@
             </select>
           </div>
         </template>
-        <div class="form-field">
+        <div class="form-field form-field--span2">
           <label class="form-field__label">开户机构</label>
           <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
             <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
@@ -915,7 +917,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  AGREEMENT_TYPES, groupStatusText, groupNatureText, currencyText, maritalStatusCode,
+  AGREEMENT_TYPES, groupStatusText, currencyText, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
@@ -1073,6 +1075,7 @@ const form = reactive({
   creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
   customerType: 'NON_SOE',
+  stateOwnedFlag: '', // 集团属性(国企 Y/非国企 N;数仓带出可下拉修改)
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '', basicAccount: '',
   // 对私(数仓带出,只读)
@@ -1081,6 +1084,7 @@ const form = reactive({
   openOrg: '', openDate: '',
   // 集团
   groupNo: '',
+  groupName: '', // 集团名称(联想选择显示;新增集团手输)
   applicationRemark: '',
   guarantees: [newGuarantee('CORPORATE')] as GuaranteeRow[]
 })
@@ -1261,10 +1265,13 @@ async function queryGroupSuggestions(queryString: string, cb: (list: any[]) => v
 async function selectGroup(item: any) {
   const g = item?.data ?? item
   form.groupNo = g.groupNo
+  form.groupName = g.groupName || ''
   await queryGroup()
 }
 
 async function queryGroup() {
+  // autocomplete 绑定名称;手动输入编号回车时同步到 groupNo(联想选中已由 selectGroup 回填)
+  if (!form.groupNo?.trim()) form.groupNo = (form.groupName || '').trim()
   if (!form.groupNo || !form.groupNo.trim()) {
     ElMessage.warning('请输入集团客户编号')
     return
@@ -1277,14 +1284,19 @@ async function queryGroup() {
     groupInfo.value = g.group || null
     groupCredit.value = g.groupCredit || null
     groupAllocatedTotal.value = g.allocatedTotal ?? null
+    // 集团名称带出(autocomplete 显示,§2026-08-25 名称框/编号框对齐对公)
+    if (g.group?.groupName) form.groupName = g.group.groupName
     // 五级分类自动带出(数仓码值,可下拉修改,§2026-08-25)
     form.fiveLevelClass = normalizeFiveLevelClass(g.group?.fiveLevelClass || '')
+    // 集团属性自动带出(国企/非国企,可下拉修改)
+    form.stateOwnedFlag = g.group?.stateOwnedFlag || ''
   } catch {
     isNewGroup.value = true
     groupInfo.value = null
     groupCredit.value = null
     groupAllocatedTotal.value = null
     form.fiveLevelClass = ''
+    form.stateOwnedFlag = ''
   }
   groupQueried.value = true
   // 成员:数仓有效成员 + 已落表手工成员(§4.4);未收录则置空(新增集团可手工补录成员)
@@ -1617,6 +1629,8 @@ function addCd(g: GuaranteeRow) {
 }
 function onCustomerScopeChange() {
   if (form.customerScope !== 'GROUP') {
+    form.groupNo = ''
+    form.groupName = ''
     groupInfo.value = null
     groupCredit.value = null
     groupAllocatedTotal.value = null
@@ -2142,6 +2156,8 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
   }
   // 五级分类(存量集团数仓带出可下拉修改,§2026-08-25;新增集团以补录卡为准)
   if (!isNewGroup.value && form.fiveLevelClass) out.fiveLevelClass = form.fiveLevelClass
+  // 集团属性(存量集团数仓带出可下拉修改,§2026-08-25)
+  if (!isNewGroup.value && form.stateOwnedFlag) out.stateOwnedFlag = form.stateOwnedFlag
   // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员贷款分项金额合计
   const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
   const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
@@ -2348,6 +2364,7 @@ async function loadDraftIntoForm(id: number | string) {
     // 新增集团:集团基本信息从快照回填(数仓仍未收录时,避免客户经理二次录入)
     if (isNewGroup.value && gInfo?.groupName) {
       groupSupplement.groupName = gInfo.groupName
+      form.groupName = gInfo.groupName
       groupSupplement.stateOwnedFlag = gInfo.stateOwnedFlag || ''
       groupSupplement.ucrCode = gInfo.ucrCode || ''
       groupSupplement.fiveLevelClass = normalizeFiveLevelClass(gInfo.fiveLevelClass || '')
@@ -2361,6 +2378,9 @@ async function loadDraftIntoForm(id: number | string) {
     // 存量集团:五级分类以提交快照为准(数仓可能已变化,保持客户经理已确认的修改,§2026-08-25)
     if (!isNewGroup.value && gInfo?.fiveLevelClass) {
       form.fiveLevelClass = normalizeFiveLevelClass(gInfo.fiveLevelClass)
+    }
+    if (!isNewGroup.value && gInfo?.stateOwnedFlag) {
+      form.stateOwnedFlag = gInfo.stateOwnedFlag
     }
     // 手工补录成员并入可勾选列表(标 MANUAL;数仓已带出同客户号则跳过)
     for (const sm of gInfo?.supplementMembers || []) {
@@ -2644,8 +2664,14 @@ async function loadDraftIntoForm(id: number | string) {
 /* 集团概要 */
 /* 涉及成员标题行:label + 小号「添加成员」按钮同行(§2026-08-25,不单独占行) */
 .member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+/* 集团成员整块独立占宽(避免 form-field 2 列网格约束,表格拉满,§2026-08-25) */
+.member-block { width: 100%; }
 /* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满,不突兀) */
 .member-table { width: 100%; }
+/* 成员勾选复选框 */
+.member-check { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
+/* 单字段跨两列(对公/个人网格末尾行铺满,消除孤零单列,§2026-08-25) */
+.form-field--span2 { grid-column: span 2; }
 /* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
 .member-head--bare { justify-content: flex-end; }
 /* 涉及成员行内切换按钮:紧凑小号 */

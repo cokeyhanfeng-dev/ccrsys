@@ -16,7 +16,7 @@
       <div class="form-card__title">
         客户信息
       </div>
-      <div class="form-grid">
+      <div class="form-grid form-grid--5">
         <div class="form-field">
           <label class="form-field__label">客户主体 <span class="req">*</span></label>
           <select class="form-select" v-model="form.customerScope" @change="onCustomerScopeChange">
@@ -44,23 +44,19 @@
           </div>
         </template>
 
-        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 存款按集团整体申请,不拉成员分项) -->
+        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 精简为集团客户/集团名称/证件号码/统一社会信用代码;证件号与信用代码数仓无字段,可编辑) -->
         <template v-else>
           <div class="form-field">
-            <label class="form-field__label">集团客户 <span class="req">*</span></label>
-            <el-autocomplete v-model="form.groupNo" :fetch-suggestions="queryGroupSuggestions" :trigger-on-focus="false" clearable
-              placeholder="编号/名称联想;未收录回车补录" style="width:100%" @select="selectGroup" @keyup.enter="queryGroup" />
+            <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
+            <el-autocomplete v-model="form.groupName" :fetch-suggestions="queryGroupSuggestions" :trigger-on-focus="false" clearable
+              placeholder="输入集团名称联想选择;未收录回车补录" style="width:100%" @select="selectGroup" @keyup.enter="queryGroup" />
           </div>
-          <div class="form-field"><label class="form-field__label">集团名称</label>
-            <input class="form-input" :value="groupInfo?.groupName || ''" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">集团属性</label>
-            <input class="form-input" :value="groupNatureText(groupInfo?.stateOwnedFlag)" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">集团状态</label>
-            <input class="form-input" :value="groupStatusText(groupInfo?.groupStatus)" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">授信总额(万元)</label>
-            <input class="form-input" :value="groupCredit?.approvedTotalAmount ?? ''" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">信用评级</label>
-            <input class="form-input" :value="groupInfo?.creditLevel || ''" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">集团客户编号</label>
+            <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">证件号码</label>
+            <input class="form-input" v-model="form.idNo" placeholder="数仓无,请手工填写" /></div>
+          <div class="form-field"><label class="form-field__label">统一社会信用代码</label>
+            <input class="form-input" v-model="form.ucrCode" placeholder="数仓无,请手工填写" /></div>
         </template>
 
         <!-- 对公字段(数仓带出,可修改) -->
@@ -254,7 +250,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, normalizeFiveLevelClass, groupNatureText, groupStatusText } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, normalizeFiveLevelClass } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -324,6 +320,7 @@ const form = reactive({
   customerType: 'NON_SOE',
   // 集团(集团客户主体:联想查询带出集团信息,按集团整体申请)
   groupNo: '',
+  groupName: '', // 集团名称(联想选择显示;新增集团手输)
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', basicAccount: '',
   // 对私(数仓带出,只读)
@@ -546,11 +543,14 @@ async function queryGroupSuggestions(queryString: string, cb: (list: any[]) => v
 async function selectGroup(item: any) {
   const g = item?.data ?? item
   form.groupNo = g.groupNo
+  form.groupName = g.groupName || ''
   await queryGroup()
 }
 
 /** 查询集团信息(数仓收录=存量带出;404=未收录按新增集团就地补录) */
 async function queryGroup() {
+  // autocomplete 绑定名称;手动输入编号回车时同步到 groupNo(联想选中已由 selectGroup 回填)
+  if (!form.groupNo?.trim()) form.groupNo = (form.groupName || '').trim()
   if (!form.groupNo || !form.groupNo.trim()) {
     ElMessage.warning('请输入集团客户编号')
     return
@@ -561,6 +561,8 @@ async function queryGroup() {
     isNewGroup.value = false
     groupInfo.value = g.group || null
     groupCredit.value = g.groupCredit || null
+    // 集团名称带出(autocomplete 显示,§2026-08-25 名称框/编号框对齐对公)
+    if (g.group?.groupName) form.groupName = g.group.groupName
   } catch {
     isNewGroup.value = true
     groupInfo.value = null
@@ -584,6 +586,7 @@ function onCustomerScopeChange() {
   form.customerNo = ''
   form.customerName = ''
   form.groupNo = ''
+  form.groupName = ''
   form.ucrCode = ''
   form.idNo = ''
   form.idType = ''
@@ -738,12 +741,11 @@ function buildPayload(): ApplicationPayload {
     }
     payload.groupInfoJson = JSON.stringify({
       groupNo: form.groupNo,
-      groupName: groupInfo.value?.groupName || '',
+      groupName: form.groupName || groupInfo.value?.groupName || '',
+      // 本次申请额度(后端提交校验必填,§2026-08-25 精简字段时保留:非界面字段,界面集团信息已去授信展示)
       applyAmount: totalAmount > 0 ? totalAmount : undefined,
-      stateOwnedFlag: groupInfo.value?.stateOwnedFlag,
-      groupStatus: groupInfo.value?.groupStatus,
-      fiveLevelClass: groupInfo.value?.fiveLevelClass,
-      creditLevel: groupInfo.value?.creditLevel,
+      idNo: form.idNo,
+      ucrCode: form.ucrCode,
     })
   } else {
     // 客户信息人工修正快照(数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示)
@@ -898,6 +900,7 @@ async function loadDraftIntoForm(id: number | string) {
       if (gi?.groupName && !groupInfo.value?.groupName) {
         if (!groupInfo.value) groupInfo.value = {}
         groupInfo.value.groupName = gi.groupName
+        form.groupName = gi.groupName
       }
     } catch { /* 快照解析失败忽略 */ }
   } else if (app.customerNo) {
@@ -959,6 +962,15 @@ async function loadDraftIntoForm(id: number | string) {
 /* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
 .form-field > .section-tip,
 .form-field > .limit-hint { grid-column: 2; }
+/* 客户信息区 5 列一行(企业单户/集团均 5 字段,§2026-08-25 用户要求五列紧凑一行):label 上置缩小+控件全宽 */
+.form-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.form-grid--5 .form-field { display: block; }
+.form-grid--5 .form-field__label { display: block; margin-bottom: 3px; font-size: 12px; text-align: left; padding-right: 0; }
+.form-grid--5 .form-field > .form-input,
+.form-grid--5 .form-field > .form-select,
+.form-grid--5 .form-field > .el-select,
+.form-grid--5 .form-field > .el-autocomplete,
+.form-grid--5 .form-field > div:not(.section-tip):not(.limit-hint) { grid-column: auto; width: 100%; min-width: 0; }
 /* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
 .form-field--stack { display: block; }
 .form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
