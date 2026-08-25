@@ -47,6 +47,21 @@
           </select>
         </div>
 
+        <!-- 集团:集团查询与客户主体并排一行(占 3/4 列,§2026-08-25 消除原单字段占 1/4 右侧大片空白;数仓未收录集团输入编号回车就地补录) -->
+        <div class="form-field" v-if="form.customerScope === 'GROUP'" style="grid-column: span 3">
+          <label class="form-field__label">集团客户 <span class="req">*</span></label>
+          <el-autocomplete
+            v-model="form.groupNo"
+            :fetch-suggestions="queryGroupSuggestions"
+            :trigger-on-focus="false"
+            clearable
+            placeholder="输入集团编号或集团名称自动联想;数仓未收录的集团可直接输入编号后回车,就地补录"
+            style="width:100%"
+            @select="selectGroup"
+            @keyup.enter="queryGroup"
+          />
+        </div>
+
         <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
         <template v-if="form.customerScope !== 'GROUP'">
           <div class="form-field">
@@ -72,23 +87,8 @@
         </template>
       </div>
 
-      <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 申请额度 + 有效成员列表(数仓带出/手工补录) -->
+      <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 有效成员列表(数仓带出/手工补录);集团查询已上移与客户主体并排一行(§2026-08-25) -->
       <template v-if="form.customerScope === 'GROUP'">
-        <div class="form-grid">
-          <div class="form-field">
-            <label class="form-field__label">集团客户 <span class="req">*</span></label>
-            <el-autocomplete
-              v-model="form.groupNo"
-              :fetch-suggestions="queryGroupSuggestions"
-              :trigger-on-focus="false"
-              clearable
-              placeholder="输入集团编号或集团名称自动联想;数仓未收录的集团可直接输入编号后回车,就地补录"
-              style="width:100%"
-              @select="selectGroup"
-              @keyup.enter="queryGroup"
-            />
-          </div>
-        </div>
         <!-- 新增集团(数仓未收录):就地补录集团基本信息,与对公客户信息要求一致(数据以数仓为准,数仓无即按新集团) -->
         <div v-if="isNewGroup" class="form-card group-supplement" style="margin-top:12px">
           <div class="form-card__title">
@@ -2722,7 +2722,7 @@ async function loadDraftIntoForm(id: number | string) {
 
 /* 集团概要 */
 .group-summary {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
   padding: 8px 12px; margin-bottom: 4px;
 }
