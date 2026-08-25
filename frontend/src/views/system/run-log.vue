@@ -33,29 +33,29 @@
       <div class="query-bar">
         <div class="query-field">
           <label class="query-label">级别</label>
-          <el-select v-model="query.level" placeholder="全部" clearable class="query-input" style="width: 110px">
+          <el-select v-model="query.level" placeholder="全部" clearable size="small" class="query-input" style="width: 110px">
             <el-option v-for="lv in options.levels" :key="lv" :label="lv" :value="lv" />
           </el-select>
         </div>
         <div class="query-field">
           <label class="query-label">状态</label>
-          <el-select v-model="query.status" placeholder="全部" clearable class="query-input" style="width: 120px">
+          <el-select v-model="query.status" placeholder="全部" clearable size="small" class="query-input" style="width: 120px">
             <el-option v-for="s in options.statuses" :key="s" :label="statusText(s)" :value="s" />
           </el-select>
         </div>
         <div class="query-field">
           <label class="query-label">开始</label>
-          <el-date-picker v-model="query.startTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
+          <el-date-picker v-model="query.startTime" type="datetime" size="small" value-format="YYYY-MM-DD HH:mm:ss"
             placeholder="开始时间" class="query-input" style="width: 190px" />
         </div>
         <div class="query-field">
           <label class="query-label">结束</label>
-          <el-date-picker v-model="query.endTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
+          <el-date-picker v-model="query.endTime" type="datetime" size="small" value-format="YYYY-MM-DD HH:mm:ss"
             placeholder="结束时间" class="query-input" style="width: 190px" />
         </div>
         <div class="query-field">
           <label class="query-label">关键词</label>
-          <el-input v-model="query.keyword" placeholder="消息/堆栈/类名" clearable class="query-input" style="width: 180px" @keyup.enter="search" />
+          <el-input v-model="query.keyword" placeholder="消息/堆栈/类名" clearable size="small" class="query-input" style="width: 180px" @keyup.enter="search" />
         </div>
         <button class="btn btn--primary" :disabled="loading" @click="search">{{ loading ? '查询中…' : '查询' }}</button>
         <button class="btn btn--text" @click="reset">重置</button>
@@ -129,20 +129,20 @@
       <div class="query-bar">
         <div class="query-field">
           <label class="query-label">状态</label>
-          <el-select v-model="flowQuery.status" placeholder="全部在途" clearable class="query-input" style="width: 150px">
+          <el-select v-model="flowQuery.status" placeholder="全部在途" clearable size="small" class="query-input" style="width: 150px">
             <el-option v-for="s in flowStatuses" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </div>
         <div class="query-field">
           <label class="query-label">业务类型</label>
-          <el-select v-model="flowQuery.businessType" placeholder="全部" clearable class="query-input" style="width: 130px">
+          <el-select v-model="flowQuery.businessType" placeholder="全部" clearable size="small" class="query-input" style="width: 130px">
             <el-option label="贷款" value="LOAN" />
             <el-option label="存款" value="DEPOSIT" />
           </el-select>
         </div>
         <div class="query-field">
           <label class="query-label">申请号</label>
-          <el-input v-model="flowQuery.applicationNo" placeholder="申请号模糊" clearable class="query-input" style="width: 180px" @keyup.enter="searchFlows" />
+          <el-input v-model="flowQuery.applicationNo" placeholder="申请号模糊" clearable size="small" class="query-input" style="width: 180px" @keyup.enter="searchFlows" />
         </div>
         <button class="btn btn--primary" :disabled="flowsLoading" @click="searchFlows">{{ flowsLoading ? '查询中…' : '查询' }}</button>
         <button class="btn btn--text" @click="resetFlows">重置</button>
@@ -236,7 +236,7 @@
     </div>
 
     <!-- 报错详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="报错详情" width="760px" append-to-body>
+    <el-dialog v-model="detailVisible" title="报错详情" width="680px" append-to-body>
       <div v-loading="detailLoading">
         <template v-if="detail">
           <div class="detail-meta">
@@ -254,7 +254,7 @@
     </el-dialog>
 
     <!-- 日志文件预览弹窗 -->
-    <el-dialog v-model="previewVisible" :title="previewName" width="780px" append-to-body>
+    <el-dialog v-model="previewVisible" :title="previewName" width="720px" append-to-body>
       <div class="preview-toolbar">
         <span class="preview-hint">尾部 {{ previewLines.length }} 行</span>
         <button class="btn btn--text" @click="refreshPreview">刷新</button>
@@ -592,4 +592,59 @@ onBeforeUnmount(() => {
 .node-meta.vote { display: block; margin-top: 8px; }
 .vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 .vote-pass { color: #67c23a; font-weight: 500; }
+
+/* ════════════════════════════════════════════════════════════════════
+   紧凑化重设计(仅本页覆盖全局类,不影响其他页面)
+   目标:查询控件 small 化、卡片/单元格间距收紧、边框更细,提升数据密度
+   ════════════════════════════════════════════════════════════════════ */
+/* 页头 */
+.section-head { margin-bottom: 8px; }
+.section-title { font-size: 17px; }
+.section-title::before { height: 15px; }
+
+/* 页签 */
+.segmented { padding: 3px; gap: 2px; margin-bottom: 12px; border-radius: 8px; }
+.segmented__item { padding: 5px 14px; font-size: 13px; border-radius: 6px; }
+
+/* 卡片:内边距收窄、圆角降档、去重阴影 */
+.card { padding: 14px 16px; border-radius: 10px; border-color: #eef1f5; box-shadow: 0 1px 2px rgba(15, 42, 92, .03); }
+
+/* 查询栏 */
+.query-bar { gap: 8px; margin-bottom: 10px; }
+.query-label { font-size: 11px; }
+.query-bar .btn { padding: 4px 12px; font-size: 13px; line-height: 1.2; }
+
+/* 错误统计条 */
+.error-stats { padding: 8px 12px; gap: 14px; margin-bottom: 10px; }
+
+/* 原生表格:单元格 padding 12px14px → 8px10px,正文 13px */
+.table th, .table td { padding: 8px 10px; }
+.table thead th { font-size: 12px; }
+.table tbody td { font-size: 13px; }
+.empty-cell { padding: 20px 0; }
+
+/* 分页容器 */
+.pagination-wrap { margin-top: 10px; }
+
+/* Element Plus 表格(流程监控):行高/表头收紧 */
+:deep(.el-table) {
+  --el-table-cell-padding: 8px 0;
+  --el-table-header-cell-padding: 8px 0;
+  font-size: 13px;
+}
+:deep(.el-table th.el-table__cell) { font-size: 12px; }
+
+/* 流程监控展开行:节点时间线紧凑 */
+.flow-detail { padding: 4px 6px 0; }
+.flow-reason { gap: 4px; margin-bottom: 10px; }
+.flow-reason__item { font-size: 12px; line-height: 1.55; }
+.flow-reason__label { width: 56px; font-size: 11px; }
+.node-dot { width: 10px; height: 10px; }
+.node-line { min-height: 20px; }
+.node-body { padding-bottom: 16px; }
+.node-title { font-size: 13px; }
+.node-state { font-size: 11px; padding: 0 7px; }
+.node-meta { font-size: 11px; margin-top: 3px; gap: 10px; }
+.node-meta.vote { margin-top: 6px; }
+.vote-text { font-size: 11px; }
 </style>
