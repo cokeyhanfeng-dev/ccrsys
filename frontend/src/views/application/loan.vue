@@ -485,35 +485,16 @@
         </InfoTip>
       </div>
 
-      <!-- 申请要素(业务类型):决定存量调息/新增授信,客户与合同带出后自动填充、可手工切换;
-           贷款品种/金额档为自动带出的重复展示,已移除(分项产品体现客户类型、分项金额可见) -->
-      <div class="form-grid" style="margin-bottom:14px">
-        <div class="form-field">
-          <label class="form-field__label">业务类型 <span class="req">*</span></label>
+      <!-- 授信概览:业务类型 + 授信额度/拆分合计 + 存量授信协议表(占整行);GROUP 追加集团批复/可用 -->
+      <div class="credit-overview">
+        <div class="credit-overview__item">
+          <span>业务类型 <span class="req">*</span></span>
           <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
             <option value="EXISTING">存量调息(现有贷款合同)</option>
             <option value="NEW">新增授信(拟签合同)</option>
           </select>
         </div>
-      </div>
-
-      <!-- 授信信息:存量=数仓授信协议只读(协议编号/授信金额/授信起止日期/授信状态)+授信总金额+拆分细项合计;新增=总授信额度手工录入+拆分细项合计 -->
-      <div class="credit-overview">
         <template v-if="form.businessType === 'EXISTING'">
-          <div v-if="creditAgreements.length" class="credit-overview__agreement">
-            <table class="table">
-              <thead><tr><th>授信协议编号</th><th>授信金额(万元)</th><th>授信日期</th><th>授信状态</th></tr></thead>
-              <tbody>
-                <tr v-for="a in creditAgreements" :key="a.agreementNo">
-                  <td>{{ a.agreementNo || '—' }}</td>
-                  <td>{{ a.creditAmount ?? '—' }}</td>
-                  <td>{{ [a.startDate, a.endDate].filter(Boolean).join(' 至 ') || '—' }}</td>
-                  <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-else class="empty" style="margin-bottom:10px">暂无授信协议数据(数仓未推送)</div>
           <div class="credit-overview__item credit-overview__item--static">
             <span>授信总金额(万元)</span><b>{{ creditTotalText }}</b>
           </div>
@@ -533,6 +514,22 @@
         <template v-if="form.customerScope === 'GROUP'">
           <div class="credit-overview__item credit-overview__item--static"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="credit-overview__item credit-overview__item--static"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
+        </template>
+        <template v-if="form.businessType === 'EXISTING'">
+          <div v-if="creditAgreements.length" class="credit-overview__agreement">
+            <table class="table">
+              <thead><tr><th>授信协议编号</th><th>授信金额(万元)</th><th>授信日期</th><th>授信状态</th></tr></thead>
+              <tbody>
+                <tr v-for="a in creditAgreements" :key="a.agreementNo">
+                  <td>{{ a.agreementNo || '—' }}</td>
+                  <td>{{ a.creditAmount ?? '—' }}</td>
+                  <td>{{ [a.startDate, a.endDate].filter(Boolean).join(' 至 ') || '—' }}</td>
+                  <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty credit-overview__agreement" style="margin-bottom:0">暂无授信协议数据(数仓未推送)</div>
         </template>
       </div>
 
@@ -559,7 +556,7 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 第一行:新增/存量统一按担保方式切分;存量拆分项由上方勾选带出(担保方式/金额/原利率/措施预填,可再编辑) -->
+        <!-- 基础字段 2 行×4 列:涉及成员(GROUP)/担保方式/产品/期限 + 授信金额/原利率(存量)/申请利率/币种 -->
         <div class="mortgage-item__grid">
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
@@ -576,9 +573,6 @@
               <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
             </select>
           </div>
-        </div>
-        <!-- 第二行:产品/期限/金额/原利率(存量带出只读)/申请利率/币种 -->
-        <div class="mortgage-item__grid" style="margin-top:10px">
           <div class="form-field">
             <label class="form-field__label">产品 <span class="req">*</span></label>
             <select class="form-select" v-model="g.productCode">
@@ -588,12 +582,11 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
-            <div style="display:flex;gap:4px">
-              <input class="form-input form-input--amount" v-model="g.termValue" type="number" min="1" step="1" placeholder="正整数" style="flex:1" />
-              <select class="form-select" v-model="g.termUnit" style="width:76px">
-                <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
-              </select>
-            </div>
+            <!-- 贷款期限固定一年期/三年期/五年期下拉(取消自由输入月/天,§用户要求) -->
+            <select class="form-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
+              <option value="" disabled>选择期限</option>
+              <option v-for="opt in loanTermOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">授信金额(万元) <span class="req">*</span></label>
@@ -617,7 +610,7 @@
         <!-- 抵押物明细 -->
         <div v-if="g.guaranteeType === 'MORTGAGE'" class="guarantee-detail-block">
           <div class="detail-title">抵押物(关联本分项) <button class="btn btn--text" @click="addGuaranteeMortgage(g)">＋ 添加抵押物</button></div>
-                <div v-for="(m, mi) in g.mortgages" :key="mi" class="mortgage-item">
+                <div v-for="(m, mi) in g.mortgages" :key="mi" class="mortgage-sub">
                   <div class="mortgage-item__head">
                     <select class="form-select" style="width:140px" v-model="m.type"><option>住宅</option><option>厂房</option><option>土地</option><option>设备</option><option>车辆</option></select>
                     <button class="btn btn--text" @click="g.mortgages.splice(mi, 1)">删除</button>
@@ -966,6 +959,27 @@ const step = ref(0)
 const guaranteeTypes = GUARANTEE_TYPES
 const agreementTypes = AGREEMENT_TYPES
 const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
+// 贷款期限固定三档(一年期/三年期/五年期),取消自由输入月/天;存量带出非标准期限保留原值(下拉不显示,可重选覆盖)
+const loanTermOptions = [
+  { value: '1Y', label: '一年期', years: 1 },
+  { value: '3Y', label: '三年期', years: 3 },
+  { value: '5Y', label: '五年期', years: 5 },
+] as const
+function termChoiceOf(g: { termValue?: string | number; termUnit?: string }): string {
+  const v = String(g.termValue ?? '').trim()
+  const u = g.termUnit || ''
+  if (u === 'YEAR' && (v === '1' || v === '3' || v === '5')) return v + 'Y'
+  // 12/36/60 个月等价 1/3/5 年(存量带出月份场景自动归一)
+  if (u === 'MONTH' && (v === '12' || v === '36' || v === '60')) return String(Number(v) / 12) + 'Y'
+  return ''
+}
+function onTermChange(g: { termValue?: string; termUnit?: string }, e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  const opt = loanTermOptions.find((o) => o.value === value)
+  if (!opt) return
+  g.termValue = String(opt.years)
+  g.termUnit = 'YEAR'
+}
 // 五级分类下拉(数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;补录与对公可修改表单统一)
 const fiveLevelOptions = FIVE_LEVEL_OPTIONS
 // 贷款产品(与规则/硬边界配置中的 product_code 对齐)
@@ -2545,13 +2559,14 @@ async function loadDraftIntoForm(id: number | string) {
 .guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
 .guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
 
-/* 总授信额度概览条(利率申请步骤) */
+/* 授信概览条(利率申请步骤):固定 3 列,存量/新增/GROUP 项按列对齐,协议表占整行 */
 .credit-overview {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px 12px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
   padding: 8px 12px; margin-bottom: 10px;
 }
+.credit-overview__item span.req { color: var(--color-danger); }
 .credit-overview__item {
   font-size: 13px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
 }
@@ -2640,6 +2655,13 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+/* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
+.mortgage-sub { margin-bottom: 10px; }
+.mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
+/* 明细表格(质押/保证金/存单/保证人)内输入框与表单字段字号统一 13px */
+.table .form-input { font-size: 13px; }
+/* 授信概览条窄屏降 2 列 */
+@media (max-width: 1100px) { .credit-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .credit-overview__item--full { grid-column: 1 / -1; }
 /* 向导内容铺满主区(2026-08-21:移除 1360px 限宽,宽屏下页面整体占满不留右侧留白) */
 
