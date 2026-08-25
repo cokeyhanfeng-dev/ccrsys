@@ -31,7 +31,7 @@
             <option value="INDIVIDUAL">个人</option>
           </select>
         </div>
-        <div class="form-field" style="grid-column: span 2">
+        <div class="form-field">
           <label class="form-field__label">客户名称 <span class="req">*</span></label>
           <el-autocomplete
             v-model="form.customerName"
@@ -140,7 +140,7 @@
               <option value="PLANNED">拟开户方案</option>
             </select>
           </div>
-          <div class="form-field" style="grid-column: span 2">
+          <div class="form-field">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
               <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
@@ -189,7 +189,7 @@
             <label class="form-field__label">当前执行利率(%)</label>
             <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
           </div>
-          <div class="form-field" style="grid-column: span 2">
+          <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
             <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
@@ -209,7 +209,7 @@
         提交预览
         <InfoTip content="提交前先生成/保存草稿,再预览审批路由;正式提交需通过数据批次差异与质量预校验确认。" />
       </div>
-      <div class="form-field">
+      <div class="form-field form-field--stack">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
@@ -724,22 +724,29 @@ async function loadDraftIntoForm(id: number | string) {
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
 .section-head { margin-bottom: 10px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
-/* 表单字段横向布局:label 文字与输入框同行(字段高度减半,页面整体紧凑) */
+/* 表单字段横向布局:label 定宽右对齐 + 输入框同行,输入框左缘整齐对齐 */
 .form-field {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 108px 1fr;
   align-items: center;
-  gap: 4px 6px;
+  column-gap: 6px;
 }
-.form-field__label { margin-bottom: 0; white-space: nowrap; flex-shrink: 0; }
+.form-field__label { margin-bottom: 0; font-size: 12px; text-align: right; padding-right: 2px; }
 .form-field > .form-input,
 .form-field > .form-select,
 .form-field > .el-select,
 .form-field > .el-autocomplete,
-.form-field > div:not(.section-tip):not(.limit-hint) { flex: 1; min-width: 0; }
-/* 反查提示/标准上限说明换行占满字段宽,置于输入框下方 */
+.form-field > div:not(.section-tip):not(.limit-hint) {
+  width: 100%;
+  min-width: 0;
+  grid-column: 2;
+}
+/* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
 .form-field > .section-tip,
-.form-field > .limit-hint { flex-basis: 100%; }
+.form-field > .limit-hint { grid-column: 2; }
+/* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
+.form-field--stack { display: block; }
+.form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
 /* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
