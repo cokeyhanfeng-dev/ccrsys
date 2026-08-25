@@ -14,33 +14,34 @@ export interface UserInfo {
   pwdChangeFlag?: string
 }
 
-// 用户状态:token 与登录信息(userInfo 持久化,刷新后路由守卫/数据权限仍可用)
+// 用户状态:token 与登录信息存 sessionStorage(会话级,关闭浏览器/标签即清空需重新登录;
+// 页面刷新 F5 保留,路由守卫/数据权限仍可用)
 export const useUserStore = defineStore('user', () => {
-  const token = ref<string>(localStorage.getItem('ccr_token') || '')
+  const token = ref<string>(sessionStorage.getItem('ccr_token') || '')
   const userInfo = ref<UserInfo | null>(
-    JSON.parse(localStorage.getItem('ccr_user_info') || 'null')
+    JSON.parse(sessionStorage.getItem('ccr_user_info') || 'null')
   )
 
   async function login(username: string, password: string) {
     const data = await post<{ token: string; userInfo: UserInfo }>('/auth/login', { username, password })
     token.value = data.token
     userInfo.value = data.userInfo
-    localStorage.setItem('ccr_token', data.token)
-    localStorage.setItem('ccr_user_info', JSON.stringify(data.userInfo))
+    sessionStorage.setItem('ccr_token', data.token)
+    sessionStorage.setItem('ccr_user_info', JSON.stringify(data.userInfo))
   }
 
   function logout() {
     token.value = ''
     userInfo.value = null
-    localStorage.removeItem('ccr_token')
-    localStorage.removeItem('ccr_user_info')
+    sessionStorage.removeItem('ccr_token')
+    sessionStorage.removeItem('ccr_user_info')
   }
 
-  // 改密成功后标记已改,并同步持久化(localStorage),避免刷新后又被守卫弹回
+  // 改密成功后标记已改,并同步持久化(sessionStorage),避免刷新后又被守卫弹回
   function markPasswordChanged() {
     if (userInfo.value) {
       userInfo.value = { ...userInfo.value, pwdChangeFlag: '0' }
-      localStorage.setItem('ccr_user_info', JSON.stringify(userInfo.value))
+      sessionStorage.setItem('ccr_user_info', JSON.stringify(userInfo.value))
     }
   }
 

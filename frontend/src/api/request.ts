@@ -8,7 +8,7 @@ const service = axios.create({
 })
 
 service.interceptors.request.use((config) => {
-  const token = localStorage.getItem('ccr_token')
+  const token = sessionStorage.getItem('ccr_token')
   if (token) {
     config.headers.Authorization = token
   }
@@ -24,7 +24,7 @@ service.interceptors.response.use(
     }
     // 会话过期/未登录(Sa-Token 经全局异常处理返回业务码 401):清 token 并跳登录页
     if (res.code === 401) {
-      localStorage.removeItem('ccr_token')
+      sessionStorage.removeItem('ccr_token')
       // 已在登录页:401 即账号或密码错误,明确提示,避免静默失败
       if (window.location.pathname.startsWith('/login')) {
         ElMessage.error(res.msg || '用户名或密码错误')
@@ -39,7 +39,7 @@ service.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401 || error.response?.data?.code === 401) {
-      localStorage.removeItem('ccr_token')
+      sessionStorage.removeItem('ccr_token')
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = '/login'
       }
@@ -73,7 +73,7 @@ export function del<T = any>(url: string, params?: object): Promise<T> {
 
 // 文件下载(独立 axios 调用,绕开 R 包装拦截器;从 Content-Disposition 取文件名)
 export async function download(url: string): Promise<void> {
-  const token = localStorage.getItem('ccr_token')
+  const token = sessionStorage.getItem('ccr_token')
   try {
     const resp = await axios.get(`/api${url}`, {
       responseType: 'blob',
