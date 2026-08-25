@@ -1845,9 +1845,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         input.setNewOrExisting(routeNewOrExisting(app, item));
         input.setCustomerType(routeCustomerType(app, item));
         input.setProductCode(item.getProductCode());
-        input.setAmount(item.getPricingAmount());
-        // 需求三(2026-08-14):金额定档基准改为按申请/分项金额定档(原集团授信总额优先)
-        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT);
+        // 需求:审批链路按总授信额度定档(存量=数仓授信协议金额合计,新增=手工录入;集团=集团综合授信批复总额度优先)
+        input.setAmount(routeTotalCredit(app, item));
+        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_GROUP_TOTAL_CREDIT);
         input.setGroupCreditTotal(routeGroupCreditTotal(app));
         input.setTermValue(item.getTermValue());
         input.setTermUnit(item.getTermUnit());
@@ -1862,6 +1862,22 @@ public class ApprovalServiceImpl implements ApprovalService {
             throw new ServiceException(e.getCode(),
                     "调整后利率 " + adjustedRate + "% 无矩阵路由匹配(" + e.getMessage() + "),请重新确认利率");
         }
+    }
+
+    /** 总授信额度(审批链路金额定档口径):优先取申请授信快照 credit_info_json.totalCredit(存量=数仓授信协议金额合计,新增=手工录入);缺省回退分项金额 */
+    private BigDecimal routeTotalCredit(CcrApplication app, CcrPricingItem item) {
+        String ci = app.getCreditInfoJson();
+        if (ci != null && !ci.isBlank()) {
+            try {
+                BigDecimal tc = JSONUtil.parseObj(ci).getBigDecimal("totalCredit");
+                if (tc != null) {
+                    return tc;
+                }
+            } catch (Exception ignored) {
+                // 快照解析失败按分项金额回退
+            }
+        }
+        return item.getPricingAmount();
     }
 
     /** 刷新调价后分项的冻结路由字段(route_code/route_chain/dept_code/boundary/matched_matrix_no),同步 DB 与内存。

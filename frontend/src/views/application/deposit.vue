@@ -155,19 +155,22 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">产品 <span class="req">*</span></label>
-            <select class="form-select" v-model="d.productCode">
+            <select class="form-select" v-model="d.productCode" @change="onProductChange(d)">
               <option value="" disabled>选择产品</option>
               <option v-for="p in depositProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
             </select>
           </div>
           <div class="form-field">
-            <label class="form-field__label">期限 <span class="req">*</span></label>
-            <div style="display:flex;gap:4px">
-              <input class="form-input form-input--amount" v-model="d.termValue" type="number" min="1" step="1" placeholder="正整数" style="flex:1" />
-              <select class="form-select" v-model="d.termUnit" style="width:76px">
-                <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
+            <label class="form-field__label">期限 <span class="req" v-if="termRequired(d.productCode)">*</span></label>
+            <template v-if="!termRequired(d.productCode)">
+              <span class="badge badge--neutral">{{ termNoneText(d.productCode) }}</span>
+            </template>
+            <template v-else>
+              <select class="form-select" v-model="d.termOption" @change="onTermOptionChange(d)" style="width:100%">
+                <option value="" disabled>选择期限</option>
+                <option v-for="o in termOptionsFor(d)" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
-            </div>
+            </template>
           </div>
           <div class="form-field">
             <label class="form-field__label">金额(万元) <span class="req">*</span></label>
@@ -191,6 +194,10 @@
               标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
               <template v-if="bpOf(d) != null"> · 较上限 {{ bpOf(d)! > 0 ? '+' : '' }}{{ bpOf(d) }} BP</template>
             </div>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="d.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 1.65" />
           </div>
         </div>
       </div>
@@ -326,20 +333,22 @@ interface DepositItemRow {
   lookupDone: boolean
   lookupFound: boolean
   productCode: string
+  termOption: string // 期限下拉选中值(格式 tv:tu;协定存款为空)
   termValue: string
   termUnit: string
   amount: string
   currency: string
   originalRate: string
   requestedRate: string
+  calculatedRate: string
 }
 function newItem(): DepositItemRow {
   return {
     accountMode: 'EXISTING', depositAccountNo: '',
     accountBalance: null, openDate: '', maturityDate: '', accountStatus: '',
     lookupDone: false, lookupFound: false,
-    productCode: '', termValue: '', termUnit: 'MONTH',
-    amount: '', currency: 'CNY', originalRate: '', requestedRate: ''
+    productCode: '', termOption: '', termValue: '', termUnit: '',
+    amount: '', currency: 'CNY', originalRate: '', requestedRate: '', calculatedRate: ''
   }
 }
 
@@ -376,6 +385,60 @@ function bpOf(d: DepositItemRow): number | null {
 function exceedOf(d: DepositItemRow): boolean {
   const bp = bpOf(d)
   return bp != null && bp > 0
+}
+
+// 存款期限按产品类型下拉(需求:不手输直接选):对公定期=3/6月·1/2/3年;通知存款=1天/7天;协定存款无固定期限
+const DEPOSIT_TERM_OPTIONS: Record<string, { value: string; label: string; tv: string; tu: string }[]> = {
+  CORP_TIME_DEPOSIT: [
+    { value: '3:MONTH', label: '3个月', tv: '3', tu: 'MONTH' },
+    { value: '6:MONTH', label: '6个月', tv: '6', tu: 'MONTH' },
+    { value: '1:YEAR', label: '一年', tv: '1', tu: 'YEAR' },
+    { value: '2:YEAR', label: '两年', tv: '2', tu: 'YEAR' },
+    { value: '3:YEAR', label: '三年', tv: '3', tu: 'YEAR' },
+  ],
+  NOTICE_DEPOSIT: [
+    { value: '1:DAY', label: '一天通知', tv: '1', tu: 'DAY' },
+    { value: '7:DAY', label: '7天通知', tv: '7', tu: 'DAY' },
+  ],
+}
+const TERM_UNIT_TEXT: Record<string, string> = { DAY: '天', MONTH: '个月', YEAR: '年' }
+function termUnitText(tu: string) {
+  return TERM_UNIT_TEXT[tu] || tu
+}
+function termRequired(productCode: string) {
+  // 仅对公定期/通知存款有期限;协定存款与保证金存款(银票/信用证)无期限
+  return productCode === 'CORP_TIME_DEPOSIT' || productCode === 'NOTICE_DEPOSIT'
+}
+const TERM_NONE_TEXT: Record<string, string> = {
+  AGREEMENT_DEPOSIT: '协定存款无固定期限',
+  BANK_ACCEPTANCE_MARGIN: '保证金存款无期限',
+  LC_MARGIN: '保证金存款无期限',
+}
+function termNoneText(productCode: string) {
+  return TERM_NONE_TEXT[productCode] || (productCode ? '该产品无需选择期限' : '选择产品后确定期限')
+}
+// 产品→期限选项;数仓带出的期限不在固定选项时,追加自定义选项保底(避免下拉无法选中已带出值)
+function termOptionsFor(d: DepositItemRow) {
+  const base = DEPOSIT_TERM_OPTIONS[d.productCode] || []
+  const opts = base.slice()
+  const cur = d.termValue && d.termUnit ? `${d.termValue}:${d.termUnit}` : ''
+  if (cur && !opts.some((o) => o.value === cur)) {
+    opts.push({ value: cur, label: `自定义(${d.termValue}${termUnitText(d.termUnit)})`, tv: d.termValue, tu: d.termUnit })
+  }
+  return opts
+}
+function onTermOptionChange(d: DepositItemRow) {
+  const opt = termOptionsFor(d).find((o) => o.value === d.termOption)
+  if (opt) {
+    d.termValue = opt.tv
+    d.termUnit = opt.tu
+  }
+}
+// 切换产品:重置期限(旧产品的期限对新产品不适用)
+function onProductChange(d: DepositItemRow) {
+  d.termValue = ''
+  d.termUnit = ''
+  d.termOption = ''
 }
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
@@ -477,6 +540,7 @@ async function onAccountLookup(d: DepositItemRow) {
       d.productCode = a.productCode || d.productCode
       d.termValue = a.termValue != null ? String(a.termValue) : d.termValue
       d.termUnit = a.termUnit || d.termUnit
+      d.termOption = d.termValue && d.termUnit ? `${d.termValue}:${d.termUnit}` : ''
       d.currency = a.currency || d.currency
       d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
     } else {
@@ -504,15 +568,21 @@ function validateForDraft(): string | null {
     const d = items.value[i]
     if (d.accountMode === 'EXISTING' && isBlank(d.depositAccountNo)) return `第 ${i + 1} 条存款分项为存量调价,请录入存款账号`
     if (isBlank(d.productCode)) return `第 ${i + 1} 条存款分项未选择产品`
-    if (isBlank(d.termValue)) return `第 ${i + 1} 条存款分项未录入期限`
-    const tv = Number(d.termValue)
-    if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条存款分项期限须为正整数(当前 ${d.termValue})`
+    // 期限:协定存款无固定期限可空,其余(对公定期/通知/保证金)必填下拉
+    if (termRequired(d.productCode)) {
+      if (isBlank(d.termValue)) return `第 ${i + 1} 条存款分项未选择期限`
+      const tv = Number(d.termValue)
+      if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条存款分项期限须为正整数(当前 ${d.termValue})`
+    }
     if (isBlank(d.amount)) return `第 ${i + 1} 条存款分项未录入金额`
     const amt = Number(d.amount)
     if (!(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条存款分项金额须在 0~999999999.99 万元之间(当前 ${d.amount})`
     if (isBlank(d.requestedRate)) return `第 ${i + 1} 条存款分项未录入申请利率`
     const rt = Number(d.requestedRate)
     if (!(rt > 0 && rt <= 100)) return `第 ${i + 1} 条存款分项申请利率须在 0~100 之间(当前 ${d.requestedRate})`
+    if (isBlank(d.calculatedRate)) return `第 ${i + 1} 条存款分项未录入测算利率`
+    const crt = Number(d.calculatedRate)
+    if (!(crt > 0 && crt <= 100)) return `第 ${i + 1} 条存款分项测算利率须在 0~100 之间(当前 ${d.calculatedRate})`
   }
   return null
 }
@@ -532,6 +602,7 @@ function buildPayload(): ApplicationPayload {
       amount: d.amount,
       currency: d.currency || 'CNY',
       requestedRate: d.requestedRate,
+      calculatedRate: d.calculatedRate,
       originalRate: isBlank(d.originalRate) ? undefined : d.originalRate,
       depositAccountNo: d.accountMode === 'EXISTING' && !isBlank(d.depositAccountNo) ? d.depositAccountNo : undefined,
       plannedAccountFlag: d.accountMode === 'PLANNED' ? 'Y' : 'N'
@@ -695,11 +766,13 @@ async function loadDraftIntoForm(id: number | string) {
     }
     row.productCode = p.productCode || ''
     row.termValue = p.termValue != null ? String(p.termValue) : ''
-    row.termUnit = p.termUnit || 'MONTH'
+    row.termUnit = p.termUnit || ''
+    row.termOption = row.termValue && row.termUnit ? `${row.termValue}:${row.termUnit}` : ''
     row.amount = p.pricingAmount != null ? String(p.pricingAmount) : ''
     row.currency = p.currency || 'CNY'
     row.originalRate = p.originalRate != null ? String(p.originalRate) : ''
     row.requestedRate = p.requestedRate != null ? String(p.requestedRate) : ''
+    row.calculatedRate = p.calculatedRate != null ? String(p.calculatedRate) : ''
     return row
   })
   if (!items.value.length) items.value = [newItem()]

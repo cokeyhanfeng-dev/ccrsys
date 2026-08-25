@@ -537,8 +537,8 @@
         分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
       </div>
 
-      <!-- 存量无拆分项提示:数仓未推送时按担保方式手工添加 -->
-      <div v-if="form.businessType === 'EXISTING' && !creditSplits.length" class="empty" style="margin-bottom:12px">该客户暂无有效授信担保拆分明细(数仓未推送),请在下方按担保方式手工添加分项。</div>
+      <!-- 需求:存量不再自动拉入拆分项,分项由业务人员按担保方式手工录入 -->
+      <div v-if="form.businessType === 'EXISTING'" class="section-tip" style="margin-bottom:12px">存量调息:总授信额度按数仓授信协议金额带出,请手工录入各担保分项及利率内容。</div>
 
       <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
 
@@ -599,6 +599,10 @@
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="g.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.40" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
+            <input class="form-input form-input--amount" v-model="g.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.60" />
           </div>
           <div class="form-field">
             <label class="form-field__label">币种</label>
@@ -1026,6 +1030,7 @@ interface GuaranteeRow {
   currency: string
   originalRate: string
   requestedRate: string
+  calculatedRate: string
   mortgages: MortgageRow[]
   guarantors: GuarantorRow[]
   pledges: PledgeRow[]
@@ -1073,7 +1078,7 @@ function newGuarantee(scope?: string): GuaranteeRow {
   return {
     memberCustomerNo: '', sourceSplitNo: '', guaranteeType: 'MORTGAGE',
     productCode: defaultProductByScope(scope ?? form.customerScope), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
-    originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
+    originalRate: '', requestedRate: '', calculatedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
 }
 
@@ -1234,12 +1239,11 @@ async function loadCustomerDetail() {
       const contractRows = view.contracts || []
       const totalContractAmt = contractRows.reduce((s, c: any) => s + (Number(c.contractAmount) || 0), 0)
       if (totalContractAmt > 0) form.amountTier = totalContractAmt >= 5000 ? 'GE_5000' : 'LT_5000'
-      // 需求②:存量利率申请按数仓授信担保拆分明细勾选(不再按授信协议/贷款合同);客户有拆分项默认进入存量并全选
+      // 需求:存量不再自动拉入数仓拆分项,仅默认进入存量模式;分项与利率由业务人员手工录入
       if (creditSplits.value.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
-        form.guarantees = []
-        selectAllSplits()
-
+        form.guarantees = [newGuarantee()]
+        syncTotalCredit()
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
@@ -1470,18 +1474,18 @@ function onBusinessTypeChange() {
     form.totalCredit = ''
     form.creditAgreementNo = ''
     form.creditInfo = initialCreditInfo()
-    // 需求②:存量按数仓授信担保拆分明细勾选(不再按授信协议/合同),重置分项并默认全选
-    form.guarantees = []
+    // 需求:存量不再自动拉入拆分项,保留一条空白分项由业务人员手工录入
+    form.guarantees = [newGuarantee()]
     if (form.customerNo) {
       getCustomerBusinessView(form.customerNo)
         .then((view: any) => {
           creditSplits.value = view.creditSplits || []
           creditAgreements.value = view.creditAgreements || []
-          selectAllSplits()
+          syncTotalCredit()
         })
         .catch(() => {})
     }
-    ElMessage.info('存量调息:已自动带出数仓授信担保拆分项,填申请利率提交')
+    ElMessage.info('存量调息:总授信额度已按数仓授信协议金额带出,分项与利率请手工录入')
   } else {
     // 新增授信:无数仓拆分项,重置为一条空白分项由客户经理按担保方式手工补充
     form.creditAgreementNo = ''
@@ -1600,9 +1604,9 @@ function selectAllSplits() {
   syncTotalCredit()
 }
 
-/** 存量:总授信额度=拆分合计(随分项同步,供提交/展示) */
+/** 存量:总授信额度=数仓授信协议金额合计(用户口径:拉出的授信协议金额即总授信;新增=手工录入) */
 function syncTotalCredit() {
-  if (form.businessType === 'EXISTING') form.totalCredit = guaranteesTotalText
+  if (form.businessType === 'EXISTING' && creditTotalText.value !== '—') form.totalCredit = creditTotalText.value
 }
 
 /** 合同担保类型(own_financing 按合同号匹配) */
@@ -1833,17 +1837,17 @@ function validateStep(s: number): string | null {
       const g = form.guarantees[i]
       if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
       if (isBlank(g.guaranteeType)) return `第 ${i + 1} 条担保分项未选择担保方式`
-      if (g.guaranteeType !== 'CREDIT') {
-        const n = g.mortgages.length + g.guarantors.length + g.pledges.length + g.margins.length + g.cds.length
-        if (n === 0) return `第 ${i + 1} 条担保分项为「${guaranteeTypeText(g.guaranteeType)}」,请至少登记一条担保措施明细`
-      }
+      // 需求:担保/抵质押物不再强制录入——无论信用还是抵押/质押等,均可不登记担保措施直接提交
       if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品`
       if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限`
       if (isBlank(g.amount) || Number(g.amount) <= 0) return `第 ${i + 1} 条分项未录入金额`
       if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率`
-      // 申请利率范围兜底:落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;合理利率 0~100%(§bug 2026-08-25)
+      // 申请利率/测算利率范围兜底:落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;合理利率 0~100%(§bug 2026-08-25)
       const rate = Number(g.requestedRate)
       if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
+      if (isBlank(g.calculatedRate)) return `第 ${i + 1} 条分项未录入测算利率`
+      const cRate = Number(g.calculatedRate)
+      if (!(cRate > 0 && cRate <= 100)) return `第 ${i + 1} 条分项测算利率须在 0~100 之间(当前 ${g.calculatedRate})`
       // 期限须为正整数(落库 INT,小数/负数报错),授信金额范围兜底(同上 out of range,§2026-08-25)
       const tv = Number(g.termValue)
       if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条分项期限须为正整数(当前 ${g.termValue})`
@@ -2022,6 +2026,7 @@ function buildPayload(): ApplicationPayload {
       : null,
     guarantees: form.guarantees.map((g) => ({
       requestedRate: g.requestedRate,
+      calculatedRate: g.calculatedRate,
       productCode: g.productCode,
       termValue: g.termValue,
       termUnit: g.termUnit,
@@ -2123,6 +2128,8 @@ function serializeCreditInfo(): Record<string, unknown> | undefined {
   const c = form.creditInfo
   // 授信业务类型显式随单提交(NEW=新增授信/EXISTING=存量调息),供后端按授信口径判定存量/新增路由,不以分项原利率推断
   const out: Record<string, unknown> = { businessType: form.businessType }
+  // 总授信额度(存量=数仓授信协议金额合计自动带出,新增=手工录入),审批链路按此定档匹配
+  if (form.totalCredit) out.totalCredit = form.totalCredit
   if (c.agreementNo) out.agreementNo = c.agreementNo
   if (c.agreementType) out.agreementType = c.agreementType
   if (c.currency) out.currency = c.currency

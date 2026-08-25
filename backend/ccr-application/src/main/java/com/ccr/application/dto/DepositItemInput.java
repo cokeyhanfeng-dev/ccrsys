@@ -34,6 +34,9 @@ public class DepositItemInput {
     /** 原执行利率(%)(存量存款调价) */
     private BigDecimal originalRate;
 
+    /** 测算利率(%)(业务人员手工录入,必填) */
+    private BigDecimal calculatedRate;
+
     /** 存款账号(明文,拟开户可空;存量调价直接填写或选择数仓账户明文账号) */
     private String depositAccountNo;
 

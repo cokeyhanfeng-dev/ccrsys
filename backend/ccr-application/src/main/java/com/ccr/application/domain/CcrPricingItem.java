@@ -52,6 +52,9 @@ public class CcrPricingItem extends BaseEntity {
     /** 原执行利率(新增业务可为空) */
     private BigDecimal originalRate;
 
+    /** 测算利率(业务人员手工录入,必填) */
+    private BigDecimal calculatedRate;
+
     /** 客户经理申请利率 */
     private BigDecimal requestedRate;
 

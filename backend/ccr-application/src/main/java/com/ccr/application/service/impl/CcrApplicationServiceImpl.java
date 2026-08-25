@@ -260,6 +260,13 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "第" + index + "条担保分项申请利率须在 0~100 之间(当前 " + requestedRate + ")");
             }
+            // 测算利率(需求:分项必填,业务人员手工录入)
+            BigDecimal calculatedRate = toBigDecimal(g.get("calculatedRate"));
+            if (calculatedRate == null || calculatedRate.compareTo(BigDecimal.ZERO) <= 0
+                    || calculatedRate.compareTo(new BigDecimal("100")) > 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条担保分项测算利率必填且须在 0~100 之间(当前 " + calculatedRate + ")");
+            }
             BigDecimal pricingAmount = toBigDecimal(g.get("amount"));
             if (pricingAmount == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条担保分项金额(amount)必填");
@@ -273,6 +280,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             pi.setPricingAmount(pricingAmount);
             pi.setCurrency(StrUtil.blankToDefault(strVal(g.get("currency")), "CNY"));
             pi.setOriginalRate(toBigDecimal(g.get("originalRate")));
+            pi.setCalculatedRate(calculatedRate);
             pi.setRequestedRate(requestedRate);
             pi.setCurrentApprovalRate(requestedRate);
             pi.setRateDirection("LOWER_BETTER");
@@ -314,16 +322,28 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             if (d == null) {
                 continue;
             }
-            if (d.getRequestedRate() == null || StrUtil.isBlank(d.getProductCode())
-                    || d.getTermValue() == null || StrUtil.isBlank(d.getTermUnit())) {
+            if (d.getRequestedRate() == null || StrUtil.isBlank(d.getProductCode())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条存款分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
+                        "第" + index + "条存款分项缺少必填项(requestedRate/productCode)");
+            }
+            // 期限:仅对公定期(CORP_TIME_DEPOSIT)与通知存款(NOTICE_DEPOSIT)有期限必填;协定存款与保证金存款(银票/信用证)无期限
+            boolean needsTerm = "CORP_TIME_DEPOSIT".equals(d.getProductCode())
+                    || "NOTICE_DEPOSIT".equals(d.getProductCode());
+            if (needsTerm && (d.getTermValue() == null || StrUtil.isBlank(d.getTermUnit()))) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条存款分项必须选择期限(termValue/termUnit)");
             }
             // 申请利率范围兜底(同贷款分项,§bug 2026-08-25)
             if (d.getRequestedRate().compareTo(BigDecimal.ZERO) <= 0
                     || d.getRequestedRate().compareTo(new BigDecimal("100")) > 0) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "第" + index + "条存款分项申请利率须在 0~100 之间(当前 " + d.getRequestedRate() + ")");
+            }
+            // 测算利率(需求:分项必填,业务人员手工录入)
+            if (d.getCalculatedRate() == null || d.getCalculatedRate().compareTo(BigDecimal.ZERO) <= 0
+                    || d.getCalculatedRate().compareTo(new BigDecimal("100")) > 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "第" + index + "条存款分项测算利率必填且须在 0~100 之间(当前 " + d.getCalculatedRate() + ")");
             }
             boolean planned = "Y".equals(d.getPlannedAccountFlag()) || StrUtil.isBlank(d.getDepositAccountNo());
             if (d.getAmount() == null) {
@@ -337,6 +357,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             pi.setPricingAmount(d.getAmount());
             pi.setCurrency(StrUtil.blankToDefault(d.getCurrency(), "CNY"));
             pi.setOriginalRate(d.getOriginalRate());
+            pi.setCalculatedRate(d.getCalculatedRate());
             pi.setRequestedRate(d.getRequestedRate());
             pi.setCurrentApprovalRate(d.getRequestedRate());
             pi.setRateDirection("HIGHER_BETTER");

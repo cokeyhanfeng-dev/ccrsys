@@ -17,6 +17,7 @@ import com.ccr.application.dto.SubmitResponse;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.application.mapper.CcrApplicationCommitmentMapper;
+import com.ccr.application.mapper.CcrApplicationCreditSummaryMapper;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrApplicationMemberMapper;
 import com.ccr.application.mapper.CcrApplicationRelationMapper;
@@ -39,6 +40,7 @@ import com.ccr.rule.mapper.CcrRateRuleSetMapper;
 import com.ccr.rule.service.RateMatrixRouter;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -75,6 +77,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ApplicationSubmitServiceImplTest {
 
+    @Mock
+    private CcrApplicationCreditSummaryMapper creditSummaryMapper;
     @Mock
     private CcrApplicationMapper applicationMapper;
     @Mock
@@ -125,6 +129,12 @@ class ApplicationSubmitServiceImplTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, CcrApplication.class);
         TableInfoHelper.initTableInfo(assistant, CcrPricingItem.class);
+    }
+
+    /** creditSummary 授信汇总(近期合入):单测补 mock,避免提交勾稽路径 NPE */
+    @BeforeEach
+    void stubCreditSummary() {
+        lenient().when(creditSummaryMapper.selectList(any())).thenReturn(List.of());
     }
 
     // ---------- 测试数据构造 ----------
@@ -759,33 +769,65 @@ class ApplicationSubmitServiceImplTest {
         assertEquals("REJECTED", source.getStatus());
     }
 
-    // ---------- 任务7:非信用类分项必须有担保组合且措施非空(§9.3-5) ----------
+    // ---------- 任务7:所有担保方式(含信用/抵押/质押/保证等)均不强制登记担保/抵押措施 ----------
 
     @Test
-    void submitBlocksNonCreditItemWithoutGuaranteeMeasures() {
+    void submitSucceedsWhenNonCreditItemHasNoGuaranteeMeasures() {
         CcrApplication app = new CcrApplication();
         app.setId(1L);
         app.setApplicationNo("CCR20260806ABCD");
         app.setBusinessType("LOAN");
         app.setCustomerScope("CORPORATE_SINGLE");
         app.setCustomerNo("CORP001");
+        app.setApplicantUserId(1000L);
+        app.setApplicantOrgId(1001L);
         app.setStatus("DRAFT");
         app.setVersionNo(1);
         CcrPricingItem item = loanItem(11L, null);
         item.setPricingCustomerNo("CORP001");
-        item.setGuaranteePackageId(900L);
+        item.setGuaranteePackageId(900L); // 非信用担保(MORTGAGE),但不登记任何担保措施
+
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
         lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
-        CcrGuaranteePackage pkg = new CcrGuaranteePackage();
-        pkg.setId(900L);
-        pkg.setMainGuaranteeType("MORTGAGE");
-        when(guaranteePackageMapper.selectById(900L)).thenReturn(pkg);
-        when(guaranteeMeasureMapper.selectCount(any())).thenReturn(0L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel())) // 唯一性:本项关系
+                .thenReturn(List.of())                                // 唯一性:无冲突
+                .thenReturn(List.of(new CcrPricingItemContractRel())); // 快照回填
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        // 担保措施数为 0 也不拦截(需求:担保/抵押信息非强制)
+        lenient().when(guaranteeMeasureMapper.selectCount(any())).thenReturn(0L);
 
-        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
-        assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
-        assertTrue(e.getMessage().contains("担保措施"));
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        SubmitResponse response = service.submit(1L);
+
+        assertTrue(response.getSubmitted());
+        // 分项仍正常进入审批(不因缺担保措施被拦截)
+        ArgumentCaptor<CcrPricingItem> itemCaptor = ArgumentCaptor.forClass(CcrPricingItem.class);
+        verify(pricingItemMapper, atLeastOnce()).updateById(itemCaptor.capture());
+        assertTrue(itemCaptor.getAllValues().stream().anyMatch(i -> "ROUTING".equals(i.getStatus())));
     }
 
     // ---------- 重提状态守卫 ----------

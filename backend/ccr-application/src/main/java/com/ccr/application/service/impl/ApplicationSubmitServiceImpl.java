@@ -749,7 +749,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                             "分项[" + item.getPricingItemNo() + "]缺少存款账户关系");
                 }
             }
-            checkGuaranteeCompleteness(item);
         }
         // 拟达成贡献度承诺:截止日期必填(§7.1 提交校验;草稿保存 saveCommitments 不强制,仅提交时把关)
         checkCommitmentCompleteness(app);
@@ -765,25 +764,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "拟达成贡献度承诺缺少截止日期,请补录承诺截止日期后提交");
             }
-        }
-    }
-
-    /** 担保完整性(§9.3-5):非信用类(guaranteeType≠CREDIT)分项必须有担保组合且担保措施非空 */
-    private void checkGuaranteeCompleteness(CcrPricingItem item) {
-        if (!"LOAN_CONTRACT".equals(item.getPricingCarrierType())) {
-            return; // 存款分项无担保概念
-        }
-        CcrGuaranteePackage pkg = item.getGuaranteePackageId() == null ? null
-                : guaranteePackageMapper.selectById(item.getGuaranteePackageId());
-        String guaranteeType = pkg == null ? null : pkg.getMainGuaranteeType();
-        if (StrUtil.isBlank(guaranteeType) || "CREDIT".equals(guaranteeType)) {
-            return; // 未冻结担保组合按信用类对待
-        }
-        Long measureCount = guaranteeMeasureMapper.selectCount(new LambdaQueryWrapper<CcrGuaranteeMeasure>()
-                .eq(CcrGuaranteeMeasure::getPackageId, pkg.getId()));
-        if (measureCount == null || measureCount == 0) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "分项[" + item.getPricingItemNo() + "]非信用类担保(" + guaranteeType + ")必须登记担保措施");
         }
     }
 
@@ -1432,9 +1412,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         input.setNewOrExisting(resolveNewOrExisting(app, item));
         input.setCustomerType(resolveCustomerType(app, item, corpCache));
         input.setProductCode(item.getProductCode());
-        input.setAmount(item.getPricingAmount());
-        // 需求三(2026-08-14):金额定档基准改为按申请/分项金额定档(原集团授信总额优先)
-        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_APPLY_AMOUNT);
+        // 需求:审批链路按总授信额度定档(存量=数仓授信协议金额合计,新增=手工录入;集团=集团综合授信批复总额度优先)
+        input.setAmount(totalCreditOf(app, item));
+        input.setAmountBasis(MatrixRouteInput.AMOUNT_BASIS_GROUP_TOTAL_CREDIT);
         input.setGroupCreditTotal(groupCreditTotal);
         input.setTermValue(item.getTermValue());
         input.setTermUnit(item.getTermUnit());
@@ -1444,6 +1424,22 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         input.setLprVersionId(app.getLprVersionId());
         input.setAsOfDate(app.getRouteAsOfDate());
         return input;
+    }
+
+    /** 总授信额度(审批链路金额定档口径):优先取申请授信快照 credit_info_json.totalCredit
+     * (存量=数仓授信协议金额合计自动带出,新增=手工录入);缺省回退分项金额(兼容旧申请/草稿) */
+    private BigDecimal totalCreditOf(CcrApplication app, CcrPricingItem item) {
+        if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
+            try {
+                BigDecimal tc = JSONUtil.parseObj(app.getCreditInfoJson()).getBigDecimal("totalCredit");
+                if (tc != null) {
+                    return tc;
+                }
+            } catch (Exception ignored) {
+                // 快照解析失败按分项金额回退
+            }
+        }
+        return item.getPricingAmount();
     }
 
     /** 存量/新增判定:优先以申请授信快照中的授信业务类型(credit_info_json.businessType,NEW=新增授信/EXISTING=存量调息)为准;

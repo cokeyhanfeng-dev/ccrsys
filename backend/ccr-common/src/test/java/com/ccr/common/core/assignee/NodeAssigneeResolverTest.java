@@ -57,17 +57,25 @@ class NodeAssigneeResolverTest {
     private void stubUserQueries(Map<String, NodeAssigneeResolver.AssigneeUser> byUsername,
                                  Map<String, List<NodeAssigneeResolver.AssigneeUser>> byRole,
                                  List<NodeAssigneeResolver.AssigneeUser> deptUsers) {
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object.class)))
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenAnswer(inv -> {
                     String sql = inv.getArgument(0);
-                    Object param = inv.getArgument(2);
+                    // 单 vararg 时 getArgument 返回元素本身,多 vararg 返回数组,需兼容两种形态
+                    Object raw = inv.getArgument(2);
+                    String param;
+                    if (raw instanceof Object[]) {
+                        Object[] params = (Object[]) raw;
+                        param = params.length > 0 ? String.valueOf(params[0]) : null;
+                    } else {
+                        param = String.valueOf(raw);
+                    }
                     if (sql.contains("JOIN ccr_sys_dept")) {
                         return new ArrayList<>(deptUsers);
                     }
                     if (sql.contains("role_code")) {
-                        return new ArrayList<>(byRole.getOrDefault(String.valueOf(param), List.of()));
+                        return new ArrayList<>(byRole.getOrDefault(param, List.of()));
                     }
-                    NodeAssigneeResolver.AssigneeUser user = byUsername.get(String.valueOf(param));
+                    NodeAssigneeResolver.AssigneeUser user = byUsername.get(param);
                     return user == null ? List.of() : List.of(user);
                 });
     }

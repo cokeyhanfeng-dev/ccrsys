@@ -36,6 +36,8 @@ export interface GuaranteeInput {
   amount: number | string
   currency?: string
   originalRate?: number | string
+  /** 测算利率(业务人员手工录入,必填) */
+  calculatedRate?: number | string
   memberCustomerNo?: string
   contractBusinessKey?: string
   plannedContractFlag?: string
@@ -53,6 +55,8 @@ export interface DepositItemInput {
   currency?: string
   requestedRate: number | string
   originalRate?: number | string
+  /** 测算利率(业务人员手工录入,必填) */
+  calculatedRate?: number | string
   depositAccountNo?: string
   plannedAccountFlag?: string
 }

@@ -16,6 +16,7 @@ import com.ccr.application.dto.DepositItemInput;
 import com.ccr.application.dto.MemberInput;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.application.mapper.CcrApplicationCommitmentMapper;
+import com.ccr.application.mapper.CcrApplicationCreditSummaryMapper;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrApplicationMemberMapper;
 import com.ccr.application.mapper.CcrGuaranteeMeasureMapper;
@@ -29,6 +30,7 @@ import com.ccr.application.service.impl.CcrApplicationServiceImpl;
 import com.ccr.common.exception.ServiceException;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -60,6 +62,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CcrApplicationServiceImplTest {
 
+    @Mock
+    private CcrApplicationCreditSummaryMapper creditSummaryMapper;
     @Mock
     private CcrApplicationMapper applicationMapper;
     @Mock
@@ -98,6 +102,12 @@ class CcrApplicationServiceImplTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, CcrApplication.class);
         TableInfoHelper.initTableInfo(assistant, CcrPricingItem.class);
+    }
+
+    /** creditSummary 授信汇总(近期合入):单测补 mock,避免 create/saveDraft 路径 NPE */
+    @BeforeEach
+    void stubCreditSummary() {
+        lenient().when(creditSummaryMapper.selectList(any())).thenReturn(List.of());
     }
 
     private void stubInsertIds() {
@@ -139,6 +149,7 @@ class CcrApplicationServiceImplTest {
         deposit.setTermUnit("YEAR");
         deposit.setAmount(new BigDecimal("800"));
         deposit.setRequestedRate(new BigDecimal("1.85"));
+        deposit.setCalculatedRate(new BigDecimal("1.75"));
         deposit.setDepositAccountNo("ACCT001");
         request.setDepositItems(List.of(deposit));
 
@@ -184,6 +195,7 @@ class CcrApplicationServiceImplTest {
         measure.put("guaranteeAmount", new BigDecimal("2000"));
         Map<String, Object> g = new HashMap<>();
         g.put("requestedRate", new BigDecimal("3.60"));
+        g.put("calculatedRate", new BigDecimal("3.55"));
         g.put("amount", new BigDecimal("2000"));
         g.put("productCode", "LOAN_GENERAL");
         g.put("termValue", 24);
@@ -350,6 +362,7 @@ class CcrApplicationServiceImplTest {
         deposit.setTermUnit("YEAR");
         deposit.setAmount(new BigDecimal("800"));
         deposit.setRequestedRate(new BigDecimal("1.95"));
+        deposit.setCalculatedRate(new BigDecimal("1.80"));
         deposit.setDepositAccountNo("ACCT001");
         CommitmentInput commitment = new CommitmentInput();
         commitment.setMetricCode("DEPOSIT_BALANCE");
@@ -368,11 +381,11 @@ class CcrApplicationServiceImplTest {
         assertEquals(7L, exist.getApplicantUserId());
         assertEquals(1001L, exist.getApplicantOrgId());
 
-        // 旧子表(分项/承诺/成员/账户关系)按申请全量删除
+        // 旧子表(分项/承诺/成员/账户关系)按申请全量删除(成员改为物理删除)
         verify(pricingItemMapper).delete(any());
         verify(commitmentMapper).delete(any());
-        verify(applicationMemberMapper).delete(any());
-        verify(depositRelMapper).delete(any());
+        verify(applicationMemberMapper).deletePhysical(any());
+        verify(depositRelMapper).deletePhysical(any(), any());
 
         // 修改后的分项按请求体重新插入,提交时读取到的即为最新利率
         ArgumentCaptor<CcrPricingItem> itemCaptor = ArgumentCaptor.forClass(CcrPricingItem.class);
