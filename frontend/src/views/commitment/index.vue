@@ -70,34 +70,39 @@
       </div>
     </template>
 
-    <!-- ============ 二级:该客户每一次申请(客户 → 申请 → 指标) ============ -->
+    <!-- ============ 二级:该客户每一次申请(客户 → 申请 → 指标),卡片网格(替代 12 列表格,消除列拥挤与数据少时空白) ============ -->
     <template v-else-if="level === 2">
       <div class="card">
         <div class="card__head"><span>申请承诺</span><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></div>
-        <table class="table" v-if="applicationRows.length">
-          <thead>
-            <tr><th>客户</th><th>申请号</th><th>业务类型</th><th>申请金额(万元)</th><th>申请利率</th><th>申请状态</th><th>申请时间</th><th>承诺计划</th><th>范围</th><th>计划状态</th><th>平均达成率</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="app in applicationRows" :key="app.applicationNo">
-              <td>{{ app.customer_name || app.customer_no || '—' }}</td>
-              <td>{{ app.applicationNo || '—' }}</td>
-              <td>{{ businessTypeText(app.business_type) }}</td>
-              <td class="num">{{ fmtAmount(app.application_amount) }}</td>
-              <td class="num">{{ fmtRate(app.requested_rate, app.final_rate) }}</td>
-              <td><span class="badge" :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span></td>
-              <td>{{ app.submitTime ? String(app.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
-              <td><span class="badge badge--info">{{ app.plan_no }}</span></td>
-              <td>{{ scopeText(app.scope_type) }}</td>
-              <td><span :class="statusBadge(app.status)">{{ statusText(app.status) }}</span></td>
-              <td class="num">
-                <span v-if="app.avgRatio != null" :class="ratioClass(app.avgRatio)">{{ app.avgRatio }}%</span>
-                <span v-else>暂无数据</span>
-              </td>
-              <td><button class="btn btn--text" @click="enterApplication(app)">查看指标</button></td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="plan-grid" v-if="applicationRows.length">
+          <div v-for="app in applicationRows" :key="app.applicationNo || app.plan_no || app.id" class="plan-card" @click="enterApplication(app)">
+            <div class="plan-card__head">
+              <b class="app-card__no">{{ app.applicationNo || '—' }}</b>
+              <span :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span>
+            </div>
+            <div class="app-card__row"><span class="dg-label">业务类型</span>{{ businessTypeText(app.business_type) }}</div>
+            <div class="app-card__row">
+              <span class="dg-label">申请金额</span>{{ fmtAmount(app.application_amount) }} 万元
+              <span class="app-card__sep">·</span>
+              <span class="dg-label">申请利率</span>{{ fmtRate(app.requested_rate, app.final_rate) }}
+            </div>
+            <div class="app-card__row">
+              <span class="dg-label">承诺计划</span><span class="badge badge--info">{{ app.plan_no || '—' }}</span>
+              <span class="app-card__sep">·</span>
+              <span class="dg-label">范围</span>{{ scopeText(app.scope_type) }}
+            </div>
+            <div class="app-card__row">
+              <span class="dg-label">平均达成率</span>
+              <span v-if="app.avgRatio != null" :class="ratioClass(app.avgRatio)">{{ app.avgRatio }}%</span>
+              <span v-else class="section-tip">暂无数据</span>
+              <span :class="statusBadge(app.status)" style="margin-left:8px">{{ statusText(app.status) }}</span>
+            </div>
+            <div class="app-card__foot">
+              <span class="app-card__time">{{ app.submitTime ? String(app.submitTime).replace('T', ' ').slice(0, 16) : '' }}</span>
+              <span class="app-card__go">查看指标 →</span>
+            </div>
+          </div>
+        </div>
         <div v-else class="empty">该客户暂无申请承诺</div>
       </div>
     </template>
@@ -789,10 +794,18 @@ onMounted(load)
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 1200px) { .plan-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .plan-grid { grid-template-columns: 1fr; } }
 .plan-card { border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 14px; cursor: pointer; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: border-color .18s, box-shadow .18s, transform .18s; }
 .plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow); transform: translateY(-2px); }
 .plan-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .plan-card__meta { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
+/* 二级:申请承诺卡片内容行(替代原 12 列表格) */
+.app-card__no { font-size: 14px; font-weight: 600; }
+.app-card__row { font-size: 13px; color: var(--color-text-main); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.app-card__sep { color: var(--color-text-light); }
+.app-card__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--color-border); font-size: 12px; color: var(--color-text-sub); }
+.app-card__go { color: var(--color-primary); font-weight: 500; }
 .metric-row { margin-bottom: 14px; }
 .metric-row__related { margin-top: 2px; padding: 8px 12px; background: #f8fafc; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
 .metric-row__related-head { display: flex; align-items: center; gap: 12px; font-size: 13px; margin-bottom: 2px; }
