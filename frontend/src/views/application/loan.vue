@@ -73,7 +73,10 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
-            <input class="form-input" :value="fiveLevelClassText(groupInfo?.fiveLevelClass)" readonly placeholder="查询后带出" />
+            <select class="form-select" v-model="form.fiveLevelClass">
+              <option value="">请选择</option>
+              <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">信用评级</label>
@@ -98,10 +101,6 @@
           <div class="form-field">
             <label class="form-field__label">客户号</label>
             <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">客户性质</label>
-            <input class="form-input" :value="customerNatureText" readonly placeholder="选客户后自动判定" />
           </div>
         </template>
       </div>
@@ -324,10 +323,6 @@
         </template>
         <template v-else>
           <div class="form-field">
-            <label class="form-field__label">证件类型</label>
-            <input class="form-input" :value="certTypeText(form.idType)" placeholder="数仓带出" readonly />
-          </div>
-          <div class="form-field">
             <label class="form-field__label">证件号码</label>
             <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
           </div>
@@ -352,6 +347,13 @@
           <div class="form-field">
             <label class="form-field__label">联系电话</label>
             <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">五级分类</label>
+            <select class="form-select" v-model="form.fiveLevelClass">
+              <option value="">请选择</option>
+              <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+            </select>
           </div>
         </template>
         <div class="form-field">
@@ -913,8 +915,8 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  AGREEMENT_TYPES, certTypeText, groupStatusText, groupNatureText, currencyText, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
+  AGREEMENT_TYPES, groupStatusText, groupNatureText, currencyText, maritalStatusCode,
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1070,7 +1072,6 @@ const form = reactive({
   creditAgreementNo: '', // 授信协议编号(存量=选中协议)
   creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
-  customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', registeredCapital: '', basicAccount: '',
@@ -1085,13 +1086,6 @@ const form = reactive({
 })
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
-
-// 客户性质只读展示(§用户要求):由数仓 customerClass 自动判定,不允许手选;未选客户显示占位
-const customerNatureText = computed(() => {
-  if (form.customerNature === 'EXISTING') return '存量客户'
-  if (form.customerNature === 'NEW') return '新增客户'
-  return '—'
-})
 
 // 数仓带出数据
 const ownFinancing = ref<any[]>([])
@@ -1213,7 +1207,6 @@ async function loadCustomerDetail() {
     form.annualIncome = basic.annualIncome || ''
     form.maritalStatus = maritalStatusCode(basic.maritalStatus)
     form.phone = basic.phone || ''
-    form.customerNature = basic.customerClass === 'EXISTING' ? 'EXISTING' : 'NEW'
     // 企业性质带出(数仓 entp_charic 仅 SOE 判国企,其余非国企,与后端 resolveCustomerType 同口径)
     form.customerType = basic.entpCharic === 'SOE' ? 'SOE' : 'NON_SOE'
     ownFinancing.value = detail.financing || []
@@ -1246,7 +1239,6 @@ async function loadCustomerDetail() {
     ElMessage.success(`已带出客户 ${form.customerName || form.customerNo} 信息`)
   } catch {
     // 数仓无该客户记录(新增客户手工填写)按新户判定;其余错误由拦截器提示
-    form.customerNature = 'NEW'
   }
 }
 
@@ -1285,11 +1277,14 @@ async function queryGroup() {
     groupInfo.value = g.group || null
     groupCredit.value = g.groupCredit || null
     groupAllocatedTotal.value = g.allocatedTotal ?? null
+    // 五级分类自动带出(数仓码值,可下拉修改,§2026-08-25)
+    form.fiveLevelClass = normalizeFiveLevelClass(g.group?.fiveLevelClass || '')
   } catch {
     isNewGroup.value = true
     groupInfo.value = null
     groupCredit.value = null
     groupAllocatedTotal.value = null
+    form.fiveLevelClass = ''
   }
   groupQueried.value = true
   // 成员:数仓有效成员 + 已落表手工成员(§4.4);未收录则置空(新增集团可手工补录成员)
@@ -2145,6 +2140,8 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
     if (groupSupplement.openDate) out.openDate = groupSupplement.openDate
     if (groupSupplement.basicAccount) out.basicAccount = groupSupplement.basicAccount
   }
+  // 五级分类(存量集团数仓带出可下拉修改,§2026-08-25;新增集团以补录卡为准)
+  if (!isNewGroup.value && form.fiveLevelClass) out.fiveLevelClass = form.fiveLevelClass
   // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员贷款分项金额合计
   const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
   const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
@@ -2360,6 +2357,10 @@ async function loadDraftIntoForm(id: number | string) {
       groupSupplement.openOrg = gInfo.openOrg || ''
       groupSupplement.openDate = gInfo.openDate || ''
       groupSupplement.basicAccount = gInfo.basicAccount || ''
+    }
+    // 存量集团:五级分类以提交快照为准(数仓可能已变化,保持客户经理已确认的修改,§2026-08-25)
+    if (!isNewGroup.value && gInfo?.fiveLevelClass) {
+      form.fiveLevelClass = normalizeFiveLevelClass(gInfo.fiveLevelClass)
     }
     // 手工补录成员并入可勾选列表(标 MANUAL;数仓已带出同客户号则跳过)
     for (const sm of gInfo?.supplementMembers || []) {
