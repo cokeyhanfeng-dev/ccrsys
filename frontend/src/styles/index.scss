@@ -141,7 +141,7 @@ body,
 
 // 表格(el-table 使用处统一表头与 hover 观感;P3 对齐 dist:表头 #f5f7fa/hover #f5f7fa/选中 #e8f4ff)
 .el-table {
-  --el-table-header-bg-color: #f5f7fa;
+  --el-table-header-bg-color: #fafbfc;
   --el-table-header-text-color: #6b7280;
   --el-table-row-hover-bg-color: #f5f7fa;
   --el-table-border-color: #eef1f5;
@@ -161,11 +161,11 @@ body,
   }
 }
 
-// 卡片
+// 卡片(扁平化:去边框,浅投影区分)
 .el-card {
-  border-radius: 12px;
-  border-color: #eef1f5;
-  box-shadow: 0 1px 2px rgba(15, 42, 92, 0.04), 0 4px 14px rgba(15, 42, 92, 0.07);
+  border-radius: 10px;
+  border: none;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 
 // 弹窗 / 抽屉(P3 对齐 dist:圆角降至 4px)
@@ -319,11 +319,11 @@ body,
 // 通用卡片(与 design-system .card 观感一致)
 .page-card {
   background: var(--color-surface);
-  border: 1px solid #eef1f5;
+  border: none;
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgba(15, 42, 92, 0.03);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 
   .card-title {
     font-size: 15px;
