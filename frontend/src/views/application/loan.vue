@@ -160,15 +160,20 @@
           <div class="group-summary__item"><span>可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>授信到期日</span><b>{{ groupCredit?.creditEnd || '暂无数据' }}</b></div>
         </div>
-        <!-- 本次申请额度字段已取消独立展示(§2026-08-25):集团本次申请额度 = 成员申请金额合计,随单提交 -->
+        <!-- 涉及成员:第一步仅勾选并展示成员额度(有则展示该列);成员本次申请金额改在利率申请(贷款分项「涉及成员」+授信金额)里录入,§2026-08-25 -->
         <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
-          <label class="form-field__label">涉及成员(勾选并逐成员录入本次申请金额) <span class="req">*</span></label>
+          <div class="member-head">
+            <span class="form-field__label" style="margin-bottom:0">涉及成员 <span class="req">*</span></span>
+            <button class="btn btn--text" @click="showSupplementMember = !showSupplementMember">
+              {{ showSupplementMember ? '收起' : '添加成员' }}
+            </button>
+          </div>
           <table class="table">
             <thead>
               <tr>
                 <th>选择</th><th>成员客户号</th><th>成员名称</th><th>角色</th>
-                <th>分配额度(万元)</th><th>可用额度(万元)</th>
-                <th>本次申请金额(万元) <span class="req">*</span></th><th>币种</th>
+                <th v-if="hasAllocatedCol">分配额度(万元)</th>
+                <th v-if="hasAvailableCol">可用额度(万元)</th>
               </tr>
             </thead>
             <tbody>
@@ -180,36 +185,15 @@
                 </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td><span class="badge badge--neutral">{{ m.memberRole === 'CORE' ? '核心' : '一般' }}</span></td>
-                <td class="num">{{ m.creditLimit?.allocatedAmount ?? '暂无数据' }}</td>
-                <td class="num">{{ m.creditLimit?.availableAmount ?? '暂无数据' }}</td>
-                <td>
-                  <input
-                    class="form-input form-input--amount"
-                    :disabled="!isMemberChecked(m.memberCustomerNo)"
-                    :value="memberInput(m.memberCustomerNo)?.requestAmount"
-                    @input="setMemberField(m.memberCustomerNo, 'requestAmount', ($event.target as HTMLInputElement).value)"
-                  />
-                </td>
-                <td>
-                  <select
-                    class="form-select"
-                    :disabled="!isMemberChecked(m.memberCustomerNo)"
-                    :value="memberInput(m.memberCustomerNo)?.currency || 'CNY'"
-                    @change="setMemberField(m.memberCustomerNo, 'currency', ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
-                  </select>
-                </td>
+                <td v-if="hasAllocatedCol" class="num">{{ m.creditLimit?.allocatedAmount ?? '' }}</td>
+                <td v-if="hasAvailableCol" class="num">{{ m.creditLimit?.availableAmount ?? '' }}</td>
               </tr>
             </tbody>
           </table>
-          <button class="btn btn--secondary" style="margin-top:8px" @click="showSupplementMember = !showSupplementMember">
-            {{ showSupplementMember ? '收起成员补录' : '＋ 添加手工成员(数仓未收录)' }}
-          </button>
         </div>
         <div v-else-if="groupQueried" class="empty">
           该集团暂无有效成员数据
-          <button class="btn btn--text" @click="showSupplementMember = true">＋ 添加手工成员(数仓未收录)</button>
+          <button class="btn btn--text" @click="showSupplementMember = true">添加成员</button>
         </div>
 
         <!-- 手工成员补录(数仓未收录成员,补录信息与对公客户申请要求一致:企业要素 + 成员要素,不含授信) -->
@@ -391,26 +375,6 @@
     <div v-show="step === 1" class="form-card">
       <div class="form-card__title">融资情况</div>
 
-      <template v-if="form.customerScope === 'GROUP'">
-        <div class="sub-title">成员合同 <span class="badge badge--info">数仓取数</span></div>
-        <table class="table" v-if="groupContractRows.length">
-          <thead>
-            <tr><th>成员</th><th>合同号</th><th>合同余额(万元)</th><th>执行利率</th><th>到期日</th><th>合同下借据数</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, i) in groupContractRows" :key="i">
-              <td>{{ r.memberName }}</td>
-              <td>{{ r.contractNo }}</td>
-              <td class="num">{{ r.contractBalance ?? '暂无数据' }}</td>
-              <td class="num">{{ r.executionRate != null ? r.executionRate + '%' : '暂无数据' }}</td>
-              <td>{{ r.maturityDate || '暂无数据' }}</td>
-              <td class="num">{{ r.noteCount }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="empty" v-else>勾选涉及成员后自动带出成员名下贷款合同</div>
-      </template>
-
       <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
       <div class="sub-title" style="margin-top:20px">他行融资概要</div>
       <InfoTip content="概要来自数仓,可编辑;提交时与下方融资明细自动核对(授信机构数/总额/已用额/笔数)" />
@@ -491,11 +455,9 @@
           </select>
         </div>
         <template v-if="form.businessType === 'EXISTING'">
+          <!-- 存量调息授信概览只保留授信总金额(选中协议后=协议额度,只读带出),去掉拆分细项合计(§2026-08-25 精简展示;超限仍走协议区 warning 条) -->
           <div class="credit-overview__item credit-overview__item--static">
             <span>授信总金额(万元)</span><b>{{ creditTotalText }}</b>
-          </div>
-          <div class="credit-overview__item credit-overview__item--static">
-            <span>拆分细项合计(万元)</span><b :class="{ 'over-limit': overAgreementCredit }">{{ guaranteesTotalText }}</b>
           </div>
         </template>
         <template v-else>
@@ -513,9 +475,8 @@
         </template>
       </div>
 
-      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;下拉选择,选中即展示该协议完整内容,授信总金额随之带出) -->
-      <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
-        <div v-if="creditAgreements.length">
+      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;下拉选择,选中即展示该协议完整内容,授信总金额随之带出;数仓无协议数据时不展示空模块,§2026-08-25) -->
+      <div v-if="form.businessType === 'EXISTING' && creditAgreements.length" class="agreement-block">
           <div class="agreement-pick">
             <span class="agreement-pick__label">授信协议 <span class="req">*</span></span>
             <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange">
@@ -545,8 +506,6 @@
             </div>
           </div>
           <div v-else class="empty agreement-detail-empty">请选择本次申请对应的授信协议</div>
-        </div>
-        <div v-else class="empty">暂无授信协议数据(数仓未推送)</div>
       </div>
 
       <div v-if="overGroupAvailable" class="credit-overview-warning">
@@ -936,7 +895,6 @@ import {
   getGroup,
   getGroupMembers,
   suggestGroups,
-  getMemberCreditView,
   createApplication,
   saveApplication,
   getApplicationDetail,
@@ -1150,7 +1108,9 @@ const groupAllocatedTotal = ref<any>(null)
 const groupMembers = ref<any[]>([])
 const groupQueried = ref(false)
 const selectedMembers = ref<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>([])
-const memberContracts = ref<Record<string, any[]>>({})
+// 成员额度列:任一成员带出额度才展示该列(有就展示,没有就不展示,§2026-08-25)
+const hasAllocatedCol = computed(() => groupMembers.value.some((m) => m.creditLimit?.allocatedAmount != null))
+const hasAvailableCol = computed(() => groupMembers.value.some((m) => m.creditLimit?.availableAmount != null))
 // 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 手工补录成员
 /** 数仓未收录该集团(按新增集团对待,就地补录集团基本信息,与对公客户一致) */
 const isNewGroup = ref(false)
@@ -1336,14 +1296,7 @@ async function queryGroup() {
 function isMemberChecked(no: string) {
   return selectedMembers.value.some((m) => m.memberCustomerNo === no)
 }
-function memberInput(no: string) {
-  return selectedMembers.value.find((m) => m.memberCustomerNo === no)
-}
-function setMemberField(no: string, field: 'requestAmount' | 'currency', value: string) {
-  const m = memberInput(no)
-  if (m) m[field] = value
-}
-async function toggleMember(m: any) {
+function toggleMember(m: any) {
   const idx = selectedMembers.value.findIndex((s) => s.memberCustomerNo === m.memberCustomerNo)
   if (idx >= 0) {
     selectedMembers.value.splice(idx, 1)
@@ -1356,15 +1309,6 @@ async function toggleMember(m: any) {
     currency: 'CNY',
     memberRole: m.memberRole || ''
   })
-  // 带出成员名下贷款合同(供存量调息合同选择)
-  if (!memberContracts.value[m.memberCustomerNo]) {
-    try {
-      const view = await getMemberCreditView(m.memberCustomerNo)
-      memberContracts.value[m.memberCustomerNo] = view.contracts || []
-    } catch {
-      memberContracts.value[m.memberCustomerNo] = []
-    }
-  }
 }
 
 // ---------- 手工成员补录(§docs/19 §4.4 成员补录=对公客户申请要素全套+成员要素,不含授信) ----------
@@ -1435,23 +1379,6 @@ function memberNameOf(no: string) {
   return m ? (m.memberName || m.memberCustomerNo) : no
 }
 
-// 集团场景:全部已选成员的合同汇总(业务/合同步骤展示)
-const groupContractRows = computed(() => {
-  const rows: any[] = []
-  for (const m of selectedMembers.value) {
-    for (const c of memberContracts.value[m.memberCustomerNo] || []) {
-      rows.push({
-        memberName: m.memberName,
-        contractNo: c.contractNo,
-        contractBalance: c.contractBalance,
-        executionRate: c.executionRate,
-        maturityDate: c.maturityDate,
-        noteCount: (c.notes || []).length
-      })
-    }
-  }
-  return rows
-})
 
 // ---------- 担保组合 ----------
 // 总授信额度概览:分项金额自动合计(万元);集团场景对照可用额度,超限仅前端预警,阻断靠后端
@@ -1824,8 +1751,6 @@ function validateStep(s: number): string | null {
       if (isNewGroup.value && isBlank(groupSupplement.groupName)) return '请补录集团名称(数仓未收录,新增集团必填)'
       if (isNewGroup.value && isBlank(groupSupplement.stateOwnedFlag)) return '请选择集团属性(国企集团/非国企集团)'
       if (!selectedMembers.value.length) return '请至少勾选一名集团成员'
-      const bad = selectedMembers.value.find((m) => isBlank(m.requestAmount) || Number(m.requestAmount) <= 0)
-      if (bad) return `成员 ${bad.memberCustomerNo} 未录入本次申请金额`
     } else if (!hasCustomerIdentity()) {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
@@ -1978,8 +1903,6 @@ function validateForDraft(): string | null {
   if (isGroup) {
     if (isBlank(form.groupNo)) return '请填写集团客户编号'
     if (!selectedMembers.value.length) return '集团场景请至少勾选一名涉及成员'
-    const noAmount = selectedMembers.value.find((m) => isBlank(m.requestAmount))
-    if (noAmount) return `成员 ${noAmount.memberName} 未录入本次申请金额`
   } else if (!hasCustomerIdentity()) {
     return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   }
@@ -2070,6 +1993,9 @@ function buildPayload(): ApplicationPayload {
   const scopeMap: Record<string, ApplicationPayload['customerScope']> = {
     CORPORATE: 'CORPORATE_SINGLE', INDIVIDUAL: 'INDIVIDUAL', GROUP: 'GROUP'
   }
+  // 成员本次申请金额 = 该成员名下贷款分项授信金额合计(金额在利率申请分项里录,§2026-08-25)
+  const memberAmountOf = (no: string) =>
+    form.guarantees.filter((g) => g.memberCustomerNo === no).reduce((s, g) => s + (Number(g.amount) || 0), 0)
   return {
     businessType: 'LOAN',
     customerScope: scopeMap[form.customerScope] || 'CORPORATE_SINGLE',
@@ -2078,7 +2004,8 @@ function buildPayload(): ApplicationPayload {
     members: isGroup
       ? selectedMembers.value.map((m) => ({
           memberCustomerNo: m.memberCustomerNo,
-          requestAmount: m.requestAmount,
+          // 成员本次申请金额 = 该成员名下贷款分项授信金额合计(§2026-08-25)
+          requestAmount: memberAmountOf(m.memberCustomerNo),
           currency: m.currency || 'CNY',
           memberRole: m.memberRole || undefined
         }))
@@ -2222,10 +2149,10 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
     if (groupSupplement.openDate) out.openDate = groupSupplement.openDate
     if (groupSupplement.basicAccount) out.basicAccount = groupSupplement.basicAccount
   }
-  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员申请金额合计
-  const memberSum = selectedMembers.value.reduce((s, m) => s + (Number(m.requestAmount) || 0), 0)
+  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员贷款分项金额合计
+  const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
   const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
-  const applyAmount = Number.isFinite(groupCreditTotal) && groupCreditTotal > 0 ? groupCreditTotal : memberSum
+  const applyAmount = Number.isFinite(groupCreditTotal) && groupCreditTotal > 0 ? groupCreditTotal : guaranteeSum
   if (applyAmount > 0) out.applyAmount = applyAmount
   // 手工补录成员(对公客户申请要素 + 成员要素,不含授信;数仓已有成员不在此列)
   const manualMembers = groupMembers.value.filter((m) => m.source === 'MANUAL')
@@ -2451,14 +2378,6 @@ async function loadDraftIntoForm(id: number | string) {
       currency: m.currency || 'CNY',
       memberRole: m.memberRole || ''
     }))
-    for (const m of selectedMembers.value) {
-      try {
-        const view = await getMemberCreditView(m.memberCustomerNo)
-        memberContracts.value[m.memberCustomerNo] = view.contracts || []
-      } catch {
-        memberContracts.value[m.memberCustomerNo] = []
-      }
-    }
   } else if (app.customerNo) {
     await loadCustomerDetail()
   }
@@ -2721,6 +2640,8 @@ async function loadDraftIntoForm(id: number | string) {
 }
 
 /* 集团概要 */
+/* 涉及成员标题行:label + 小号「添加成员」按钮同行(§2026-08-25,不单独占行) */
+.member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .group-summary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
