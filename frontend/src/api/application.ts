@@ -315,6 +315,11 @@ export function lookupDepositAccount(customerNo: string, accountNo: string) {
   return get<any>(`/ccr/customers/${customerNo}/deposit-account-lookup`, { accountNo })
 }
 
+/** 存款账户列表(数仓最新批次;存量调价下拉选择,§2026-08-25) */
+export function listDepositAccounts(customerNo: string) {
+  return get<any[]>(`/ccr/customers/${customerNo}/deposit-accounts`)
+}
+
 /** 集团有效成员及额度 */
 export function getGroupMembers(groupNo: string) {
   return get<any[]>(`/ccr/groups/${groupNo}/members`)

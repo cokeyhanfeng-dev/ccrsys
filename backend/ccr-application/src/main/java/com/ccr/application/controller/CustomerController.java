@@ -163,6 +163,18 @@ public class CustomerController {
         return R.ok(GroupQueryController.camel(row));
     }
 
+    /** 存款账户列表(数仓最新批次;存量调价下拉选择,轻量接口避免 business-view 全量,§2026-08-25) */
+    @GetMapping("/{customerNo}/deposit-accounts")
+    public R<List<Map<String, Object>>> depositAccounts(@PathVariable String customerNo) {
+        Map<String, Object> corp = dataWarehouseService.findCorpCustomer(customerNo);
+        Map<String, Object> indv = corp == null ? dataWarehouseService.findIndvCustomer(customerNo) : null;
+        if (corp == null && indv == null) {
+            throw new ServiceException(404, "客户不存在:" + customerNo);
+        }
+        assertManagerPermitted(corp != null ? corp : indv);
+        return R.ok(camelRows(dataWarehouseService.depositAccounts(customerNo)));
+    }
+
     /** 客户业务视图(§13.1:账户/授信/合同/合同下借据/担保/贡献度概况,最新批次) */
     @GetMapping("/{customerNo}/business-view")
     public R<Map<String, Object>> businessView(@PathVariable String customerNo) {

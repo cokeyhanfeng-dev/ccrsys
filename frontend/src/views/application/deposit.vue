@@ -19,34 +19,52 @@
       <div class="form-grid">
         <div class="form-field">
           <label class="form-field__label">客户主体 <span class="req">*</span></label>
-          <select class="form-select" v-model="form.customerScope">
+          <select class="form-select" v-model="form.customerScope" @change="onCustomerScopeChange">
             <option value="CORPORATE">企业单户</option>
-            <option value="INDIVIDUAL">个人</option>
+            <option value="GROUP">集团客户</option>
           </select>
         </div>
-        <div class="form-field">
-          <label class="form-field__label">客户名称 <span class="req">*</span></label>
-          <el-autocomplete
-            v-model="form.customerName"
-            :fetch-suggestions="queryCustomerSuggestions"
-            :trigger-on-focus="false"
-            clearable
-            placeholder="输入客户名称自动联想,下拉选择客户"
-            style="width:100%"
-            @select="selectCustomer"
-          />
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">客户号</label>
-          <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">客户性质</label>
-          <input class="form-input" :value="customerNatureText" readonly placeholder="选客户后自动判定" />
-        </div>
+        <!-- 非集团:客户名称/客户号/客户性质(集团分支见下方 GROUP 模板) -->
+        <template v-if="form.customerScope !== 'GROUP'">
+          <div class="form-field">
+            <label class="form-field__label">客户名称 <span class="req">*</span></label>
+            <el-autocomplete
+              v-model="form.customerName"
+              :fetch-suggestions="queryCustomerSuggestions"
+              :trigger-on-focus="false"
+              clearable
+              placeholder="输入客户名称自动联想,下拉选择客户"
+              style="width:100%"
+              @select="selectCustomer"
+            />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">客户号</label>
+            <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
+          </div>
+        </template>
 
-        <!-- 对公字段(数仓带出,只读) -->
-        <template v-if="form.customerScope !== 'INDIVIDUAL'">
+        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 存款按集团整体申请,不拉成员分项) -->
+        <template v-else>
+          <div class="form-field">
+            <label class="form-field__label">集团客户 <span class="req">*</span></label>
+            <el-autocomplete v-model="form.groupNo" :fetch-suggestions="queryGroupSuggestions" :trigger-on-focus="false" clearable
+              placeholder="编号/名称联想;未收录回车补录" style="width:100%" @select="selectGroup" @keyup.enter="queryGroup" />
+          </div>
+          <div class="form-field"><label class="form-field__label">集团名称</label>
+            <input class="form-input" :value="groupInfo?.groupName || ''" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">集团属性</label>
+            <input class="form-input" :value="groupNatureText(groupInfo?.stateOwnedFlag)" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">集团状态</label>
+            <input class="form-input" :value="groupStatusText(groupInfo?.groupStatus)" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">授信总额(万元)</label>
+            <input class="form-input" :value="groupCredit?.approvedTotalAmount ?? ''" readonly placeholder="查询后带出" /></div>
+          <div class="form-field"><label class="form-field__label">信用评级</label>
+            <input class="form-input" :value="groupInfo?.creditLevel || ''" readonly placeholder="查询后带出" /></div>
+        </template>
+
+        <!-- 对公字段(数仓带出,可修改) -->
+        <template v-if="form.customerScope === 'CORPORATE'">
           <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
@@ -83,7 +101,14 @@
           <div class="form-field">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
-              <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
+              <!-- 存量账户下拉:按当前客户数仓账户列表选择并自动带出(§2026-08-25);集团/无数仓账户时回退手工输入+反查 -->
+              <select v-if="form.customerScope !== 'GROUP' && accountOptions.length" class="form-select" :value="d.depositAccountNo" @change="onAccountPick(d, $event)">
+                <option value="">请选择存款账户</option>
+                <option v-for="a in accountOptions" :key="a.depositAccountNo" :value="a.depositAccountNo">
+                  {{ a.depositAccountNo }}<span v-if="a.accountBalance != null"> · 余额{{ a.accountBalance }}万</span><span v-if="a.executionRate != null"> · 利率{{ a.executionRate }}%</span>
+                </option>
+              </select>
+              <input v-else class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
               <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
                 数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 当前利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
               </div>
@@ -129,11 +154,6 @@
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
-            <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
-            <div v-if="limitOf(d.productCode)" class="limit-hint" :class="{ 'limit-hint--exceed': exceedOf(d) }">
-              标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
-              <template v-if="bpOf(d) != null"> · 较上限 {{ bpOf(d)! > 0 ? '+' : '' }}{{ bpOf(d) }} BP</template>
-            </div>
           </div>
           <div class="form-field">
             <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
@@ -214,6 +234,10 @@ import {
   searchCustomers as apiSearchCustomers,
   getCustomerDetail,
   lookupDepositAccount,
+  listDepositAccounts,
+  getGroup,
+  getGroupMembers,
+  suggestGroups,
   createApplication,
   saveApplication,
   getApplicationDetail,
@@ -230,7 +254,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, normalizeFiveLevelClass, groupNatureText, groupStatusText } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -298,6 +322,8 @@ const form = reactive({
   customerNo: '',
   customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
+  // 集团(集团客户主体:联想查询带出集团信息,按集团整体申请)
+  groupNo: '',
   // 对公(数仓带出,只读)
   ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', basicAccount: '',
   // 对私(数仓带出,只读)
@@ -306,6 +332,14 @@ const form = reactive({
   applicationRemark: ''
 })
 const items = ref<DepositItemRow[]>([newItem()])
+// 集团信息(查询带出;未收录=新增集团就地补录,见 loan.vue 同构逻辑)
+const groupInfo = ref<any | null>(null)
+const groupCredit = ref<any | null>(null)
+const groupQueried = ref(false)
+const groupMembers = ref<any[]>([])
+const isNewGroup = ref(false)
+// 存量账户下拉选项(按当前客户数仓账户列表;集团主体无数仓账户,回退手工输入)
+const accountOptions = ref<Array<Record<string, any>>>([])
 // 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
 const contribution = ref<any[]>([])
 // 产品标准上限(生效中的存款硬边界;非 admin 可能 403,失败则隐藏)
@@ -383,13 +417,6 @@ function onProductChange(d: DepositItemRow) {
 
 const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
 
-// 客户性质只读展示(§用户要求):由数仓 customerClass 自动判定,不允许手选;未选客户显示占位
-const customerNatureText = computed(() => {
-  if (form.customerNature === 'EXISTING') return '存量客户'
-  if (form.customerNature === 'NEW') return '新增客户'
-  return '—'
-})
-
 // 草稿与提交闭环状态
 const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
 const saving = ref(false)
@@ -404,8 +431,9 @@ async function queryCustomerSuggestions(queryString: string, cb: (list: any[]) =
   if (!queryString || !queryString.trim()) return cb([])
   try {
     const rows = await apiSearchCustomers(queryString.trim())
-    cb((rows || []).map(r => ({
-      value: `${r.customerName} · ${r.customerNo} · ${r.custType === 'CORP' ? '对公' : '个人'}`,
+    // 存款仅对公(§2026-08-25):联想过滤个人客户,只提供对公候选
+    cb((rows || []).filter((r: any) => r.custType !== 'INDV').map((r: any) => ({
+      value: `${r.customerName} · ${r.customerNo} · 对公`,
       data: r,
     })))
   } catch {
@@ -417,7 +445,7 @@ async function selectCustomer(item: any) {
   const c = item?.data ?? item
   form.customerNo = c.customerNo
   form.customerName = c.customerName
-  form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
+  form.customerScope = 'CORPORATE'
   await loadCustomerDetail()
 }
 
@@ -441,10 +469,137 @@ async function loadCustomerDetail() {
     // 企业性质带出(数仓 entp_charic 仅 SOE 判国企,其余非国企,与后端 resolveCustomerType 同口径)
     form.customerType = basic.entpCharic === 'SOE' ? 'SOE' : 'NON_SOE'
     contribution.value = detail.contribution || []
+    // 存量账户下拉选项按客户号刷新(§2026-08-25)
+    await loadAccountOptions()
   } catch {
     // 数仓无该客户记录(新增客户手工填写)按新户判定;其余错误由拦截器提示
     form.customerNature = 'NEW'
   }
+}
+
+/** 存量账户下拉选项(数仓列表;集团主体无数仓账户/加载失败回退手工输入+反查) */
+async function loadAccountOptions() {
+  accountOptions.value = []
+  if (!form.customerNo || form.customerScope === 'GROUP') return
+  try {
+    const rows = await listDepositAccounts(form.customerNo)
+    accountOptions.value = rows || []
+  } catch {
+    accountOptions.value = []
+  }
+}
+
+/** 存量账户下拉选中:直接按数仓账户行带出产品/期限/币种/余额/当前利率(复用 onAccountLookup 赋值口径) */
+function onAccountPick(d: DepositItemRow, ev: Event) {
+  const no = (ev.target as HTMLSelectElement).value
+  d.depositAccountNo = no
+  if (!no) {
+    d.accountBalance = null
+    d.openDate = ''
+    d.maturityDate = ''
+    d.accountStatus = ''
+    d.lookupDone = false
+    d.lookupFound = false
+    d.originalRate = ''
+    d.productCode = ''
+    d.termValue = ''
+    d.termUnit = ''
+    d.termOption = ''
+    return
+  }
+  const a = accountOptions.value.find((x) => x.depositAccountNo === no)
+  d.lookupDone = true
+  if (a) {
+    d.lookupFound = true
+    d.accountBalance = a.accountBalance ?? null
+    d.openDate = a.openDate || ''
+    d.maturityDate = a.maturityDate || ''
+    d.accountStatus = a.accountStatus || ''
+    d.productCode = a.productCode || d.productCode
+    d.termValue = a.termValue != null ? String(a.termValue) : d.termValue
+    d.termUnit = a.termUnit || d.termUnit
+    d.termOption = d.termValue && d.termUnit ? `${d.termValue}:${d.termUnit}` : ''
+    d.currency = a.currency || d.currency
+    d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
+  } else {
+    d.lookupFound = false
+    d.accountBalance = null
+  }
+}
+
+// ---------- 集团查询(与贷款申请同构;存款按集团整体申请,不拉成员分项) ----------
+/** 集团联想(el-autocomplete fetch-suggestions;输入即查,§13.1) */
+async function queryGroupSuggestions(queryString: string, cb: (list: any[]) => void) {
+  if (!queryString || !queryString.trim()) return cb([])
+  try {
+    const rows = await suggestGroups(queryString.trim())
+    cb((rows || []).map(r => ({
+      value: `${r.groupNo} · ${r.groupName}`,
+      data: r,
+    })))
+  } catch {
+    cb([])
+  }
+}
+
+/** 集团下拉选中:回填集团号并加载集团信息 */
+async function selectGroup(item: any) {
+  const g = item?.data ?? item
+  form.groupNo = g.groupNo
+  await queryGroup()
+}
+
+/** 查询集团信息(数仓收录=存量带出;404=未收录按新增集团就地补录) */
+async function queryGroup() {
+  if (!form.groupNo || !form.groupNo.trim()) {
+    ElMessage.warning('请输入集团客户编号')
+    return
+  }
+  const no = form.groupNo.trim()
+  try {
+    const g = await getGroup(no)
+    isNewGroup.value = false
+    groupInfo.value = g.group || null
+    groupCredit.value = g.groupCredit || null
+  } catch {
+    isNewGroup.value = true
+    groupInfo.value = null
+    groupCredit.value = null
+  }
+  groupQueried.value = true
+  // 有效成员快照(提交校验:members 必须在集团有效成员快照中,集团号本身不算成员;存款按集团整体申请,等分本次申请金额构造 members)
+  try {
+    const members = await getGroupMembers(no)
+    groupMembers.value = (members || []).filter((m: any) => m?.memberCustomerNo)
+  } catch {
+    groupMembers.value = []
+  }
+  if (isNewGroup.value) {
+    ElMessage.info('数仓未收录该集团,请按新增集团补录基本信息(存款按集团整体申请)')
+  }
+}
+
+/** 切客户主体:清空客户/集团信息与账户下拉,避免残留 */
+function onCustomerScopeChange() {
+  form.customerNo = ''
+  form.customerName = ''
+  form.groupNo = ''
+  form.ucrCode = ''
+  form.idNo = ''
+  form.idType = ''
+  form.occupation = ''
+  form.phone = ''
+  form.industry = ''
+  form.fiveLevelClass = ''
+  form.creditLevel = ''
+  form.customerNature = ''
+  groupInfo.value = null
+  groupCredit.value = null
+  groupQueried.value = false
+  isNewGroup.value = false
+  accountOptions.value = []
+  groupMembers.value = []
+  items.value = [newItem()]
 }
 
 // ---------- 存款分项 ----------
@@ -500,10 +655,14 @@ function isBlank(v: any) {
 }
 
 function validateForDraft(): string | null {
-  // 新增客户无客户号:允许先录证件号(对私 idNo / 对公 ucrCode),提交时后端反查数仓/占位(2026-08-20 #017)
-  const hasIdentity = !isBlank(form.customerNo)
-    || (form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode))
-  if (!hasIdentity) return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
+  // 集团主体:按集团整体申请,校验集团编号已查询(不校验客户号/证件号)
+  if (form.customerScope === 'GROUP') {
+    if (isBlank(form.groupNo) || !groupQueried.value) return '请录入集团编号并查询加载集团信息'
+  } else {
+    // 新增客户无客户号:允许先录证件号(对公 ucrCode),提交时后端反查数仓/占位(2026-08-20 #017)
+    const hasIdentity = !isBlank(form.customerNo) || !isBlank(form.ucrCode)
+    if (!hasIdentity) return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
+  }
   if (!items.value.length) return '请至少录入一条存款分项'
   for (let i = 0; i < items.value.length; i++) {
     const d = items.value[i]
@@ -529,14 +688,17 @@ function validateForDraft(): string | null {
 }
 
 function buildPayload(): ApplicationPayload {
+  const isGroup = form.customerScope === 'GROUP'
   const scopeMap: Record<string, ApplicationPayload['customerScope']> = {
-    CORPORATE: 'CORPORATE_SINGLE', INDIVIDUAL: 'INDIVIDUAL'
+    CORPORATE: 'CORPORATE_SINGLE', INDIVIDUAL: 'INDIVIDUAL', GROUP: 'GROUP'
   }
-  return {
+  const payload: ApplicationPayload = {
     businessType: 'DEPOSIT',
     customerScope: scopeMap[form.customerScope] || 'CORPORATE_SINGLE',
-    customerNo: form.customerNo,
+    customerNo: isGroup ? null : form.customerNo,
     depositItems: items.value.map((d) => ({
+      // 集团主体:后端 newPricingItem 强制 GROUP 分项携带 memberCustomerNo,按集团整体视为唯一成员(§2026-08-25)
+      memberCustomerNo: isGroup ? form.groupNo : undefined,
       productCode: d.productCode,
       termValue: d.termValue,
       termUnit: d.termUnit,
@@ -553,11 +715,42 @@ function buildPayload(): ApplicationPayload {
     orgId: userStore.userInfo?.orgId,
     // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
     applicationRemark: (form.applicationRemark || '').trim() || undefined,
+  }
+  if (isGroup) {
+    // 集团整体申请:members 用真实有效成员(后端 checkGroupConstraints 校验成员必须在集团有效成员快照中,集团号本身不算成员),金额等分合计=申请总额
+    const totalAmount = items.value.reduce((s, d) => s + (Number(d.amount) || 0), 0)
+    payload.groupNo = form.groupNo
+    const realNos = (groupMembers.value || []).map((m: any) => m.memberCustomerNo).filter(Boolean) as string[]
+    if (realNos.length && totalAmount > 0) {
+      // 等分到分位,末位成员补足尾差,保证合计精确=totalAmount
+      const share = Math.floor((totalAmount * 100) / realNos.length) / 100
+      payload.members = realNos.map((no, i) => ({
+        memberCustomerNo: no,
+        requestAmount: i === realNos.length - 1
+          ? +(totalAmount - share * (realNos.length - 1)).toFixed(2)
+          : share,
+        currency: 'CNY',
+        memberRole: 'GENERAL'
+      }))
+    } else {
+      // 无有效成员时兜底(数仓异常):仍以集团号提交,由后端校验给出明确提示
+      payload.members = [{ memberCustomerNo: form.groupNo, requestAmount: totalAmount, currency: 'CNY', memberRole: 'CORE' }]
+    }
+    payload.groupInfoJson = JSON.stringify({
+      groupNo: form.groupNo,
+      groupName: groupInfo.value?.groupName || '',
+      applyAmount: totalAmount > 0 ? totalAmount : undefined,
+      stateOwnedFlag: groupInfo.value?.stateOwnedFlag,
+      groupStatus: groupInfo.value?.groupStatus,
+      fiveLevelClass: groupInfo.value?.fiveLevelClass,
+      creditLevel: groupInfo.value?.creditLevel,
+    })
+  } else {
     // 客户信息人工修正快照(数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示)
-    customerInfoJson: JSON.stringify({
+    payload.customerInfoJson = JSON.stringify({
       customerNo: form.customerNo,
       customerName: form.customerName,
-      custType: form.customerScope === 'INDIVIDUAL' ? 'INDV' : 'CORP',
+      custType: 'CORP',
       ucrCode: form.ucrCode,
       fiveLevelClass: form.fiveLevelClass,
       creditLevel: form.creditLevel,
@@ -571,6 +764,7 @@ function buildPayload(): ApplicationPayload {
       basicAccount: form.basicAccount
     })
   }
+  return payload
 }
 
 /** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
@@ -686,8 +880,9 @@ async function loadDraftIntoForm(id: number | string) {
   const app = d.application
   // 同步数据版本号:保存草稿(PUT)必须携带 versionNo(乐观锁),缺失会导致"保存草稿必须携带数据版本号"报错
   draft.versionNo = app.versionNo != null ? app.versionNo : (draft.versionNo ?? 1)
-  form.customerScope = app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
+  form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : 'CORPORATE'
   form.customerNo = app.customerNo || ''
+  form.groupNo = app.groupNo || ''
   form.applicationRemark = app.applicationRemark || ''
   // 客户信息人工快照回填(继续编辑/重提):数仓重查可能缺客户名称等字段,以提交时快照为准
   let custInfo: any = null
@@ -695,7 +890,17 @@ async function loadDraftIntoForm(id: number | string) {
   if (custInfo?.customerName) form.customerName = custInfo.customerName
   form.industry = custInfo?.industry || ''
   form.basicAccount = custInfo?.basicAccount || ''
-  if (app.customerNo) {
+  if (form.customerScope === 'GROUP' && form.groupNo) {
+    // 集团主体:查询带出集团信息;未收录集团名称从提交快照回填展示
+    await queryGroup()
+    try {
+      const gi = app.groupInfoJson ? JSON.parse(app.groupInfoJson) : null
+      if (gi?.groupName && !groupInfo.value?.groupName) {
+        if (!groupInfo.value) groupInfo.value = {}
+        groupInfo.value.groupName = gi.groupName
+      }
+    } catch { /* 快照解析失败忽略 */ }
+  } else if (app.customerNo) {
     await loadCustomerDetail()
   }
   const editable = (d.pricingItems || []).filter((p) => p.inheritFlag !== 'Y')
