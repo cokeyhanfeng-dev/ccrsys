@@ -48,6 +48,13 @@ body,
   color: var(--color-text-main);
   font-size: 14px;
 }
+// 表单控件默认不继承 body 字体(浏览器行为),统一强制继承,保证同页文本框字体一致
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
 
 // ── 滚动条美化 ──
 ::-webkit-scrollbar {
