@@ -517,22 +517,23 @@
         </template>
         <template v-if="form.businessType === 'EXISTING'">
           <div v-if="creditAgreements.length" class="credit-overview__agreement">
-            <div class="section-tip" style="margin-bottom:6px">请选择本次申请对应的授信协议（每份协议独立发起申请，不可合并；授信总金额按所选协议额度带出）</div>
-            <table class="table">
-              <thead><tr><th style="width:36px"></th><th>授信协议编号</th><th>授信金额(万元)</th><th>可用额度(万元)</th><th>授信日期</th><th>授信状态</th></tr></thead>
-              <tbody>
-                <tr v-for="a in creditAgreements" :key="a.agreementNo"
-                    class="agreement-row" :class="{ 'agreement-row--selected': selectedAgreementNo === a.agreementNo }"
-                    @click="selectCreditAgreement(a)">
-                  <td><span class="agreement-radio" :class="{ 'agreement-radio--on': selectedAgreementNo === a.agreementNo }"></span></td>
-                  <td><b>{{ a.agreementNo || '—' }}</b></td>
-                  <td>{{ a.creditAmount ?? '—' }}</td>
-                  <td>{{ a.availableAmount ?? '—' }}</td>
-                  <td>{{ [a.startDate, a.endDate].filter(Boolean).join(' 至 ') || '—' }}</td>
-                  <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="agreement-pick">
+              <label class="form-field__label">授信协议 <span class="req">*</span></label>
+              <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange">
+                <option value="" disabled>请选择授信协议</option>
+                <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
+                  {{ a.agreementNo }}（授信 {{ a.creditAmount ?? '—' }} 万 · {{ agreementStatusText(a.agreementStatus) }}）
+                </option>
+              </select>
+            </div>
+            <div v-if="selectedAgreement" class="agreement-detail">
+              <span class="agreement-detail__item">授信金额<b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b></span>
+              <span class="agreement-detail__item">可用额度<b>{{ selectedAgreement.availableAmount ?? '—' }} 万</b></span>
+              <span class="agreement-detail__item">已用额度<b>{{ selectedAgreement.usedAmount ?? '—' }} 万</b></span>
+              <span class="agreement-detail__item">授信期间<b>{{ [selectedAgreement.startDate, selectedAgreement.endDate].filter(Boolean).join(' 至 ') || '—' }}</b></span>
+              <span class="agreement-detail__item">状态<b>{{ agreementStatusText(selectedAgreement.agreementStatus) }}</b></span>
+            </div>
+            <div class="section-tip" style="margin-top:6px">每份协议独立发起申请，不可合并；授信总金额按所选协议额度带出，分项请在此协议额度下录入</div>
           </div>
           <div v-else class="empty credit-overview__agreement" style="margin-bottom:0">暂无授信协议数据(数仓未推送)</div>
         </template>
@@ -1470,6 +1471,12 @@ const creditTotalText = computed(() => {
   const n = Number(selectedAgreement.value?.creditAmount)
   return n > 0 ? String(n) : '—'
 })
+/** 下拉选择授信协议(需求六:选到哪份就展示哪份的内容) */
+function onAgreementChange(e: any) {
+  const no = e?.target?.value
+  const a = creditAgreements.value.find((x) => x.agreementNo === no)
+  if (a) selectCreditAgreement(a)
+}
 /** 选中授信协议:带出协议内容并同步总授信(审批按所选协议总授信额度定档) */
 function selectCreditAgreement(a: any) {
   selectedAgreementNo.value = a.agreementNo
@@ -2640,21 +2647,17 @@ async function loadDraftIntoForm(id: number | string) {
   border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
   padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
 }
-/* 存量授信协议选择表(数仓带出,可单选,占满 credit-overview 整行;每份协议独立发起申请) */
+/* 存量授信协议下拉选择(数仓带出,占满 credit-overview 整行;每份协议独立发起申请,选中即展示该协议内容) */
 .credit-overview__agreement { grid-column: 1 / -1; }
-.credit-overview__agreement .table { margin-bottom: 0; }
-.agreement-row { cursor: pointer; }
-.agreement-row:hover td { background: var(--color-primary-light); }
-.agreement-row--selected td { background: var(--color-primary-light); }
-.agreement-radio {
-  display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-  border: 1px solid var(--color-border, #cbd5e1); vertical-align: middle; position: relative;
-  background: var(--color-surface);
+.agreement-pick { display: flex; align-items: center; gap: 10px; }
+.agreement-pick .form-select { max-width: 420px; }
+.agreement-detail {
+  display: flex; flex-wrap: wrap; gap: 8px 24px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 8px; font-size: 13px;
 }
-.agreement-radio--on { border-color: var(--color-primary); }
-.agreement-radio--on::after {
-  content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--color-primary);
-}
+.agreement-detail__item { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-sub); }
+.agreement-detail__item b { color: var(--color-text-main); font-variant-numeric: tabular-nums; }
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .customer-cand:last-child { border-bottom: none; }
