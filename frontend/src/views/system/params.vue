@@ -210,7 +210,7 @@
       <div v-if="pcTab === 'route'">
         <div class="card__head">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span>产品审批链路(草稿→送审→复核发布→停用;同产品同生效日仅一版发布生效)</span>
+            <span>产品审批链路：配置特殊审批要求（上会/行长决策）。未配置链路时自动按默认链路运行——对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置（草稿→送审→复核发布→停用；同产品同生效日仅一版生效）</span>
             <select class="form-select" v-model="routeQuery.productCode" style="width:200px" @change="loadProductRoutes">
               <option value="">全部产品</option>
               <option v-for="p in productCatalog" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
@@ -901,7 +901,7 @@
       </div>
     </div>
 
-    <!-- 新增产品链路草稿弹窗(§8A.5②;含上会条件 JSON 构建器) -->
+    <!-- 新增产品链路草稿弹窗(§8A.5②;人性化:字段说明/上会条件可视化/保存前预览) -->
     <div class="modal" v-if="routeDialog.show">
       <div class="modal__card modal__card--wide">
         <div class="modal__title">新增产品审批链路</div>
@@ -913,6 +913,7 @@
                 <option value="" disabled>选择产品</option>
                 <option v-for="p in enabledProducts" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
               </select>
+              <div class="form-field__tip">选择后自动带出业务大类，并按默认规则预填路由模式</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">业务大类</label>
@@ -921,22 +922,25 @@
             <div class="form-field">
               <label class="form-field__label">路由模式 <span class="req">*</span></label>
               <select class="form-select" v-model="routeDialog.form.routeMode">
-                <option value="CHAINED">链式逐级(CHAINED)</option>
-                <option value="DIRECT_VOTE">直接上会(DIRECT_VOTE,存款/保证金 D16b)</option>
+                <option value="CHAINED">链式逐级（推荐·贷款）</option>
+                <option value="DIRECT_VOTE">直接上会（推荐·存款/保证金）</option>
               </select>
+              <div class="form-field__tip">链式逐级=按金额/利率逐级上送，权限内岗位即可终审；直接上会=必经支行行长后直接进入六人小组表决</div>
             </div>
             <div class="form-field" v-if="routeDialog.form.routeMode === 'CHAINED'">
               <label class="form-field__label">起始节点 <span class="req">*</span></label>
               <select class="form-select" v-model="routeDialog.form.startNodeCode">
                 <option v-for="n in NODE_OPTIONS" :key="n" :value="n">{{ nodeLabel(n) }}</option>
               </select>
+              <div class="form-field__tip">审批起点岗位，默认支行行长（所有申请必经支行行长）</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">强制上会(六人小组)</label>
+              <label class="form-field__label">强制上会（六人小组）</label>
               <select class="form-select" v-model="routeDialog.form.mandatoryVote">
-                <option value="N">否</option>
-                <option value="Y">是</option>
+                <option value="N">否（按金额/利率匹配）</option>
+                <option value="Y">是（一律上会表决）</option>
               </select>
+              <div class="form-field__tip">开启后无论金额/利率是否在权限内，一律必经六人小组表决（≥4票），适合大额/高风险业务</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">必经总行行长决策</label>
@@ -944,14 +948,17 @@
                 <option value="N">否</option>
                 <option value="Y">是</option>
               </select>
+              <div class="form-field__tip">凡上会申请必经行长决策（全局强制）；此开关用于给权限内终审业务额外增加行长环节</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">优先级(低值优先)</label>
+              <label class="form-field__label">优先级（低值优先）</label>
               <input class="form-input" v-model="routeDialog.form.priority" type="number" />
+              <div class="form-field__tip">多条生效链路并存时数值小者优先，一般填 0</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">生效日</label>
               <input class="form-input" v-model="routeDialog.form.effectiveDate" type="datetime-local" />
+              <div class="form-field__tip">链路生效时间，不填则保存后立即生效</div>
             </div>
             <div class="form-field" style="grid-column: span 2">
               <label class="form-field__label">备注</label>
@@ -959,16 +966,17 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">上会条件 JSON 构建器(命中即上会,可留空=无条件)</div>
+          <div class="sub-title" style="margin-top:14px">上会条件（选填）——满足条件时该申请必经六人小组表决</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">金额档</label>
+              <label class="form-field__label">定档金额档</label>
               <select class="form-select" v-model="routeDialog.form.voteAmountTier" @change="syncVoteCondition">
                 <option value="">不限</option>
                 <option value="LT_1000">&lt;1000万</option>
                 <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
                 <option value="GE_5000">≥5000万</option>
               </select>
+              <div class="form-field__tip">申请定档金额所在档位（集团按集团总授信，其他按总授信额度）；大额业务一般需上会</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">企业类型</label>
@@ -977,19 +985,25 @@
                 <option value="SOE">国企</option>
                 <option value="NON_SOE">非国企</option>
               </select>
+              <div class="form-field__tip">仅该企业类型触发上会，其余按权限内终审</div>
             </div>
           </div>
           <div class="form-field" style="margin-top:10px">
-            <label class="form-field__label">上会条件 JSON</label>
-            <textarea class="form-input" v-model="routeDialog.form.voteCondition" rows="3" placeholder='{"amount_tier":"GE_5000","enterprise_type":"SOE"}'></textarea>
+            <label class="form-field__label">当前条件（中文预览）</label>
+            <div class="section-tip">{{ voteConditionText(routeDialog.form.voteCondition) }}</div>
+          </div>
+          <div class="form-field" style="margin-top:10px">
+            <label class="form-field__label">底层 JSON（无需手改，构建器自动生成）</label>
+            <textarea class="form-input" v-model="routeDialog.form.voteCondition" rows="2" placeholder='{"amount_tier":"GE_5000","enterprise_type":"SOE"}'></textarea>
           </div>
           <div style="display:flex;justify-content:flex-end;margin-top:6px">
             <button class="btn btn--secondary" @click="parseVoteCondition">从 JSON 回填构建器</button>
           </div>
-          <div class="section-tip" style="margin-top:8px">路由引擎读取 vote_condition:金额档按集团批复总额度/申请金额定档(§B18),企业类型取 SOE/NON_SOE;JSON 解析失败按不命中处理。</div>
+          <div class="section-tip" style="margin-top:8px">未配置链路时自动按默认链路运行：对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置。路由引擎读取 vote_condition：金额档按集团批复总额度/申请金额定档（§B18），企业类型取 SOE/NON_SOE；JSON 解析失败按不命中处理。</div>
         </div>
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="routeDialog.show = false">取消</button>
+          <button class="btn btn--secondary" @click="openRoutePreview">预览实际链路</button>
           <button class="btn btn--primary" @click="saveRoute">保存草稿</button>
         </div>
       </div>
@@ -1017,6 +1031,7 @@
       <div class="modal__card modal__card--wide">
         <div class="modal__title">模拟路由:{{ routeSimDialog.productCode }}</div>
         <div class="modal__body">
+          <div class="section-tip" style="margin-bottom:10px">预览基于当前已生效链路；产品未配置链路时按默认链路运行（对公贷款=链式逐级、存款/保证金=直接上会）。填好金额与利率后点「试算」查看实际审批走向。</div>
           <div class="trial-form">
             <div class="form-field">
               <label class="form-field__label">存量/新增 <span class="req">*</span></label>
@@ -2007,6 +2022,12 @@ function onRouteProductChange() {
   const p = enabledProducts.value.find((x) => x.productCode === routeDialog.form.productCode)
   routeDialog.form.businessBigTypeText = p ? (p.businessBigType === 'LOAN' ? '贷款' : '存款') : ''
   routeDialog.form.businessBigType = p?.businessBigType || ''
+  // 需求四:按业务大类自动预填默认——贷款=链式逐级、起始支行行长;存款/保证金=直接上会
+  const isDeposit = p?.businessBigType === 'DEPOSIT'
+  routeDialog.form.routeMode = isDeposit ? 'DIRECT_VOTE' : 'CHAINED'
+  routeDialog.form.startNodeCode = isDeposit ? '' : 'BRANCH_MANAGER'
+  routeDialog.form.mandatoryVote = 'N'
+  routeDialog.form.presidentDecision = 'N'
 }
 function syncVoteCondition() {
   const f = routeDialog.form
@@ -2014,6 +2035,25 @@ function syncVoteCondition() {
   if (f.voteAmountTier) cond.amount_tier = f.voteAmountTier
   if (f.voteEnterpriseType) cond.enterprise_type = f.voteEnterpriseType
   f.voteCondition = Object.keys(cond).length ? JSON.stringify(cond) : ''
+}
+// 需求四:保存前预览实际链路——按当前表单产品打开模拟路由,展示生效/默认链路的实际走向
+function openRoutePreview() {
+  const f = routeDialog.form
+  if (!f.productCode) {
+    ElMessage.warning('请先选择产品')
+    return
+  }
+  routeSimDialog.productCode = f.productCode
+  routeSimDialog.newOrExisting = 'NEW'
+  routeSimDialog.customerType = ''
+  routeSimDialog.guaranteeType = ''
+  routeSimDialog.amount = ''
+  routeSimDialog.termValue = ''
+  routeSimDialog.termUnit = 'YEAR'
+  routeSimDialog.requestedRate = ''
+  routeSimDialog.originalRate = ''
+  routeSimResult.value = null
+  routeSimDialog.show = true
 }
 function parseVoteCondition() {
   const f = routeDialog.form
@@ -2389,4 +2429,5 @@ onMounted(() => {
 .modal__card { max-width: 720px; width: 92vw; }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.form-field__tip { font-size: 12px; color: var(--color-text-light, #909399); margin-top: 4px; line-height: 1.5; }
 </style>
