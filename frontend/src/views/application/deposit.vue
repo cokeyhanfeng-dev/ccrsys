@@ -2,12 +2,6 @@
   <div>
     <div class="section-head">
       <div class="section-title">存款利率提升申请</div>
-      <InfoTip content="存款申请必须经过支行行长节点;贷款控制最低利率、存款控制最高利率,比较方向相反(存款越高越优惠)。" />
-    </div>
-
-    <!-- 规则来源提示(§12.4⑦) -->
-    <div class="rule-notice">
-      规则来源:本页审批路径、权限矩阵与产品利率上限依据《关于调整经营性贷款利率审批流程的议案》配置;规则调整经规则版本发布生效后自动适用于新申请。
     </div>
 
     <!-- 关联重提/草稿提示 -->
@@ -21,7 +15,6 @@
     <div class="form-card">
       <div class="form-card__title">
         客户信息
-        <InfoTip content="客户基本信息由数仓统一提供,按客户姓名模糊查询带出后只读展示。" />
       </div>
       <div class="form-grid">
         <div class="form-field">
@@ -55,65 +48,14 @@
         <!-- 对公字段(数仓带出,只读) -->
         <template v-if="form.customerScope !== 'INDIVIDUAL'">
           <div class="form-field">
-            <label class="form-field__label">企业性质</label>
-            <select class="form-select" v-model="form.customerType">
-              <option value="NON_SOE">非国企</option>
-              <option value="SOE">国企</option>
-            </select>
-          </div>
-          <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">五级分类</label>
-            <select class="form-select" v-model="form.fiveLevelClass">
-              <option value="">请选择</option>
-              <option v-for="f in FIVE_LEVEL_OPTIONS" :key="f.code" :value="f.code">{{ f.name }}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">内部信用等级</label>
-            <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">基本户账户</label>
-            <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
+            <label class="form-field__label">所属行业</label>
+            <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
           </div>
         </template>
-        <!-- 对私字段(数仓带出,只读) -->
-        <template v-else>
-          <div class="form-field">
-            <label class="form-field__label">证件类型</label>
-            <input class="form-input" :value="certTypeText(form.idType)" placeholder="数仓带出" readonly />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">证件号码</label>
-            <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">职业</label>
-            <input class="form-input" v-model="form.occupation" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">联系电话</label>
-            <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
-          </div>
-        </template>
-        <div class="form-field">
-          <label class="form-field__label">开户机构</label>
-          <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
-            <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
-          </el-select>
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">开户日期</label>
-          <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">申请机构</label>
-          <input class="form-input" :value="applyOrgText" disabled />
-        </div>
       </div>
     </div>
 
@@ -122,8 +64,6 @@
     <div class="form-card">
       <div class="form-card__title">
         存款分项
-        <span class="badge badge--warning">存款利率越高越优惠</span>
-        <InfoTip>每条分项按“产品/期限/金额/申请利率/账号”结构化提交;存量调价输入存款账号后自动反查数仓,命中即带出产品/期限/当前执行利率,未命中可手工完善;未开户业务选拟开户方案。</InfoTip>
       </div>
       <!-- 每分项一张卡片(字段带标签分行分块,避免多列横向滚动导致关键字段看不见;提交结构不变) -->
       <div v-for="(d, i) in items" :key="i" class="mortgage-item deposit-item">
@@ -359,7 +299,7 @@ const form = reactive({
   customerNature: '', // 客户性质由数仓 customerClass 自动判定(存量/新增),不允许手选
   customerType: 'NON_SOE',
   // 对公(数仓带出,只读)
-  ucrCode: '', fiveLevelClass: '', creditLevel: '', basicAccount: '',
+  ucrCode: '', fiveLevelClass: '', creditLevel: '', industry: '', basicAccount: '',
   // 对私(数仓带出,只读)
   idType: '', idNo: '', occupation: '', phone: '',
   openOrg: '', openDate: '',
@@ -489,6 +429,7 @@ async function loadCustomerDetail() {
     form.ucrCode = basic.certNo || ''
     form.fiveLevelClass = normalizeFiveLevelClass(basic.fiveLevelClass || '')
     form.creditLevel = basic.creditLevel || ''
+    form.industry = basic.industry || ''
     form.openOrg = basic.openOrgName || ''
     form.openDate = basic.openDate || ''
     form.basicAccount = basic.basicAccount || form.basicAccount
@@ -620,6 +561,7 @@ function buildPayload(): ApplicationPayload {
       ucrCode: form.ucrCode,
       fiveLevelClass: form.fiveLevelClass,
       creditLevel: form.creditLevel,
+      industry: form.industry,
       idType: form.idType,
       idNo: form.idNo,
       occupation: form.occupation,
@@ -751,6 +693,7 @@ async function loadDraftIntoForm(id: number | string) {
   let custInfo: any = null
   try { custInfo = app.customerInfoJson ? JSON.parse(app.customerInfoJson) : null } catch { custInfo = null }
   if (custInfo?.customerName) form.customerName = custInfo.customerName
+  form.industry = custInfo?.industry || ''
   form.basicAccount = custInfo?.basicAccount || ''
   if (app.customerNo) {
     await loadCustomerDetail()

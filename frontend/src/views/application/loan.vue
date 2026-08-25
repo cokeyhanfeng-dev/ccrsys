@@ -2,12 +2,6 @@
   <div class="wizard-page">
     <div class="section-head">
       <div class="section-title">贷款利率申请</div>
-      <InfoTip content="分步录入客户、融资情况、利率申请、贡献承诺与材料附件;系统按权限矩阵自动识别审批路径,所有申请必经支行行长首节点(§7.1/§14.1)。" />
-    </div>
-
-    <!-- 规则来源提示(§12.4⑦) -->
-    <div class="rule-notice">
-      规则来源:本页审批路径、权限矩阵与利率边界依据《关于调整经营性贷款利率审批流程的议案》配置;规则调整经规则版本发布生效后自动适用于新申请。
     </div>
 
     <!-- 步骤条(§14.1) -->
@@ -35,7 +29,6 @@
     <div v-show="step === 0" class="form-card">
       <div class="form-card__title">
         客户信息
-        <InfoTip content="客户基本信息由数仓统一提供(caps_corp/indv_cust_basic_info),带出后只读展示;集团客户输入集团号查询数仓集团快照。" />
       </div>
       <div class="form-grid">
         <div class="form-field">
@@ -93,7 +86,6 @@
         <div v-if="isNewGroup" class="form-card group-supplement" style="margin-top:12px">
           <div class="form-card__title">
             新增集团补录 <span class="badge badge--warning">数仓未收录</span>
-            <InfoTip content="数仓未收录该集团,按新集团对待:补录集团基本信息(与对公客户一致),授信以本次申请额度(成员申请金额合计)为准。" />
           </div>
           <div class="form-grid">
             <div class="form-field">
@@ -200,7 +192,6 @@
         <div v-if="showSupplementMember" class="form-card" style="margin-top:12px">
           <div class="form-card__title">
             手工成员补录 <span class="badge badge--warning">数仓未收录</span>
-            <InfoTip content="补录成员信息与对公客户申请要求一致(客户号/名称/统一社会信用代码/五级分类/信用等级/行业/注册资本/开户机构/开户日期/基本账户);成员授信不做补录,授信集团级在申请额度补录。" />
           </div>
           <div v-for="(m, i) in supplementMembers" :key="i" class="form-grid" style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:var(--radius);padding:10px 14px">
             <div class="form-field">
@@ -436,13 +427,6 @@
     <div v-show="step === 2" class="form-card">
       <div class="form-card__title">
         利率申请
-        <span class="badge badge--info">逐担保方式独立路由/表决</span>
-        <span class="badge badge--warning">贷款利率越低越优惠</span>
-        <InfoTip>
-          <template v-if="form.businessType === 'EXISTING'">存量调息:请先选择本次申请对应的授信协议,再按协议额度手工录入各担保分项及利率内容(每份协议独立申请,不可合并)。</template>
-          <template v-else>新增授信:尚无授信担保拆分项,按担保方式手工切分授信额度。</template>
-          集团场景按“成员 × 担保项”生成分项;申请利率不限,任何利率均可提交审批(产品硬边界仅作展示,不再限制)。
-        </InfoTip>
       </div>
 
       <!-- 授信概览:业务类型 + 授信额度/拆分合计(存量/新增/GROUP 项按列对齐);GROUP 追加集团批复/可用 -->
@@ -701,7 +685,6 @@
       <div class="form-card__title">
         贡献承诺
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
-        <InfoTip content="下拉选择承诺指标,参照数仓当前贡献度录入基线与拟达成目标;承诺随申请提交(commitments),审批通过后生成正式承诺计划跟踪。" />
       </div>
 
       <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
@@ -738,8 +721,7 @@
             <div class="form-field">
               <label class="form-field__label">拟达成目标 <span class="req">*</span></label>
               <template v-if="c.metricCode === 'OTHER'">
-                <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本,§6.4)" />
-                <div class="section-tip" style="color:var(--color-warning);margin-top:4px">手工描述跟踪,无数值达成率,不参与机构达成率</div>
+                <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本)" />
               </template>
               <input v-else class="form-input form-input--amount" v-model="c.targetValue" type="number" min="0" step="0.0001" />
             </div>
@@ -819,7 +801,6 @@
     <div v-show="step === 5" class="form-card">
       <div class="form-card__title">
         提交预览
-        <InfoTip content="提交前先生成/保存草稿,再逐分项预览审批路由;正式提交需通过数据批次差异与质量预校验确认(§7.1 步骤9-11)。" />
       </div>
       <div class="form-field form-field--stack">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
