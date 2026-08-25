@@ -615,7 +615,7 @@
           </div>
           <div class="form-field" v-if="form.businessType === 'EXISTING'">
             <label class="form-field__label">原利率(%)</label>
-            <input class="form-input form-input--amount" v-model="g.originalRate" disabled placeholder="合同带出" />
+            <input class="form-input form-input--amount" v-model="g.originalRate" placeholder="数仓带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
