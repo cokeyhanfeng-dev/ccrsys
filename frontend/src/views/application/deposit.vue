@@ -140,7 +140,7 @@
               <option value="PLANNED">拟开户方案</option>
             </select>
           </div>
-          <div class="form-field" style="grid-column: span 4">
+          <div class="form-field" style="grid-column: span 2">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
               <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
@@ -189,7 +189,7 @@
             <label class="form-field__label">当前执行利率(%)</label>
             <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
           </div>
-          <div class="form-field" style="grid-column: span 4">
+          <div class="form-field" style="grid-column: span 2">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
             <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
@@ -722,20 +722,36 @@ async function loadDraftIntoForm(id: number | string) {
   box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
-.section-head { margin-bottom: 12px; }
+.section-head { margin-bottom: 10px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
+/* 表单字段横向布局:label 文字与输入框同行(字段高度减半,页面整体紧凑) */
+.form-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.form-field__label { margin-bottom: 0; white-space: nowrap; flex-shrink: 0; }
+.form-field > .form-input,
+.form-field > .form-select,
+.form-field > .el-select,
+.form-field > .el-autocomplete,
+.form-field > div:not(.section-tip):not(.limit-hint) { flex: 1; min-width: 0; }
+/* 反查提示/标准上限说明换行占满字段宽,置于输入框下方 */
+.form-field > .section-tip,
+.form-field > .limit-hint { flex-basis: 100%; }
 /* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
   border: none;
   border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-/* 4 列网格:文本框随列收窄(原 3 列时客户名称等占 2/3 行宽偏大) */
-.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 12px; }
+.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+/* 4 列网格:文本框随列收窄;label 同行后列宽紧凑,跨列字段降至 span 2 */
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 10px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
@@ -759,7 +775,7 @@ async function loadDraftIntoForm(id: number | string) {
   font-size: 12px; font-weight: 500;
 }
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
-.deposit-item { margin-bottom: 12px; }
+.deposit-item { margin-bottom: 10px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
 /* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
 @media (max-width: 1100px) {

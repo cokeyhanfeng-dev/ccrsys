@@ -75,7 +75,7 @@
       <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 申请额度 + 有效成员列表(数仓带出/手工补录) -->
       <template v-if="form.customerScope === 'GROUP'">
         <div class="form-grid">
-          <div class="form-field" style="grid-column: span 3">
+          <div class="form-field" style="grid-column: span 2">
             <label class="form-field__label">集团客户 <span class="req">*</span></label>
             <el-autocomplete
               v-model="form.groupNo"
@@ -2485,23 +2485,39 @@ async function loadDraftIntoForm(id: number | string) {
   box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
-.section-head { margin-bottom: 12px; }
+.section-head { margin-bottom: 10px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
+/* 表单字段横向布局:label 文字与输入框同行(字段高度减半,页面整体紧凑) */
+.form-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.form-field__label { margin-bottom: 0; white-space: nowrap; flex-shrink: 0; }
+.form-field > .form-input,
+.form-field > .form-select,
+.form-field > .el-select,
+.form-field > .el-autocomplete,
+.form-field > div:not(.section-tip):not(.limit-hint) { flex: 1; min-width: 0; }
+/* 反查提示/标准上限说明换行占满字段宽,置于输入框下方 */
+.form-field > .section-tip,
+.form-field > .limit-hint { flex-basis: 100%; }
 /* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
   border: none;
   border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-/* 4 列网格:文本框随列收窄(原 3 列时客户名称等占 2/3 行宽偏大) */
-.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 12px; }
+.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+/* 4 列网格:文本框随列收窄;label 同行后列宽紧凑,跨列字段降至 span 2 */
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 10px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .table--nested { margin-top: 8px; }
-.guarantee-item { margin-bottom: 12px; }
+.guarantee-item { margin-bottom: 10px; }
 .guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
 .guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
 
@@ -2510,7 +2526,7 @@ async function loadDraftIntoForm(id: number | string) {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 8px 12px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: 10px 14px; margin-bottom: 12px;
+  padding: 8px 12px; margin-bottom: 10px;
 }
 .credit-overview__item {
   font-size: 13px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
@@ -2545,7 +2561,7 @@ async function loadDraftIntoForm(id: number | string) {
 .commitment-list { display: flex; flex-direction: column; gap: 12px; }
 .commitment-card {
   border: none; border-radius: var(--radius-sm);
-  padding: 12px 14px; background: var(--color-surface);
+  padding: 10px 12px; background: var(--color-surface);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .commitment-card__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -2560,13 +2576,13 @@ async function loadDraftIntoForm(id: number | string) {
   border: none;
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .wizard-stepper .stepper__step { cursor: pointer; }
 .wizard-actions {
   display: flex; justify-content: space-between; align-items: center;
-  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--color-border);
+  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-border);
 }
 
 /* 草稿横幅 */
@@ -2583,7 +2599,7 @@ async function loadDraftIntoForm(id: number | string) {
 .group-summary {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: 10px 14px; margin-bottom: 4px;
+  padding: 8px 12px; margin-bottom: 4px;
 }
 .group-summary__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
 .group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
@@ -2597,7 +2613,7 @@ async function loadDraftIntoForm(id: number | string) {
 }
 
 /* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
-.mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 10px 12px !important; }
+.mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 .credit-overview__item--full { grid-column: 1 / -1; }
