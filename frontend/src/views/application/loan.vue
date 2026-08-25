@@ -2485,6 +2485,9 @@ async function loadDraftIntoForm(id: number | string) {
 /* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
 .form-field > .section-tip,
 .form-field > .limit-hint { grid-column: 2; }
+/* 涉及成员整块(标题行+成员表格)跨满两列,避免被 2 列 form-field 网格挤入 108px 窄列导致显示不全(§2026-08-25) */
+.form-field > .member-head,
+.form-field > table.table { grid-column: 1 / -1; }
 /* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
 .form-field--stack { display: block; }
 .form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
