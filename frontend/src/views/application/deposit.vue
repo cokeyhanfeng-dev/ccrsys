@@ -108,7 +108,7 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">开户日期</label>
-          <input class="form-input" v-model="form.openDate" placeholder="数仓带出,可修改" />
+          <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
         </div>
         <div class="form-field">
           <label class="form-field__label">申请机构</label>
@@ -166,7 +166,7 @@
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
             <div style="display:flex;gap:4px">
-              <input class="form-input form-input--amount" v-model="d.termValue" placeholder="数值" style="flex:1" />
+              <input class="form-input form-input--amount" v-model="d.termValue" type="number" min="1" step="1" placeholder="正整数" style="flex:1" />
               <select class="form-select" v-model="d.termUnit" style="width:76px">
                 <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
               </select>
@@ -174,7 +174,7 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">金额(万元) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.amount" />
+            <input class="form-input form-input--amount" v-model="d.amount" type="number" min="0" max="999999999.99" step="0.0001" />
           </div>
           <div class="form-field">
             <label class="form-field__label">币种</label>
@@ -191,7 +191,7 @@
           </div>
           <div class="form-field" style="grid-column: span 3">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.requestedRate" placeholder="高于当前执行利率" />
+            <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
             <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
             <div v-if="limitOf(d.productCode)" class="limit-hint" :class="{ 'limit-hint--exceed': exceedOf(d) }">
               标准上限 {{ limitOf(d.productCode)!.hardBoundaryRate }}%
@@ -511,8 +511,14 @@ function validateForDraft(): string | null {
     if (d.accountMode === 'EXISTING' && isBlank(d.depositAccountNo)) return `第 ${i + 1} 条存款分项为存量调价,请录入存款账号`
     if (isBlank(d.productCode)) return `第 ${i + 1} 条存款分项未选择产品`
     if (isBlank(d.termValue)) return `第 ${i + 1} 条存款分项未录入期限`
+    const tv = Number(d.termValue)
+    if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条存款分项期限须为正整数(当前 ${d.termValue})`
     if (isBlank(d.amount)) return `第 ${i + 1} 条存款分项未录入金额`
+    const amt = Number(d.amount)
+    if (!(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条存款分项金额须在 0~999999999.99 万元之间(当前 ${d.amount})`
     if (isBlank(d.requestedRate)) return `第 ${i + 1} 条存款分项未录入申请利率`
+    const rt = Number(d.requestedRate)
+    if (!(rt > 0 && rt <= 100)) return `第 ${i + 1} 条存款分项申请利率须在 0~100 之间(当前 ${d.requestedRate})`
   }
   return null
 }

@@ -1,5 +1,6 @@
 package com.ccr.approval.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
@@ -9,6 +10,7 @@ import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.service.ApprovalService;
+import com.ccr.approval.service.FlowMonitorService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.ContributionMerger;
@@ -50,6 +52,9 @@ public class ApprovalController {
     private ApprovalService approvalService;
 
     @Resource
+    private FlowMonitorService flowMonitorService;
+
+    @Resource
     private ApplicationAccessService applicationAccessService;
 
     @Resource
@@ -57,14 +62,6 @@ public class ApprovalController {
 
     @Resource
     private JdbcTemplate jdbcTemplate;
-
-    /** 节点中文名(审批进度可视化) */
-    private static final Map<String, String> NODE_LABEL = Map.of(
-            "BRANCH_MANAGER", "支行行长",
-            "DEPT_GENERAL_MANAGER", "部门总经理",
-            "VICE_PRESIDENT", "总行分管行长",
-            "SIX_PEOPLE_GROUP", "审批小组成员",
-            "PRESIDENT", "总行行长");
 
     /**
      * 审批进度(§用户要求,链路可视化):按申请聚合链路各节点流转状态,admin/申请人/审批人均可查看。
@@ -75,170 +72,22 @@ public class ApprovalController {
     @GetMapping("/progress")
     public R<Map<String, Object>> progress(@RequestParam Long applicationId) {
         applicationAccessService.requireView(applicationId);
-        List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                "SELECT id, application_no applicationNo, business_type businessType, status, submit_time submitTime"
-                        + " FROM ccr_application WHERE id = ? AND del_flag = '0'", applicationId);
-        if (apps.isEmpty()) {
-            throw new ServiceException(404, "申请不存在");
-        }
-        Map<String, Object> app = apps.get(0);
-        List<Map<String, Object>> items = jdbcTemplate.queryForList(
-                "SELECT id, pricing_item_no pricingItemNo, route_chain routeChain, current_node_code currentNodeCode, status"
-                        + " FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+        return R.ok(flowMonitorService.buildNodes(applicationId));
+    }
 
-        // 链路并集(保持冻结顺序;多分项链路不一致时取并集)
-        List<String> chain = new ArrayList<>();
-        for (Map<String, Object> it : items) {
-            Object rc = it.get("routeChain");
-            if (rc != null && StrUtil.isNotBlank(rc.toString())) {
-                for (String n : JSONUtil.parseArray(rc.toString()).toList(String.class)) {
-                    if (!chain.contains(n)) {
-                        chain.add(n);
-                    }
-                }
-            }
-        }
-        // 当前节点:任一分项流转中(ROUTING/VOTING)时取链上最靠后的 current_node_code;全终态则链路全部 DONE
-        int curIdx = -1;
-        String curNode = null;
-        boolean anyRouting = false;
-        for (Map<String, Object> it : items) {
-            if ("ROUTING".equals(it.get("status")) || "VOTING".equals(it.get("status"))) {
-                anyRouting = true;
-            }
-            String c = it.get("currentNodeCode") == null ? null : it.get("currentNodeCode").toString();
-            if (c != null) {
-                int idx = chain.indexOf(c);
-                if (idx > curIdx) {
-                    curIdx = idx;
-                    curNode = c;
-                }
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("applicationId", applicationId);
-        result.put("applicationNo", app.get("applicationNo"));
-        result.put("businessType", app.get("businessType"));
-        result.put("currentStatus", app.get("status"));
-        result.put("currentNodeCode", anyRouting ? curNode : null);
-        result.put("routeChain", chain);
-        if (items.isEmpty()) {
-            result.put("nodes", List.of());
-            return R.ok(result);
-        }
-
-        StringBuilder inSb = new StringBuilder();
-        for (Map<String, Object> it : items) {
-            if (inSb.length() > 0) {
-                inSb.append(',');
-            }
-            inSb.append(it.get("id"));
-        }
-        String in = inSb.toString();
-        // 普通节点审批动作(节点 → 最后动作操作人/时间)
-        Map<String, Map<String, Object>> lastByNode = new HashMap<>();
-        Set<String> handledNodes = new LinkedHashSet<>();
-        for (Map<String, Object> a : jdbcTemplate.queryForList(
-                "SELECT a.node_code nodeCode, a.operation_time operationTime, u.nick_name operatorName"
-                        + " FROM ccr_approval_action a LEFT JOIN ccr_sys_user u ON u.id = a.operator_id"
-                        + " WHERE a.pricing_item_id IN (" + in + ") AND a.action_type IN ('APPROVE','REJECT','VETO','ESCALATE')"
-                        + " AND a.del_flag = '0' ORDER BY a.operation_time")) {
-            lastByNode.put(String.valueOf(a.get("nodeCode")), a);
-            handledNodes.add(String.valueOf(a.get("nodeCode")));
-        }
-        // 表决节点:是否已计票 + 最新轮次(进行中:应投/已投/通过线)
-        Integer votedResultCnt = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
-                        + " WHERE pi.application_id = ? AND vr.del_flag = '0'", Integer.class, applicationId);
-        boolean voteCounted = votedResultCnt != null && votedResultCnt > 0;
-        String voteResult = null;
-        if (voteCounted) {
-            List<Map<String, Object>> vr = jdbcTemplate.queryForList(
-                    "SELECT vr.result FROM ccr_vote_result vr JOIN ccr_pricing_item pi ON pi.id = vr.pricing_item_id"
-                            + " WHERE pi.application_id = ? AND vr.del_flag = '0' ORDER BY vr.count_time DESC LIMIT 1",
-                    applicationId);
-            if (!vr.isEmpty()) {
-                voteResult = String.valueOf(vr.get(0).get("result"));
-            }
-        }
-        Map<String, Object> round = null;
-        List<Map<String, Object>> rounds = jdbcTemplate.queryForList(
-                "SELECT id, round_no roundNo, round_name roundName, status, voter_count voterCount, required_count requiredCount"
-                        + " FROM ccr_vote_round WHERE application_id = ? AND del_flag = '0' ORDER BY round_no DESC LIMIT 1",
-                applicationId);
-        if (!rounds.isEmpty()) {
-            round = rounds.get(0);
-        }
-        // 行长决策
-        Integer presCnt = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
-                        + " WHERE pi.application_id = ? AND pd.del_flag = '0'", Integer.class, applicationId);
-        boolean presidentDecided = presCnt != null && presCnt > 0;
-        String presDecision = null;
-        if (presidentDecided) {
-            List<Map<String, Object>> pd = jdbcTemplate.queryForList(
-                    "SELECT pd.decision FROM ccr_president_decision pd JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id"
-                            + " WHERE pi.application_id = ? AND pd.del_flag = '0' ORDER BY pd.decision_time DESC LIMIT 1",
-                    applicationId);
-            if (!pd.isEmpty()) {
-                presDecision = String.valueOf(pd.get(0).get("decision"));
-            }
-        }
-
-        List<Map<String, Object>> nodes = new ArrayList<>();
-        for (int i = 0; i < chain.size(); i++) {
-            String n = chain.get(i);
-            Map<String, Object> node = new LinkedHashMap<>();
-            node.put("nodeCode", n);
-            node.put("label", NODE_LABEL.getOrDefault(n, n));
-            if (RouteChains.SIX_PEOPLE_GROUP.equals(n)) {
-                if (voteCounted) {
-                    node.put("status", "DONE");
-                    node.put("result", voteResult);
-                } else if (round != null && "VOTING".equals(round.get("status"))) {
-                    node.put("status", "CURRENT");
-                    node.put("roundNo", round.get("roundNo"));
-                    node.put("roundName", round.get("roundName"));
-                    node.put("voterCount", round.get("voterCount"));
-                    node.put("requiredCount", round.get("requiredCount"));
-                    node.put("submittedCount", jdbcTemplate.queryForObject(
-                            "SELECT COUNT(*) FROM ccr_vote_assignment WHERE round_id = ? AND status = 'SUBMITTED'",
-                            Integer.class, round.get("id")));
-                    // 匿名同意票数(只给汇总,不暴露委员身份)
-                    node.put("approveCount", jdbcTemplate.queryForObject(
-                            "SELECT COUNT(*) FROM ccr_ballot WHERE round_id = ? AND vote_choice = 'APPROVE'",
-                            Integer.class, round.get("id")));
-                } else {
-                    node.put("status", i == curIdx && anyRouting ? "CURRENT" : "PENDING");
-                }
-            } else if ("PRESIDENT".equals(n)) {
-                if (presidentDecided) {
-                    node.put("status", "DONE");
-                    node.put("decision", presDecision);
-                } else if (i == curIdx && anyRouting) {
-                    node.put("status", "CURRENT");
-                } else {
-                    node.put("status", "PENDING");
-                }
-            } else if (handledNodes.contains(n)) {
-                node.put("status", "DONE");
-                Map<String, Object> last = lastByNode.get(n);
-                if (last != null) {
-                    node.put("operatorName", last.get("operatorName"));
-                    node.put("operationTime", last.get("operationTime"));
-                }
-            } else if (i == curIdx && anyRouting) {
-                node.put("status", "CURRENT");
-            } else if (i < curIdx) {
-                node.put("status", "SKIPPED");
-            } else {
-                node.put("status", "PENDING");
-            }
-            nodes.add(node);
-        }
-        result.put("nodes", nodes);
-        return R.ok(result);
+    /**
+     * 流程监控(运行监控「流程监控」tab):在途审批流程整体监控,admin 专属。
+     * 每条流程按申请聚合,展示当前走到哪一步(nodes 节点时间线)+ 为什么走当前节点(路由规则原因)。
+     */
+    @GetMapping("/flow-monitor")
+    @SaCheckRole("admin")
+    public R<Map<String, Object>> flowMonitor(@RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "10") int size,
+                                              @RequestParam(required = false) String status,
+                                              @RequestParam(required = false) String businessType,
+                                              @RequestParam(required = false) String applicationNo) {
+        return R.ok(flowMonitorService.pageFlows(Math.max(page, 1), Math.max(Math.min(size, 50), 1),
+                status, businessType, applicationNo));
     }
 
     /**
@@ -623,9 +472,9 @@ public class ApprovalController {
             Map<String, Object> manual = new LinkedHashMap<>();
             manual.put("agreementNo", ci.getStr("agreementNo"));
             manual.put("agreementType", ci.getStr("agreementType"));
-            manual.put("creditAmount", ci.get("creditAmount"));
-            manual.put("usedAmount", ci.get("usedAmount"));
-            manual.put("availableAmount", ci.get("availableAmount"));
+            manual.put("creditAmount", jsonSafe(ci.get("creditAmount")));
+            manual.put("usedAmount", jsonSafe(ci.get("usedAmount")));
+            manual.put("availableAmount", jsonSafe(ci.get("availableAmount")));
             manual.put("currency", ci.getStr("currency"));
             manual.put("startDate", ci.getStr("startDate"));
             manual.put("endDate", ci.getStr("endDate"));
@@ -906,10 +755,11 @@ public class ApprovalController {
      * allowBlank=false 时空值不覆盖(客户号/名称必填),true 时含空覆盖(清空生效,以人工填写为准)
      */
     private void overwriteCustomer(Map<String, Object> row, cn.hutool.json.JSONObject manual, String srcKey, String targetKey, boolean allowBlank) {
-        if (manual == null || !manual.containsKey(srcKey) || manual.get(srcKey) == null) {
+        Object raw = manual == null ? null : jsonSafe(manual.get(srcKey));
+        if (raw == null) {
             return;
         }
-        String v = manual.get(srcKey).toString();
+        String v = raw.toString();
         if (!allowBlank && v.isBlank()) {
             return;
         }
@@ -933,42 +783,42 @@ public class ApprovalController {
         Map<String, Object> row = new LinkedHashMap<>();
         if (corp != null) {
             // 对公客户基本信息(审批详情 §7.4/§14.2 ①,字段与实时降级口径一致)
-            row.put("customerNo", corp.get("cust_no"));
-            row.put("customerName", corp.get("cust_name"));
-            row.put("certNo", corp.get("cert_no"));
-            row.put("entpCharic", corp.get("entp_charic"));
-            row.put("entpScale", corp.get("entp_scale"));
-            row.put("industry", corp.get("blgd_idsty"));
-            row.put("creditLevel", corp.get("crdt_grd"));
-            row.put("fiveLevelClass", corp.get("ffthlv_class"));
-            row.put("empeNum", corp.get("entp_empe_num"));
-            row.put("totalAssets", corp.get("rest_asts"));
-            row.put("estbDate", corp.get("estp_estb_dt"));
-            row.put("restAddr", corp.get("rest_addr"));
-            row.put("openOrgName", corp.get("openact_org_nm"));
-            row.put("openDate", corp.get("openact_dt"));
-            row.put("customerClass", corp.get("cust_class"));
+            row.put("customerNo", jsonSafe(corp.get("cust_no")));
+            row.put("customerName", jsonSafe(corp.get("cust_name")));
+            row.put("certNo", jsonSafe(corp.get("cert_no")));
+            row.put("entpCharic", jsonSafe(corp.get("entp_charic")));
+            row.put("entpScale", jsonSafe(corp.get("entp_scale")));
+            row.put("industry", jsonSafe(corp.get("blgd_idsty")));
+            row.put("creditLevel", jsonSafe(corp.get("crdt_grd")));
+            row.put("fiveLevelClass", jsonSafe(corp.get("ffthlv_class")));
+            row.put("empeNum", jsonSafe(corp.get("entp_empe_num")));
+            row.put("totalAssets", jsonSafe(corp.get("rest_asts")));
+            row.put("estbDate", jsonSafe(corp.get("estp_estb_dt")));
+            row.put("restAddr", jsonSafe(corp.get("rest_addr")));
+            row.put("openOrgName", jsonSafe(corp.get("openact_org_nm")));
+            row.put("openDate", jsonSafe(corp.get("openact_dt")));
+            row.put("customerClass", jsonSafe(corp.get("cust_class")));
             row.put("custType", "CORP");
-            row.put("dataSource", corp.get("data_source"));
+            row.put("dataSource", jsonSafe(corp.get("data_source")));
             return List.of(row);
         }
         if (indv != null) {
             // 对私客户基本信息(证件/职业/年收入/婚姻/居住/联系电话等)
-            row.put("customerNo", indv.get("cust_no"));
-            row.put("customerName", indv.get("cust_nm"));
-            row.put("certType", indv.get("cert_tp"));
-            row.put("certNo", indv.get("cert_no"));
-            row.put("gender", indv.get("gnd"));
-            row.put("occupation", indv.get("ocupn"));
-            row.put("annualIncome", indv.get("whlyr_incm"));
-            row.put("maritalStatus", indv.get("mrrg_sittn"));
-            row.put("address", indv.get("rsd_addr"));
-            row.put("phone", indv.get("tel_no"));
-            row.put("openOrgName", indv.get("opnact_org_nm"));
-            row.put("openDate", indv.get("opnact_dt"));
-            row.put("fiveLevelClass", indv.get("ffthlv_class"));
-            row.put("customerClass", indv.get("cust_class"));
-            row.put("dataSource", indv.get("data_source"));
+            row.put("customerNo", jsonSafe(indv.get("cust_no")));
+            row.put("customerName", jsonSafe(indv.get("cust_nm")));
+            row.put("certType", jsonSafe(indv.get("cert_tp")));
+            row.put("certNo", jsonSafe(indv.get("cert_no")));
+            row.put("gender", jsonSafe(indv.get("gnd")));
+            row.put("occupation", jsonSafe(indv.get("ocupn")));
+            row.put("annualIncome", jsonSafe(indv.get("whlyr_incm")));
+            row.put("maritalStatus", jsonSafe(indv.get("mrrg_sittn")));
+            row.put("address", jsonSafe(indv.get("rsd_addr")));
+            row.put("phone", jsonSafe(indv.get("tel_no")));
+            row.put("openOrgName", jsonSafe(indv.get("opnact_org_nm")));
+            row.put("openDate", jsonSafe(indv.get("opnact_dt")));
+            row.put("fiveLevelClass", jsonSafe(indv.get("ffthlv_class")));
+            row.put("customerClass", jsonSafe(indv.get("cust_class")));
+            row.put("dataSource", jsonSafe(indv.get("data_source")));
             row.put("custType", "INDIV");
             return List.of(row);
         }
@@ -1041,10 +891,10 @@ public class ApprovalController {
                     continue;
                 }
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("metricCode", metric.get("metric_code"));
-                row.put("metricName", metric.get("metric_name"));
-                row.put("metricValue", metric.get("metric_value"));
-                row.put("valueType", metric.get("value_type"));
+                row.put("metricCode", jsonSafe(metric.get("metric_code")));
+                row.put("metricName", jsonSafe(metric.get("metric_name")));
+                row.put("metricValue", jsonSafe(metric.get("metric_value")));
+                row.put("valueType", jsonSafe(metric.get("value_type")));
                 rows.add(row);
             }
             return rows;
@@ -1108,10 +958,10 @@ public class ApprovalController {
                 continue;
             }
             Map<String, Object> core = coreOf(record);
-            groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
-            groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
-            groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
-            groupStateOwned = core.get("state_owned_flag") == null ? null : String.valueOf(core.get("state_owned_flag"));
+            groupName = jsonSafe(core.get("group_name")) == null ? null : String.valueOf(core.get("group_name"));
+            groupType = jsonSafe(core.get("group_type")) == null ? null : String.valueOf(core.get("group_type"));
+            groupStatus = jsonSafe(core.get("group_status")) == null ? null : String.valueOf(core.get("group_status"));
+            groupStateOwned = jsonSafe(core.get("state_owned_flag")) == null ? null : String.valueOf(core.get("state_owned_flag"));
             break;
         }
         if (groupName == null) {
@@ -1150,12 +1000,12 @@ public class ApprovalController {
             row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
             row.put("creditLevel", gi.getStr("creditLevel"));
             row.put("industry", gi.getStr("industry"));
-            row.put("registeredCapital", gi.get("registeredCapital"));
+            row.put("registeredCapital", jsonSafe(gi.get("registeredCapital")));
             row.put("openOrgName", gi.getStr("openOrg"));
             row.put("openDate", gi.getStr("openDate"));
             row.put("basicAccount", gi.getStr("basicAccount"));
             row.put("currency", gi.getStr("currency"));
-            row.put("applyAmount", gi.get("applyAmount"));
+            row.put("applyAmount", jsonSafe(gi.get("applyAmount")));
         }
         row.put("groupNo", groupNo);
         row.put("groupName", groupName);
@@ -1181,11 +1031,11 @@ public class ApprovalController {
             String no = sid.toString();
             Map<String, Object> core = coreOf(record);
             if ("CORPORATE".equals(record.get("subjectType"))) {
-                if (core.get("cust_name") != null) {
+                if (jsonSafe(core.get("cust_name")) != null) {
                     nameByNo.putIfAbsent(no, String.valueOf(core.get("cust_name")));
                 }
                 corpCoreByNo.putIfAbsent(no, core);
-            } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
+            } else if ("MEMBER".equals(record.get("subjectType")) && jsonSafe(core.get("member_name")) != null) {
                 nameByNo.putIfAbsent(no, String.valueOf(core.get("member_name")));
             }
         }
@@ -1238,20 +1088,20 @@ public class ApprovalController {
 
     /** 数仓成员对公要素(快照 CORPORATE core_json)映射到前端对公模板键;epoch 毫秒日期统一归一 */
     private void applyCorpMember(Map<String, Object> member, Map<String, Object> core) {
-        member.put("certNo", core.get("cert_no"));
-        member.put("certType", core.get("cert_tp"));
-        member.put("fiveLevelClass", core.get("ffthlv_class"));
-        member.put("creditLevel", core.get("crdt_grd"));
-        member.put("industry", core.get("blgd_idsty"));
-        member.put("registeredCapital", core.get("reg_cap"));
-        member.put("openOrgName", core.get("openact_org_nm"));
-        member.put("openDate", snapshotDate(core.get("openact_dt")));
-        member.put("basicAccount", core.get("basic_account_no"));
-        member.put("customerClass", core.get("cust_class"));
-        member.put("empeNum", core.get("entp_empe_num"));
-        member.put("estbDate", snapshotDate(core.get("estp_estb_dt")));
-        member.put("totalAssets", core.get("rest_asts"));
-        member.put("restAddr", core.get("rest_addr"));
+        member.put("certNo", jsonSafe(core.get("cert_no")));
+        member.put("certType", jsonSafe(core.get("cert_tp")));
+        member.put("fiveLevelClass", jsonSafe(core.get("ffthlv_class")));
+        member.put("creditLevel", jsonSafe(core.get("crdt_grd")));
+        member.put("industry", jsonSafe(core.get("blgd_idsty")));
+        member.put("registeredCapital", jsonSafe(core.get("reg_cap")));
+        member.put("openOrgName", jsonSafe(core.get("openact_org_nm")));
+        member.put("openDate", snapshotDate(jsonSafe(core.get("openact_dt"))));
+        member.put("basicAccount", jsonSafe(core.get("basic_account_no")));
+        member.put("customerClass", jsonSafe(core.get("cust_class")));
+        member.put("empeNum", jsonSafe(core.get("entp_empe_num")));
+        member.put("estbDate", snapshotDate(jsonSafe(core.get("estp_estb_dt"))));
+        member.put("totalAssets", jsonSafe(core.get("rest_asts")));
+        member.put("restAddr", jsonSafe(core.get("rest_addr")));
     }
 
     /** 快照日期归一:数仓 DATE 列被快照冻结为 epoch 毫秒(数字或13位数字串),统一转 yyyy-MM-dd;字符串原样返回 */
@@ -1276,7 +1126,7 @@ public class ApprovalController {
         member.put("fiveLevelClass", m.getStr("fiveLevelClass"));
         member.put("creditLevel", m.getStr("creditLevel"));
         member.put("industry", m.getStr("industry"));
-        member.put("registeredCapital", m.get("registeredCapital"));
+        member.put("registeredCapital", jsonSafe(m.get("registeredCapital")));
         member.put("openOrgName", m.getStr("openOrg"));
         member.put("openDate", m.getStr("openDate"));
         member.put("basicAccount", m.getStr("basicAccount"));

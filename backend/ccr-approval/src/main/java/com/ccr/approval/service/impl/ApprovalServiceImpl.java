@@ -939,43 +939,43 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         Map<String, Object> row = new LinkedHashMap<>();
         if (corp != null) {
-            row.put("customerNo", corp.get("cust_no"));
-            row.put("customerName", corp.get("cust_name"));
-            row.put("certNo", corp.get("cert_no"));
-            row.put("entpCharic", corp.get("entp_charic"));
-            row.put("entpScale", corp.get("entp_scale"));
-            row.put("industry", corp.get("blgd_idsty"));
-            row.put("creditLevel", corp.get("crdt_grd"));
-            row.put("fiveLevelClass", corp.get("ffthlv_class"));
-            row.put("empeNum", corp.get("entp_empe_num"));
-            row.put("totalAssets", corp.get("rest_asts"));
-            row.put("registeredCapital", corp.get("reg_cap"));
-            row.put("estbDate", snapshotDate(corp.get("estp_estb_dt")));
-            row.put("restAddr", corp.get("rest_addr"));
-            row.put("openOrgName", corp.get("openact_org_nm"));
-            row.put("openDate", corp.get("openact_dt"));
-            row.put("customerClass", corp.get("cust_class"));
+            row.put("customerNo", jsonSafe(corp.get("cust_no")));
+            row.put("customerName", jsonSafe(corp.get("cust_name")));
+            row.put("certNo", jsonSafe(corp.get("cert_no")));
+            row.put("entpCharic", jsonSafe(corp.get("entp_charic")));
+            row.put("entpScale", jsonSafe(corp.get("entp_scale")));
+            row.put("industry", jsonSafe(corp.get("blgd_idsty")));
+            row.put("creditLevel", jsonSafe(corp.get("crdt_grd")));
+            row.put("fiveLevelClass", jsonSafe(corp.get("ffthlv_class")));
+            row.put("empeNum", jsonSafe(corp.get("entp_empe_num")));
+            row.put("totalAssets", jsonSafe(corp.get("rest_asts")));
+            row.put("registeredCapital", jsonSafe(corp.get("reg_cap")));
+            row.put("estbDate", snapshotDate(jsonSafe(corp.get("estp_estb_dt"))));
+            row.put("restAddr", jsonSafe(corp.get("rest_addr")));
+            row.put("openOrgName", jsonSafe(corp.get("openact_org_nm")));
+            row.put("openDate", jsonSafe(corp.get("openact_dt")));
+            row.put("customerClass", jsonSafe(corp.get("cust_class")));
             row.put("custType", "CORP");
-            row.put("dataSource", corp.get("data_source"));
+            row.put("dataSource", jsonSafe(corp.get("data_source")));
             return List.of(row);
         }
         if (indv != null) {
-            row.put("customerNo", indv.get("cust_no"));
-            row.put("customerName", indv.get("cust_nm"));
-            row.put("certType", indv.get("cert_tp"));
-            row.put("certNo", indv.get("cert_no"));
-            row.put("gender", indv.get("gnd"));
-            row.put("occupation", indv.get("ocupn"));
-            row.put("annualIncome", indv.get("whlyr_incm"));
-            row.put("maritalStatus", indv.get("mrrg_sittn"));
-            row.put("address", indv.get("rsd_addr"));
-            row.put("phone", indv.get("tel_no"));
-            row.put("openOrgName", indv.get("opnact_org_nm"));
-            row.put("openDate", indv.get("opnact_dt"));
-            row.put("fiveLevelClass", indv.get("ffthlv_class"));
-            row.put("customerClass", indv.get("cust_class"));
+            row.put("customerNo", jsonSafe(indv.get("cust_no")));
+            row.put("customerName", jsonSafe(indv.get("cust_nm")));
+            row.put("certType", jsonSafe(indv.get("cert_tp")));
+            row.put("certNo", jsonSafe(indv.get("cert_no")));
+            row.put("gender", jsonSafe(indv.get("gnd")));
+            row.put("occupation", jsonSafe(indv.get("ocupn")));
+            row.put("annualIncome", jsonSafe(indv.get("whlyr_incm")));
+            row.put("maritalStatus", jsonSafe(indv.get("mrrg_sittn")));
+            row.put("address", jsonSafe(indv.get("rsd_addr")));
+            row.put("phone", jsonSafe(indv.get("tel_no")));
+            row.put("openOrgName", jsonSafe(indv.get("opnact_org_nm")));
+            row.put("openDate", jsonSafe(indv.get("opnact_dt")));
+            row.put("fiveLevelClass", jsonSafe(indv.get("ffthlv_class")));
+            row.put("customerClass", jsonSafe(indv.get("cust_class")));
             row.put("custType", "INDIV");
-            row.put("dataSource", indv.get("data_source"));
+            row.put("dataSource", jsonSafe(indv.get("data_source")));
             return List.of(row);
         }
         return List.of();
@@ -1056,10 +1056,10 @@ public class ApprovalServiceImpl implements ApprovalService {
                     continue;
                 }
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("metricCode", metric.get("metric_code"));
-                row.put("metricName", metric.get("metric_name"));
-                row.put("metricValue", metric.get("metric_value"));
-                row.put("valueType", metric.get("value_type"));
+                row.put("metricCode", jsonSafe(metric.get("metric_code")));
+                row.put("metricName", jsonSafe(metric.get("metric_name")));
+                row.put("metricValue", jsonSafe(metric.get("metric_value")));
+                row.put("valueType", jsonSafe(metric.get("value_type")));
                 rows.add(row);
             }
             return rows;
@@ -1094,9 +1094,9 @@ public class ApprovalServiceImpl implements ApprovalService {
                 continue;
             }
             Map<String, Object> core = coreOf(record);
-            groupName = core.get("group_name") == null ? null : String.valueOf(core.get("group_name"));
-            groupType = core.get("group_type") == null ? null : String.valueOf(core.get("group_type"));
-            groupStatus = core.get("group_status") == null ? null : String.valueOf(core.get("group_status"));
+            groupName = jsonSafe(core.get("group_name")) == null ? null : String.valueOf(core.get("group_name"));
+            groupType = jsonSafe(core.get("group_type")) == null ? null : String.valueOf(core.get("group_type"));
+            groupStatus = jsonSafe(core.get("group_status")) == null ? null : String.valueOf(core.get("group_status"));
             break;
         }
         if (groupName == null) {
@@ -1131,12 +1131,12 @@ public class ApprovalServiceImpl implements ApprovalService {
             row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
             row.put("creditLevel", gi.getStr("creditLevel"));
             row.put("industry", gi.getStr("industry"));
-            row.put("registeredCapital", gi.get("registeredCapital"));
+            row.put("registeredCapital", jsonSafe(gi.get("registeredCapital")));
             row.put("openOrgName", gi.getStr("openOrg"));
             row.put("openDate", gi.getStr("openDate"));
             row.put("basicAccount", gi.getStr("basicAccount"));
             row.put("currency", gi.getStr("currency"));
-            row.put("applyAmount", gi.get("applyAmount"));
+            row.put("applyAmount", jsonSafe(gi.get("applyAmount")));
         }
         row.put("groupNo", groupNo);
         row.put("groupName", groupName);
@@ -1168,11 +1168,11 @@ public class ApprovalServiceImpl implements ApprovalService {
                 String no = sid.toString();
                 Map<String, Object> core = coreOf(record);
                 if ("CORPORATE".equals(record.get("subjectType"))) {
-                    if (core.get("cust_name") != null) {
+                    if (jsonSafe(core.get("cust_name")) != null) {
                         nameByNo.putIfAbsent(no, String.valueOf(core.get("cust_name")));
                     }
                     corpCoreByNo.putIfAbsent(no, core);
-                } else if ("MEMBER".equals(record.get("subjectType")) && core.get("member_name") != null) {
+                } else if ("MEMBER".equals(record.get("subjectType")) && jsonSafe(core.get("member_name")) != null) {
                     nameByNo.putIfAbsent(no, String.valueOf(core.get("member_name")));
                 }
             }
@@ -1230,20 +1230,20 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /** 数仓成员对公要素(快照 CORPORATE core_json)映射到前端对公模板键 */
     private void applyCorpMember(Map<String, Object> member, Map<String, Object> core) {
-        member.put("certNo", core.get("cert_no"));
-        member.put("certType", core.get("cert_tp"));
-        member.put("fiveLevelClass", core.get("ffthlv_class"));
-        member.put("creditLevel", core.get("crdt_grd"));
-        member.put("industry", core.get("blgd_idsty"));
-        member.put("registeredCapital", core.get("reg_cap"));
-        member.put("openOrgName", core.get("openact_org_nm"));
-        member.put("openDate", snapshotDate(core.get("openact_dt")));
-        member.put("basicAccount", core.get("basic_account_no"));
-        member.put("customerClass", core.get("cust_class"));
-        member.put("empeNum", core.get("entp_empe_num"));
-        member.put("estbDate", snapshotDate(core.get("estp_estb_dt")));
-        member.put("totalAssets", core.get("rest_asts"));
-        member.put("restAddr", core.get("rest_addr"));
+        member.put("certNo", jsonSafe(core.get("cert_no")));
+        member.put("certType", jsonSafe(core.get("cert_tp")));
+        member.put("fiveLevelClass", jsonSafe(core.get("ffthlv_class")));
+        member.put("creditLevel", jsonSafe(core.get("crdt_grd")));
+        member.put("industry", jsonSafe(core.get("blgd_idsty")));
+        member.put("registeredCapital", jsonSafe(core.get("reg_cap")));
+        member.put("openOrgName", jsonSafe(core.get("openact_org_nm")));
+        member.put("openDate", snapshotDate(jsonSafe(core.get("openact_dt"))));
+        member.put("basicAccount", jsonSafe(core.get("basic_account_no")));
+        member.put("customerClass", jsonSafe(core.get("cust_class")));
+        member.put("empeNum", jsonSafe(core.get("entp_empe_num")));
+        member.put("estbDate", snapshotDate(jsonSafe(core.get("estp_estb_dt"))));
+        member.put("totalAssets", jsonSafe(core.get("rest_asts")));
+        member.put("restAddr", jsonSafe(core.get("rest_addr")));
     }
 
     /** 手工成员对公要素(申请补录 group_info_json.supplementMembers)映射到前端对公模板键;证件类型统一 USCC */
@@ -1253,7 +1253,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         member.put("fiveLevelClass", m.getStr("fiveLevelClass"));
         member.put("creditLevel", m.getStr("creditLevel"));
         member.put("industry", m.getStr("industry"));
-        member.put("registeredCapital", m.get("registeredCapital"));
+        member.put("registeredCapital", jsonSafe(m.get("registeredCapital")));
         member.put("openOrgName", m.getStr("openOrg"));
         member.put("openDate", m.getStr("openDate"));
         member.put("basicAccount", m.getStr("basicAccount"));
@@ -1397,7 +1397,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /** 单字段人工修正覆盖(allowBlank=false 仅非空覆盖;true 含空覆盖,以人工为准) */
     private void overwriteCustomer(Map<String, Object> row, JSONObject manual, String srcKey, String targetKey, boolean allowBlank) {
-        Object v = manual.get(srcKey);
+        Object v = jsonSafe(manual.get(srcKey));
         if (v == null) {
             return;
         }
@@ -1423,9 +1423,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         Map<String, Object> manual = new LinkedHashMap<>();
         manual.put("agreementNo", ci.getStr("agreementNo"));
         manual.put("agreementType", ci.getStr("agreementType"));
-        manual.put("creditAmount", ci.get("creditAmount"));
-        manual.put("usedAmount", ci.get("usedAmount"));
-        manual.put("availableAmount", ci.get("availableAmount"));
+        manual.put("creditAmount", jsonSafe(ci.get("creditAmount")));
+        manual.put("usedAmount", jsonSafe(ci.get("usedAmount")));
+        manual.put("availableAmount", jsonSafe(ci.get("availableAmount")));
         manual.put("currency", ci.getStr("currency"));
         manual.put("startDate", ci.getStr("startDate"));
         manual.put("endDate", ci.getStr("endDate"));

@@ -143,7 +143,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
-              <input class="form-input" v-model="groupSupplement.openDate" placeholder="可空" />
+              <input class="form-input" type="date" v-model="groupSupplement.openDate" placeholder="可空" />
             </div>
             <div class="form-field">
               <label class="form-field__label">基本户账户</label>
@@ -262,7 +262,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">开户日期</label>
-              <input class="form-input" v-model="m.openDate" placeholder="可空" />
+              <input class="form-input" type="date" v-model="m.openDate" placeholder="可空" />
             </div>
             <div class="form-field">
               <label class="form-field__label">基本账户</label>
@@ -374,7 +374,7 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">开户日期</label>
-          <input class="form-input" v-model="form.openDate" placeholder="数仓带出,可修改" />
+          <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
         </div>
         <div class="form-field">
           <label class="form-field__label">申请机构</label>
@@ -428,15 +428,15 @@
         </thead>
         <tbody>
           <tr>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.lenderCount" type="number" min="0" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.loanAccountCount" type="number" min="0" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueAccountCount" type="number" min="0" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.lenderCount" type="number" min="0" step="1" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.loanAccountCount" type="number" min="0" step="1" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueAccountCount" type="number" min="0" step="1" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
           </tr>
         </tbody>
       </table>
@@ -449,10 +449,10 @@
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
             <td><input class="form-input" v-model="d.lenderName" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.creditAmount" type="number" min="0" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.usedAmount" type="number" min="0" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" step="0.000001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.creditAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.usedAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" max="100" step="0.000001" /></td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
           </tr>
         </tbody>
@@ -589,7 +589,7 @@
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
             <div style="display:flex;gap:4px">
-              <input class="form-input form-input--amount" v-model="g.termValue" placeholder="数值" style="flex:1" />
+              <input class="form-input form-input--amount" v-model="g.termValue" type="number" min="1" step="1" placeholder="正整数" style="flex:1" />
               <select class="form-select" v-model="g.termUnit" style="width:76px">
                 <option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option>
               </select>
@@ -597,7 +597,7 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">授信金额(万元) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="g.amount" />
+            <input class="form-input form-input--amount" v-model="g.amount" type="number" min="0" max="999999999.99" step="0.0001" />
           </div>
           <div class="form-field" v-if="form.businessType === 'EXISTING'">
             <label class="form-field__label">原利率(%)</label>
@@ -627,18 +627,18 @@
                     <div class="form-field"><label class="form-field__label">{{ m.type === '土地' ? '地块名称' : m.type === '设备' ? '设备名称' : m.type === '车辆' ? '品牌型号' : '名称' }}</label><input class="form-input" v-model="m.name" /></div>
                     <template v-if="m.type === '住宅' || m.type === '厂房'">
                       <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
-                      <div class="form-field"><label class="form-field__label">建筑面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" /></div>
+                      <div class="form-field"><label class="form-field__label">建筑面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" /></div>
                       <div class="form-field"><label class="form-field__label">产权证号</label><input class="form-input" v-model="m.certNo" /></div>
                     </template>
                     <template v-else-if="m.type === '土地'">
                       <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
-                      <div class="form-field"><label class="form-field__label">土地面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" /></div>
+                      <div class="form-field"><label class="form-field__label">土地面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" /></div>
                       <div class="form-field"><label class="form-field__label">使用权类型</label><select class="form-select" v-model="m.landUseType"><option>出让</option><option>划拨</option></select></div>
                       <div class="form-field"><label class="form-field__label">使用权到期日</label><input class="form-input" type="date" v-model="m.landUseExpiry" /></div>
                     </template>
                     <template v-else-if="m.type === '设备'">
                       <div class="form-field"><label class="form-field__label">规格型号</label><input class="form-input" v-model="m.specModel" /></div>
-                      <div class="form-field"><label class="form-field__label">数量(台/套)</label><input class="form-input form-input--amount" v-model="m.quantity" /></div>
+                      <div class="form-field"><label class="form-field__label">数量(台/套)</label><input class="form-input form-input--amount" v-model="m.quantity" type="number" min="0" step="1" /></div>
                       <div class="form-field"><label class="form-field__label">购置日期</label><input class="form-input" type="date" v-model="m.purchaseDate" /></div>
                     </template>
                     <template v-else-if="m.type === '车辆'">
@@ -646,9 +646,9 @@
                       <div class="form-field"><label class="form-field__label">车架号(VIN)</label><input class="form-input" v-model="m.vin" /></div>
                       <div class="form-field"><label class="form-field__label">登记日期</label><input class="form-input" type="date" v-model="m.regDate" /></div>
                     </template>
-                    <div class="form-field"><label class="form-field__label">评估价值(万元)</label><input class="form-input form-input--amount" v-model="m.value" /></div>
+                    <div class="form-field"><label class="form-field__label">评估价值(万元)</label><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" /></div>
                     <div class="form-field"><label class="form-field__label">权属人</label><input class="form-input" v-model="m.owner" /></div>
-                    <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" /></div>
+                    <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" /></div>
                   </div>
                 </div>
         </div>
@@ -661,7 +661,7 @@
                     <tr v-for="(m, mi) in g.pledges" :key="mi">
                       <td><select class="form-select" v-model="m.type"><option>存单</option><option>股权</option><option>应收账款</option><option>存货</option><option>仓单</option></select></td>
                       <td><input class="form-input" v-model="m.name" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.value" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" /></td>
                       <td><input class="form-input" v-model="m.owner" /></td>
                       <td><button class="btn btn--text" @click="g.pledges.splice(mi, 1)">删除</button></td>
                     </tr>
@@ -675,9 +675,9 @@
                   <thead><tr><th>保证金金额(万元)</th><th>保证金比例(%)</th><th>期限(月)</th><th></th></tr></thead>
                   <tbody>
                     <tr v-for="(m, mi) in g.margins" :key="mi">
-                      <td><input class="form-input form-input--amount" v-model="m.amount" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.ratio" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.term" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.term" type="number" min="1" step="1" /></td>
                       <td><button class="btn btn--text" @click="g.margins.splice(mi, 1)">删除</button></td>
                     </tr>
                   </tbody>
@@ -691,7 +691,7 @@
                   <tbody>
                     <tr v-for="(m, mi) in g.cds" :key="mi">
                       <td><input class="form-input" v-model="m.cdNo" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.amount" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" /></td>
                       <td><input class="form-input" type="date" v-model="m.maturityDate" /></td>
                       <td><button class="btn btn--text" @click="g.cds.splice(mi, 1)">删除</button></td>
                     </tr>
@@ -707,8 +707,8 @@
                     <tr v-for="(gt, gi) in g.guarantors" :key="gi">
                       <td><input class="form-input" v-model="gt.name" /></td>
                       <td><input class="form-input" v-model="gt.certNo" /></td>
-                      <td><input class="form-input form-input--amount" v-model="gt.amount" /></td>
-                      <td><input class="form-input form-input--amount" v-model="gt.balance" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.amount" type="number" min="0" step="0.0001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.balance" type="number" min="0" step="0.0001" /></td>
                       <td><button class="btn btn--text" @click="g.guarantors.splice(gi, 1)">删除</button></td>
                     </tr>
                   </tbody>
@@ -763,7 +763,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">基线值</label>
-              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" placeholder="可空" />
+              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="可空" />
               <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
@@ -772,7 +772,7 @@
                 <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本,§6.4)" />
                 <div class="section-tip" style="color:var(--color-warning);margin-top:4px">手工描述跟踪,无数值达成率,不参与机构达成率</div>
               </template>
-              <input v-else class="form-input form-input--amount" v-model="c.targetValue" />
+              <input v-else class="form-input form-input--amount" v-model="c.targetValue" type="number" min="0" step="0.0001" />
             </div>
             <div class="form-field">
               <label class="form-field__label">截止日期 <span class="req">*</span></label>
@@ -1783,6 +1783,40 @@ function validateStep(s: number): string | null {
         return `他行融资未结清笔数(概要 ${summary.loanAccountCount})与明细笔数(${rows.length})不一致`
       }
     }
+    // 概要数字格式校验(计数非负整数,金额范围兜底;type=number+min/max/step 拦输入,此处拦非法值,§2026-08-25)
+    const os = otherSummary.value
+    const osCounts: Array<[number, string]> = [
+      [Number(os.lenderCount), '授信机构数'],
+      [Number(os.loanAccountCount), '未结清笔数'],
+      [Number(os.overdueAccountCount), '逾期笔数'],
+    ]
+    for (const [v, label] of osCounts) {
+      if (!Number.isNaN(v) && (!Number.isInteger(v) || v < 0)) return `他行融资概要「${label}」须为非负整数(当前 ${v})`
+    }
+    const osAmts: Array<[number, string]> = [
+      [Number(os.creditAmountTotal), '授信总额'],
+      [Number(os.usedAmountTotal), '已用额'],
+      [Number(os.overdueBalance), '逾期余额'],
+      [Number(os.nplBalance), '不良余额'],
+      [Number(os.specialMentionBalance), '关注类余额'],
+      [Number(os.externalGuaranteeBalance), '对外担保余额'],
+    ]
+    for (const [v, label] of osAmts) {
+      if (!Number.isNaN(v) && !(v >= 0 && v <= 999999999.99)) return `他行融资概要「${label}」须在 0~999999999.99 万元之间(当前 ${v})`
+    }
+    // 明细数字格式校验(金额范围/年化利率 0~100)
+    for (const dl of otherLoans.value) {
+      const dlAmts: Array<[number, string]> = [
+        [Number(dl.creditAmount), '授信金额'],
+        [Number(dl.usedAmount), '已用额'],
+        [Number(dl.balanceAmount), '余额'],
+      ]
+      for (const [v, label] of dlAmts) {
+        if (!Number.isNaN(v) && !(v >= 0 && v <= 999999999.99)) return `他行融资明细「${label}」须在 0~999999999.99 万元之间(当前 ${v})`
+      }
+      const ar = Number(dl.annualRate)
+      if (!Number.isNaN(ar) && !(ar >= 0 && ar <= 100)) return `他行融资明细「年化利率」须在 0~100 之间(当前 ${dl.annualRate})`
+    }
   }
   if (s === 2) {
     for (let i = 0; i < form.guarantees.length; i++) {
@@ -1800,6 +1834,29 @@ function validateStep(s: number): string | null {
       // 申请利率范围兜底:落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;合理利率 0~100%(§bug 2026-08-25)
       const rate = Number(g.requestedRate)
       if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
+      // 期限须为正整数(落库 INT,小数/负数报错),授信金额范围兜底(同上 out of range,§2026-08-25)
+      const tv = Number(g.termValue)
+      if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条分项期限须为正整数(当前 ${g.termValue})`
+      const amt = Number(g.amount)
+      if (!(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条分项授信金额须在 0~999999999.99 万元之间(当前 ${g.amount})`
+      // 担保措施金额非负(抵押/质押/存单/保证金/保证人金额与余额,负值后端报错,前端先拦)
+      for (const mm of g.mortgages) {
+        if (Number(mm.value) < 0) return `第 ${i + 1} 条分项抵押物评估价值不能为负(当前 ${mm.value})`
+      }
+      for (const mm of g.pledges) {
+        if (Number(mm.value) < 0) return `第 ${i + 1} 条分项质押物估值不能为负(当前 ${mm.value})`
+      }
+      for (const gt of g.guarantors) {
+        if (Number(gt.amount) < 0) return `第 ${i + 1} 条分项保证人担保金额不能为负(当前 ${gt.amount})`
+        if (Number(gt.balance) < 0) return `第 ${i + 1} 条分项保证人账户余额不能为负(当前 ${gt.balance})`
+      }
+      for (const mm of g.margins) {
+        if (Number(mm.amount) < 0) return `第 ${i + 1} 条分项保证金金额不能为负(当前 ${mm.amount})`
+        if (Number(mm.ratio) < 0) return `第 ${i + 1} 条分项保证金比例不能为负(当前 ${mm.ratio})`
+      }
+      for (const cdd of g.cds) {
+        if (Number(cdd.amount) < 0) return `第 ${i + 1} 条分项存单金额不能为负(当前 ${cdd.amount})`
+      }
     }
   }
   if (s === 3) {
@@ -1808,6 +1865,15 @@ function validateStep(s: number): string | null {
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
       if (c.metricCode === 'OTHER' ? isBlank(c.commitmentDesc) : isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入目标`
       if (isBlank(c.endDate)) return `第 ${i + 1} 条承诺未录入截止日期`
+      // 承诺数值非负(基准值可空,目标值必填;负数/越界在此拦截,§2026-08-25)
+      if (c.metricCode !== 'OTHER') {
+        const bv = Number(c.baselineValue)
+        if (c.baselineValue !== undefined && c.baselineValue !== '' && (Number.isNaN(bv) || bv < 0 || bv > 999999999.99)) {
+          return `第 ${i + 1} 条承诺基准值须在 0~999999999.99 之间(当前 ${c.baselineValue})`
+        }
+        const tgt = Number(c.targetValue)
+        if (Number.isNaN(tgt) || tgt < 0 || tgt > 999999999.99) return `第 ${i + 1} 条承诺目标值须在 0~999999999.99 之间(当前 ${c.targetValue})`
+      }
     }
   }
   return null
@@ -1859,6 +1925,11 @@ function validateForDraft(): string | null {
     // 申请利率范围兜底(同上,草稿/提交共用)
     const rate = Number(g.requestedRate)
     if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
+    // 期限正整数 + 授信金额范围(草稿暂存共用,§2026-08-25)
+    const tv = Number(g.termValue)
+    if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条分项期限须为正整数(当前 ${g.termValue})`
+    const amt = Number(g.amount)
+    if (!(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条分项授信金额须在 0~999999999.99 万元之间(当前 ${g.amount})`
   }
   for (let i = 0; i < commitments.value.length; i++) {
     const c = commitments.value[i]

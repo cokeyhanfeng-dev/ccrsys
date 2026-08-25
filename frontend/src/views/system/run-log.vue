@@ -124,6 +124,116 @@
       </table>
     </div>
 
+    <!-- ③ 流程监控 -->
+    <div v-if="activeTab === 'flows'" class="card">
+      <div class="query-bar">
+        <div class="query-field">
+          <label class="query-label">状态</label>
+          <el-select v-model="flowQuery.status" placeholder="全部在途" clearable class="query-input" style="width: 150px">
+            <el-option v-for="s in flowStatuses" :key="s.value" :label="s.label" :value="s.value" />
+          </el-select>
+        </div>
+        <div class="query-field">
+          <label class="query-label">业务类型</label>
+          <el-select v-model="flowQuery.businessType" placeholder="全部" clearable class="query-input" style="width: 130px">
+            <el-option label="贷款" value="LOAN" />
+            <el-option label="存款" value="DEPOSIT" />
+          </el-select>
+        </div>
+        <div class="query-field">
+          <label class="query-label">申请号</label>
+          <el-input v-model="flowQuery.applicationNo" placeholder="申请号模糊" clearable class="query-input" style="width: 180px" @keyup.enter="searchFlows" />
+        </div>
+        <button class="btn btn--primary" :disabled="flowsLoading" @click="searchFlows">{{ flowsLoading ? '查询中…' : '查询' }}</button>
+        <button class="btn btn--text" @click="resetFlows">重置</button>
+      </div>
+
+      <el-table :data="flows" v-loading="flowsLoading" row-key="applicationId" style="width: 100%">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div class="flow-detail">
+              <div class="flow-reason">
+                <div class="flow-reason__item">
+                  <span class="flow-reason__label">链路形态</span>
+                  <span class="flow-reason__text">{{ row.routeReason || '—' }}</span>
+                </div>
+                <div class="flow-reason__item">
+                  <span class="flow-reason__label">当前原因</span>
+                  <span class="flow-reason__text">{{ row.currentReason || '—' }}</span>
+                </div>
+              </div>
+              <div v-if="row.nodes && row.nodes.length" class="progress-nodes">
+                <div v-for="(n, i) in row.nodes" :key="n.nodeCode" class="progress-node" :class="'node--' + n.status">
+                  <div class="node-rail">
+                    <span class="node-dot"></span>
+                    <span v-if="i < row.nodes.length - 1" class="node-line"></span>
+                  </div>
+                  <div class="node-body">
+                    <div class="node-title">
+                      <span>{{ n.label }}</span>
+                      <span class="node-state" :class="'state--' + n.status">{{ nodeStatusText(n) }}</span>
+                    </div>
+                    <div v-if="n.status === 'DONE' && (n.operatorName || n.operationTime || n.result || n.decision)" class="node-meta">
+                      <span v-if="n.operatorName">{{ n.operatorName }}</span>
+                      <span v-if="n.operationTime">{{ fmtTime(n.operationTime) }}</span>
+                      <span v-if="n.result">计票 {{ n.result }}</span>
+                      <span v-if="n.decision">决策 {{ n.decision }}</span>
+                    </div>
+                    <div v-else-if="n.submittedCount != null" class="node-meta vote">
+                      <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'#409EFF'" />
+                      <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-cell">暂无节点数据</div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="申请号" min-width="150">
+          <template #default="{ row }">{{ row.applicationNo }}</template>
+        </el-table-column>
+        <el-table-column label="业务类型" width="90">
+          <template #default="{ row }">
+            <span :class="row.businessType === 'DEPOSIT' ? 'badge badge--warning' : 'badge badge--info'">{{ businessTypeText(row.businessType) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="客户范围" width="110">
+          <template #default="{ row }">{{ customerScopeText(row.customerScope) }}</template>
+        </el-table-column>
+        <el-table-column label="金额(万元)" width="110">
+          <template #default="{ row }">{{ row.amount != null ? fmtNum(row.amount) : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="产品" min-width="130">
+          <template #default="{ row }">{{ row.productCode || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <span :class="itemStatusBadge(row.status)">{{ itemStatusText(row.status) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="当前节点" min-width="120">
+          <template #default="{ row }">{{ row.currentNodeLabel || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="提交时间" width="160">
+          <template #default="{ row }">{{ fmtTime(row.submitTime) }}</template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="flowsTotal > 0" class="pagination-wrap">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="flowsTotal"
+          v-model:current-page="flowPageNum"
+          v-model:page-size="flowPageSize"
+          :page-sizes="[10, 20, 50]"
+          @current-change="loadFlows"
+          @size-change="onFlowSizeChange"
+        />
+      </div>
+    </div>
+
     <!-- 报错详情弹窗 -->
     <el-dialog v-model="detailVisible" title="报错详情" width="760px" append-to-body>
       <div v-loading="detailLoading">
@@ -157,13 +267,15 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   pageRunErrors, getRunErrorDetail, getRunErrorStats, updateRunErrorStatus,
-  getRunErrorOptions, listLogFiles, tailLogFile, downloadLogFile,
-  type RunErrorRow, type LogFileInfo
+  getRunErrorOptions, listLogFiles, tailLogFile, downloadLogFile, getFlowMonitor,
+  type RunErrorRow, type LogFileInfo, type FlowRow
 } from '@/api/runLog'
+import { businessTypeText, itemStatusText } from '@/utils/dict'
 
 const tabs = [
   { key: 'errors', label: '运行错误' },
-  { key: 'files', label: '日志文件' }
+  { key: 'files', label: '日志文件' },
+  { key: 'flows', label: '流程监控' }
 ]
 const activeTab = ref('errors')
 
@@ -285,6 +397,74 @@ async function refreshPreview() {
   }
 }
 
+// ---------- 流程监控 ----------
+const flowStatuses = [
+  { value: 'ROUTING', label: '路由中' },
+  { value: 'VOTING', label: '表决中' },
+  { value: 'COMMITTEE_PASS', label: '已过会待决策' },
+  { value: 'PRESIDENT_DECISION', label: '行长决策' }
+]
+const flowsLoading = ref(false)
+const flows = ref<FlowRow[]>([])
+const flowsTotal = ref(0)
+const flowPageNum = ref(1)
+const flowPageSize = ref(10)
+const flowQuery = ref<{ status?: string; businessType?: string; applicationNo?: string }>({})
+
+async function loadFlows() {
+  flowsLoading.value = true
+  try {
+    const data = await getFlowMonitor({ ...flowQuery.value, page: flowPageNum.value, size: flowPageSize.value })
+    flows.value = data.records || []
+    flowsTotal.value = Number(data.total) || 0
+  } catch {
+    flows.value = []
+    flowsTotal.value = 0
+  } finally {
+    flowsLoading.value = false
+  }
+}
+function searchFlows() {
+  flowPageNum.value = 1
+  loadFlows()
+}
+function resetFlows() {
+  flowQuery.value = {}
+  flowPageNum.value = 1
+  loadFlows()
+}
+function onFlowSizeChange() {
+  flowPageNum.value = 1
+  loadFlows()
+}
+function nodeStatusText(n: any) {
+  if (n.status === 'DONE') return '已处理'
+  if (n.status === 'CURRENT') return '进行中'
+  if (n.status === 'SKIPPED') return '跳过'
+  return '待处理'
+}
+function votePct(n: any) {
+  if (!n.voterCount) return 0
+  return Math.round(((n.submittedCount || 0) / n.voterCount) * 100)
+}
+function customerScopeText(s: unknown) {
+  const map: Record<string, string> = { INDIVIDUAL: '个人', CORPORATE_SINGLE: '企业单户', GROUP: '集团' }
+  return map[String(s || '')] || String(s || '—')
+}
+function fmtNum(v: unknown) {
+  if (v == null || v === '') return '—'
+  return Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+function itemStatusBadge(s: unknown) {
+  const map: Record<string, string> = {
+    ROUTING: 'badge badge--info',
+    VOTING: 'badge badge--warning',
+    COMMITTEE_PASS: 'badge badge--info',
+    PRESIDENT_DECISION: 'badge badge--warning'
+  }
+  return map[String(s || '')] || 'badge badge--neutral'
+}
+
 function switchTab(key: string) {
   activeTab.value = key
   if (timer) { clearInterval(timer); timer = null }
@@ -292,6 +472,8 @@ function switchTab(key: string) {
     load()
     loadStats()
     if (autoRefresh.value) onAutoRefresh(true)
+  } else if (key === 'flows') {
+    loadFlows()
   } else {
     loadFiles()
   }
@@ -385,4 +567,27 @@ onBeforeUnmount(() => {
 .tab-toolbar__hint { font-size: 12px; color: #909399; margin-right: auto; }
 .preview-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .preview-hint { font-size: 12px; color: #909399; }
+
+/* 流程监控:展开行链路形态/当前原因 + 节点时间线(与 history 进度弹窗同款配色) */
+.flow-detail { padding: 6px 8px 2px; }
+.flow-reason { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.flow-reason__item { display: flex; gap: 8px; font-size: 13px; line-height: 1.6; }
+.flow-reason__label { flex-shrink: 0; width: 64px; color: #909399; font-size: 12px; padding-top: 1px; }
+.flow-reason__text { color: #303133; }
+.progress-nodes { padding-left: 4px; }
+.progress-node { display: flex; }
+.node-rail { display: flex; flex-direction: column; align-items: center; width: 20px; margin-right: 12px; }
+.node-dot { width: 12px; height: 12px; border-radius: 50%; background: #d9d9d9; flex-shrink: 0; margin-top: 2px; }
+.node-line { width: 2px; flex: 1; min-height: 28px; background: #e8e8e8; }
+.node--DONE .node-dot { background: #52c41a; }
+.node--CURRENT .node-dot { background: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2); }
+.node-body { flex: 1; padding-bottom: 22px; }
+.node-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+.node-state { font-size: 12px; font-weight: 400; padding: 1px 8px; border-radius: 10px; }
+.state--DONE { color: #52c41a; background: rgba(82, 196, 26, 0.12); }
+.state--CURRENT { color: #409eff; background: rgba(64, 158, 255, 0.12); }
+.state--PENDING, .state--SKIPPED { color: #909399; background: rgba(144, 147, 153, 0.12); }
+.node-meta { margin-top: 4px; font-size: 12px; color: #909399; display: flex; gap: 12px; }
+.node-meta.vote { display: block; margin-top: 8px; }
+.vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 </style>

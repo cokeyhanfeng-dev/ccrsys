@@ -64,3 +64,49 @@ export const tailLogFile = (name: string, lines = 300) =>
 /** 下载日志文件(走 request.ts download,blob + Content-Disposition 取文件名) */
 export const downloadLogFile = (name: string) =>
   download(`/system/run-log/files/download?name=${encodeURIComponent(name)}`)
+
+/** 流程监控节点(节点状态时间线) */
+export interface FlowNode {
+  nodeCode: string
+  label: string
+  status: 'DONE' | 'CURRENT' | 'SKIPPED' | 'PENDING'
+  operatorName?: string
+  operationTime?: string
+  result?: string
+  decision?: string
+  voterCount?: number
+  requiredCount?: number
+  submittedCount?: number
+  approveCount?: number
+}
+
+/** 流程监控行(按申请聚合,含路由原因文案) */
+export interface FlowRow {
+  applicationId: number
+  applicationNo: string
+  businessType?: string
+  customerScope?: string
+  customerNo?: string
+  groupNo?: string
+  status?: string
+  submitTime?: string
+  productCode?: string
+  amount?: number
+  currentApprovalRate?: number
+  requestedRate?: number
+  routeCode?: string
+  currentNodeCode?: string
+  currentNodeLabel?: string
+  routeReason?: string
+  currentReason?: string
+  nodes?: FlowNode[]
+}
+
+/** 流程监控分页(运行监控「流程监控」tab):在途审批流程,按申请聚合,含节点状态与路由原因(仅 admin) */
+export const getFlowMonitor = (params: {
+  page?: number
+  size?: number
+  status?: string
+  businessType?: string
+  applicationNo?: string
+}) => get<{ total: number; records: FlowRow[] }>('/ccr/approval/flow-monitor', params || {})
