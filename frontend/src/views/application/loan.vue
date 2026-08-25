@@ -93,7 +93,7 @@
         <div v-if="isNewGroup" class="form-card group-supplement" style="margin-top:12px">
           <div class="form-card__title">
             新增集团补录 <span class="badge badge--warning">数仓未收录</span>
-            <InfoTip content="数仓未收录该集团,按新集团对待:补录集团基本信息(与对公客户一致),授信以本次申请额度为准。" />
+            <InfoTip content="数仓未收录该集团,按新集团对待:补录集团基本信息(与对公客户一致),授信以本次申请额度(成员申请金额合计)为准。" />
           </div>
           <div class="form-grid">
             <div class="form-field">
@@ -160,11 +160,7 @@
           <div class="group-summary__item"><span>可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
           <div class="group-summary__item"><span>授信到期日</span><b>{{ groupCredit?.creditEnd || '暂无数据' }}</b></div>
         </div>
-        <!-- 申请额度(本次申请新增授信,必填;所有集团申请统一,数仓批复授信仅作展示参考) -->
-        <div v-if="groupQueried" class="form-field" style="margin-top:12px;max-width:420px">
-          <label class="form-field__label">本次申请额度(万元) <span class="req">*</span></label>
-          <input class="form-input form-input--amount" v-model="groupApplyAmount" placeholder="集团本次申请新增授信额度,必填" />
-        </div>
+        <!-- 本次申请额度字段已取消独立展示(§2026-08-25):集团本次申请额度 = 成员申请金额合计,随单提交 -->
         <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
           <label class="form-field__label">涉及成员(勾选并逐成员录入本次申请金额) <span class="req">*</span></label>
           <table class="table">
@@ -1155,9 +1151,7 @@ const groupMembers = ref<any[]>([])
 const groupQueried = ref(false)
 const selectedMembers = ref<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>([])
 const memberContracts = ref<Record<string, any[]>>({})
-// 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 本次申请额度 + 手工补录成员
-/** 本次申请额度(万元,集团本次申请新增授信,必填;数仓批复授信仅展示参考,勾稽基准读本字段) */
-const groupApplyAmount = ref('')
+// 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 手工补录成员
 /** 数仓未收录该集团(按新增集团对待,就地补录集团基本信息,与对公客户一致) */
 const isNewGroup = ref(false)
 /** 新增集团补录表单(集团对公全套:与对公客户基本信息一致 + 集团特有要素) */
@@ -1335,7 +1329,7 @@ async function queryGroup() {
     groupMembers.value.some((m) => m.memberCustomerNo === s.memberCustomerNo)
   )
   if (isNewGroup.value) {
-    ElMessage.info('数仓未收录该集团,请补录集团基本信息并录入本次申请额度')
+    ElMessage.info('数仓未收录该集团,请补录集团基本信息并勾选成员录入本次申请金额')
   }
 }
 
@@ -1713,7 +1707,6 @@ function onCustomerScopeChange() {
     groupMembers.value = []
     groupQueried.value = false
     // 集团补录状态一并重置(§docs/19 §4.1)
-    groupApplyAmount.value = ''
     isNewGroup.value = false
     groupSupplement.groupName = ''
     groupSupplement.ucrCode = ''
@@ -1830,14 +1823,9 @@ function validateStep(s: number): string | null {
       // 新增集团(数仓未收录):就地补录集团名称/集团属性必填(§docs/19 §4.3;国企属性 §2026-08-25)
       if (isNewGroup.value && isBlank(groupSupplement.groupName)) return '请补录集团名称(数仓未收录,新增集团必填)'
       if (isNewGroup.value && isBlank(groupSupplement.stateOwnedFlag)) return '请选择集团属性(国企集团/非国企集团)'
-      // 本次申请额度必填(集团本次申请新增授信,§4.5;存量集团补申请额度同理)
-      if (isBlank(groupApplyAmount.value) || Number(groupApplyAmount.value) <= 0) return '请录入本次申请额度(集团新增授信,必填)'
       if (!selectedMembers.value.length) return '请至少勾选一名集团成员'
       const bad = selectedMembers.value.find((m) => isBlank(m.requestAmount) || Number(m.requestAmount) <= 0)
       if (bad) return `成员 ${bad.memberCustomerNo} 未录入本次申请金额`
-      // 勾稽:成员申请金额合计 ≤ 本次申请额度(§4.5,后端提交时同口径复核)
-      const sum = selectedMembers.value.reduce((acc, m) => acc + (Number(m.requestAmount) || 0), 0)
-      if (sum > Number(groupApplyAmount.value)) return `成员申请金额合计 ${sum} 超过本次申请额度 ${groupApplyAmount.value}`
     } else if (!hasCustomerIdentity()) {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
@@ -2172,7 +2160,7 @@ function buildPayload(): ApplicationPayload {
     }),
     // 授信协议补录/修正快照(存量=协议带出可修正;新增=手工补录,协议号可空;审批详情优先展示补录值)
     creditInfoJson: serializeCreditInfo() ? JSON.stringify(serializeCreditInfo()) : undefined,
-    // 集团补录/申请额度快照(集团对公全套 + 本次申请额度 + 手工补录成员;提交时落表,§docs/19 §4.5;审批详情优先展示)
+    // 集团补录/申请额度快照(集团对公全套 + 成员申请金额合计 + 手工补录成员;提交时落表,§docs/19 §4.5;审批详情优先展示)
     groupInfoJson: serializeGroupInfo() ? JSON.stringify(serializeGroupInfo()) : undefined
   }
 }
@@ -2234,8 +2222,11 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
     if (groupSupplement.openDate) out.openDate = groupSupplement.openDate
     if (groupSupplement.basicAccount) out.basicAccount = groupSupplement.basicAccount
   }
-  // 本次申请额度(集团本次申请新增授信,必填;每次申请一条,随申请上下文保存不覆盖历史)
-  if (groupApplyAmount.value) out.applyAmount = groupApplyAmount.value
+  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员申请金额合计
+  const memberSum = selectedMembers.value.reduce((s, m) => s + (Number(m.requestAmount) || 0), 0)
+  const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
+  const applyAmount = Number.isFinite(groupCreditTotal) && groupCreditTotal > 0 ? groupCreditTotal : memberSum
+  if (applyAmount > 0) out.applyAmount = applyAmount
   // 手工补录成员(对公客户申请要素 + 成员要素,不含授信;数仓已有成员不在此列)
   const manualMembers = groupMembers.value.filter((m) => m.source === 'MANUAL')
   if (manualMembers.length) {
@@ -2432,9 +2423,8 @@ async function loadDraftIntoForm(id: number | string) {
 
   if (app.customerScope === 'GROUP' && app.groupNo) {
     await queryGroup()
-    // 集团补录/申请额度快照回填(§docs/19 §4.5):本次申请额度 + 手工补录成员(数仓带出优先,补录成员仅并入可勾选列表)
+    // 集团补录/申请额度快照回填(§docs/19 §4.5):手工补录成员(数仓带出优先,补录成员仅并入可勾选列表);本次申请额度=成员申请金额合计自动得出
     const gInfo = parseExtJson(app.groupInfoJson)
-    if (gInfo?.applyAmount != null) groupApplyAmount.value = String(gInfo.applyAmount)
     // 新增集团:集团基本信息从快照回填(数仓仍未收录时,避免客户经理二次录入)
     if (isNewGroup.value && gInfo?.groupName) {
       groupSupplement.groupName = gInfo.groupName
