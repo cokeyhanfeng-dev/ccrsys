@@ -356,7 +356,7 @@
         </table>
         <div v-else class="empty" style="padding:8px">暂无账户数据</div>
         <div class="section-tip" style="margin-top:8px" v-if="pi.boundary_rate != null">
-          本节点权限上限 {{ pi.boundary_rate }}%(存款越高越优惠,超过上限将上送小组表决)
+          本节点权限上限 {{ pi.boundary_rate }}%(超过上限将上送小组表决)
           <span v-if="pi.requested_rate != null"> · 申请利率较上限 {{ ((pi.requested_rate - pi.boundary_rate) * 100).toFixed(0) }} BP</span>
         </div>
       </template>

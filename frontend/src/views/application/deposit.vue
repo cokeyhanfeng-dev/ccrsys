@@ -315,7 +315,7 @@ function limitOf(productCode: string) {
   if (!productCode) return null
   return productLimits.value.find((l) => l.productCode === productCode && l.businessType === 'DEPOSIT') || null
 }
-// 较上限 BP:1% = 100BP,存款越高越优惠,超过上限为正向风险提示
+// 较上限 BP:1% = 100BP,存款申请利率超过硬边界为正向风险提示
 function bpOf(d: DepositItemRow): number | null {
   const limit = limitOf(d.productCode)
   const rate = Number(d.requestedRate)

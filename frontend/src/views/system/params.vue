@@ -1359,7 +1359,6 @@
             <label class="form-field__label">生效时间 <span class="req">*</span></label>
             <input class="form-input" v-model="limitDialog.form.effectiveFrom" type="datetime-local" />
           </div>
-          <div class="section-tip">利率方向按业务类型自动确定:贷款=越低越优惠、存款=越高越优惠。</div>
         </div>
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="limitDialog.show = false">取消</button>

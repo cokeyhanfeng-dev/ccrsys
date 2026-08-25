@@ -275,7 +275,7 @@ export function inputModeText(code?: string, fallback = '—'): string {
 
 /** 利率比较方向 */
 export const RATE_DIRECTION: Record<string, string> = {
-  LOWER_BETTER: '越低越优惠(贷款)', HIGHER_BETTER: '越高越优惠(存款)'
+  LOWER_BETTER: '贷款(越低)', HIGHER_BETTER: '存款(越高)'
 }
 export function rateDirectionText(code?: string, fallback = '—'): string {
   return textOf(RATE_DIRECTION, code, fallback)
