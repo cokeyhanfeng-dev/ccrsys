@@ -107,6 +107,7 @@ public class GroupQueryController {
             String memberNo = String.valueOf(member.get("member_customer_no"));
             Map<String, Object> corp = dataWarehouseService.findCorpCustomer(memberNo);
             row.put("memberName", corp == null ? null : corp.get("cust_name"));
+            row.put("idNo", corp == null ? null : corp.get("cert_no"));
             Map<String, Object> limit = groupCreditNo == null ? null
                     : dataWarehouseService.findMemberLimit(groupCreditNo, memberNo);
             row.put("creditLimit", limit == null ? null : camel(limit));
