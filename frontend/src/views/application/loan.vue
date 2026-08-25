@@ -742,7 +742,7 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">基线值 <span class="section-tip">（当前贡献度）</span></label>
+              <label class="form-field__label">基线值</label>
               <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="默认带出当前贡献度，可修改" />
               <div v-else class="section-tip commitment-static">—</div>
             </div>
