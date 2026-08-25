@@ -62,7 +62,7 @@
 
   /* ── 圆角 / 阴影(层次化) ── */
   --radius-sm: 4px;
-  --radius: 12px;
+  --radius: 10px;
   --radius-lg: 16px;
   --shadow-xs: 0 1px 2px rgba(15, 42, 92, .05);
   --shadow-sm: 0 1px 3px rgba(15, 42, 92, .07);
@@ -101,7 +101,7 @@ body {
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: var(--space-1);
-  padding: 10px 18px;
+  padding: 8px 14px;
   font-size: var(--fs-body);
   font-weight: 500;
   border-radius: var(--radius-sm);
@@ -136,15 +136,15 @@ body {
 /* ============================================================
    表单
    ============================================================ */
-.form-field { margin-bottom: var(--space-4); }
+.form-field { margin-bottom: var(--space-3); }
 .form-field__label { display: block; margin-bottom: 6px; font-weight: 500; }
 .form-field__label .req { color: var(--color-danger); margin-left: 2px; }
 
 .form-input,
 .form-select {
   width: 100%;
-  height: 40px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 10px;
   font-size: var(--fs-body);
   border: 1px solid #dcdfe6;
   border-radius: var(--radius-sm);
@@ -180,16 +180,16 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
    页面区段标题(各列表页通用)
    ============================================================ */
 .section-head {
-  margin-bottom: 16px;
-  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
 }
 .section-title {
-  font-size: var(--fs-h2); font-weight: 600;
+  font-size: 17px; font-weight: 600;
   display: flex; align-items: center;
 }
 .section-title::before {
   content: ""; display: inline-block;
-  width: 4px; height: 18px; margin-right: 10px;
+  width: 4px; height: 15px; margin-right: 8px;
   border-radius: 2px; background: var(--grad-primary);
 }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
@@ -215,13 +215,13 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   background: var(--color-surface);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 16px;
-  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(15, 42, 92, .03);
 }
 .card__head {
   display: flex; align-items: center; justify-content: space-between;
-  font-weight: 600; font-size: 15px; margin-bottom: 14px;
+  font-weight: 600; font-size: 14px; margin-bottom: 10px;
 }
 .card__head > span:first-child { display: inline-flex; align-items: center; }
 .card__head > span:first-child::before {
@@ -230,7 +230,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   border-radius: 2px; background: var(--grad-primary);
 }
 .card-title {
-  font-size: var(--fs-h3); font-weight: 600; margin-bottom: 14px;
+  font-size: var(--fs-h3); font-weight: 600; margin-bottom: 10px;
   display: flex; align-items: center; justify-content: space-between;
 }
 
@@ -241,7 +241,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   background: var(--color-surface);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius);
-  padding: 18px 20px;
+  padding: 12px 16px;
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
 }
@@ -263,7 +263,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   background: var(--color-surface);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius);
-  padding: 16px 20px 16px 24px;
+  padding: 12px 16px 12px 20px;
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
 }
@@ -285,7 +285,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   background: var(--color-surface);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius);
-  padding: var(--space-4);
+  padding: 12px 14px;
   box-shadow: var(--shadow-sm);
 }
 .contrib-block--current { border-top: 3px solid var(--color-info); }
@@ -322,9 +322,9 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
    ============================================================ */
 .badge {
   display: inline-flex; align-items: center;
-  padding: 2px 10px; border-radius: 999px;
+  padding: 1px 8px; border-radius: 999px;
   font-size: var(--fs-caption); font-weight: 500;
-  line-height: 18px; white-space: nowrap;
+  line-height: 16px; white-space: nowrap;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .04);
 }
 .badge--success { background: var(--color-success-light); color: #047857; }
@@ -343,7 +343,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 /* 步骤条 */
 .stepper {
   display: flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-3) 0;
+  padding: 8px 0;
 }
 .stepper__step {
   flex: 1; text-align: center; font-size: var(--fs-caption);
@@ -384,13 +384,13 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
    width:100% 只撑大盒子、列不伸展、多余空间全留右侧(视觉"没铺满") */
 .table--full { display: table; width: 100%; }
 .table th, .table td {
-  padding: 12px 14px; text-align: left;
+  padding: 8px 10px; text-align: left;
   border-bottom: 1px solid var(--color-border-light);
-  font-size: var(--fs-body);
+  font-size: 13px;
 }
 .table thead th {
   background: #f5f7fa; color: var(--color-text-sub);
-  font-weight: 600; font-size: 13px;
+  font-weight: 600; font-size: 12px;
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
@@ -406,7 +406,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 
 /* 空态(CSS 插画:浅色收件箱 SVG,data-URI,无外部图片) */
 .empty {
-  text-align: center; padding: 44px var(--space-6) 48px;
+  text-align: center; padding: 36px var(--space-5) 40px;
   color: var(--color-text-light); font-size: 13px;
 }
 .empty::before {
@@ -418,7 +418,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 /* 已有文字图标的空态不再重复显示插画 */
 .empty:has(.empty__icon)::before { display: none; }
 
-.empty-cell { text-align: center; color: var(--color-text-light); padding: 28px 0; font-size: 13px; }
+.empty-cell { text-align: center; color: var(--color-text-light); padding: 20px 0; font-size: 13px; }
 
 /* ============================================================
    弹窗
@@ -432,7 +432,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 }
 .modal__card {
   background: var(--color-surface); border-radius: var(--radius-lg);
-  max-width: 480px; width: 100%; padding: var(--space-5);
+  max-width: 480px; width: 100%; padding: 20px;
   box-shadow: var(--shadow-lg);
   max-height: calc(100vh - var(--space-4) * 2); /* 表单过长时卡片内部滚动,关闭按钮始终可见 */
   overflow-y: auto;
@@ -469,7 +469,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   color: var(--sidebar-text-active); font-weight: 600;
   box-shadow: inset 3px 0 0 #60a5fa;
 }
-.app-main { flex: 1; min-width: 0; padding: var(--space-5); width: 100%; }
+.app-main { flex: 1; min-width: 0; padding: 16px 20px; width: 100%; }
 
 /* ============================================================
    移动审批端（企微 H5）
@@ -519,12 +519,12 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   position: relative;
   background: var(--color-surface);
   border: 1px solid var(--color-border-light, var(--color-border));
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 14px 16px;
   box-shadow: var(--shadow-sm);
   transition: transform .18s var(--ease, ease), box-shadow .18s var(--ease, ease);
 }
@@ -534,9 +534,9 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   color: #fff;
   background: var(--grad-primary, linear-gradient(135deg, #1890ff, #096dd9));
   box-shadow: var(--shadow-primary, 0 4px 12px rgba(37, 99, 235, .3));
@@ -570,17 +570,17 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   display: inline-flex;
   align-items: center;
   background: #edf0f5;
-  border-radius: 10px;
-  padding: 4px;
-  gap: 4px;
-  margin-bottom: 16px;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 12px;
 }
 .segmented__item {
   border: none;
   background: transparent;
-  padding: 6px 20px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 13px;
   color: var(--color-text-sub);
   cursor: pointer;
   transition: all .15s var(--ease, ease);

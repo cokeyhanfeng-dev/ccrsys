@@ -527,17 +527,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* 查询栏(label 在上/控件在下,与 audit 等页一致,避免字与框紧贴) */
-.query-bar { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.query-bar { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .query-field { display: flex; flex-direction: column; gap: 4px; }
-.query-label { font-size: 12px; color: var(--color-text-sub); }
+.query-label { font-size: 11px; color: var(--color-text-sub); }
 .error-stats {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 10px 14px;
+  gap: 14px;
+  padding: 8px 12px;
   background: var(--fill-light, #f7f8fa);
   border-radius: var(--radius-sm, 6px);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .stat { font-size: 13px; color: #606266; }
 .stat b { font-size: 16px; margin-left: 2px; }
@@ -593,47 +593,11 @@ onBeforeUnmount(() => {
 .vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 .vote-pass { color: #67c23a; font-weight: 500; }
 
-/* ════════════════════════════════════════════════════════════════════
-   紧凑化重设计(仅本页覆盖全局类,不影响其他页面)
-   目标:查询控件 small 化、卡片/单元格间距收紧、边框更细,提升数据密度
-   ════════════════════════════════════════════════════════════════════ */
-/* 页头 */
-.section-head { margin-bottom: 8px; }
-.section-title { font-size: 17px; }
-.section-title::before { height: 15px; }
-
-/* 页签 */
-.segmented { padding: 3px; gap: 2px; margin-bottom: 12px; border-radius: 8px; }
-.segmented__item { padding: 5px 14px; font-size: 13px; border-radius: 6px; }
-
-/* 卡片:内边距收窄、圆角降档、去重阴影 */
-.card { padding: 14px 16px; border-radius: 10px; border-color: #eef1f5; box-shadow: 0 1px 2px rgba(15, 42, 92, .03); }
-
-/* 查询栏 */
-.query-bar { gap: 8px; margin-bottom: 10px; }
-.query-label { font-size: 11px; }
+/* 紧凑化特例(全局类已全局收紧,此处仅保留本页特定组件) */
+/* 查询栏按钮与 small 控件对齐 */
 .query-bar .btn { padding: 4px 12px; font-size: 13px; line-height: 1.2; }
-
-/* 错误统计条 */
-.error-stats { padding: 8px 12px; gap: 14px; margin-bottom: 10px; }
-
-/* 原生表格:单元格 padding 12px14px → 8px10px,正文 13px */
-.table th, .table td { padding: 8px 10px; }
-.table thead th { font-size: 12px; }
-.table tbody td { font-size: 13px; }
-.empty-cell { padding: 20px 0; }
-
 /* 分页容器 */
 .pagination-wrap { margin-top: 10px; }
-
-/* Element Plus 表格(流程监控):行高/表头收紧 */
-:deep(.el-table) {
-  --el-table-cell-padding: 8px 0;
-  --el-table-header-cell-padding: 8px 0;
-  font-size: 13px;
-}
-:deep(.el-table th.el-table__cell) { font-size: 12px; }
-
 /* 流程监控展开行:节点时间线紧凑 */
 .flow-detail { padding: 4px 6px 0; }
 .flow-reason { gap: 4px; margin-bottom: 10px; }
