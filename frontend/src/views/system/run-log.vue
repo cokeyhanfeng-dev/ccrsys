@@ -180,9 +180,10 @@
                       <span v-if="n.decision">决策 {{ n.decision }}</span>
                     </div>
                     <div v-else-if="n.submittedCount != null" class="node-meta vote">
-                      <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'#409EFF'" />
-                      <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
+                      <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="n.approveCount != null && n.requiredCount != null && n.approveCount >= n.requiredCount ? '#67C23A' : '#409EFF'" />
+                      <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})<span v-if="n.approveCount != null && n.requiredCount != null && n.approveCount >= n.requiredCount" class="vote-pass"> · 已达通过线</span></span>
                     </div>
+                    <div v-else-if="n.status === 'SKIPPED'" class="node-meta">该节点无需审批，流程自动跳过</div>
                   </div>
                 </div>
               </div>
@@ -590,4 +591,5 @@ onBeforeUnmount(() => {
 .node-meta { margin-top: 4px; font-size: 12px; color: #909399; display: flex; gap: 12px; }
 .node-meta.vote { display: block; margin-top: 8px; }
 .vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
+.vote-pass { color: #67c23a; font-weight: 500; }
 </style>
