@@ -2,6 +2,7 @@ package com.ccr.application.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -31,23 +32,41 @@ public class CustomerController {
     @Resource
     private DataWarehouseService dataWarehouseService;
 
-    /** 按客户姓名或客户号模糊查询(对公+对私),返回候选客户 */
+    @Resource
+    private AppLoginUser appLoginUser;
+
+    /**
+     * 按客户姓名或客户号模糊查询(对公+对私),返回候选客户。
+     * 管户过滤(2026-08-24 需求①):mgr_no 空=无管户,所有客户经理可见;非空=仅管户客户经理本人可见。
+     */
     @GetMapping
     public R<List<Map<String, Object>>> search(@RequestParam String name) {
         if (name == null || name.isBlank()) {
             return R.ok(List.of());
         }
         String like = "%" + name + "%";
+        String mgrNo = appLoginUser.requireCurrentUser().getUsername();
         String sql = """
                 SELECT cust_no AS customerNo, cust_name AS customerName, 'CORP' AS custType, cust_class AS customerClass
                 FROM caps_corp_cust_basic_info
-                WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)
+                WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND (mgr_no IS NULL OR mgr_no = ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)
                 UNION ALL
                 SELECT cust_no AS customerNo, cust_nm AS customerName, 'INDV' AS custType, cust_class AS customerClass
                 FROM caps_indv_cust_basic_info
-                WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)
+                WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND (mgr_no IS NULL OR mgr_no = ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)
                 """;
-        return R.ok(jdbcTemplate.queryForList(sql, like, like, like, like));
+        return R.ok(jdbcTemplate.queryForList(sql, like, like, mgrNo, like, like, mgrNo));
+    }
+
+    /** 开户机构下拉(§用户要求):启用机构列表,客户经理填单选填开户机构(数据源 ccr_sys_dept,与数仓开户机构名对齐)
+     *  2026-08-25 补回:增量022曾加入,后续重构丢失导致 /{customerNo} 抢占 open-orgs → 申请页初始化报"客户不存在" */
+    @GetMapping("/open-orgs")
+    public R<List<Map<String, Object>>> openOrgs() {
+        return R.ok(jdbcTemplate.queryForList("""
+                SELECT id, org_code orgCode, dept_name deptName
+                FROM ccr_sys_dept
+                WHERE del_flag = '0' AND status = 'ENABLE'
+                ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no"""));
     }
 
     /** 客户详情:基本信息 + 本行融资 + 当前贡献度 + 他行融资(申请带出) */
@@ -58,21 +77,23 @@ public class CustomerController {
         List<Map<String, Object>> corp = jdbcTemplate.queryForList("""
                 SELECT cust_no customerNo, cust_name customerName, cert_tp certType, cert_no certNo, ffthlv_class fiveLevelClass,
                        entp_charic entpCharic, entp_scale entpScale, blgd_idsty industry, crdt_grd creditLevel, rest_asts registeredCapital,
-                       openact_org_nm openOrgName, openact_dt openDate, basic_account_no basicAccount, cust_class customerClass
+                       openact_org_nm openOrgName, openact_dt openDate, basic_account_no basicAccount, cust_class customerClass, mgr_no mgrNo
                 FROM caps_corp_cust_basic_info
                 WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no) LIMIT 1""", customerNo);
         if (!corp.isEmpty()) {
+            assertManagerPermitted(corp.get(0));
             result.put("basic", corp.get(0));
             result.put("custType", "CORP");
         } else {
             List<Map<String, Object>> indv = jdbcTemplate.queryForList("""
                     SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo, ocupn occupation,
-                           whlyr_incm annualIncome, mrrg_sittn maritalStatus, tel_no phone, cust_class customerClass
+                           whlyr_incm annualIncome, mrrg_sittn maritalStatus, tel_no phone, cust_class customerClass, mgr_no mgrNo
                     FROM caps_indv_cust_basic_info
                     WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no) LIMIT 1""", customerNo);
             if (indv.isEmpty()) {
                 throw new ServiceException(404, "客户不存在");
             }
+            assertManagerPermitted(indv.get(0));
             result.put("basic", indv.get(0));
             result.put("custType", "INDV");
         }
@@ -121,6 +142,8 @@ public class CustomerController {
         if (corp == null && indv == null) {
             throw new ServiceException(404, "客户不存在:" + customerNo);
         }
+        // 管户权限校验:数仓行带 mgr_no(工号),非本人管户客户经理不可查看
+        assertManagerPermitted(corp != null ? corp : indv);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("customer", GroupQueryController.camel(corp != null ? corp : indv));
         result.put("custType", corp != null ? "CORP" : "INDV");
@@ -143,9 +166,38 @@ public class CustomerController {
         guarantees.put("mortgages", camelRows(dataWarehouseService.mortgages(customerNo)));
         guarantees.put("guarantors", camelRows(dataWarehouseService.guarantors(customerNo)));
         result.put("guarantees", guarantees);
+        // 授信担保拆分明细(需求②:存量利率申请按数仓拆分项勾选,每项内嵌担保措施 T21+T22)
+        List<Map<String, Object>> splits = dataWarehouseService.creditSplits(customerNo);
+        List<String> splitNos = splits.stream().map(s -> String.valueOf(s.get("split_no"))).toList();
+        List<Map<String, Object>> splitMeasures = dataWarehouseService.splitMeasures(splitNos);
+        for (Map<String, Object> sp : splits) {
+            String sn = String.valueOf(sp.get("split_no"));
+            sp.put("measures", camelRows(splitMeasures.stream()
+                    .filter(m -> sn.equals(String.valueOf(m.get("split_no")))).toList()));
+        }
+        result.put("creditSplits", camelRows(splits));
         // 贡献度概况
         result.put("contribution", camelRows(dataWarehouseService.contribution(customerNo)));
         return R.ok(result);
+    }
+
+    /**
+     * 管户权限(需求①,2026-08-24):数仓客户 mgr_no 为空=无管户,任何客户经理可拉出;
+     * mgr_no 非空=有管户客户经理,仅该工号本人可查看。非本人 → 403。
+     */
+    private void assertManagerPermitted(Map<String, Object> custRow) {
+        // 兼容两种键名:detail 内联 SQL 用别名(mgr_no mgrNo),businessView 数仓行用下划线键(mgr_no)
+        Object mgrNo = custRow.get("mgr_no");
+        if (mgrNo == null) {
+            mgrNo = custRow.get("mgrNo");
+        }
+        if (mgrNo == null || String.valueOf(mgrNo).isBlank()) {
+            return;
+        }
+        String currentUsername = appLoginUser.requireCurrentUser().getUsername();
+        if (!String.valueOf(mgrNo).equals(currentUsername)) {
+            throw new ServiceException(403, "无权限查看该客户(该客户由客户经理[" + mgrNo + "]管户)");
+        }
     }
 
     private List<Map<String, Object>> camelRows(List<Map<String, Object>> rows) {

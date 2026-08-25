@@ -1,6 +1,7 @@
 package com.ccr.workflow.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.workflow.service.WarmFlowService;
@@ -46,6 +47,7 @@ public class WarmFlowServiceImpl implements WarmFlowService {
         NODE_NAMES.put("BRANCH_MANAGER", "支行行长");
         NODE_NAMES.put("DEPT_GENERAL_MANAGER", "部门总经理");
         NODE_NAMES.put("VICE_PRESIDENT", "分管副行长");
+        NODE_NAMES.put("SECRETARY", "贷审会秘书岗");
         NODE_NAMES.put("SIX_PEOPLE_GROUP", "六人审批小组");
         NODE_NAMES.put("PRESIDENT", "总行行长");
     }
@@ -179,23 +181,44 @@ public class WarmFlowServiceImpl implements WarmFlowService {
 
     @Override
     public synchronized void ensureStandardFlow() {
+        // 需求④P6/决策⑨:存贷分设。贷款走标准流程,存款/保证金走独立流程;已发布则跳过(重建需删旧定义)
+        ensureFlow(STANDARD_FLOW_CODE, "利率审批标准流程", loanNodeHandlers());
+        ensureFlow(DEPOSIT_FLOW_CODE, "存款保证金审批流程", depositNodeHandlers());
+    }
+
+    /** 贷款标准流程节点:支行行长→部门总经理→分管副行长→秘书岗(≥1000万且<2.6%条件必经)→六人小组→总行行长 */
+    private static Map<String, String> loanNodeHandlers() {
+        Map<String, String> handlers = new LinkedHashMap<>();
+        handlers.put("BRANCH_MANAGER", "branch_manager");
+        handlers.put("DEPT_GENERAL_MANAGER", "dept_gm");
+        handlers.put("VICE_PRESIDENT", "vice_president");
+        handlers.put("SECRETARY", "secretary");
+        handlers.put("SIX_PEOPLE_GROUP", "committee_member");
+        handlers.put("PRESIDENT", "president");
+        return handlers;
+    }
+
+    /** 存款/保证金独立流程节点:支行行长→六人小组→总行行长(决策⑨:存款上会必经行长决议) */
+    private static Map<String, String> depositNodeHandlers() {
+        Map<String, String> handlers = new LinkedHashMap<>();
+        handlers.put("BRANCH_MANAGER", "branch_manager");
+        handlers.put("SIX_PEOPLE_GROUP", "committee_member");
+        handlers.put("PRESIDENT", "president");
+        return handlers;
+    }
+
+    /** 确保指定流程定义已发布;已发布跳过,初始化失败仅记日志不影响系统启动 */
+    private void ensureFlow(String flowCode, String flowName, Map<String, String> nodeHandlers) {
         try {
-            Definition published = definitionService.getPublishByFlowCode(STANDARD_FLOW_CODE);
+            Definition published = definitionService.getPublishByFlowCode(flowCode);
             if (published != null) {
                 return;
             }
-            // 节点顺序=逐级上送链路:支行行长→部门总经理→分管副行长→六人小组→总行行长
-            Map<String, String> nodeHandlers = new LinkedHashMap<>();
-            nodeHandlers.put("BRANCH_MANAGER", "branch_manager");
-            nodeHandlers.put("DEPT_GENERAL_MANAGER", "dept_general_manager");
-            nodeHandlers.put("VICE_PRESIDENT", "vice_president");
-            nodeHandlers.put("SIX_PEOPLE_GROUP", "six_people_group");
-            nodeHandlers.put("PRESIDENT", "president");
-            createFlow(STANDARD_FLOW_CODE, "利率审批标准流程", nodeHandlers);
-            log.info("利率审批标准流程定义已初始化: {}", STANDARD_FLOW_CODE);
+            createFlow(flowCode, flowName, nodeHandlers);
+            log.info("流程定义已初始化: {}", flowCode);
         } catch (Exception e) {
             // 初始化失败不影响系统启动(轨迹记录时再降级)
-            log.error("利率审批标准流程定义初始化失败", e);
+            log.error("流程定义初始化失败 flowCode={}", flowCode, e);
         }
     }
 
@@ -203,9 +226,9 @@ public class WarmFlowServiceImpl implements WarmFlowService {
     public void recordBusinessTrail(String pricingItemNo, String nodeCode, String action,
                                     String operator, String comment) {
         try {
-            Definition definition = definitionService.getPublishByFlowCode(STANDARD_FLOW_CODE);
+            Definition definition = resolveTrailDefinition(pricingItemNo);
             if (definition == null) {
-                log.warn("业务轨迹跳过:标准流程未发布 pricingItemNo={} node={} action={}",
+                log.warn("业务轨迹跳过:流程未发布 pricingItemNo={} node={} action={}",
                         pricingItemNo, nodeCode, action);
                 return;
             }
@@ -235,6 +258,31 @@ public class WarmFlowServiceImpl implements WarmFlowService {
             log.error("业务审批轨迹记录失败 pricingItemNo={} node={} action={}",
                     pricingItemNo, nodeCode, action, e);
         }
+    }
+
+    /**
+     * 按业务载体解析轨迹所用流程定义(需求④P6):存款/保证金(DEPOSIT_ACCOUNT)走独立存款流程,
+     * 其余(贷款)走标准流程;查不到业务类型时降级标准流程,无发布定义返回 null
+     */
+    private Definition resolveTrailDefinition(String pricingItemNo) {
+        String flowCode = STANDARD_FLOW_CODE;
+        if (StrUtil.isNotBlank(pricingItemNo)) {
+            try {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                        "SELECT pricing_carrier_type FROM ccr_pricing_item WHERE pricing_item_no = ? AND del_flag = '0'",
+                        pricingItemNo);
+                if (!rows.isEmpty()) {
+                    Object carrier = rows.get(0).get("pricing_carrier_type");
+                    if ("DEPOSIT_ACCOUNT".equals(carrier)) {
+                        flowCode = DEPOSIT_FLOW_CODE;
+                    }
+                }
+            } catch (Exception e) {
+                // 反查失败不阻断轨迹记录,降级标准流程
+                log.warn("轨迹流程反查失败 pricingItemNo={}, 降级标准流程", pricingItemNo, e);
+            }
+        }
+        return definitionService.getPublishByFlowCode(flowCode);
     }
 
     /** 查找(businessId=定价分项编号)或创建轨迹用流程实例 */

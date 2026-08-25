@@ -38,6 +38,7 @@ import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -231,8 +232,11 @@ class WarmFlowServiceImplTest {
 
     @Test
     void ensureStandardFlow_已发布则跳过() {
+        // 需求④:贷款标准流程与存款独立流程分设,两者均已发布则均跳过
         Definition existing = mockDefinition(300L, "利率审批标准流程");
         when(definitionService.getPublishByFlowCode(WarmFlowService.STANDARD_FLOW_CODE))
+                .thenReturn(existing);
+        when(definitionService.getPublishByFlowCode(WarmFlowService.DEPOSIT_FLOW_CODE))
                 .thenReturn(existing);
 
         service.ensureStandardFlow();
@@ -243,20 +247,25 @@ class WarmFlowServiceImplTest {
 
     @Test
     void ensureStandardFlow_未发布则创建() {
+        // 需求④:两个流程均未发布时各创建一次(贷款含SECRETARY/DGM=dept_gm等修正,存款独立定义)
         when(definitionService.getPublishByFlowCode(WarmFlowService.STANDARD_FLOW_CODE))
+                .thenReturn(null);
+        when(definitionService.getPublishByFlowCode(WarmFlowService.DEPOSIT_FLOW_CODE))
                 .thenReturn(null);
         Definition saved = mockDefinition(301L, "利率审批标准流程");
         when(definitionService.importDef(any())).thenReturn(saved);
 
         service.ensureStandardFlow();
 
-        verify(definitionService).importDef(any());
-        verify(definitionService).publish(301L);
+        verify(definitionService, times(2)).importDef(any());
+        verify(definitionService, times(2)).publish(301L);
     }
 
     @Test
     void ensureStandardFlow_异常不抛出() {
         when(definitionService.getPublishByFlowCode(WarmFlowService.STANDARD_FLOW_CODE))
+                .thenReturn(null);
+        when(definitionService.getPublishByFlowCode(WarmFlowService.DEPOSIT_FLOW_CODE))
                 .thenReturn(null);
         when(definitionService.importDef(any())).thenThrow(new RuntimeException("初始化失败"));
 

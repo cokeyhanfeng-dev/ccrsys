@@ -210,6 +210,30 @@ public class DataWarehouseService {
                 LIMIT 1""", depositAccountNo);
     }
 
+    // ---------- 授信担保拆分明细(需求②,数仓 T21/T22) ----------
+
+    /** 授信担保拆分明细(按客户,最新批次,仅有效):存量利率申请直接读取展示勾选,每项含担保措施 */
+    public List<Map<String, Object>> creditSplits(String customerNo) {
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_credit_split_snapshot
+                WHERE cust_no = ? AND split_status = 'EFFECTIVE'
+                  AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_split_snapshot)
+                ORDER BY split_no""", customerNo);
+    }
+
+    /** 拆分项担保措施(按 split_no 批量,最新批次) */
+    public List<Map<String, Object>> splitMeasures(Collection<String> splitNos) {
+        if (splitNos == null || splitNos.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(splitNos.size(), "?"));
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_credit_split_measure_snapshot
+                WHERE split_no IN (%s)
+                  AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_split_measure_snapshot)
+                ORDER BY split_no, etl_md5""".formatted(placeholders), splitNos.toArray());
+    }
+
     // ---------- 私有 ----------
 
     /**

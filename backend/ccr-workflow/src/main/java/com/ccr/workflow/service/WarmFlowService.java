@@ -10,8 +10,11 @@ import java.util.Map;
  */
 public interface WarmFlowService {
 
-    /** 利率审批标准流程编码(业务审批轨迹载体,节点见 ensureStandardFlow) */
+    /** 利率审批标准流程编码(贷款业务审批轨迹载体,节点见 ensureStandardFlow) */
     String STANDARD_FLOW_CODE = "rate_approval";
+
+    /** 存款/保证金独立流程编码(需求④P6/决策⑨:存贷分设,存款链=支行行长→六人小组→总行行长) */
+    String DEPOSIT_FLOW_CODE = "deposit_approval";
 
     /**
      * 创建并发布流程定义(编程式,§18 POC)

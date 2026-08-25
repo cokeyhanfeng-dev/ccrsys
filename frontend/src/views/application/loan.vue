@@ -470,9 +470,9 @@
         <span class="badge badge--info">逐担保方式独立路由/表决</span>
         <span class="badge badge--warning">贷款利率越低越优惠</span>
         <InfoTip>
-          <template v-if="form.businessType === 'EXISTING'">存量授信:每个贷款合同对应一个担保方式,按合同切分授信额度(原利率取合同执行利率)。</template>
-          <template v-else>新增授信:尚无贷款合同,按担保方式切分授信额度,审批通过后回填正式合同(拟签合同)。</template>
-          集团场景按“成员 × 合同”生成分项;申请利率不限,任何利率均可提交审批(产品硬边界仅作展示,不再限制)。
+          <template v-if="form.businessType === 'EXISTING'">存量调息:按数仓授信担保拆分明细勾选拆分项,填申请利率提交(与新增一致,只关注拆分项,不再按合同/授信协议拆分)。</template>
+          <template v-else>新增授信:尚无授信担保拆分项,按担保方式手工切分授信额度。</template>
+          集团场景按“成员 × 担保项”生成分项;申请利率不限,任何利率均可提交审批(产品硬边界仅作展示,不再限制)。
         </InfoTip>
       </div>
 
@@ -488,155 +488,58 @@
         </div>
       </div>
 
-      <!-- 授信信息:存量按客户带出授信协议,选中后要素带出可修正;新增手工补录(协议号可空,拟签授信);
-           补录/修正要素随申请提交,审批详情「授信信息」区展示;协议项下合同由下方分项卡片按合同逐条填充 -->
+      <!-- 授信信息:存量=数仓授信协议只读(协议编号/授信金额/授信起止日期/授信状态)+授信总金额+拆分细项合计;新增=总授信额度手工录入+拆分细项合计 -->
       <div class="credit-overview">
-        <div class="credit-overview__item">
-          <span>授信协议</span>
-          <select class="form-select" v-model="form.creditAgreementNo" @change="onAgreementSelect"
-                  :disabled="form.businessType === 'NEW'">
-            <option value="" disabled>{{ form.businessType === 'NEW' ? '新增授信:协议资料请手工录入' : '选择授信协议' }}</option>
-            <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
-              {{ a.agreementNo }} · {{ agreementTypeText(a.agreementType) }} · {{ a.creditAmount }} 万
-            </option>
-          </select>
-        </div>
-        <template v-if="form.businessType === 'EXISTING' && selectedAgreement">
-          <div class="credit-overview__item credit-overview__item--static"><span>授信协议号</span><b>{{ form.creditInfo.agreementNo }}</b></div>
-          <div class="credit-overview__item">
-            <span>授信类型</span>
-            <select class="form-select" v-model="form.creditInfo.agreementType">
-              <option value="" disabled>选择授信类型</option>
-              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
-            </select>
+        <template v-if="form.businessType === 'EXISTING'">
+          <div v-if="creditAgreements.length" class="credit-overview__agreement">
+            <table class="table">
+              <thead><tr><th>授信协议编号</th><th>授信金额(万元)</th><th>授信日期</th><th>授信状态</th></tr></thead>
+              <tbody>
+                <tr v-for="a in creditAgreements" :key="a.agreementNo">
+                  <td>{{ a.agreementNo || '—' }}</td>
+                  <td>{{ a.creditAmount ?? '—' }}</td>
+                  <td>{{ [a.startDate, a.endDate].filter(Boolean).join(' 至 ') || '—' }}</td>
+                  <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="credit-overview__item">
-            <span>币种</span>
-            <select class="form-select" v-model="form.creditInfo.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
-            </select>
+          <div v-else class="empty" style="margin-bottom:10px">暂无授信协议数据(数仓未推送)</div>
+          <div class="credit-overview__item credit-overview__item--static">
+            <span>授信总金额(万元)</span><b>{{ creditTotalText }}</b>
           </div>
-          <div class="credit-overview__item">
-            <span>协议状态</span>
-            <select class="form-select" v-model="form.creditInfo.agreementStatus">
-              <option value="" disabled>选择协议状态</option>
-              <option value="EFFECTIVE">有效</option>
-              <option value="EXPIRED">已到期</option>
-              <option value="CLOSED">已终止</option>
-            </select>
-          </div>
-          <div class="credit-overview__item">
-            <span>授信额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" />
-          </div>
-          <div class="credit-overview__item">
-            <span>已用额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.usedAmount" />
-          </div>
-          <div class="credit-overview__item">
-            <span>可用额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.availableAmount" />
-          </div>
-          <div class="credit-overview__item credit-overview__item--date">
-            <span>协议期限</span>
-            <div class="credit-overview__range">
-              <input class="form-input" type="date" v-model="form.creditInfo.startDate" />
-              <span class="credit-overview__range-sep">至</span>
-              <input class="form-input" type="date" v-model="form.creditInfo.endDate" />
-            </div>
+          <div class="credit-overview__item credit-overview__item--static">
+            <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
           </div>
         </template>
-        <!-- 存量调息但未选中协议:授信要素手工补录(完整字段,可修正) -->
-        <template v-else-if="form.businessType === 'EXISTING'">
-          <div class="credit-overview__item">
-            <span>授信协议号</span>
-            <input class="form-input" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
-          </div>
-          <div class="credit-overview__item">
-            <span>授信类型</span>
-            <select class="form-select" v-model="form.creditInfo.agreementType">
-              <option value="" disabled>选择授信类型</option>
-              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
-            </select>
-          </div>
-          <div class="credit-overview__item">
-            <span>币种</span>
-            <select class="form-select" v-model="form.creditInfo.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
-            </select>
-          </div>
-          <div class="credit-overview__item">
-            <span>协议状态</span>
-            <select class="form-select" v-model="form.creditInfo.agreementStatus">
-              <option value="" disabled>选择协议状态</option>
-              <option value="EFFECTIVE">有效</option>
-              <option value="EXPIRED">已到期</option>
-              <option value="CLOSED">已终止</option>
-            </select>
-          </div>
-          <div class="credit-overview__item">
-            <span>授信额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" placeholder="手工录入" />
-          </div>
-          <div class="credit-overview__item">
-            <span>已用额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.usedAmount" placeholder="可空" />
-          </div>
-          <div class="credit-overview__item">
-            <span>可用额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.creditInfo.availableAmount" placeholder="可空" />
-          </div>
-          <div class="credit-overview__item credit-overview__item--date">
-            <span>协议期限</span>
-            <div class="credit-overview__range">
-              <input class="form-input" type="date" v-model="form.creditInfo.startDate" />
-              <span class="credit-overview__range-sep">至</span>
-              <input class="form-input" type="date" v-model="form.creditInfo.endDate" />
-            </div>
-          </div>
-        </template>
-        <!-- 新增授信:授信只需授信总额/协议编号/授信类型(下拉)3要素,其余要素留待协议生效后维护(§用户要求) -->
         <template v-else>
           <div class="credit-overview__item">
-            <span>授信协议号</span>
-            <input class="form-input" v-model="form.creditInfo.agreementNo" placeholder="新增可空(拟签)" />
+            <span>总授信额度(万元)</span>
+            <input class="form-input form-input--amount" v-model="form.totalCredit" placeholder="手工录入" />
           </div>
-          <div class="credit-overview__item">
-            <span>授信类型</span>
-            <select class="form-select" v-model="form.creditInfo.agreementType">
-              <option value="" disabled>选择授信类型</option>
-              <option v-for="t in agreementTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
-            </select>
+          <div class="credit-overview__item credit-overview__item--static">
+            <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
           </div>
         </template>
-        <div class="credit-overview__item">
-          <span>总授信额度(万元)</span>
-          <input class="form-input form-input--amount" v-model="form.totalCredit" placeholder="授信额度带出或手工" />
-        </div>
-        <div class="credit-overview__item credit-overview__item--static">
-          <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
-        </div>
         <template v-if="form.customerScope === 'GROUP'">
           <div class="credit-overview__item credit-overview__item--static"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
           <div class="credit-overview__item credit-overview__item--static"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
         </template>
       </div>
 
-            <div v-if="overGroupAvailable" class="credit-overview-warning">
+      <div v-if="overGroupAvailable" class="credit-overview-warning">
         分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
       </div>
 
-      <!-- 存量调息未选授信协议:分项留空,由协议选择按协议项下带出(§用户要求) -->
-      <div v-if="form.businessType === 'EXISTING' && !form.creditAgreementNo" class="empty" style="margin-bottom:12px">
-        请先在「授信信息」中选择授信协议,将自动带出该协议项下的贷款合同作为利率申请分项。
-      </div>
+      <!-- 存量无拆分项提示:数仓未推送时按担保方式手工添加 -->
+      <div v-if="form.businessType === 'EXISTING' && !creditSplits.length" class="empty" style="margin-bottom:12px">该客户暂无有效授信担保拆分明细(数仓未推送),请在下方按担保方式手工添加分项。</div>
 
-      <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/合同/措施明细 + 产品/期限/金额/利率 -->
+      <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
       <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
-            分项 {{ idx + 1 }}
-            <span v-if="g.contractBusinessKey" class="badge badge--info">合同 {{ g.contractBusinessKey }}</span>
+            分项{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
+            <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
             <span v-else-if="g.guaranteeType === 'PLEDGE'" class="badge badge--neutral">质押物 {{ g.pledges.length }} 项</span>
@@ -646,15 +549,11 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 第一行:存量=贷款合同(协议项下,只读带出)+担保方式(按合同带出);新增=纯担保方式切分,无合同概念 -->
+        <!-- 第一行:新增/存量统一按担保方式切分;存量拆分项由上方勾选带出(担保方式/金额/原利率/措施预填,可再编辑) -->
         <div class="mortgage-item__grid">
-          <div class="form-field" v-if="form.businessType === 'EXISTING'">
-            <label class="form-field__label">贷款合同 <span class="req">*</span></label>
-            <input class="form-input" :value="g.contractBusinessKey" disabled />
-          </div>
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
-            <select class="form-select" v-model="g.memberCustomerNo" @change="g.contractBusinessKey = ''">
+            <select class="form-select" v-model="g.memberCustomerNo">
               <option value="" disabled>选择成员</option>
               <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
                 {{ m.memberName || m.memberCustomerNo }}
@@ -806,7 +705,7 @@
                 </table>
         </div>
       </div>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">{{ form.businessType === 'EXISTING' ? '＋ 补入贷款合同' : '＋ 添加担保分项' }}</button>
+      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 1">上一步</button>
@@ -1037,7 +936,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
-  productName, inputModeText, LOAN_PRODUCTS, agreementTypeText,
+  productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, certTypeText, groupStatusText, currencyText, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
@@ -1097,7 +996,8 @@ interface MortgageRow {
 interface GuarantorRow { name: string; certNo: string; amount: string; balance: string }
 interface GuaranteeRow {
   memberCustomerNo: string
-  contractBusinessKey: string
+  /** 数仓授信担保拆分项编号(存量调息勾选来源,需求②;新增为空) */
+  sourceSplitNo: string
   guaranteeType: string
   productCode: string
   termValue: string
@@ -1151,7 +1051,7 @@ function initialCreditInfo(): CreditInfo {
 
 function newGuarantee(scope?: string): GuaranteeRow {
   return {
-    memberCustomerNo: '', contractBusinessKey: '', guaranteeType: 'MORTGAGE',
+    memberCustomerNo: '', sourceSplitNo: '', guaranteeType: 'MORTGAGE',
     productCode: defaultProductByScope(scope ?? form.customerScope), termValue: '', termUnit: 'MONTH', amount: '', currency: 'CNY',
     originalRate: '', requestedRate: '', mortgages: [], guarantors: [], pledges: [], margins: [], cds: []
   }
@@ -1168,7 +1068,7 @@ const form = reactive({
   customerNo: '',
   loanType: 'CORP_LOAN',
   businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
-  totalCredit: '', // 总授信额度(存量=协议带出可改;新增=手工录入)
+  totalCredit: '', // 总授信额度(存量=拆分合计自动同步;新增=手工录入)
   creditAgreementNo: '', // 授信协议编号(存量)
   creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
@@ -1306,22 +1206,17 @@ async function loadCustomerDetail() {
       creditAgreements.value = view.creditAgreements || []
       creditContracts.value = view.contracts || []
       relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
-      // 仅存量调息可带出并自动选中协议;新增授信协议资料需手工录入(§用户要求),不自动选中
-      if (form.businessType !== 'NEW' && creditAgreements.value.length === 1) {
-        form.creditAgreementNo = creditAgreements.value[0].agreementNo
-        onAgreementSelect()
-      }
+      creditSplits.value = view.creditSplits || []
       // 申请要素自动带出(§用户要求):贷款品种按客户类型、金额档按合同金额合计、业务类型按是否名下有合同
       form.loanType = form.customerScope === 'INDIVIDUAL' ? 'PERSONAL_LOAN' : 'CORP_LOAN'
       const contractRows = view.contracts || []
       const totalContractAmt = contractRows.reduce((s, c: any) => s + (Number(c.contractAmount) || 0), 0)
       if (totalContractAmt > 0) form.amountTier = totalContractAmt >= 5000 ? 'GE_5000' : 'LT_5000'
-      // 存量贷款:客户名下有贷款合同默认自动进入存量调息;
-      // 分项合同由「授信协议选择」按协议项下带出(先选协议再填充;未选协议不填充,§用户要求)——
-      // 唯一协议已在上方自动选中并带出,多协议/无协议则分项留空,由客户经理选择协议触发带出
-      if (contractRows.length && !userPickedBusinessType.value) {
+      // 需求②:存量利率申请按数仓授信担保拆分明细勾选(不再按授信协议/贷款合同);客户有拆分项默认进入存量并全选
+      if (creditSplits.value.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
-        if (!form.creditAgreementNo) form.guarantees = []
+        form.guarantees = []
+        selectAllSplits()
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
@@ -1523,37 +1418,19 @@ const guaranteesTotalAmount = computed(() =>
 const creditAgreements = ref<any[]>([])
 const creditContracts = ref<any[]>([])
 const relatedGuarantees = ref<{ mortgages: any[]; guarantors: any[] }>({ mortgages: [], guarantors: [] })
-/** 当前选中的授信协议(存量) */
-const selectedAgreement = computed(() =>
-  creditAgreements.value.find((a) => a.agreementNo === form.creditAgreementNo) || null)
-function onAgreementSelect() {
-  const a = selectedAgreement.value
-  if (a) {
-    form.totalCredit = String(a.creditAmount ?? '')
-    // 协议要素带出到补录/修正快照(界面可调,随单提交,审批详情优先展示补录值)
-    form.creditInfo = {
-      agreementNo: a.agreementNo ?? '',
-      agreementType: a.agreementType ?? '',
-      currency: a.currency || 'CNY',
-      agreementStatus: a.agreementStatus ?? '',
-      creditAmount: a.creditAmount != null ? String(a.creditAmount) : '',
-      usedAmount: a.usedAmount != null ? String(a.usedAmount) : '',
-      availableAmount: a.availableAmount != null ? String(a.availableAmount) : '',
-      startDate: a.startDate ?? '',
-      endDate: a.endDate ?? ''
-    }
-  }
-  // 带出该授信协议项下贷款合同与关联抵押物/保证人(数仓,按客户)并自动列为分项;
-  // 未选协议不填充(§用户要求:先选授信协议再带出合同,切换协议即重新按协议项下带出)
-  if (form.customerNo) {
-    getCustomerBusinessView(form.customerNo).then((view: any) => {
-      creditContracts.value = view.contracts || []
-      relatedGuarantees.value = view.guarantees || { mortgages: [], guarantors: [] }
-      autoItemsFromContracts(view.contracts || [])
-    }).catch(() => {})
-  }
-}
+/** 数仓授信担保拆分明细(T21,存量利率申请勾选来源;每项含措施 T22,需求②) */
+const creditSplits = ref<any[]>([])
 const guaranteesTotalText = computed(() => (Math.round(guaranteesTotalAmount.value * 100) / 100).toString())
+/** 存量授信总金额(数仓授信协议 credit_amount 合计,万元;无协议显示 —) */
+const creditTotalText = computed(() => {
+  const total = creditAgreements.value.reduce((s, a) => s + (Number(a.creditAmount) || 0), 0)
+  return total > 0 ? String(total) : '—'
+})
+/** 分项中文序号:1→一,2→二(≤10) */
+const CN_ORDINAL = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+function cnOrdinal(n: number): string {
+  return CN_ORDINAL[n - 1] ?? String(n)
+}
 
 
 const overGroupAvailable = computed(() => {
@@ -1564,76 +1441,26 @@ const overGroupAvailable = computed(() => {
   return Number.isFinite(n) && guaranteesTotalAmount.value > n
 })
 
-function contractOptions(g: GuaranteeRow) {
-  if (form.customerScope === 'GROUP') {
-    return memberContracts.value[g.memberCustomerNo] || []
-  }
-  return ownFinancing.value
-}
-function onContractSelect(g: GuaranteeRow) {
-  const c = contractOptions(g).find((x: any) => x.contractNo === g.contractBusinessKey)
-  if (c) {
-    g.originalRate = c.executionRate ?? c.contractRate ?? ''
-    if (c.currency) g.currency = c.currency
-    // 存量:分项金额按合同金额自动带出(合同金额缺省用合同余额)
-    const amt = c.contractAmount ?? c.loanBalance
-    if (amt != null) g.amount = String(amt)
-    // 担保方式按合同担保类型带出
-    if (c.guaranteeType) g.guaranteeType = c.guaranteeType
-  }
-}
-/** 合同期限由数仓起止日加工(满 12 个月折年,否则按月;无法计算返回 null) */
-function contractTerm(start?: string, end?: string): { value: string; unit: string } | null {
-  if (!start || !end) return null
-  const s = new Date(start)
-  const e = new Date(end)
-  if (Number.isNaN(+s) || Number.isNaN(+e) || e <= s) return null
-  const months = Math.max(1, (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()))
-  if (months % 12 === 0 && months >= 12) return { value: String(months / 12), unit: 'YEAR' }
-  return { value: String(months), unit: 'MONTH' }
-}
-
-/** 存量:把「当前选中的授信协议」项下贷款合同自动列为担保分项(客户经理可删除不需要提交调息的合同);
- *  未选授信协议不填充(§用户要求:先选协议再带合同,分项随协议变化) */
-function autoItemsFromContracts(contracts: any[]) {
-  const rows = (contracts || []).filter((c) => c && c.contractNo && c.agreementNo === form.creditAgreementNo)
-  if (!rows.length) { form.guarantees = []; return }
-  form.guarantees = rows.map((c) => {
-    const g = newGuarantee()
-    g.contractBusinessKey = c.contractNo
-    g.originalRate = c.executionRate != null ? String(c.executionRate) : ''
-    g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
-    g.currency = c.currency || 'CNY'
-    // 合同期限由数仓起止日加工自动填充
-    const term = contractTerm(c.startDate, c.maturityDate)
-    if (term) { g.termValue = term.value; g.termUnit = term.unit }
-    const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
-    if (c.guaranteeType || fin?.guaranteeType) g.guaranteeType = c.guaranteeType || fin.guaranteeType
-    populateMeasuresFromDw(g, c.contractNo)
-    // 担保类型兜底:合同表/本行融资未带出时,按带出的措施推断(有抵押物→抵押;仅保证人→保证)
-    if (!c.guaranteeType && !fin?.guaranteeType) {
-      g.guaranteeType = g.mortgages.length ? 'MORTGAGE' : (g.guarantors.length ? 'GUARANTEE' : 'MORTGAGE')
-    }
-    return g
-  })
-}
+/** 需求②(2026-08-24):存量按担保项拆分,不再按协议/合同自动生成分项(原 autoItemsFromContracts 已移除) */
 function onBusinessTypeChange() {
   if (form.businessType === 'EXISTING') {
     form.totalCredit = ''
     form.creditAgreementNo = ''
     form.creditInfo = initialCreditInfo()
-    // 先选授信协议再带出合同(§用户要求):未选协议时分项留空,由协议选择按协议项下带出
+    // 需求②:存量按数仓授信担保拆分明细勾选(不再按授信协议/合同),重置分项并默认全选
     form.guarantees = []
-    // 已有客户则刷新授信协议列表供选择
     if (form.customerNo) {
       getCustomerBusinessView(form.customerNo)
-        .then((view: any) => { creditAgreements.value = view.creditAgreements || [] })
+        .then((view: any) => {
+          creditSplits.value = view.creditSplits || []
+          creditAgreements.value = view.creditAgreements || []
+          selectAllSplits()
+        })
         .catch(() => {})
     }
-    ElMessage.info('请选择授信协议,将自动带出该协议项下的贷款合同')
+    ElMessage.info('存量调息:已自动带出数仓授信担保拆分项,填申请利率提交')
   } else {
-    // 新增授信:无存量协议可带出,授信信息留待手工补录(协议号可空);
-    // 清空存量带出的贷款合同分项,重置为一条空白分项由客户经理手工补充(§用户要求)
+    // 新增授信:无数仓拆分项,重置为一条空白分项由客户经理按担保方式手工补充
     form.creditAgreementNo = ''
     form.totalCredit = ''
     form.creditInfo = initialCreditInfo()
@@ -1656,6 +1483,9 @@ function parseExtJson(j: any): any {
 }
 /** 合同关联的抵押物/保证人从数仓带出到分项(可再编辑) */
 function populateMeasuresFromDw(g: GuaranteeRow, contractNo: string) {
+  // 切换参考合同重新填充,先清空上次带出的措施避免重复
+  g.mortgages = []
+  g.guarantors = []
   for (const m of relatedGuarantees.value.mortgages.filter((x: any) => x.contractNo === contractNo)) {
     const ext = parseExtJson(m.extJson)
     g.mortgages.push({
@@ -1678,6 +1508,80 @@ function populateMeasuresFromDw(g: GuaranteeRow, contractNo: string) {
   }
 }
 
+// ---------- 需求② 存量:数仓授信担保拆分项自动渲染 ----------
+
+/** 拆分项是否已在分项列表中(sourceSplitNo 命中,供 selectAllSplits 去重) */
+function isSplitSelected(splitNo: string): boolean {
+  return form.guarantees.some((g) => g.sourceSplitNo === splitNo)
+}
+
+/** 数仓拆分项 → 分项行(担保方式/金额/原利率带出,担保措施按 T22 预填,可再编辑) */
+function splitToGuarantee(sp: any): GuaranteeRow {
+  const g = newGuarantee(form.customerScope)
+  g.sourceSplitNo = sp.splitNo
+  g.guaranteeType = sp.guaranteeType || 'MORTGAGE'
+  g.amount = sp.splitAmount != null ? String(sp.splitAmount) : ''
+  g.currency = sp.currency || 'CNY'
+  g.originalRate = sp.originalRate != null ? String(sp.originalRate) : ''
+  for (const m of sp.measures || []) {
+    if (m.measureType === 'MORTGAGE') {
+      const ext = parseExtJson(m.extJson)
+      g.mortgages.push({
+        type: DW_MORTGAGE_TYPE[m.mortgageType] || '住宅',
+        name: m.mortgageName || '', addr: m.mortgageAddr || '',
+        value: m.assessValue != null ? String(m.assessValue) : '',
+        owner: m.ownerName || '', ratio: m.mortgageRatio != null ? String(m.mortgageRatio) : '',
+        area: ext.area || '', certNo: ext.certNo || m.registerNo || '',
+        landUseType: ext.landUseType || '出让', landUseExpiry: ext.landUseExpiry || '',
+        specModel: ext.specModel || '', quantity: ext.quantity || '', purchaseDate: ext.purchaseDate || '',
+        plateNo: ext.plateNo || '', vin: ext.vin || '', regDate: ext.regDate || ''
+      })
+    } else if (m.measureType === 'GUARANTEE' || m.measureType === 'GUARANTOR') {
+      g.guarantors.push({
+        name: m.guarantorName || '', certNo: m.guarantorCertNo || '',
+        amount: m.guaranteeAmount != null ? String(m.guaranteeAmount) : '',
+        balance: m.guaranteeBalance != null ? String(m.guaranteeBalance) : ''
+      })
+    } else if (m.measureType === 'PLEDGE') {
+      g.pledges.push({
+        type: '存单', name: m.measureName || '',
+        value: m.guaranteeAmount != null ? String(m.guaranteeAmount) : '',
+        owner: m.ownerName || ''
+      })
+    } else if (isMarginType(m.measureType)) {
+      g.margins.push({
+        amount: m.guaranteeAmount != null ? String(m.guaranteeAmount) : '',
+        ratio: m.extJson?.marginRatio != null ? String(m.extJson.marginRatio) : '',
+        term: m.extJson?.termMonths != null ? String(m.extJson.termMonths) : ''
+      })
+    } else if (m.measureType === 'CERTIFICATE_DEPOSIT') {
+      g.cds.push({
+        cdNo: m.collateralNo || m.measureName || '',
+        amount: m.guaranteeAmount != null ? String(m.guaranteeAmount) : '',
+        maturityDate: m.extJson?.maturityDate || ''
+      })
+    }
+  }
+  return g
+}
+
+/** 存量自动渲染:将数仓全部拆分项生成为分项卡片(进入存量调息时调用) */
+function selectAllSplits() {
+  for (const sp of creditSplits.value) {
+    if (isSplitSelected(sp.splitNo)) continue
+    const g = splitToGuarantee(sp)
+    const blankIdx = form.guarantees.findIndex((x) => !x.sourceSplitNo && !x.requestedRate && !x.amount)
+    if (blankIdx >= 0) form.guarantees[blankIdx] = g
+    else form.guarantees.push(g)
+  }
+  syncTotalCredit()
+}
+
+/** 存量:总授信额度=拆分合计(随分项同步,供提交/展示) */
+function syncTotalCredit() {
+  if (form.businessType === 'EXISTING') form.totalCredit = guaranteesTotalText
+}
+
 /** 合同担保类型(own_financing 按合同号匹配) */
 function finGuaranteeType(contractNo: string): string {
   const fin = ownFinancing.value.find((f: any) => f.contractNo === contractNo)
@@ -1685,29 +1589,7 @@ function finGuaranteeType(contractNo: string): string {
 }
 
 function addGuarantee() {
-  if (form.businessType === 'EXISTING') {
-    if (!form.creditAgreementNo) {
-      ElMessage.warning('请先选择授信协议,将自动带出该协议项下的贷款合同')
-      return
-    }
-    // 存量:分项=当前授信协议项下贷款合同,添加即补回一个未在列的合同
-    const used = new Set(form.guarantees.map((g) => g.contractBusinessKey))
-    const rest = creditContracts.value.filter((c) => c.contractNo && c.agreementNo === form.creditAgreementNo && !used.has(c.contractNo))
-    if (!rest.length) {
-      ElMessage.warning('该授信协议项下全部贷款合同已在列表中')
-      return
-    }
-    const g = newGuarantee()
-    const c = rest[0]
-    g.contractBusinessKey = c.contractNo
-    g.originalRate = c.executionRate != null ? String(c.executionRate) : ''
-    g.amount = c.contractAmount != null ? String(c.contractAmount) : (c.contractBalance != null ? String(c.contractBalance) : '')
-    const fin = ownFinancing.value.find((f: any) => f.contractNo === c.contractNo)
-    if (fin?.guaranteeType) g.guaranteeType = fin.guaranteeType
-    populateMeasuresFromDw(g, c.contractNo)
-    form.guarantees.push(g)
-    return
-  }
+  // 需求②:存量与新增一致,按担保项拆分,直接追加空白担保行(可参考合同带出预填)
   form.guarantees.push(newGuarantee())
 }
 function removeGuarantee(idx: number) {
@@ -1869,7 +1751,6 @@ function validateStep(s: number): string | null {
     for (let i = 0; i < form.guarantees.length; i++) {
       const g = form.guarantees[i]
       if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
-      if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
       if (isBlank(g.guaranteeType)) return `第 ${i + 1} 条担保分项未选择担保方式`
       if (g.guaranteeType !== 'CREDIT') {
         const n = g.mortgages.length + g.guarantors.length + g.pledges.length + g.margins.length + g.cds.length
@@ -1928,7 +1809,6 @@ function validateForDraft(): string | null {
   for (let i = 0; i < form.guarantees.length; i++) {
     const g = form.guarantees[i]
     if (isGroup && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择涉及成员`
-    if (form.businessType === 'EXISTING' && isBlank(g.contractBusinessKey)) return `第 ${i + 1} 条担保分项未选择贷款合同`
     if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(利率申请步骤)`
     if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率申请步骤)`
     if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率申请步骤)`
@@ -2022,8 +1902,8 @@ function buildPayload(): ApplicationPayload {
       currency: g.currency || 'CNY',
       originalRate: isBlank(g.originalRate) ? undefined : g.originalRate,
       memberCustomerNo: isGroup ? g.memberCustomerNo : undefined,
-      contractBusinessKey: isBlank(g.contractBusinessKey) ? undefined : g.contractBusinessKey,
-      plannedContractFlag: form.businessType === 'NEW' ? 'Y' : 'N',
+      // 需求②:新增/存量统一纯拆分项——不建合同关系、不回填合同号;存量带数仓拆分项编号溯源
+      sourceSplitNo: isBlank(g.sourceSplitNo) ? undefined : g.sourceSplitNo,
       guaranteeType: g.guaranteeType,
       measures: buildMeasures(g)
     })),
@@ -2351,7 +2231,7 @@ async function loadDraftIntoForm(id: number | string) {
     if (rel?.plannedContractFlag === 'Y') hasPlanned = true
     const g = newGuarantee()
     g.memberCustomerNo = p.memberCustomerNo || ''
-    g.contractBusinessKey = rel?.contractBusinessKey || rel?.loanContractNo || ''
+    g.sourceSplitNo = p.sourceSplitNo || ''
     g.guaranteeType = pkg?.guaranteePackage?.mainGuaranteeType || 'MORTGAGE'
     g.productCode = p.productCode || ''
     g.termValue = p.termValue != null ? String(p.termValue) : ''
@@ -2485,6 +2365,9 @@ async function loadDraftIntoForm(id: number | string) {
   border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
   padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
 }
+/* 存量授信协议只读表(数仓带出,占满 credit-overview 整行) */
+.credit-overview__agreement { grid-column: 1 / -1; }
+.credit-overview__agreement .table { margin-bottom: 0; }
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .customer-cand:last-child { border-bottom: none; }

@@ -40,12 +40,6 @@
         <div><span class="dg-label">客户号</span>{{ application.customerNo || pi.pricing_customer_no || '—' }}</div>
         <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
       </div>
-      <!-- 本次申请补录/新增授信(§用户要求:与存量授信分开展示,不在"本行授信情况"里以空值混排) -->
-      <div v-if="appliedCredit" class="detail-grid applied-credit" style="margin-top:8px">
-        <div><span class="dg-label">申请授信协议号</span>{{ appliedCredit.agreementNo || '—' }}</div>
-        <div><span class="dg-label">申请授信类型</span>{{ agreementTypeText(appliedCredit.agreementType) }}</div>
-        <div><span class="dg-label">申请授信总额(万元)</span>{{ appliedCredit.creditAmount != null ? appliedCredit.creditAmount : '—' }}</div>
-      </div>
       <table class="table" style="margin-top:12px">
         <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
         <tbody>

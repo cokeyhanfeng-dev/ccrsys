@@ -242,6 +242,10 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                 LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                 LEFT JOIN ccr_application a ON a.id = pi.application_id
                 WHERE cp.del_flag = '0'
+                  -- 需求③:仅统计已结束承诺(以申请录入的承诺完成截止日 ccr_application_commitment.end_date <= 当前日期为准,决策⑥)
+                  AND EXISTS (SELECT 1 FROM ccr_application_commitment cm
+                              WHERE cm.application_id = a.id
+                                AND cm.end_date IS NOT NULL AND cm.end_date <= CURDATE())
                   AND cp.org_id IN (SELECT id FROM ccr_sys_dept WHERE org_code = ? AND del_flag = '0')
                   AND """ + scopeCondition(scope, orgParams), orgParams.toArray());
 
@@ -257,6 +261,10 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                 LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
                 LEFT JOIN ccr_application a ON a.id = pi.application_id
                 WHERE cp.del_flag = '0' AND (cp.customer_no = ? OR cp.member_customer_no = ?)
+                  -- 需求③:仅统计已结束承诺(以申请录入的承诺完成截止日 ccr_application_commitment.end_date <= 当前日期为准,决策⑥)
+                  AND EXISTS (SELECT 1 FROM ccr_application_commitment cm
+                              WHERE cm.application_id = a.id
+                                AND cm.end_date IS NOT NULL AND cm.end_date <= CURDATE())
                   AND """ + scopeCondition(scope, custParams), custParams.toArray());
 
         Map<String, Object> result = new LinkedHashMap<>();

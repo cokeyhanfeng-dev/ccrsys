@@ -16,9 +16,13 @@ Thumbs.db
 
 # 日志与临时
 *.log
+logs/
 
 # 内部临时脚本/工具与认证 token(不入库)
 .scratch/
+
+# 本地临时测试构建(不入库):复用 maven 镜像作运行基础,jar 由宿主机预生成
+backend/Dockerfile.local
 
 # 项目内隔离工具链与依赖缓存(由 ./dev setup 创建)
 .tools/

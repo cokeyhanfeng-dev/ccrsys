@@ -83,6 +83,15 @@ ccr:
       refresh-cron: 0 */1 * * * *   # 缓存配置定时兜底刷新(单实例经管理接口已实时生效)
     data:
       refresh-cron: 0 0 * * * *   # 缓存数据定时刷新(默认每小时;遍历启用+数据加载器的精确 key 项调 load 写 Redis,单项失败不阻断)
+    # 运行日志监控(增量014):报错采集异步落库 ccr_error_log + 日志文件落盘(§11.11)
+    run-log:
+      logs-path: logs           # 日志文件目录(相对启动目录;docker 挂载 ./logs:/app/logs)
+      min-level: ERROR          # 报错采集最低级别(ERROR 起;可调 WARN 扩大采集)
+      queue-size: 10000         # 报错采集异步队列容量(满则丢最旧,保最新)
+      flush-interval-ms: 3000   # 报错批量落库间隔(毫秒)
+      batch-size: 50            # 报错批量落库条数阈值
+      retention-days: 30        # ccr_error_log 保留天数(超期由清理任务删除)
+      clean-cron: 0 22 3 * * ?  # 清理任务 cron(默认每天 03:22)
 
 # 业务参数(代码内均有默认值,以下仅注释说明;需调整时取消注释)
 # ccr:

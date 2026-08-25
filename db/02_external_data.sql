@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `caps_corp_cust_basic_info` (
   `openact_dt`        DATE         NULL COMMENT '开户日期/基本户开户日期',
   `basic_account_no`  VARCHAR(64)  NULL COMMENT '基本户账户/基本户账号(数仓回填,申请页可改,可空;2026-08-14 新增)',
   `cust_class`        VARCHAR(10)  NOT NULL COMMENT 'EXISTING存客/NEW新客',
+  `mgr_no`            VARCHAR(32)  NULL COMMENT '管户客户经理工号(参照 ccr_sys_user.username;空=无管户,所有客户经理可见;2026-08-24 需求①新增)',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_cust_no` (`cust_no`),
   KEY `idx_cert_no` (`cert_no`)
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS `caps_indv_cust_basic_info` (
   `opnact_org_nm`     VARCHAR(32)  NULL COMMENT '开户机构/最早开户机构名称',
   `opnact_dt`         DATE         NULL COMMENT '开户日期/最早开户日期',
   `cust_class`        VARCHAR(10)  NOT NULL COMMENT 'EXISTING存客/NEW新客',
+  `mgr_no`            VARCHAR(32)  NULL COMMENT '管户客户经理工号(参照 ccr_sys_user.username;空=无管户,所有客户经理可见;2026-08-24 需求①新增)',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_cust_no` (`cust_no`),
   KEY `idx_cert_no` (`cert_no`)
@@ -194,6 +196,7 @@ CREATE TABLE IF NOT EXISTS `dw_customer_group_snapshot` (
   `group_name`        VARCHAR(128) NOT NULL COMMENT '集团名称',
   `group_type`        VARCHAR(20)  NOT NULL COMMENT '集团类型',
   `manager_org_id`    VARCHAR(32)  NULL COMMENT '集团主办机构编号',
+  `mgr_no`            VARCHAR(32)  NULL COMMENT '管户客户经理工号(参照 ccr_sys_user.username;空=无管户;2026-08-24 需求①新增)',
   `group_status`      VARCHAR(16)  NOT NULL COMMENT '集团状态:NORMAL正常/DISSOLVED解散',
   PRIMARY KEY (`etl_md5`),
   KEY `idx_group_no` (`group_no`)

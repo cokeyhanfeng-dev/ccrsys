@@ -128,6 +128,13 @@ const routes: RouteRecordRaw[] = [
         name: 'SysCache',
         component: () => import('@/views/system/cache.vue'),
         meta: { title: '缓存配置', roles: ['admin'] }
+      },
+      {
+        // 运行日志监控(增量014):系统运行报错采集查询/日志文件查看下载,仅 admin
+        path: 'system/run-log',
+        name: 'SysRunLog',
+        component: () => import('@/views/system/run-log.vue'),
+        meta: { title: '运行监控', icon: 'Monitor', roles: ['admin'] }
       }
     ]
   },

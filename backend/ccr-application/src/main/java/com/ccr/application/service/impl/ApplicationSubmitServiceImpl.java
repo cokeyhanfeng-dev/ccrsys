@@ -534,14 +534,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                         "分项[" + item.getPricingItemNo() + "]缺少集团成员客户号");
             }
             if ("LOAN_CONTRACT".equals(item.getPricingCarrierType())) {
-                Long cnt = contractRelMapper.selectCount(new LambdaQueryWrapper<CcrPricingItemContractRel>()
-                        .eq(CcrPricingItemContractRel::getPricingItemId, item.getId()));
-                if (cnt == 0) {
-                    throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                            "分项[" + item.getPricingItemNo() + "]缺少贷款合同关系(现有合同号或拟签合同标识)");
-                }
-                // 存量贷款重复申请校验(§10.4 方案 A):同一贷款合同已有进行中申请时阻断提交
-                checkDuplicateContractApplication(item, app.getId());
+                // 需求②(2026-08-24):存量利率申请按担保项拆分,分项可不挂合同关系(plannedContractFlag='N'),
+                // 放开"必须有合同 rel"阻断;新增拟签(PLANNED)仍建合同关系;两者均走重复申请防重(口径=客户+担保措施)
+                checkDuplicateContractApplication(app, item);
             }
             if ("DEPOSIT_ACCOUNT".equals(item.getPricingCarrierType())) {
                 Long cnt = depositRelMapper.selectCount(new LambdaQueryWrapper<CcrPricingItemDepositRel>()
@@ -590,37 +585,61 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * 存量贷款重复申请校验(§10.4 方案 A):同一真实贷款合同已有进行中申请时阻断提交。
-     * 拟签订(planned='Y' 或无正式合同号)不构成重复;重提 reapply 源申请已终态,天然豁免。
-     * 进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/CLOSED)。
+     * 贷款重复申请校验(需求②):存量调息带数仓拆分项编号(source_split_no)时按拆分项精确防重
+     * (同一拆分项已有在途调息申请即阻断);拆分项为空(新增授信/存量手工补录)回退「客户+担保方式」兜底
+     * (同一客户同一担保方式非信用类已有进行中申请阻断)。拟签订(planned='Y' 或无正式合同号)不构成重复;
+     * 重提 reapply 源申请已终态,天然豁免。进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/CLOSED)。
      */
-    private void checkDuplicateContractApplication(CcrPricingItem item, Long excludeAppId) {
-        List<CcrPricingItemContractRel> rels = contractRelMapper.selectList(new LambdaQueryWrapper<CcrPricingItemContractRel>()
-                .eq(CcrPricingItemContractRel::getPricingItemId, item.getId()));
-        for (CcrPricingItemContractRel rel : rels) {
-            String loanContractNo = rel.getLoanContractNo();
-            if (StrUtil.isBlank(loanContractNo) || "Y".equals(rel.getPlannedContractFlag())) {
-                continue;
-            }
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+    private void checkDuplicateContractApplication(CcrApplication app, CcrPricingItem item) {
+        if (StrUtil.isNotBlank(item.getSourceSplitNo())) {
+            List<Map<String, Object>> splitRows = jdbcTemplate.queryForList(
                     """
                     SELECT a.application_no
-                    FROM ccr_pricing_item_contract_rel cr
-                    JOIN ccr_pricing_item pi ON pi.id = cr.pricing_item_id
+                    FROM ccr_pricing_item pi
                     JOIN ccr_application a ON a.id = pi.application_id
-                    WHERE cr.loan_contract_no = ?
-                      AND cr.planned_contract_flag != 'Y'
+                    WHERE pi.source_split_no = ?
                       AND a.id != ?
                       AND a.del_flag = '0' AND pi.del_flag = '0'
                       AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','CLOSED')
                     """,
-                    loanContractNo, excludeAppId);
-            if (!rows.isEmpty()) {
-                String inAppNo = rows.get(0).get("application_no") == null ? ""
-                        : rows.get(0).get("application_no").toString();
+                    item.getSourceSplitNo(), app.getId());
+            if (!splitRows.isEmpty()) {
+                String inAppNo = splitRows.get(0).get("application_no") == null ? ""
+                        : splitRows.get(0).get("application_no").toString();
                 throw new ServiceException(ErrorCode.DUPLICATE_APPLICATION.getCode(),
-                        "贷款合同[" + loanContractNo + "]已有进行中申请(" + inAppNo + "),请勿重复申请");
+                        "拆分项[" + item.getSourceSplitNo() + "]已有进行中调息申请(" + inAppNo + "),请勿重复申请");
             }
+            return;
+        }
+        String customerNo = StrUtil.blankToDefault(item.getMemberCustomerNo(), app.getCustomerNo());
+        if (StrUtil.isBlank(customerNo)) {
+            return;
+        }
+        // 担保措施:分项担保组合主担保类型;信用类无担保措施,不参与防重
+        CcrGuaranteePackage pkg = item.getGuaranteePackageId() == null ? null
+                : guaranteePackageMapper.selectById(item.getGuaranteePackageId());
+        if (pkg == null || StrUtil.isBlank(pkg.getMainGuaranteeType()) || "CREDIT".equals(pkg.getMainGuaranteeType())) {
+            return;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                """
+                SELECT a.application_no
+                FROM ccr_guarantee_package gp
+                JOIN ccr_pricing_item pi ON pi.id = gp.pricing_item_id
+                JOIN ccr_application a ON a.id = pi.application_id
+                WHERE (a.customer_no = ? OR pi.member_customer_no = ?)
+                  AND gp.main_guarantee_type = ?
+                  AND a.id != ?
+                  AND a.del_flag = '0' AND pi.del_flag = '0'
+                  AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','CLOSED')
+                """,
+                customerNo, customerNo, pkg.getMainGuaranteeType(), app.getId());
+        if (!rows.isEmpty()) {
+            String inAppNo = rows.get(0).get("application_no") == null ? ""
+                    : rows.get(0).get("application_no").toString();
+            throw new ServiceException(ErrorCode.DUPLICATE_APPLICATION.getCode(),
+                    "客户[" + customerNo + "]的「" + pkg.getMainGuaranteeType() + "」担保措施已有进行中申请("
+                            + inAppNo + "),请勿重复申请");
         }
     }
 

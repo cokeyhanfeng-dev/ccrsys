@@ -94,6 +94,9 @@ public class CcrPricingItem extends BaseEntity {
     /** 是否沿用原决议 Y/N(D18b:已批准分项连同最终利率与快照保留,不重新审批) */
     private String inheritFlag;
 
+    /** 数仓授信担保拆分项编号(存量调息来源,需求②;新增为空) */
+    private String sourceSplitNo;
+
     /** 部门归属编码(矩阵透出并提交冻结,§D16a 部门分流:机构org_code——3202233912公司金融部/3202233943授信评审部/3202233991零售金融;节点处理人按此解析) */
     private String deptCode;
 }

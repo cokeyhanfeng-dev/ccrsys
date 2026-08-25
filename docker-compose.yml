@@ -52,6 +52,8 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./config:/app/config
+      # 运行日志监控:后端日志文件(ccr-run.log)落盘到宿主机 logs/,运维可直接查看
+      - ./logs:/app/logs
     ports:
       - "8080:8080"
 

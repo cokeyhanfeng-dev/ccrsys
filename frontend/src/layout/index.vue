@@ -29,7 +29,8 @@
                 '/system/dept': 'OfficeBuilding',
                 '/system/flow': 'Share',
                 '/system/params': 'Setting',
-                '/system/cache': 'Coin'
+                '/system/cache': 'Coin',
+                '/system/run-log': 'Monitor'
               }[item.path] || 'Menu'"
             />
           </el-icon>
@@ -151,7 +152,9 @@ const allMenus = [
   // 参数管理:管理员维护草稿/配置复核人复核发布(param_admin 角色已取消,并入 admin)
   { path: '/system/params', title: '参数管理', roles: ['admin', 'config_reviewer'] },
   // 缓存配置(§3.6):Redis 缓存项 TTL/写入开关,DB 覆盖立即生效
-  { path: '/system/cache', title: '缓存配置', roles: ['admin'] }
+  { path: '/system/cache', title: '缓存配置', roles: ['admin'] },
+  // 运行日志监控(增量014):系统运行报错采集查询/日志文件查看下载,仅 admin
+  { path: '/system/run-log', title: '运行监控', roles: ['admin'] }
 ]
 
 // 审批人角色:客户经理看到"历史申请",审批人看到"历史审批"
