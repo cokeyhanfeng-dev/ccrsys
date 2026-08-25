@@ -140,7 +140,7 @@
               <option value="PLANNED">拟开户方案</option>
             </select>
           </div>
-          <div class="form-field" style="grid-column: span 3">
+          <div class="form-field" style="grid-column: span 4">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
               <input class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
@@ -189,7 +189,7 @@
             <label class="form-field__label">当前执行利率(%)</label>
             <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
           </div>
-          <div class="form-field" style="grid-column: span 3">
+          <div class="form-field" style="grid-column: span 4">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
             <!-- 产品标准上限与较上限 BP(取产品边界配置;无权限/无配置则隐藏) -->
@@ -252,7 +252,7 @@
         <div class="empty" v-else>暂无存款分项,无法预览路由</div>
       </template>
 
-      <div style="display:flex;gap:12px;margin-top:16px">
+      <div style="display:flex;gap:12px;margin-top:12px">
         <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
         <button class="btn btn--secondary" :disabled="saving" @click="onRoutePreview">路由预览</button>
         <button class="btn btn--primary" :disabled="saving" @click="onSubmit">提交申请</button>
@@ -713,28 +713,29 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
-/* 开户机构下拉(el-select)与 .form-input 对齐(40px 高度/边框/圆角一致) */
+/* 开户机构下拉(el-select)与 .form-input 对齐(36px 高度/边框/圆角一致,跟随全局紧凑值) */
 .open-org-select.el-select { width: 100%; }
 .open-org-select.el-select :deep(.el-select__wrapper) {
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
-.section-head { margin-bottom: 20px; }
-.section-title { font-size: var(--fs-h1); font-weight: 700; }
+.section-head { margin-bottom: 12px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
+/* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: none;
   border-radius: var(--radius);
-  padding: var(--space-4);
-  margin-bottom: 16px;
-  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+/* 4 列网格:文本框随列收窄(原 3 列时客户名称等占 2/3 行宽偏大) */
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 12px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
 .customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
@@ -758,6 +759,10 @@ async function loadDraftIntoForm(id: number | string) {
   font-size: 12px; font-weight: 500;
 }
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
-.deposit-item { margin-bottom: 14px; }
+.deposit-item { margin-bottom: 12px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
+/* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
+@media (max-width: 1100px) {
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

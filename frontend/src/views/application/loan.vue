@@ -75,7 +75,7 @@
       <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 申请额度 + 有效成员列表(数仓带出/手工补录) -->
       <template v-if="form.customerScope === 'GROUP'">
         <div class="form-grid">
-          <div class="form-field" style="grid-column: span 2">
+          <div class="form-field" style="grid-column: span 3">
             <label class="form-field__label">集团客户 <span class="req">*</span></label>
             <el-autocomplete
               v-model="form.groupNo"
@@ -2476,47 +2476,48 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
-/* 开户机构下拉(el-select)与 .form-input 对齐(40px 高度/边框/圆角一致) */
+/* 开户机构下拉(el-select)与 .form-input 对齐(36px 高度/边框/圆角一致,跟随全局紧凑值) */
 .open-org-select.el-select { width: 100%; }
 .open-org-select.el-select :deep(.el-select__wrapper) {
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
-.section-head { margin-bottom: 20px; }
-.section-title { font-size: var(--fs-h1); font-weight: 700; }
+.section-head { margin-bottom: 12px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
+/* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: none;
   border-radius: var(--radius);
-  padding: var(--space-4);
-  margin-bottom: 16px;
-  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+/* 4 列网格:文本框随列收窄(原 3 列时客户名称等占 2/3 行宽偏大) */
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 12px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .table--nested { margin-top: 8px; }
-.guarantee-item { margin-bottom: 14px; }
+.guarantee-item { margin-bottom: 12px; }
 .guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
 .guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
 
 /* 总授信额度概览条(利率申请步骤) */
 .credit-overview {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px 16px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 12px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: 12px 16px; margin-bottom: 14px;
+  padding: 10px 14px; margin-bottom: 12px;
 }
 .credit-overview__item {
   font-size: 13px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
 }
 .credit-overview__item span { color: var(--color-text-sub); font-size: 12px; white-space: nowrap; }
 .credit-overview__item b { font-variant-numeric: tabular-nums; }
-.credit-overview__item--static b { font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+.credit-overview__item--static b { font-weight: 600; min-height: 36px; display: flex; align-items: center; }
 .credit-overview__item .form-input, .credit-overview__item .form-select { width: 100%; }
 .credit-overview__item--date { flex-direction: column; }
 .credit-overview__range { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2543,28 +2544,29 @@ async function loadDraftIntoForm(id: number | string) {
 /* 拟达成承诺卡片(替代横向表格:承诺字段多,表格列宽超容器被横向滚动截断,卡片 3 列网格完整展示) */
 .commitment-list { display: flex; flex-direction: column; gap: 12px; }
 .commitment-card {
-  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
-  padding: 12px 16px; background: var(--color-surface);
+  border: none; border-radius: var(--radius-sm);
+  padding: 12px 14px; background: var(--color-surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .commitment-card__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .commitment-card__no { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
 .commitment-card__grid { margin-bottom: 0; }
 .commitment-card__grid .form-field { margin-bottom: 0; }
-.commitment-static { min-height: 40px; display: flex; align-items: center; }
+.commitment-static { min-height: 36px; display: flex; align-items: center; }
 
 /* 向导步骤条(沿用 design-system .stepper) */
 .wizard-stepper {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: none;
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
-  margin-bottom: 16px;
-  box-shadow: var(--shadow-sm);
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .wizard-stepper .stepper__step { cursor: pointer; }
 .wizard-actions {
   display: flex; justify-content: space-between; align-items: center;
-  margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--color-border);
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--color-border);
 }
 
 /* 草稿横幅 */
@@ -2579,9 +2581,9 @@ async function loadDraftIntoForm(id: number | string) {
 
 /* 集团概要 */
 .group-summary {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4); margin-bottom: 4px;
+  padding: 10px 14px; margin-bottom: 4px;
 }
 .group-summary__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
 .group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
@@ -2594,8 +2596,8 @@ async function loadDraftIntoForm(id: number | string) {
   font-size: 12px; font-weight: 500;
 }
 
-/* 利率申请分项卡片网格(3 列等宽,minmax 防内容溢出) */
-.mortgage-item__grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px 20px !important; }
+/* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
+.mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 10px 12px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 .credit-overview__item--full { grid-column: 1 / -1; }
