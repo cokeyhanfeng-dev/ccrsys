@@ -59,4 +59,16 @@ public interface ApprovalService {
      * 表决汇总(不含票据明细)+行长决议+决议执行核验+承诺计划
      */
     Map<String, Object> historyDetail(Long applicationId);
+
+    /**
+     * 审批中客户号回填(2026-08-20 #017):新增客户提交时数仓未收录 → 占位号(NEW+证件后6位);
+     * 审批中数仓已收录后,由申请人/审批人回填真实客户号。仅占用位号的分项可回填,
+     * 回填同步 ccr_application.customer_no + ccr_pricing_item.pricing_customer_no +
+     * customer_info_json.customerNo + 已冻结快照记录(subject_id / core_json.cust_no)。
+     *
+     * @param pricingItemId 定价分项
+     * @param customerNo    真实客户号(与 certNo 二选一,优先)
+     * @param certNo        证件号(按证件号反查数仓真实客户号)
+     */
+    void backfillCustomerNo(Long pricingItemId, String customerNo, String certNo);
 }

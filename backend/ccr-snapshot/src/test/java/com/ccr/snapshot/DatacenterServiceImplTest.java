@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DatacenterServiceImplTest {
 
-    /** 模拟 information_schema 动态清单:含 A11 dw_credit_agreement_snapshot、不含弃用 dw_org_dim */
+    /** 模拟 information_schema 动态清单:含 A11 dw_credit_agreement_snapshot、含弃用表(验证被 DEPRECATED_TABLES 过滤) */
     private static final List<String> DYNAMIC_TABLES = List.of(
             "caps_corp_cust_basic_info",
             "caps_indv_cust_basic_info",
@@ -81,7 +81,11 @@ class DatacenterServiceImplTest {
 
         List<Map<String, Object>> rows = datacenterService.sourceStatus();
 
-        assertEquals(19, rows.size());
+        // 18 张 mock 表中 2 张(021 废弃 dw_org_performance_snapshot/dw_customer_relation_snapshot)被过滤
+        assertEquals(16, rows.size());
+        assertTrue(rows.stream().noneMatch(r -> "dw_customer_relation_snapshot".equals(r.get("table"))
+                        || "dw_org_performance_snapshot".equals(r.get("table"))),
+                "废弃表不应纳入监控");
         Map<String, Object> corp = rows.get(0);
         assertEquals("caps_corp_cust_basic_info", corp.get("table"));
         assertEquals("对公客户主数据", corp.get("sourceName"));
@@ -104,24 +108,26 @@ class DatacenterServiceImplTest {
         String dataDt = LocalDate.now().toString();
         lenient().when(jdbcTemplate.queryForObject(anyString(), eq(String.class))).thenReturn(null);
         when(jdbcTemplate.queryForObject(
-                "SELECT MAX(data_dt) FROM dw_org_performance_snapshot", String.class)).thenReturn(dataDt);
+                "SELECT MAX(data_dt) FROM dw_contribution_metric", String.class)).thenReturn(dataDt);
         when(jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM dw_org_performance_snapshot WHERE data_dt = ?", Long.class, dataDt))
+                "SELECT COUNT(1) FROM dw_contribution_metric WHERE data_dt = ?", Long.class, dataDt))
                 .thenReturn(42L);
-        when(jdbcTemplate.queryForObject(
-                "SELECT MAX(snapshot_ts) FROM dw_org_performance_snapshot WHERE data_dt = ?",
-                String.class, dataDt)).thenReturn("2026-08-07 02:00:00");
 
         List<Map<String, Object>> rows = datacenterService.batchOverview();
 
-        assertEquals(19, rows.size());
-        Map<String, Object> orgPerf = rows.stream()
-                .filter(r -> "dw_org_performance_snapshot".equals(r.get("table"))).findFirst().orElseThrow();
-        assertEquals(dataDt, orgPerf.get("latestDataDt"));
-        assertEquals(42L, orgPerf.get("batchRows"));
-        assertEquals("2026-08-07 02:00:00", orgPerf.get("landedTime"));
+        assertEquals(16, rows.size());
+        // 021 废弃表(dw_org_performance_snapshot/dw_customer_relation_snapshot)不再纳入批次监控
+        assertFalse(rows.stream().anyMatch(r -> "dw_org_performance_snapshot".equals(r.get("table"))
+                        || "dw_customer_relation_snapshot".equals(r.get("table"))),
+                "废弃表不应在批次监控中");
+        // 有数据表:批次行数=COUNT,latestDataDt 落库,落地时间列为空(021 后活跃表均无 snapshot_ts 列)
+        Map<String, Object> contrib = rows.stream()
+                .filter(r -> "dw_contribution_metric".equals(r.get("table"))).findFirst().orElseThrow();
+        assertEquals(dataDt, contrib.get("latestDataDt"));
+        assertEquals(42L, contrib.get("batchRows"));
+        assertNull(contrib.get("landedTime"));
 
-        // 无数据表:批次行数 0,无落地时间列的表 landedTime 为 null
+        // 无数据表:批次行数 0,落地时间为 null
         Map<String, Object> corp = rows.get(0);
         assertEquals(0L, corp.get("batchRows"));
         assertNull(corp.get("landedTime"));
@@ -133,6 +139,8 @@ class DatacenterServiceImplTest {
         List<String> dynamic = List.of(
                 "dw_credit_agreement_snapshot",
                 "dw_org_dim",
+                "dw_customer_relation_snapshot",
+                "dw_org_performance_snapshot",
                 "dw_new_landed_snapshot",
                 "caps_corp_cust_basic_info");
         when(jdbcTemplate.queryForList(anyString(), eq(String.class))).thenReturn(dynamic);
@@ -146,6 +154,9 @@ class DatacenterServiceImplTest {
         assertEquals("dw_new_landed_snapshot", tables.get(tables.size() - 1));
         // 弃用表 dw_org_dim 不在库清单时自然不出现;在库也应被过滤
         assertFalse(tables.contains("dw_org_dim"), "弃用表 dw_org_dim 不应纳入监控");
+        // 增量021废弃表同样被 DEPRECATED_TABLES 过滤
+        assertFalse(tables.contains("dw_customer_relation_snapshot"), "021废弃表不应纳入监控");
+        assertFalse(tables.contains("dw_org_performance_snapshot"), "021废弃表不应纳入监控");
         // 新增表无中文说明,回退表名
         Map<String, Object> news = rows.stream()
                 .filter(r -> "dw_new_landed_snapshot".equals(r.get("table"))).findFirst().orElseThrow();

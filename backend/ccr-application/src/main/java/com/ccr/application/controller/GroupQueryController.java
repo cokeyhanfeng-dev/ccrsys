@@ -1,6 +1,7 @@
 package com.ccr.application.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.util.StrUtil;
 import com.ccr.application.domain.CcrGroup;
 import com.ccr.application.domain.CcrGroupMember;
@@ -25,7 +26,7 @@ import java.util.Map;
  * 数仓优先,手工集团(数仓未统计)回退 ccr_group;手工集团无数仓授信,批复总额度补录用于授信概况。</p>
  */
 @RestController
-@SaCheckRole("customer_manager")
+@SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
 public class GroupQueryController {
 
     @Resource

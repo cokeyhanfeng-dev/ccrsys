@@ -12,6 +12,9 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
+import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrApplicationCommitment;
 import com.ccr.application.domain.CcrApplicationOtherLoan;
@@ -43,6 +46,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.read.SysUserRead;
 import com.ccr.application.support.AppLoginUser;
+import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -340,13 +344,24 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (groupScope && StrUtil.isBlank(memberCustomerNo)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景定价分项必须指定成员客户号(memberCustomerNo)");
         }
-        if (!groupScope && StrUtil.isBlank(entity.getCustomerNo())) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景创建分项前必须填写客户号(customerNo)");
+        String pricingCustomerNo;
+        if (groupScope) {
+            pricingCustomerNo = memberCustomerNo;
+        } else {
+            pricingCustomerNo = entity.getCustomerNo();
+            // 新增客户无客户号:按证件号生成占位号兜底 NOT NULL(pricing_customer_no),提交时反查数仓回填真实号(2026-08-20 #017)
+            if (StrUtil.isBlank(pricingCustomerNo)) {
+                String certNo = CustomerNoUtil.certNoFromInfoJson(entity.getCustomerInfoJson(), entity.getCustomerScope());
+                pricingCustomerNo = CustomerNoUtil.placeholderCustomerNo(certNo);
+                if (StrUtil.isBlank(pricingCustomerNo)) {
+                    throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景创建分项前必须填写客户号或证件号(customerNo/certNo)");
+                }
+            }
         }
         CcrPricingItem pi = new CcrPricingItem();
         pi.setApplicationId(entity.getId());
         pi.setPricingItemNo("PI-" + IdUtil.fastSimpleUUID().substring(0, 8).toUpperCase());
-        pi.setPricingCustomerNo(groupScope ? memberCustomerNo : entity.getCustomerNo());
+        pi.setPricingCustomerNo(pricingCustomerNo);
         pi.setMemberCustomerNo(groupScope ? memberCustomerNo : null);
         pi.setStatus(PricingItemStatus.DRAFT.getCode());
         pi.setInheritFlag("N");
@@ -415,6 +430,13 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (commitments == null) {
             return;
         }
+        // 基线后端自动取数回填需主客户号(集团申请 customer_no 为空;成员级按成员客户号取数)
+        String customerNo = null;
+        List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
+                "SELECT customer_no customerNo FROM ccr_application WHERE id = ?", applicationId);
+        if (!appRows.isEmpty() && appRows.get(0).get("customerNo") != null) {
+            customerNo = appRows.get(0).get("customerNo").toString();
+        }
         Map<String, Long> itemNoToId = new HashMap<>();
         for (CcrPricingItem pi : createdItems) {
             itemNoToId.put(pi.getPricingItemNo(), pi.getId());
@@ -446,7 +468,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setPricingItemId(resolvedItemId);
             commitment.setMetricCode(c.getMetricCode());
             commitment.setTargetType(c.getTargetType());
-            commitment.setBaselineValue(c.getBaselineValue());
+            commitment.setBaselineValue(resolveBaseline(c, customerNo, applicationId));
             commitment.setTargetValue(isOther ? null : c.getTargetValue());
             commitment.setUnit(StrUtil.blankToDefault(c.getUnit(), "WAN_YUAN"));
             commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));
@@ -455,6 +477,50 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setEndDate(c.getEndDate());
             commitmentMapper.insert(commitment);
         }
+    }
+
+    /**
+     * 承诺基线(§基线=申请时点当前值,没有就是空的):前端传入值优先;
+     * 为空时后端按主客户(成员级取成员客户号)数仓最近批次回填,并归并关联人同码值(§关联人贡献度归并);
+     * 无数据/OTHER 手工承诺保持空。
+     */
+    private BigDecimal resolveBaseline(CommitmentInput c, String customerNo, Long applicationId) {
+        if (c.getBaselineValue() != null) {
+            return c.getBaselineValue();
+        }
+        String scopeCustNo = StrUtil.isNotBlank(c.getMemberCustomerNo()) ? c.getMemberCustomerNo() : customerNo;
+        if (StrUtil.isBlank(scopeCustNo) || "OTHER".equals(c.getMetricCode())) {
+            return null;
+        }
+        // 主客户该指标最近批次值(无数据构造空行供归并)
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric"
+                        + " WHERE cust_no = ? AND metric_code = ?"
+                        + " AND data_dt = (SELECT MAX(d2.data_dt) FROM dw_contribution_metric d2"
+                        + "   WHERE d2.cust_no = dw_contribution_metric.cust_no AND d2.metric_code = dw_contribution_metric.metric_code)"
+                        + " LIMIT 1", scopeCustNo, c.getMetricCode());
+        Map<String, Object> mainRow = rows.isEmpty() ? new HashMap<>() : new HashMap<>(rows.get(0));
+        if (mainRow.isEmpty()) {
+            mainRow.put("metricCode", c.getMetricCode());
+        }
+        List<Map<String, Object>> contribution = new ArrayList<>();
+        contribution.add(mainRow);
+        // 成员级承诺按成员客户号单独取数,不归并关联人;其余归并申请录入关联人同码值
+        if (StrUtil.isBlank(c.getMemberCustomerNo()) && applicationId != null) {
+            List<Map<String, Object>> relations = jdbcTemplate.queryForList(
+                    "SELECT related_customer_no relatedCustomerNo FROM ccr_application_related_person"
+                            + " WHERE application_id = ? AND del_flag = '0'", applicationId);
+            Set<String> relatedNos = new LinkedHashSet<>();
+            for (Map<String, Object> rel : relations) {
+                Object no = rel.get("relatedCustomerNo");
+                if (no != null && !no.toString().isBlank()) {
+                    relatedNos.add(no.toString());
+                }
+            }
+            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
+        }
+        Object value = contribution.get(0).get("metricValue");
+        return value == null ? null : new BigDecimal(value.toString());
     }
 
     /** 数据日期基线(数仓不可用时容忍,提交校验按无基线处理) */

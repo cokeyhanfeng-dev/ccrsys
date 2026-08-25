@@ -1,9 +1,12 @@
 package com.ccr.application.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.ContributionMerger;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,8 +17,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 客户查询接口(数仓数据:申请按姓名模糊查询带出客户/融资/贡献度)
@@ -23,7 +28,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/ccr/customers")
-@SaCheckRole("customer_manager")
+@SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
 public class CustomerController {
 
     @Resource
@@ -69,6 +74,16 @@ public class CustomerController {
                 ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no"""));
     }
 
+    /** 开户机构下拉(§用户要求):启用机构列表,客户经理填单选填开户机构(数据源 ccr_sys_dept,与数仓开户机构名对齐) */
+    @GetMapping("/open-orgs")
+    public R<List<Map<String, Object>>> openOrgs() {
+        return R.ok(jdbcTemplate.queryForList("""
+                SELECT id, org_code orgCode, dept_name deptName
+                FROM ccr_sys_dept
+                WHERE del_flag = '0' AND status = 'ENABLE'
+                ORDER BY FIELD(org_type, 'HEAD', 'DEPT', 'BRANCH', 'NETWORK'), sort_no"""));
+    }
+
     /** 客户详情:基本信息 + 本行融资 + 当前贡献度 + 他行融资(申请带出) */
     @GetMapping("/{customerNo}")
     public R<Map<String, Object>> detail(@PathVariable String customerNo) {
@@ -103,10 +118,10 @@ public class CustomerController {
                        contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,
                        execution_rate contractRate, currency
                 FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?""", customerNo));
-        // 3. 当前贡献度
-        result.put("contribution", jdbcTemplate.queryForList("""
+        // 3. 当前贡献度(关联人贡献度归并:数仓有效关联人同码值加总,§关联人贡献度归并)
+        result.put("contribution", mergeWithRelated(jdbcTemplate.queryForList("""
                 SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
-                FROM dw_contribution_metric WHERE cust_no = ?""", customerNo));
+                FROM dw_contribution_metric WHERE cust_no = ?""", customerNo), customerNo));
         // 4. 他行融资概要 + 明细
         result.put("creditSummary", jdbcTemplate.queryForList("""
                 SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal,
@@ -118,6 +133,30 @@ public class CustomerController {
                 SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate
                 FROM dw_credit_financing_detail WHERE customer_no = ?""", customerNo));
         return R.ok(result);
+    }
+
+    /** 当前贡献度归并关联人:仅前台录入的申请关联人(ccr_application_related_person),同 metric_code 值加总进主客户(§关联人贡献度归并) */
+    private List<Map<String, Object>> mergeWithRelated(List<Map<String, Object>> contribution, String customerNo) {
+        if (contribution == null || contribution.isEmpty()) {
+            return contribution;
+        }
+        // 前台录入关联人:按申请客户号反查历史申请的关联人(数仓推的关系不参与归并);
+        // related_customer_no 为空时按证件号兜底反查数仓主数据补全
+        List<Map<String, Object>> relations = jdbcTemplate.queryForList(
+                "SELECT rp.related_customer_no relatedCustomerNo, rp.cert_type certType, rp.cert_no certNo"
+                        + " FROM ccr_application_related_person rp"
+                        + " JOIN ccr_application a ON a.id = rp.application_id AND a.del_flag = '0'"
+                        + " WHERE a.customer_no = ? AND rp.del_flag = '0'", customerNo);
+        RelatedCustomerResolver.resolveBatch(jdbcTemplate, relations);
+        Set<String> relatedNos = new LinkedHashSet<>();
+        for (Map<String, Object> rel : relations) {
+            Object no = rel.get("relatedCustomerNo");
+            if (no != null && !no.toString().isBlank()) {
+                relatedNos.add(no.toString());
+            }
+        }
+        ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
+        return contribution;
     }
 
     /** 存款账号反查(输入明文账号,查数仓最新批次;命中返回账户信息,未命中返回 null) */

@@ -535,6 +535,7 @@
       <div v-if="form.businessType === 'EXISTING' && !creditSplits.length" class="empty" style="margin-bottom:12px">该客户暂无有效授信担保拆分明细(数仓未推送),请在下方按担保方式手工添加分项。</div>
 
       <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
+
       <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
@@ -1217,6 +1218,7 @@ async function loadCustomerDetail() {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
         form.guarantees = []
         selectAllSplits()
+
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []

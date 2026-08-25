@@ -7,6 +7,8 @@ import com.ccr.application.controller.GroupQueryController;
 import com.ccr.application.controller.OtherLoanImportController;
 import com.ccr.admin.system.controller.FlowConfigController;
 import com.ccr.admin.system.controller.ProductConfigController;
+import com.ccr.admin.system.controller.RunLogController;
+import com.ccr.admin.system.controller.RunLogFileController;
 import com.ccr.commitment.controller.CommitmentController;
 import com.ccr.commitment.controller.TrackingPolicyController;
 import com.ccr.message.controller.NotificationLogController;
@@ -34,6 +36,9 @@ class SensitiveEndpointAuthorizationTest {
     void technicalDataEndpoints_requireAdmin() {
         assertRoles(DatacenterController.class, Set.of("admin"));
         assertRoles(SnapshotController.class, Set.of("admin"));
+        // 运行日志监控(报错采集/日志文件查看):含 SQL 实参与服务器文件,仅 admin
+        assertRoles(RunLogController.class, Set.of("admin"));
+        assertRoles(RunLogFileController.class, Set.of("admin"));
     }
 
     @Test

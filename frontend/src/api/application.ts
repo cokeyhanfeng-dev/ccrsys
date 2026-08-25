@@ -272,6 +272,11 @@ export function getCustomerDetail(customerNo: string) {
   return get<any>(`/ccr/customers/${customerNo}`)
 }
 
+/** 开户机构下拉(客户经理填单选填开户机构;数据源 ccr_sys_dept 启用机构) */
+export function getOpenOrgs() {
+  return get<any[]>('/ccr/customers/open-orgs')
+}
+
 /** 客户业务视图(账户/授信/合同/借据/担保/贡献度,最新批次) */
 export function getCustomerBusinessView(customerNo: string) {
   return get<any>(`/ccr/customers/${customerNo}/business-view`)

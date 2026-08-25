@@ -15,6 +15,8 @@ import com.ccr.commitment.mapper.CcrTrackingPolicyVersionMapper;
 import com.ccr.commitment.mapper.CcrTrackingThresholdMapper;
 import com.ccr.commitment.service.CommitmentQueryService;
 import com.ccr.commitment.service.support.PolicyThresholds;
+import com.ccr.common.core.util.OrgAchievementAssembler;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -223,13 +225,10 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "客户未登记开户机构: " + customerNo);
         }
 
-        // 机构达成快照(dw_org_performance_snapshot 最新批次最新月份,D19)
-        List<Map<String, Object>> perf = jdbcTemplate.queryForList("""
-                SELECT data_dt, stat_month, achieved_amount, expected_amount, completion_rate
-                FROM dw_org_performance_snapshot
-                WHERE org_code = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_org_performance_snapshot)
-                ORDER BY stat_month DESC LIMIT 1""", orgCode);
-        Map<String, Object> snapshot = perf.isEmpty() ? null : perf.get(0);
+        // 机构达成(实时组装,增量021 B方案:废弃数仓 dw_org_performance_snapshot,
+        // 本系统按申请机构承诺指标(分母)+ 数仓客户贡献度(分子)加工)
+        List<Map<String, Object>> assembled = OrgAchievementAssembler.assemble(jdbcTemplate, orgCode);
+        Map<String, Object> snapshot = assembled.isEmpty() ? null : assembled.get(0);
 
         // 本系统评估数据:机构下承诺计划(统一 org_code,2026-08-14)
         List<Object> orgParams = new ArrayList<>();
@@ -271,11 +270,11 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
         result.put("customerNo", customerNo);
         result.put("orgCode", orgCode);
         result.put("orgName", orgName);
-        result.put("dataDt", snapshot == null ? null : snapshot.get("data_dt"));
-        result.put("statMonth", snapshot == null ? null : snapshot.get("stat_month"));
-        result.put("achievedAmount", snapshot == null ? null : snapshot.get("achieved_amount"));
-        result.put("expectedAmount", snapshot == null ? null : snapshot.get("expected_amount"));
-        result.put("completionRate", snapshot == null ? null : snapshot.get("completion_rate"));
+        result.put("dataDt", snapshot == null ? null : snapshot.get("dataDt"));
+        result.put("statMonth", snapshot == null ? null : snapshot.get("statMonth"));
+        result.put("achievedAmount", snapshot == null ? null : snapshot.get("achievedAmount"));
+        result.put("expectedAmount", snapshot == null ? null : snapshot.get("expectedAmount"));
+        result.put("completionRate", snapshot == null ? null : snapshot.get("completionRate"));
         result.put("orgPlanStats", orgPlanStats);
         result.put("customerPlanStats", customerPlanStats);
         return result;
@@ -301,12 +300,13 @@ public class CommitmentQueryServiceImpl implements CommitmentQueryService {
                 || StrUtil.isBlank(plan.getCustomerNo())) {
             return null;
         }
-        // 1. 有效关联人(数仓 B03 客户关系快照最新批次,复用审批详关联人查询口径)
+        // 1. 有效关联人(仅前台录入的申请关联人;数仓推的关系不参与归并,增量021)
+        //    related_customer_no 为空时按证件号兜底反查数仓主数据补全
         List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength "
-                        + "FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' "
-                        + "AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)",
-                plan.getCustomerNo(), plan.getCustomerNo());
+                "SELECT related_customer_no relatedCustomerNo, relation_type relationType, cert_type certType, cert_no certNo "
+                        + "FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0'",
+                plan.getApplicationId());
+        RelatedCustomerResolver.resolveBatch(jdbcTemplate, relations);
         // 2. 关联人同码实绩(最近批次,折算贡献度行优先;同编码才并)
         List<Map<String, Object>> relatedCustomers = new ArrayList<>();
         BigDecimal relatedSum = BigDecimal.ZERO;

@@ -295,8 +295,8 @@ class RateMatrixRouterImplTest {
         when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "2.85"));
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
-        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT", "SIX_PEOPLE_GROUP"),
-                result.getRouteChain());
+        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT", "SIX_PEOPLE_GROUP",
+                "PRESIDENT"), result.getRouteChain());
     }
 
     @Test
@@ -337,7 +337,7 @@ class RateMatrixRouterImplTest {
         RouteResult result = router.calcRoute(in);
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
         assertEquals("M-DEP-TIME-3M", result.getMatchedRuleCode());
-        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"), result.getRouteChain());
+        assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getRouteChain());
     }
 
     @Test

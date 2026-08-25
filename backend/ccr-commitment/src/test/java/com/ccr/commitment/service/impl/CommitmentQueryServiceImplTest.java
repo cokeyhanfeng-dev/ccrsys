@@ -185,16 +185,21 @@ class CommitmentQueryServiceImplTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void orgAchievement_assemblesDwSnapshotAndEvaluationStats() {
+    void orgAchievement_assemblesOrgCommitmentAndContribution() {
         try (MockedStatic<StpUtil> ignored = mockLogin(1L, "admin")) {
             when(jdbcTemplate.queryForList(contains("caps_corp_cust_basic_info"), eq("C001")))
                     .thenReturn(List.of(Map.of("openact_org_no", "ORG01", "openact_org_nm", "城东支行")));
-            when(jdbcTemplate.queryForList(contains("dw_org_performance_snapshot"), eq("ORG01")))
-                    .thenReturn(List.of(Map.of(
-                            "data_dt", "2026-08-06", "stat_month", "202608",
-                            "achieved_amount", new BigDecimal("800"),
-                            "expected_amount", new BigDecimal("1000"),
-                            "completion_rate", new BigDecimal("0.8000"))));
+            // 增量021 B方案:机构达成由 OrgAchievementAssembler 实时组装(不再读数仓 dw_org_performance_snapshot)
+            // 分母 = 申请机构承诺计划指标 target_value 合计
+            when(jdbcTemplate.queryForList(contains("SUM(m.target_value)"), eq("ORG01")))
+                    .thenReturn(List.of(Map.of("expectedAmount", new BigDecimal("1000"))));
+            // 客户集合 = 该机构承诺计划客户(单户 + 集团成员;成员号可空,Map.of 不支持 null,省略该键)
+            when(jdbcTemplate.queryForList(contains("memberCustomerNo"), eq("ORG01")))
+                    .thenReturn(List.of(Map.of("customerNo", "C001")));
+            // 分子 = 客户集合 dw_contribution_metric TOTAL 行(折算贡献度优先)最新批次求和
+            when(jdbcTemplate.queryForList(contains("dw_contribution_metric")))
+                    .thenReturn(List.of(Map.of("custNo", "C001", "metricValue", new BigDecimal("800"),
+                            "valueType", "CONTRIBUTION_AMOUNT", "data_dt", "2026-08-06")));
             when(jdbcTemplate.queryForMap(anyString(), any(Object[].class))).thenAnswer(inv -> {
                 String sql = inv.getArgument(0, String.class);
                 Map<String, Object> stats = new HashMap<>();
@@ -208,8 +213,11 @@ class CommitmentQueryServiceImplTest {
             assertEquals("C001", result.get("customerNo"));
             assertEquals("ORG01", result.get("orgCode"));
             assertEquals("城东支行", result.get("orgName"));
-            assertEquals("202608", result.get("statMonth"));
+            assertEquals(LocalDate.now().toString().substring(0, 7), result.get("statMonth"));
+            assertEquals(new BigDecimal("800"), result.get("achievedAmount"));
+            assertEquals(new BigDecimal("1000"), result.get("expectedAmount"));
             assertEquals(new BigDecimal("0.8000"), result.get("completionRate"));
+            assertEquals("2026-08-06", result.get("dataDt"));
             assertEquals(4L, ((Map<String, Object>) result.get("orgPlanStats")).get("planCount"));
             assertEquals(1L, ((Map<String, Object>) result.get("customerPlanStats")).get("planCount"));
         }
@@ -229,12 +237,13 @@ class CommitmentQueryServiceImplTest {
     }
 
     @Test
-    void orgAchievement_noDwSnapshot_returnsNullSnapshotFields() {
+    void orgAchievement_noCommitmentPlan_returnsNullSnapshotFields() {
         try (MockedStatic<StpUtil> ignored = mockLogin(1L, "admin")) {
             when(jdbcTemplate.queryForList(contains("caps_corp_cust_basic_info"), eq("C001")))
                     .thenReturn(List.of(Map.of("openact_org_no", "ORG01", "openact_org_nm", "城东支行")));
-            when(jdbcTemplate.queryForList(contains("dw_org_performance_snapshot"), eq("ORG01")))
-                    .thenReturn(List.of());
+            // 机构下无承诺计划 → 分母 expected=0 → Assembler 返回空快照(与原数仓空表行为一致)
+            when(jdbcTemplate.queryForList(contains("SUM(m.target_value)"), eq("ORG01")))
+                    .thenReturn(List.of(Map.of("expectedAmount", BigDecimal.ZERO)));
             when(jdbcTemplate.queryForMap(anyString(), any(Object[].class)))
                     .thenReturn(Map.of("planCount", 0L, "avgAchievementRatio", BigDecimal.ZERO));
 

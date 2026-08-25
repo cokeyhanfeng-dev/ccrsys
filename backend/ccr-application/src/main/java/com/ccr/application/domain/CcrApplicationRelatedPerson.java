@@ -22,6 +22,9 @@ public class CcrApplicationRelatedPerson extends BaseEntity {
     /** 证件号码 */
     private String certNo;
 
+    /** 证件类型(USCC对公/ID_CARD对私;增量021,后端兜底反查关联人客户号用) */
+    private String certType;
+
     /** 关系类型(配偶/直系亲属/担保人/实际控制人等) */
     private String relationType;
 

@@ -76,9 +76,9 @@ public class SysRoleController {
         if (exist == null) {
             throw new ServiceException(404, "角色不存在");
         }
-        exist.setDelFlag("1");
-        exist.setUpdateTime(LocalDateTime.now());
-        roleMapper.updateById(exist);
+        // delFlag 为 MP 全局逻辑删除字段(logic-delete-field:delFlag),updateById 会排除该字段更新,
+        // 直接 setDelFlag 不生效;须用 deleteById 触发逻辑删除(UPDATE del_flag='1')
+        roleMapper.deleteById(id);
         return R.ok();
     }
 }

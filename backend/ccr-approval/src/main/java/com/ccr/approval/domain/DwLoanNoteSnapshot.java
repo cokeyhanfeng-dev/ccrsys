@@ -22,9 +22,9 @@ public class DwLoanNoteSnapshot implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    /** 数仓技术主键 */
-    @TableId(value = "etl_md5", type = IdType.AUTO)
-    private Long etlMd5;
+    /** 数仓技术主键(源系统 ETL_MD5,数仓显式推送;VARCHAR(100) 非自增) */
+    @TableId(value = "etl_md5", type = IdType.INPUT)
+    private String etlMd5;
 
     /** 数据日期(DATA_DT,数仓批次标识) */
     private LocalDate dataDt;

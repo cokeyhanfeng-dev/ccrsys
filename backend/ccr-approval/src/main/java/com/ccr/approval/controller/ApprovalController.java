@@ -11,6 +11,9 @@ import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.domain.R;
+import com.ccr.common.core.util.ContributionMerger;
+import com.ccr.common.core.util.OrgAchievementAssembler;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -663,15 +666,31 @@ public class ApprovalController {
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
         if (appId != null) {
             List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
-                    "SELECT person_name personName, cert_no certNo, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId);
+                    "SELECT person_name personName, cert_no certNo, cert_type certType, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId);
             enrichRelated(relatedPersons);
             result.put("relatedPersons", relatedPersons);
         }
-        // 关联人(数仓客户关系快照,最新批次;按关联客户号补全基本信息/授信信息)
-        List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT related_customer_no relatedCustomerNo, relation_type relationType, relation_strength relationStrength FROM dw_customer_relation_snapshot WHERE customer_no = ? AND relation_status = 'VALID' AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_relation_snapshot WHERE customer_no = ?)", custNo, custNo);
-        enrichRelated(relations);
-        result.put("relations", relations);
+
+        // 关联人贡献度归并:仅前台录入关联人(ccr_application_related_person)同 metric_code 值加总进主客户贡献度(§关联人贡献度归并)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> contributionRows = (List<Map<String, Object>>) result.get("contribution");
+        if (contributionRows != null) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> relPersons = (List<Map<String, Object>>) result.get("relatedPersons");
+            if (relPersons == null) {
+                relPersons = List.of();
+            }
+            // 空客户号关联人按证件号兜底反查数仓主数据补全(展示与归并共用该列表)
+            RelatedCustomerResolver.resolveBatch(jdbcTemplate, relPersons);
+            Set<String> relatedCustomerNos = new LinkedHashSet<>();
+            for (Map<String, Object> rp : relPersons) {
+                Object no = rp.get("relatedCustomerNo");
+                if (no != null && !no.toString().isBlank()) {
+                    relatedCustomerNos.add(no.toString());
+                }
+            }
+            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contributionRows, relatedCustomerNos);
+        }
 
         // 决议与执行核验(§12.7 ⑪:审批终态后签发;决议日期=issue_time,无有效期周期)
         result.put("resolutions", jdbcTemplate.queryForList(
@@ -1048,7 +1067,7 @@ public class ApprovalController {
         return info;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 数仓最新批次(2026-08-14 统一 org_code) */
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 本系统实时组装(增量021 B方案,废弃数仓 dw_org_performance_snapshot) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
@@ -1059,11 +1078,7 @@ public class ApprovalController {
         if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
             return List.of();
         }
-        return jdbcTemplate.queryForList(
-                "SELECT org_code orgCode, stat_month statMonth, achieved_amount achievedAmount,"
-                        + " expected_amount expectedAmount, completion_rate completionRate, data_dt dataDt"
-                        + " FROM dw_org_performance_snapshot WHERE org_code = ?"
-                        + " ORDER BY data_dt DESC LIMIT 1", orgCodes.get(0).get("orgCode"));
+        return OrgAchievementAssembler.assemble(jdbcTemplate, orgCodes.get(0).get("orgCode").toString());
     }
 
     /** 解析快照 core_json(JSON 列查询结果为字符串) */
@@ -1392,6 +1407,21 @@ public class ApprovalController {
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 body.get("versionNo") == null ? null : Integer.valueOf(body.get("versionNo").toString()),
                 idempotencyKey);
+        return R.ok();
+    }
+
+    /**
+     * 审批中客户号回填(2026-08-20 #017):新增客户提交时数仓未收录 → 占位号,审批中数仓已收录后回填真实号。
+     * body 支持 customerNo(真实客户号)或 certNo(按证件号反查数仓),二选一。
+     */
+    @PostMapping("/{pricingItemId}/backfill-customer-no")
+    public R<Void> backfillCustomerNo(@PathVariable Long pricingItemId, @RequestBody Map<String, Object> body) {
+        String customerNo = body.get("customerNo") == null ? null : body.get("customerNo").toString().trim();
+        String certNo = body.get("certNo") == null ? null : body.get("certNo").toString().trim();
+        if (StrUtil.isBlank(customerNo) && StrUtil.isBlank(certNo)) {
+            throw new ServiceException(400, "回填需提供真实客户号或证件号(customerNo/certNo)");
+        }
+        approvalService.backfillCustomerNo(pricingItemId, customerNo, certNo);
         return R.ok();
     }
 

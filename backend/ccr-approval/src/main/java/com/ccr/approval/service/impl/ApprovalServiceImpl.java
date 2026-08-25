@@ -4,19 +4,24 @@ import cn.hutool.core.convert.Convert;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ccr.application.domain.CcrApplication;
+import com.ccr.application.domain.CcrApplicationMember;
 import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.mapper.CcrApplicationMemberMapper;
 import com.ccr.application.mapper.CcrGuaranteePackageMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
+import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
 import com.ccr.approval.domain.DwLoanNoteSnapshot;
@@ -27,6 +32,9 @@ import com.ccr.approval.mapper.DwLoanNoteReadMapper;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
+import com.ccr.common.core.util.ContributionMerger;
+import com.ccr.common.core.util.OrgAchievementAssembler;
+import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
@@ -86,6 +94,8 @@ public class ApprovalServiceImpl implements ApprovalService {
     @Resource
     private CcrApplicationMapper applicationMapper;
     @Resource
+    private CcrApplicationMemberMapper applicationMemberMapper;
+    @Resource
     private CcrApprovalActionMapper approvalActionMapper;
     @Resource
     private CcrRateAdjustmentMapper rateAdjustmentMapper;
@@ -99,6 +109,8 @@ public class ApprovalServiceImpl implements ApprovalService {
     private CcrGuaranteePackageMapper guaranteePackageMapper;
     @Resource
     private DataWarehouseService dataWarehouseService;
+    @Resource
+    private ApplicationAccessService applicationAccessService;
     @Resource
     private VoteService voteService;
     @Resource
@@ -491,6 +503,135 @@ public class ApprovalServiceImpl implements ApprovalService {
         log.info("分项 {} 节点 {} 否决(整单否决), 操作人 {}", pricingItemId, nodeCode, operator.getId());
     }
 
+    // ---------- 审批中客户号回填(2026-08-20 #017) ----------
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void backfillCustomerNo(Long pricingItemId, String customerNo, String certNo) {
+        // 权限:能查看该分项的对象(申请人/审批链审批人/行长/审计/admin)方可回填
+        applicationAccessService.requirePricingItemView(pricingItemId);
+        CcrPricingItem item = pricingItemMapper.selectById(pricingItemId);
+        if (item == null || "1".equals(item.getDelFlag())) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "定价分项不存在");
+        }
+        CcrApplication application = applicationMapper.selectById(item.getApplicationId());
+        if (application == null || "1".equals(application.getDelFlag())) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在");
+        }
+        boolean groupScope = "GROUP".equals(application.getCustomerScope());
+        String currentNo = item.getPricingCustomerNo();
+        if (!CustomerNoUtil.isPlaceholder(currentNo)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "当前客户号已是真实号(" + StrUtil.nullToEmpty(currentNo) + "),无需回填");
+        }
+        // 解析真实客户号:优先直接给号;仅给证件号时按数仓 cert_no 反查
+        String resolved;
+        if (StrUtil.isNotBlank(customerNo)) {
+            resolved = customerNo.trim();
+        } else {
+            if (StrUtil.isBlank(certNo)) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "回填需提供真实客户号或证件号(customerNo/certNo)");
+            }
+            Map<String, Object> dw = "INDIVIDUAL".equals(application.getCustomerScope())
+                    ? dataWarehouseService.findIndvByCertNo(certNo.trim())
+                    : dataWarehouseService.findCorpByCertNo(certNo.trim());
+            if (dw == null) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "按证件号未在数仓命中客户,请核对后直接填写真实客户号");
+            }
+            resolved = String.valueOf(dw.get("cust_no"));
+        }
+        if (CustomerNoUtil.isPlaceholder(resolved)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "回填的客户号不能是占位号");
+        }
+        if (resolved.equals(currentNo)) {
+            return; // 幂等:已是目标号,无需变更
+        }
+
+        // 1) 回填主申请 customer_no + customer_info_json.customerNo:仅单户
+        //    (集团主申请以 group_no 为主标识无客户号,成员号按分项/成员表回填)
+        if (!groupScope) {
+            applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                    .eq(CcrApplication::getId, application.getId())
+                    .set(CcrApplication::getCustomerNo, resolved));
+            if (StrUtil.isNotBlank(application.getCustomerInfoJson())) {
+                try {
+                    JSONObject json = JSONUtil.parseObj(application.getCustomerInfoJson());
+                    json.set("customerNo", resolved);
+                    applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                            .eq(CcrApplication::getId, application.getId())
+                            .set(CcrApplication::getCustomerInfoJson, json.toString()));
+                } catch (Exception e) {
+                    log.warn("回填 customer_info_json.customerNo 失败,忽略:{}", e.getMessage());
+                }
+            }
+        }
+        // 2) 同申请占用位号的分项全部替换(整单口径:单户按客户号一致,集团按成员号一致)
+        pricingItemMapper.update(null, new LambdaUpdateWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, application.getId())
+                .eq(CcrPricingItem::getPricingCustomerNo, currentNo)
+                .set(CcrPricingItem::getPricingCustomerNo, resolved));
+        // 2.5) 集团:分项 member_customer_no + ccr_application_member + ccr_group_member + group_info_json 同步(2026-08-20 #017)
+        if (groupScope) {
+            pricingItemMapper.update(null, new LambdaUpdateWrapper<CcrPricingItem>()
+                    .eq(CcrPricingItem::getApplicationId, application.getId())
+                    .eq(CcrPricingItem::getMemberCustomerNo, currentNo)
+                    .set(CcrPricingItem::getMemberCustomerNo, resolved));
+            applicationMemberMapper.update(null, new LambdaUpdateWrapper<CcrApplicationMember>()
+                    .eq(CcrApplicationMember::getApplicationId, application.getId())
+                    .eq(CcrApplicationMember::getMemberCustomerNo, currentNo)
+                    .set(CcrApplicationMember::getMemberCustomerNo, resolved));
+            // 手工集团成员表(补录占位号若已落 ccr_group_member,数仓优先不落则无此行)
+            if (StrUtil.isNotBlank(application.getGroupNo())) {
+                jdbcTemplate.update("""
+                        UPDATE ccr_group_member
+                        SET member_customer_no = ?
+                        WHERE group_no = ? AND member_customer_no = ?""",
+                        resolved, application.getGroupNo(), currentNo);
+            }
+            // group_info_json.supplementMembers[].memberCustomerNo 占位→真实(审批详情集团成员展示)
+            if (StrUtil.isNotBlank(application.getGroupInfoJson())) {
+                try {
+                    JSONObject json = JSONUtil.parseObj(application.getGroupInfoJson());
+                    JSONArray supplementMembers = json.getJSONArray("supplementMembers");
+                    if (supplementMembers != null) {
+                        for (int i = 0; i < supplementMembers.size(); i++) {
+                            JSONObject m = supplementMembers.getJSONObject(i);
+                            if (currentNo.equals(m.getStr("memberCustomerNo"))) {
+                                m.set("memberCustomerNo", resolved);
+                            }
+                        }
+                    }
+                    applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                            .eq(CcrApplication::getId, application.getId())
+                            .set(CcrApplication::getGroupInfoJson, json.toString()));
+                } catch (Exception e) {
+                    log.warn("回填 group_info_json 补录成员客户号失败,忽略:{}", e.getMessage());
+                }
+            }
+            // 申请承诺指标成员号同步(终态承诺固化按此 member_customer_no 建 uk_alloc,必须用真实号)
+            jdbcTemplate.update("""
+                    UPDATE ccr_application_commitment
+                    SET member_customer_no = ?
+                    WHERE application_id = ? AND member_customer_no = ?""",
+                    resolved, application.getId(), currentNo);
+        }
+        // 3) 同步已冻结快照记录(subject_id + core_json.cust_no)与质量结果 subject_id:
+        //    审批详情快照路径按 pricing_customer_no.equals(subjectId) 过滤,必须一并纠正(2026-08-20 #017)
+        if (application.getSnapshotBundleId() != null) {
+            jdbcTemplate.update("""
+                    UPDATE ccr_snapshot_record
+                    SET subject_id = ?, core_json = JSON_SET(core_json, '$.cust_no', ?)
+                    WHERE bundle_id = ? AND subject_id = ?""", resolved, resolved, application.getSnapshotBundleId(), currentNo);
+            jdbcTemplate.update("""
+                    UPDATE ccr_snapshot_quality_result
+                    SET subject_id = ?
+                    WHERE bundle_id = ? AND subject_id = ?""", resolved, application.getSnapshotBundleId(), currentNo);
+        }
+        log.info("审批中回填客户号:分项 {} 申请 {} 场景{} 占位号 {} → 真实号 {}, 操作人 {}",
+                pricingItemId, application.getId(), groupScope ? "集团成员" : "单户", currentNo, resolved,
+                currentLoginUser.requireLoginId());
+    }
+
     // ---------- 已办(§11.4) ----------
 
     @Override
@@ -667,7 +808,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
         List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
-                "SELECT person_name personName, cert_no certNo, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+                "SELECT person_name personName, cert_no certNo, cert_type certType, relation_type relationType, related_customer_no relatedCustomerNo FROM ccr_application_related_person WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
         enrichRelated(relatedPersons);
         result.put("relatedPersons", relatedPersons);
 
@@ -714,6 +855,23 @@ public class ApprovalServiceImpl implements ApprovalService {
                     : realtimeCustomer(custNoStr));
             result.put("financing", realtimeFinancing(custNoStr));
             result.put("contribution", realtimeContribution(custNoStr));
+        }
+        // 关联人贡献度归并:关联人(申请录入)同 metric_code 值加总进主客户贡献度(§关联人贡献度归并)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> contributionRows = (List<Map<String, Object>>) result.get("contribution");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> relPersons = (List<Map<String, Object>>) result.get("relatedPersons");
+        if (contributionRows != null && relPersons != null) {
+            // 空客户号关联人按证件号兜底反查数仓主数据补全(展示与归并共用该列表)
+            RelatedCustomerResolver.resolveBatch(jdbcTemplate, relPersons);
+            Set<String> relatedCustomerNos = new LinkedHashSet<>();
+            for (Map<String, Object> rp : relPersons) {
+                Object no = rp.get("relatedCustomerNo");
+                if (no != null && !no.toString().isBlank()) {
+                    relatedCustomerNos.add(no.toString());
+                }
+            }
+            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contributionRows, relatedCustomerNos);
         }
         // 客户信息人工修正(ccr_application.customer_info_json):数仓带出后人工调整/新增客户手工录入,档案保留人工值
         applyCustomerOverride(result, application);
@@ -1319,7 +1477,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         return byItem;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 数仓最新批次(2026-08-14 统一 org_code) */
+    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 本系统实时组装(增量021 B方案,废弃数仓 dw_org_performance_snapshot) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
@@ -1330,11 +1488,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
             return List.of();
         }
-        return jdbcTemplate.queryForList(
-                "SELECT org_code orgCode, stat_month statMonth, achieved_amount achievedAmount,"
-                        + " expected_amount expectedAmount, completion_rate completionRate, data_dt dataDt"
-                        + " FROM dw_org_performance_snapshot WHERE org_code = ?"
-                        + " ORDER BY data_dt DESC LIMIT 1", orgCodes.get(0).get("orgCode"));
+        return OrgAchievementAssembler.assemble(jdbcTemplate, orgCodes.get(0).get("orgCode").toString());
     }
 
     /** 关联人信息补全(§12.4④):按 relatedCustomerNo 批量反查基本信息(caps_corp/indv)+授信信息(授信协议数/本行贷款余额) */

@@ -109,7 +109,7 @@ async function load() {
   try {
     const data = await pageHistory(pageNum.value, pageSize)
     records.value = data.records || []
-    total.value = data.total || 0
+    total.value = Number(data.total) || 0
   } catch {
     records.value = []
     total.value = 0
