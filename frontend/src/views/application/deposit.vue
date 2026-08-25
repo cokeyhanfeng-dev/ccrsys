@@ -131,7 +131,7 @@
           <span class="deposit-item__title">存款分项 {{ i + 1 }}</span>
           <button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button>
         </div>
-        <!-- 账户方式 + 存款账户(存量反查/拟开户) -->
+        <!-- 8 字段均匀 2 行×4 列:账户方式/存款账户/产品/期限 + 金额/币种/当前执行利率/申请利率 -->
         <div class="mortgage-item__grid">
           <div class="form-field">
             <label class="form-field__label">账户方式 <span class="req">*</span></label>
@@ -153,9 +153,6 @@
             </template>
             <span v-else class="badge badge--neutral">拟开户(未开户业务)</span>
           </div>
-        </div>
-        <!-- 产品/期限/金额/币种 -->
-        <div class="mortgage-item__grid" style="margin-top:10px">
           <div class="form-field">
             <label class="form-field__label">产品 <span class="req">*</span></label>
             <select class="form-select" v-model="d.productCode">
@@ -182,9 +179,6 @@
               <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
             </select>
           </div>
-        </div>
-        <!-- 利率:当前执行 + 申请(含标准上限对比) -->
-        <div class="mortgage-item__grid" style="margin-top:10px">
           <div class="form-field">
             <label class="form-field__label">当前执行利率(%)</label>
             <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
@@ -747,6 +741,20 @@ async function loadDraftIntoForm(id: number | string) {
 /* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
 .form-field--stack { display: block; }
 .form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+/* 文本框内字体优化:紧凑字号 + 数字等宽对齐 + 占位提示可读 */
+.form-field .form-input,
+.form-field .form-select,
+.form-field :deep(.el-input__inner),
+.form-field :deep(.el-select__selected-item),
+.form-field :deep(.el-textarea__inner) {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.form-field .form-input::placeholder,
+.form-field .form-select::placeholder,
+.form-field :deep(.el-input__inner::placeholder) {
+  color: #9ca3af;
+}
 /* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);

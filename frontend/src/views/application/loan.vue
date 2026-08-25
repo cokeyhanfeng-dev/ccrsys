@@ -2510,6 +2510,20 @@ async function loadDraftIntoForm(id: number | string) {
 /* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
 .form-field--stack { display: block; }
 .form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+/* 文本框内字体优化:紧凑字号 + 数字等宽对齐 + 占位提示可读 */
+.form-field .form-input,
+.form-field .form-select,
+.form-field :deep(.el-input__inner),
+.form-field :deep(.el-select__selected-item),
+.form-field :deep(.el-textarea__inner) {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.form-field .form-input::placeholder,
+.form-field .form-select::placeholder,
+.form-field :deep(.el-input__inner::placeholder) {
+  color: #9ca3af;
+}
 /* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
 .form-card {
   background: var(--color-surface);
