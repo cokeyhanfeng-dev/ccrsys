@@ -106,6 +106,10 @@ function checkBadgeOf(c: any): { cls: string; text: string } {
 .contrib-dual__col { min-width: 0; }
 .contrib-dual__title { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 
+/* 贡献度表格铺满所在栏宽:全局 .table 为 fit-content 收缩贴合(列少时靠左留白),
+   此处局部覆盖为 display:table + width:100%,列按内容分配、总宽铺满(勿回改全局 .table) */
+.contrib-table { display: table; width: 100%; }
+
 /* 指标列:中文名为主,编码小字次要,不换行挤压 */
 .contrib-table .col-metric { min-width: 150px; }
 .metric-name { font-weight: 500; white-space: nowrap; }

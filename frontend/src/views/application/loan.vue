@@ -742,8 +742,9 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">当前贡献度</label>
-              <div class="section-tip commitment-static">{{ c.metricCode === 'OTHER' ? '—' : (currentOf(c.metricCode) ?? '—') }}</div>
+              <label class="form-field__label">基线值 <span class="section-tip">（当前贡献度）</span></label>
+              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="默认带出当前贡献度，可修改" />
+              <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">目标类型 <span class="req">*</span></label>
@@ -753,11 +754,6 @@
                 <option value="INCREMENT">承诺新增</option>
                 <option value="CUMULATIVE">期间累计</option>
               </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">基线值</label>
-              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="可空" />
-              <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">拟达成目标 <span class="req">*</span></label>
