@@ -66,9 +66,9 @@ INSERT INTO caps_corp_cust_basic_info (etl_md5,data_dt,cust_no,cust_name,cert_tp
 ON DUPLICATE KEY UPDATE cust_name=VALUES(cust_name), basic_account_no=VALUES(basic_account_no), mgr_no=VALUES(mgr_no);
 
 -- ---------- 集团主数据(dw_customer_group_snapshot) ----------
-INSERT INTO dw_customer_group_snapshot (etl_md5,data_dt,group_no,group_name,group_type,manager_org_id,mgr_no,group_status,state_owned_flag) VALUES
-(4001,CURDATE(),'GROUP001','江苏某某控股集团','INDUSTRY_GROUP','1001','zhangsan','NORMAL','Y')
-ON DUPLICATE KEY UPDATE group_name=VALUES(group_name), mgr_no=VALUES(mgr_no), state_owned_flag=VALUES(state_owned_flag);
+INSERT INTO dw_customer_group_snapshot (etl_md5,data_dt,group_no,group_name,group_type,manager_org_id,mgr_no,group_status,state_owned_flag,five_level_class,credit_level) VALUES
+(4001,CURDATE(),'GROUP001','江苏某某控股集团','INDUSTRY_GROUP','1001','zhangsan','NORMAL','Y','010','AA+')
+ON DUPLICATE KEY UPDATE group_name=VALUES(group_name), mgr_no=VALUES(mgr_no), state_owned_flag=VALUES(state_owned_flag), five_level_class=VALUES(five_level_class), credit_level=VALUES(credit_level);
 
 -- ---------- 集团成员(dw_customer_group_member_snapshot) ----------
 INSERT INTO dw_customer_group_member_snapshot (etl_md5,data_dt,group_no,member_customer_no,member_role,control_relation,is_core_member,relation_start,relation_end) VALUES

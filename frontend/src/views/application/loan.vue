@@ -71,6 +71,14 @@
             <label class="form-field__label">授信总额(万元)</label>
             <input class="form-input" :value="groupCredit?.approvedTotalAmount ?? ''" readonly placeholder="查询后带出" />
           </div>
+          <div class="form-field">
+            <label class="form-field__label">五级分类</label>
+            <input class="form-input" :value="fiveLevelClassText(groupInfo?.fiveLevelClass)" readonly placeholder="查询后带出" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">信用评级</label>
+            <input class="form-input" :value="groupInfo?.creditLevel || ''" readonly placeholder="查询后带出" />
+          </div>
         </template>
 
         <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
@@ -161,28 +169,33 @@
             </div>
           </div>
         </div>
-        <!-- 涉及成员:第一步仅展示成员清单(成员客户号+名称+证件号码);成员本次申请在利率申请分项「涉及成员」下拉里选择,分配/可用额度暂不展示(§2026-08-25) -->
+        <!-- 集团成员:第一步勾选本次申请涉及成员(勾选集合供第三步分项「涉及成员」下拉选择);标题文字不展示(§2026-08-25),表格拉满整宽 -->
         <div v-if="groupMembers.length" class="form-field" style="margin-top:12px">
-          <div class="member-head">
-            <span class="form-field__label" style="margin-bottom:0">涉及成员</span>
+          <div class="member-head member-head--bare">
+            <span class="badge badge--neutral">{{ selectedMembers.length }}/{{ groupMembers.length }} 已选</span>
             <button class="btn btn--text" @click="showSupplementMember = !showSupplementMember">
               {{ showSupplementMember ? '收起' : '添加成员' }}
             </button>
           </div>
-          <table class="table">
+          <table class="table member-table">
             <thead>
               <tr>
-                <th>成员客户号</th><th>成员名称</th><th>证件号码</th>
+                <th>成员客户号</th><th>成员名称</th><th>证件号码</th><th style="width:96px"></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="m in groupMembers" :key="m.memberCustomerNo">
+              <tr v-for="m in groupMembers" :key="m.memberCustomerNo" :class="{ 'member-row--checked': isMemberChecked(m.memberCustomerNo) }">
                 <td>
                   {{ customerNoText(m.memberCustomerNo) }}
                   <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
                 </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td>{{ m.idNo || m.ucrCode || '—' }}</td>
+                <td>
+                  <button class="btn member-btn" :class="isMemberChecked(m.memberCustomerNo) ? 'btn--primary' : 'btn--ghost'" @click="toggleMember(m.memberCustomerNo)">
+                    {{ isMemberChecked(m.memberCustomerNo) ? '已涉及' : '涉及成员' }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -526,7 +539,7 @@
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
             <select class="form-select" v-model="g.memberCustomerNo">
               <option value="" disabled>选择成员</option>
-              <option v-for="m in groupMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
+              <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
                 {{ m.memberName || m.memberCustomerNo }}
               </option>
             </select>
@@ -755,7 +768,7 @@
               <label class="form-field__label">成员</label>
               <select class="form-select" v-model="c.memberCustomerNo">
                 <option value="">集团整体</option>
-                <option v-for="m in groupMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
+                <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
                   {{ m.memberName || m.memberCustomerNo }}
                 </option>
               </select>
@@ -901,7 +914,7 @@ import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, certTypeText, groupStatusText, groupNatureText, currencyText, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1092,24 +1105,27 @@ const groupCredit = ref<any | null>(null)
 const groupAllocatedTotal = ref<any>(null)
 const groupMembers = ref<any[]>([])
 const groupQueried = ref(false)
-// 集团本次申请涉及的成员 = 贷款分项「涉及成员」去重(成员选择在利率申请分项里做,第一步仅展示成员清单,§2026-08-25)
-const selectedMembers = computed<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>(() => {
-  if (form.customerScope !== 'GROUP') return []
-  const nos: string[] = []
-  for (const g of form.guarantees) {
-    if (g.memberCustomerNo && !nos.includes(g.memberCustomerNo)) nos.push(g.memberCustomerNo)
-  }
-  return nos.map((no) => {
+// 集团本次申请涉及的成员 = 第一步勾选集合(§2026-08-25 恢复勾选:涉及成员表头加勾选列,勾选结果供第三步分项「涉及成员」下拉选择)
+const selectedMembers = ref<Array<{ memberCustomerNo: string; memberName: string; requestAmount: string; currency: string; memberRole: string }>>([])
+/** 成员是否已勾选 */
+const isMemberChecked = (no: string) => selectedMembers.value.some((s) => s.memberCustomerNo === no)
+/** 勾选/取消勾选成员;取消勾选时同步清空贷款分项中该成员的引用(避免下拉悬空值) */
+function toggleMember(no: string) {
+  const idx = selectedMembers.value.findIndex((s) => s.memberCustomerNo === no)
+  if (idx >= 0) {
+    selectedMembers.value.splice(idx, 1)
+    for (const g of form.guarantees) if (g.memberCustomerNo === no) g.memberCustomerNo = ''
+  } else {
     const m = groupMembers.value.find((x) => x.memberCustomerNo === no)
-    return {
+    selectedMembers.value.push({
       memberCustomerNo: no,
       memberName: m?.memberName || no,
       requestAmount: '',
       currency: m?.currency || 'CNY',
       memberRole: m?.memberRole || ''
-    }
-  })
-})
+    })
+  }
+}
 // 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 手工补录成员
 /** 数仓未收录该集团(按新增集团对待,就地补录集团基本信息,与对公客户一致) */
 const isNewGroup = ref(false)
@@ -1280,8 +1296,10 @@ async function queryGroup() {
   try {
     const members = await getGroupMembers(no)
     groupMembers.value = (members || []).map((m: any) => ({ ...m, source: 'DW' }))
+    selectedMembers.value = []
   } catch {
     groupMembers.value = []
+    selectedMembers.value = []
   }
   if (isNewGroup.value) {
     ElMessage.info('数仓未收录该集团,请补录集团基本信息并勾选成员录入本次申请金额')
@@ -1608,6 +1626,7 @@ function onCustomerScopeChange() {
     groupCredit.value = null
     groupAllocatedTotal.value = null
     groupMembers.value = []
+    selectedMembers.value = []
     groupQueried.value = false
     // 集团补录状态一并重置(§docs/19 §4.1)
     isNewGroup.value = false
@@ -1726,6 +1745,8 @@ function validateStep(s: number): string | null {
       // 新增集团(数仓未收录):就地补录集团名称/集团属性必填(§docs/19 §4.3;国企属性 §2026-08-25)
       if (isNewGroup.value && isBlank(groupSupplement.groupName)) return '请补录集团名称(数仓未收录,新增集团必填)'
       if (isNewGroup.value && isBlank(groupSupplement.stateOwnedFlag)) return '请选择集团属性(国企集团/非国企集团)'
+      // 有有效成员时必须先选择本次申请涉及的成员(§2026-08-25 恢复勾选)
+      if (groupMembers.value.length && !selectedMembers.value.length) return '请至少选择一名涉及成员'
     } else if (!hasCustomerIdentity()) {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
@@ -1877,6 +1898,7 @@ function validateForDraft(): string | null {
   const isGroup = form.customerScope === 'GROUP'
   if (isGroup) {
     if (isBlank(form.groupNo)) return '请填写集团客户编号'
+    if (groupMembers.value.length && !selectedMembers.value.length) return '请至少选择一名涉及成员'
   } else if (!hasCustomerIdentity()) {
     return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   }
@@ -2414,6 +2436,15 @@ async function loadDraftIntoForm(id: number | string) {
     return g
   })
   if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+  // 集团勾选集合回填(从分项涉及成员去重,§2026-08-25 恢复勾选)
+  if (form.customerScope === 'GROUP') {
+    const nos: string[] = []
+    for (const g of form.guarantees) if (g.memberCustomerNo && !nos.includes(g.memberCustomerNo)) nos.push(g.memberCustomerNo)
+    selectedMembers.value = nos.map((no) => {
+      const m = groupMembers.value.find((x) => x.memberCustomerNo === no)
+      return { memberCustomerNo: no, memberName: m?.memberName || no, requestAmount: '', currency: m?.currency || 'CNY', memberRole: m?.memberRole || '' }
+    })
+  }
   // 已上传附件回显(材料附件步骤)
   try {
     const atts = await listAttachments(id)
@@ -2612,6 +2643,14 @@ async function loadDraftIntoForm(id: number | string) {
 /* 集团概要 */
 /* 涉及成员标题行:label + 小号「添加成员」按钮同行(§2026-08-25,不单独占行) */
 .member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+/* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满,不突兀) */
+.member-table { width: 100%; }
+/* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
+.member-head--bare { justify-content: flex-end; }
+/* 涉及成员行内切换按钮:紧凑小号 */
+.member-btn { padding: 3px 10px; font-size: 12px; border-radius: var(--radius-sm); }
+/* 已涉及成员行高亮 */
+.member-row--checked td { background: var(--color-primary-light); }
 .group-summary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
