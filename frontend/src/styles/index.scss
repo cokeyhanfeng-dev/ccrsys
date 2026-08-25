@@ -130,6 +130,15 @@ body,
 .el-select__wrapper.is-focused {
   box-shadow: 0 0 0 1px var(--el-color-primary) inset;
 }
+// 数字输入框:去掉上下点选步进箭头(紧凑布局下挤占空间,手动输入更精确)
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
 .el-form-item {
   // 表单项间距统一 4×4px,紧凑版与卡片内边距节奏一致
   --el-form-item-margin-bottom: 16px;
