@@ -459,31 +459,62 @@
         </template>
       </div>
 
-      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;下拉选择,选中即展示该协议完整内容,授信总金额随之带出;数仓无协议数据时不展示空模块,§2026-08-25) -->
-      <div v-if="form.businessType === 'EXISTING' && creditAgreements.length" class="agreement-block">
-          <div class="agreement-pick">
-            <span class="agreement-pick__label">授信协议 <span class="req">*</span></span>
-            <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange">
-              <option value="" disabled>请选择本次申请对应的授信协议</option>
-              <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
-                {{ a.agreementNo }}（授信 {{ a.creditAmount ?? '—' }} 万）
-              </option>
-            </select>
-            <span class="agreement-pick__hint">每份协议独立申请,不可合并;授信总金额按所选协议额度带出,分项合计原则上不超过协议额度</span>
-          </div>
-          <div v-if="selectedAgreement" class="agreement-detail">
-            <div class="agreement-detail__item agreement-detail__item--amount">
-              <span class="agreement-detail__label">授信总额</span><b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b>
+      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;折叠面板默认收起减少空白,点标题展开选/录;数仓有协议→下拉选+详情展示编号/总额/日期,无(含集团,集团查询不带协议)→手工补录三字段;§2026-08-26 集团协议块可见) -->
+      <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
+        <div class="agreement-pick agreement-pick--head" @click="agreementExpanded = !agreementExpanded">
+          <span class="agreement-pick__label">授信协议 <span class="req">*</span></span>
+          <span class="agreement-pick__state">{{ agreementPickState }}</span>
+          <span class="agreement-pick__arrow">{{ agreementExpanded ? '▾' : '▸' }}</span>
+        </div>
+        <div v-if="agreementExpanded" class="agreement-pick__body">
+          <template v-if="creditAgreements.length">
+            <div class="agreement-pick">
+              <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange">
+                <option value="" disabled>请选择本次申请对应的授信协议</option>
+                <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
+                  {{ a.agreementNo }}（授信 {{ a.creditAmount ?? '—' }} 万）
+                </option>
+              </select>
+              <span class="agreement-pick__hint">每份协议独立申请,不可合并;授信总金额按所选协议额度带出,分项合计原则上不超过协议额度</span>
             </div>
-            <div class="agreement-detail__item">
-              <span class="agreement-detail__label">授信状态</span>
-              <span class="badge" :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span>
+            <div v-if="selectedAgreement" class="agreement-detail">
+              <div class="agreement-detail__item">
+                <span class="agreement-detail__label">授信协议编号</span><b>{{ selectedAgreement.agreementNo || '—' }}</b>
+              </div>
+              <div class="agreement-detail__item agreement-detail__item--amount">
+                <span class="agreement-detail__label">授信协议总额</span><b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b>
+              </div>
+              <div class="agreement-detail__item">
+                <span class="agreement-detail__label">授信协议日期</span><b>{{ selectedAgreement.startDate || '—' }}</b>
+              </div>
+              <div class="agreement-detail__item">
+                <span class="agreement-detail__label">授信状态</span>
+                <span class="badge" :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span>
+              </div>
+              <div class="agreement-detail__item">
+                <span class="agreement-detail__label">到期日期</span><b>{{ selectedAgreement.endDate || '—' }}</b>
+              </div>
             </div>
-            <div class="agreement-detail__item">
-              <span class="agreement-detail__label">到期日期</span><b>{{ selectedAgreement.endDate || '—' }}</b>
+            <div v-else class="empty agreement-detail-empty">请选择本次申请对应的授信协议</div>
+          </template>
+          <template v-else>
+            <div class="agreement-pick__hint">数仓暂无该客户授信协议,请按现有授信协议手工录入编号/总额/日期</div>
+            <div class="agreement-manual">
+              <div class="form-field">
+                <label class="form-field__label">授信协议编号</label>
+                <input class="form-input" v-model="form.creditInfo.agreementNo" placeholder="如 XH20240001" />
+              </div>
+              <div class="form-field">
+                <label class="form-field__label">授信协议总额(万元)</label>
+                <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" placeholder="0" @change="syncTotalCredit" />
+              </div>
+              <div class="form-field">
+                <label class="form-field__label">授信协议日期</label>
+                <input class="form-input" type="date" v-model="form.creditInfo.startDate" />
+              </div>
             </div>
-          </div>
-          <div v-else class="empty agreement-detail-empty">请选择本次申请对应的授信协议</div>
+          </template>
+        </div>
       </div>
 
       <div v-if="overGroupAvailable" class="credit-overview-warning">
@@ -1394,9 +1425,18 @@ const selectedAgreementNo = ref('')
 const selectedAgreement = computed(() =>
   creditAgreements.value.find((a) => a.agreementNo === selectedAgreementNo.value) || null
 )
-/** 存量授信总金额 = 所选授信协议 credit_amount(万元;未选显示 —) */
+/** 存量授信协议折叠面板:默认收起(减少整页空白),点标题展开选/录(§2026-08-26) */
+const agreementExpanded = ref(false)
+/** 折叠标题条状态:已选协议号 / 已手工录入编号 / 未选择 */
+const agreementPickState = computed(() => {
+  if (selectedAgreementNo.value) return `已选 ${selectedAgreementNo.value}`
+  if (form.creditInfo.agreementNo) return `已录 ${form.creditInfo.agreementNo}`
+  return '未选择'
+})
+/** 存量授信总金额 = 所选授信协议/手工补录 credit_amount(万元;未选显示 —) */
 const creditTotalText = computed(() => {
-  const n = Number(selectedAgreement.value?.creditAmount)
+  const src = selectedAgreement.value?.creditAmount ?? form.creditInfo.creditAmount
+  const n = Number(src)
   return n > 0 ? String(n) : '—'
 })
 /** 下拉选择授信协议(需求六:选到哪份就展示哪份的内容) */
@@ -1585,11 +1625,11 @@ function selectAllSplits() {
   syncTotalCredit()
 }
 
-/** 存量:总授信额度=所选授信协议 credit_amount(需求六:每份协议独立,不合并;新增=手工录入) */
+/** 存量:总授信额度=所选授信协议/手工补录 credit_amount(需求六:每份协议独立,不合并;新增=手工录入;§2026-08-26 数仓无协议走手工补录) */
 function syncTotalCredit() {
-  if (form.businessType === 'EXISTING' && selectedAgreement.value) {
-    form.totalCredit = selectedAgreement.value.creditAmount != null ? String(selectedAgreement.value.creditAmount) : ''
-  }
+  if (form.businessType !== 'EXISTING') return
+  const src = selectedAgreement.value ? selectedAgreement.value.creditAmount : form.creditInfo.creditAmount
+  form.totalCredit = src != null && src !== '' ? String(src) : ''
 }
 
 /** 合同担保类型(own_financing 按合同号匹配) */
@@ -1908,9 +1948,9 @@ function validateForDraft(): string | null {
   } else if (!hasCustomerIdentity()) {
     return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
   }
-  // 需求六:非集团存量须选授信协议(集团层无协议维度,成员协议各归各)
-  if (form.businessType === 'EXISTING' && form.customerScope !== 'GROUP' && !selectedAgreementNo.value) {
-    return '存量调息请选择本次申请对应的授信协议'
+  // 存量须选/录授信协议(数仓有协议→下拉选择;无协议含集团→手工补录编号;§2026-08-26 集团协议块已可见)
+  if (form.businessType === 'EXISTING' && !selectedAgreementNo.value && !form.creditInfo.agreementNo) {
+    return '存量调息请选择或录入本次申请对应的授信协议(授信协议编号必填)'
   }
   if (!form.guarantees.length) return '请至少录入一条担保分项'
   for (let i = 0; i < form.guarantees.length; i++) {
@@ -2116,8 +2156,9 @@ function serializeCreditInfo(): Record<string, unknown> | undefined {
   const c = form.creditInfo
   // 授信业务类型显式随单提交(NEW=新增授信/EXISTING=存量调息),供后端按授信口径判定存量/新增路由,不以分项原利率推断
   const out: Record<string, unknown> = { businessType: form.businessType }
-  // 总授信额度(存量=数仓授信协议金额合计自动带出,新增=手工录入),审批链路按此定档匹配
+  // 总授信额度(存量=所选授信协议/手工补录金额带出,新增=手工录入),审批链路按此定档匹配
   if (form.totalCredit) out.totalCredit = form.totalCredit
+  else if (out.businessType === 'EXISTING' && form.creditInfo.creditAmount) out.totalCredit = form.creditInfo.creditAmount
   if (c.agreementNo) out.agreementNo = c.agreementNo
   if (c.agreementType) out.agreementType = c.agreementType
   if (c.currency) out.currency = c.currency
@@ -2610,6 +2651,13 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-detail__item b { font-size: 14px; font-weight: 600; color: var(--color-text-main); font-variant-numeric: tabular-nums; }
 .agreement-detail__item--amount b { font-size: 18px; color: var(--color-primary); }
 .agreement-detail-empty { margin-top: 10px; }
+/* 存量授信协议折叠面板:标题条可点(默认收起减少空白),展开区承载下拉选/手工补录(§2026-08-26) */
+.agreement-pick--head { cursor: pointer; user-select: none; }
+.agreement-pick__state { font-size: 12px; color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
+.agreement-pick__arrow { margin-left: auto; color: var(--color-text-light); font-size: 12px; }
+.agreement-pick__body { margin-top: 10px; }
+.agreement-manual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px; margin-top: 10px; }
+.agreement-manual .form-field { margin-bottom: 0; }
 /* 拆分细项合计超过所选协议额度 → 数字标红(与 warning 条呼应) */
 .over-limit { color: var(--color-danger); }
 .customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
