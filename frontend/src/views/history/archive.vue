@@ -157,29 +157,6 @@
         <div v-else class="empty-block">暂无授信协议数据</div>
       </div>
 
-      <!-- 2c. 本行融资(提交快照/数仓贷款合同) -->
-      <div class="card">
-        <div class="card__head"><span>本行融资</span></div>
-        <table class="table table--full" v-if="financing.length">
-          <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
-          <tbody>
-            <tr v-for="f in financing" :key="f.contractNo">
-              <td>{{ f.contractNo }}</td>
-              <td>{{ f.agreementNo || '—' }}</td>
-              <td class="num">{{ f.contractAmount ?? '—' }}</td>
-              <td class="num">{{ f.loanBalance ?? '—' }}</td>
-              <td class="num">{{ rateText(f.contractRate) }}</td>
-              <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${termTierText(f.lprTerm)}` : '' }}</td>
-              <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
-              <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
-              <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
-              <td>{{ currencyText(f.currency) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-block">暂无数据</div>
-      </div>
-
       <!-- 2d. 申请材料附件(申请时上传材料元数据,下载走附件下载接口) -->
       <div class="card">
         <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
@@ -228,72 +205,24 @@
         <div v-if="!otherLoans.length" class="empty-block">暂无他行融资记录</div>
       </div>
 
-      <!-- 3. 贷款合同/存款账户 -->
-      <div class="card">
-        <div class="card__head"><span>贷款合同 / 存款账户</span></div>
-        <table class="table table--full" v-if="archive.contracts?.length">
-          <thead><tr><th>分项</th><th>合同业务标识</th><th>正式合同号</th><th>拟签合同</th></tr></thead>
-          <tbody>
-            <tr v-for="(c, i) in archive.contracts" :key="i">
-              <td>{{ val(c, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td>{{ val(c, 'contractBusinessKey', 'contract_business_key') }}</td>
-              <td>{{ val(c, 'loanContractNo', 'loan_contract_no') }}</td>
-              <td>{{ plannedText(val(c, 'plannedContractFlag', 'planned_contract_flag')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table class="table table--full" v-if="archive.depositAccounts?.length" :style="archive.contracts?.length ? 'margin-top:8px' : ''">
-          <thead><tr><th>分项</th><th>存款账号</th><th>拟开户</th></tr></thead>
-          <tbody>
-            <tr v-for="(d, i) in archive.depositAccounts" :key="i">
-              <td>{{ val(d, 'pricingItemId', 'pricing_item_id') }}</td>
-              <td>{{ val(d, 'depositAccountNo', 'deposit_account_no') }}</td>
-              <td>{{ plannedText(val(d, 'plannedAccountFlag', 'planned_account_flag')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!archive.contracts?.length && !archive.depositAccounts?.length" class="empty-block">暂无数据</div>
-      </div>
-
-      <!-- 4. 合同下借据(数仓最新批次) -->
-      <div class="card">
-        <div class="card__head"><span>合同下借据</span><span v-if="archive.notes?.length" class="badge badge--info">数仓批次 {{ val(archive.notes[0], 'dataDt', 'data_dt') }}</span></div>
-        <table class="table table--full" v-if="archive.notes?.length">
-          <thead>
-            <tr><th>借据号</th><th>合同号</th><th>借据金额</th><th>借据余额</th><th>币种</th><th>执行利率</th><th>起息日</th><th>到期日</th><th>状态</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(n, i) in archive.notes" :key="i">
-              <td>{{ val(n, 'loanNoteNo', 'loan_note_no') }}</td>
-              <td>{{ val(n, 'contractNo', 'contract_no') }}</td>
-              <td class="num">{{ val(n, 'loanAmount', 'loan_amount') }}</td>
-              <td class="num">{{ val(n, 'loanBalance', 'loan_balance') }}</td>
-              <td>{{ currencyText(val(n, 'currency')) }}</td>
-              <td class="num">{{ rateText(val(n, 'executionRate', 'execution_rate')) }}</td>
-              <td>{{ fmtDate(val(n, 'startDate', 'start_date')) }}</td>
-              <td>{{ fmtDate(val(n, 'maturityDate', 'maturity_date')) }}</td>
-              <td><span class="badge" :class="noteStatusBadge(val(n, 'noteStatus', 'note_status'))">{{ noteStatusText(val(n, 'noteStatus', 'note_status')) }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-block">暂无数据</div>
-      </div>
-
       <!-- 5. 定价分项 -->
       <div class="card">
         <div class="card__head"><span>定价分项</span></div>
         <table class="table table--full" v-if="archive.pricingItems?.length">
           <thead>
             <tr>
-              <th>分项号</th><th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>金额(万元)</th><th>期限</th>
+              <th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th>授信协议编号</th><th>担保方式</th><th>金额(万元)</th><th>期限</th>
               <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>终审岗位</th><th>状态</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="p in archive.pricingItems" :key="val(p, 'id')">
-              <td>{{ val(p, 'pricing_item_no', 'pricingItemNo') }}</td>
               <td>{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
               <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
+              <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
+              <td class="num">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
+              <td class="num">{{ itemAgreementNo(p) }}</td>
+              <td>{{ itemGuaranteeText(p) }}</td>
               <td class="num">{{ val(p, 'pricing_amount', 'pricingAmount') }}</td>
               <td>{{ termText(p) }}</td>
               <td class="num">{{ rateText(val(p, 'requested_rate', 'requestedRate')) }}</td>
@@ -563,8 +492,8 @@ import {
   roundStatusText, execStatusText,
   evalResultText, planStatusText,
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
-  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, decisionSourceText, noteStatusText, noteStatusBadge,
+  customerTypeText, customerClassText, certTypeText, inputModeText,
+  entpScaleText, maritalStatusText, creditStatusText, snapshotStatusText, decisionSourceText,
   fiveLevelClassText, groupTypeText
 } from '@/utils/dict'
 
@@ -618,7 +547,6 @@ const isCorpCustomer = computed(() => customer.value.custType === 'CORP')
 const isIndivCustomer = computed(() => customer.value.custType === 'INDIV')
 const isLoan = computed(() => val(archive.value.application || {}, 'business_type', 'businessType') !== 'DEPOSIT')
 const creditAgreements = computed(() => archive.value.creditAgreements || [])
-const financing = computed(() => archive.value.financing || [])
 const attachments = computed(() => archive.value.attachments || [])
 const otherLoanSummary = computed(() => archive.value.otherLoanSummary || [])
 const otherLoans = computed(() => archive.value.otherLoans || [])
@@ -649,6 +577,28 @@ function pricingMemberLabel(p: any): string {
   if (!no) return val(p, 'pricing_customer_no', 'pricingCustomerNo') || '—'
   const m = (archive.value.members || []).find((x) => String(val(x, 'member_customer_no', 'memberCustomerNo')) === String(no))
   return m ? (val(m, 'member_name', 'memberName') || no) : no
+}
+// 定价分项授信协议编号:存量分项(有原执行利率=存量调息)取申请提交时授信协议(creditInfoJson.agreementNo),
+// 补录缺失时兜底数仓/补录合并协议列表第一条;新增业务无协议显示「新增业务」(§2026-08-26 与审批口径一致)
+function itemAgreementNo(p: any): string {
+  if (val(p, 'original_rate', 'originalRate') === '—') return '新增业务'
+  const app = archive.value.application || {}
+  const ci = val(app, 'credit_info_json', 'creditInfoJson')
+  if (ci !== '—') {
+    try {
+      const obj = typeof ci === 'string' ? JSON.parse(ci) : ci
+      if (obj?.agreementNo) return obj.agreementNo
+    } catch { /* 补录 JSON 解析失败走协议列表兜底 */ }
+  }
+  const first = (archive.value.creditAgreements || [])[0]
+  return first?.agreementNo || '—'
+}
+// 定价分项担保方式合并(多担保方式去重逗号分隔;与审批详情页 guaranteesText 口径一致,§2026-08-26)
+function itemGuaranteeText(p: any): string {
+  const list = guaranteesOf(p)
+  if (!list.length) return '—'
+  const types = Array.from(new Set(list.map((g) => g.guaranteeType).filter(Boolean)))
+  return types.map(guaranteeTypeText).join('、')
 }
 function extOf(g: any): any {
   const j = g?.extJson
@@ -696,9 +646,6 @@ function termText(p: any) {
   if (v === '—') return '—'
   const unit = val(p, 'term_unit', 'termUnit')
   return `${v}${termUnitText(unit === '—' ? '' : unit)}`
-}
-function plannedText(f: any) {
-  return f === 'Y' ? '是' : f === 'N' ? '否' : f || '—'
 }
 function badgeClass(s: any) {
   const map: Record<string, string> = {

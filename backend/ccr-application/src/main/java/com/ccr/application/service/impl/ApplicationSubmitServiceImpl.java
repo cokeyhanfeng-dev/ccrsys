@@ -46,6 +46,7 @@ import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.cache.CcrCacheUtil;
+import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.common.outbox.OutboxEventType;
@@ -103,6 +104,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
     @Resource
     private JdbcTemplate jdbcTemplate;
+
+    @Resource
+    private NodeAssigneeResolver nodeAssigneeResolver;
 
     @Resource
     private CcrApplicationMapper applicationMapper;
@@ -186,6 +190,16 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 preview.setStartNodeCode(route.getStartNodeCode());
                 preview.setFinalNodeCode(route.getFinalNodeCode());
                 preview.setRouteChain(route.getRouteChain());
+                // 下一步审批人姓名:routeChain 首节点按申请人机构+分项部门归属解析(§2026-08-26 预览显示审批人)
+                List<String> chain = route.getRouteChain();
+                if (chain != null && !chain.isEmpty()) {
+                    NodeAssigneeResolver.ResolveResult resolved = nodeAssigneeResolver.resolve(
+                            chain.get(0), app.getApplicantOrgId(), null, item.getDeptCode());
+                    preview.setNextApproverNames(resolved.users().stream()
+                            .map(NodeAssigneeResolver.AssigneeUser::getNickName)
+                            .filter(StrUtil::isNotBlank)
+                            .toList());
+                }
                 preview.setLprVersionId(route.getLprVersionId());
                 preview.setLprVersionCode(route.getLprVersionCode());
                 preview.setMessage(route.getMessage());
@@ -368,8 +382,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         resolveGroupMemberPlaceholder(app, items);
         // b) 完整性校验
         checkCompleteness(app, items);
-        // b0-他行融资) 概要 vs 明细对应校验(§2026-08-25:概要可编辑,提交时与明细加总比对)
-        checkCreditSummaryConsistency(id);
         // b1) 提交时落表(§docs/19 §4.6):解析 group_info_json 补录数据落 ccr_group/ccr_group_member(幂等、数仓优先、最新覆盖)
         persistGroupSupplement(app);
         // c) 集团场景校验(返回申请额度供路由定档,§B18)
@@ -664,52 +676,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /** b) 完整性:分项非空、客户/集团字段齐、分项必填字段齐、载体关系齐 */
-    /**
-     * 他行融资概要 vs 明细对应校验(§2026-08-25):概要随申请可编辑,
-     * 提交时若已填概要则明细必须存在且对应——授信机构数/授信总额/已用额合计/未结清笔数
-     * 与明细加总(容差 1 万元,机构数/笔数精确)比对,不一致阻断并报中文错误。
-     * 概要为空则不校验(未填概要无对应要求)。
-     */
-    private void checkCreditSummaryConsistency(Long applicationId) {
-        List<CcrApplicationCreditSummary> summaries = creditSummaryMapper.selectList(
-                new LambdaQueryWrapper<CcrApplicationCreditSummary>()
-                        .eq(CcrApplicationCreditSummary::getApplicationId, applicationId));
-        if (summaries == null || summaries.isEmpty()) {
-            return;
-        }
-        List<CcrApplicationOtherLoan> loans = otherLoanMapper.selectList(
-                new LambdaQueryWrapper<CcrApplicationOtherLoan>()
-                        .eq(CcrApplicationOtherLoan::getApplicationId, applicationId));
-        if (loans == null || loans.isEmpty()) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "他行融资概要已填写,请同步补录融资明细(概要/明细需对应一致)");
-        }
-        CcrApplicationCreditSummary s = summaries.get(0);
-        BigDecimal creditTotal = loans.stream().map(CcrApplicationOtherLoan::getCreditAmount)
-                .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal usedTotal = loans.stream().map(CcrApplicationOtherLoan::getUsedAmount)
-                .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        long distinctLenders = loans.stream().map(CcrApplicationOtherLoan::getLenderName).distinct().count();
-        if (s.getCreditAmountTotal() != null
-                && creditTotal.subtract(s.getCreditAmountTotal()).abs().compareTo(BigDecimal.ONE) > 0) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "他行融资授信总额(概要 " + s.getCreditAmountTotal() + " 万元)与明细合计(" + creditTotal + " 万元)不一致");
-        }
-        if (s.getUsedAmountTotal() != null
-                && usedTotal.subtract(s.getUsedAmountTotal()).abs().compareTo(BigDecimal.ONE) > 0) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "他行融资已用额合计(概要 " + s.getUsedAmountTotal() + " 万元)与明细合计(" + usedTotal + " 万元)不一致");
-        }
-        if (s.getLenderCount() != null && s.getLenderCount() != distinctLenders) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "他行融资授信机构数(概要 " + s.getLenderCount() + ")与明细机构数(" + distinctLenders + ")不一致");
-        }
-        if (s.getLoanAccountCount() != null && s.getLoanAccountCount() != loans.size()) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    "他行融资未结清笔数(概要 " + s.getLoanAccountCount() + ")与明细笔数(" + loans.size() + ")不一致");
-        }
-    }
-
     private void checkCompleteness(CcrApplication app, List<CcrPricingItem> items) {
         if (items.isEmpty()) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "定价分项不能为空,无法提交");

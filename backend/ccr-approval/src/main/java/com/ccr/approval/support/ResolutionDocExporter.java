@@ -114,6 +114,96 @@ public final class ResolutionDocExporter {
         return s == null ? "" : s;
     }
 
+    /** 担保方式编码→中文(与 Pdf 决议书/前端字典一致) */
+    private static String guaranteeText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "MORTGAGE" -> "抵押";
+            case "PLEDGE" -> "质押";
+            case "GUARANTEE" -> "保证";
+            case "CREDIT" -> "信用";
+            case "BILL_MARGIN" -> "银票保证金";
+            case "CREDIT_MARGIN" -> "信用证保证金";
+            case "CERTIFICATE_DEPOSIT" -> "存单质押";
+            default -> code;
+        };
+    }
+
+    /** 分项增强:担保方式(按分项聚合去重)+授信协议编号(存量分项=有原执行利率取申请协议,新增显示「新增业务」)
+     *  §2026-08-26 决议书与申请档案定价分项口径同步(分项编号不再展示) */
+    private static void enrichPricingItems(Map<String, Object> archive, Map<String, Object> app, List<Map<String, Object>> items, Map<String, Object> guarantees) {
+        String agreementNo = agreementNoOf(archive, app);
+        for (Map<String, Object> item : items) {
+            item.put("guarantee_type_display", guaranteeTypesOf(guarantees, item));
+            boolean existing = pick(item, "original_rate", "originalRate") != null
+                    && !pick(item, "original_rate", "originalRate").isEmpty();
+            item.put("agreement_no_display", existing ? (agreementNo == null ? "—" : agreementNo) : "新增业务");
+        }
+    }
+
+    /** 决议书授信协议编号:申请提交时授信协议(creditInfoJson.agreementNo)优先;缺失兜底数仓/补录合并协议第一条 */
+    private static String agreementNoOf(Map<String, Object> archive, Map<String, Object> app) {
+        Object ci = app == null ? null : app.get("creditInfoJson");
+        if (ci != null) {
+            String no = agreementNoFromJson(ci.toString());
+            if (no != null) {
+                return no;
+            }
+        }
+        List<Map<String, Object>> agreements = list(archive.get("creditAgreements"));
+        if (!agreements.isEmpty()) {
+            String no = pick(agreements.get(0), "agreementNo");
+            if (no != null && !no.isEmpty()) {
+                return no;
+            }
+        }
+        return null;
+    }
+
+    /** 轻量提取 creditInfoJson 中 agreementNo(结构简单,不引入 JSON 解析依赖) */
+    private static String agreementNoFromJson(String json) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"agreementNo\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** 分项担保方式合并(多担保方式去重顿号分隔,与前端担保明细口径一致) */
+    private static String guaranteeTypesOf(Map<String, Object> guarantees, Map<String, Object> item) {
+        Object id = item.get("id");
+        if (id == null) {
+            return "—";
+        }
+        Object g = guarantees.get(id);
+        if (g == null) {
+            g = guarantees.get(String.valueOf(id));
+        }
+        if (!(g instanceof List<?> list) || list.isEmpty()) {
+            return "—";
+        }
+        java.util.LinkedHashSet<String> types = new java.util.LinkedHashSet<>();
+        for (Object o : list) {
+            if (o instanceof Map<?, ?> gm) {
+                Object t = gm.get("guaranteeType");
+                if (t != null) {
+                    types.add(t.toString());
+                }
+            }
+        }
+        if (types.isEmpty()) {
+            return "—";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String t : types) {
+            String zh = guaranteeText(t);
+            if (sb.length() > 0) {
+                sb.append("、");
+            }
+            sb.append(zh == null ? t : zh);
+        }
+        return sb.toString();
+    }
+
     /**
      * 生成决议书字节流
      *
@@ -131,6 +221,8 @@ public final class ResolutionDocExporter {
         List<Map<String, Object>> execs = list(archive.get("resolutionExecutions"));
         List<Map<String, Object>> commitments = list(archive.get("commitments"));
         Map<String, Object> guarantees = map(archive.get("guaranteesByItem"));
+        // 分项增强(§2026-08-26 决议书与申请档案同步):担保方式聚合 + 授信协议编号(存量分项取申请协议,新增显示「新增业务」)
+        enrichPricingItems(archive, app, items, guarantees);
 
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             setupPage(doc);
@@ -189,9 +281,10 @@ public final class ResolutionDocExporter {
             };
             descTable(doc, loanFields);
             dataTable(doc, "定价分项", items, new String[][]{
-                    {"分项编号", "pricing_item_no", "pricingItemNo"},
                     {"定价客户", "pricing_customer_no", "pricingCustomerNo"},
                     {"产品", "product_code", "productCode"},
+                    {"授信协议编号", "agreement_no_display"},
+                    {"担保方式", "guarantee_type_display"},
                     {"金额(万元)", "pricing_amount", "pricingAmount"},
                     {"期限", "term_value", "termValue"},
                     {"期限单位", "term_unit", "termUnit"},
@@ -202,8 +295,9 @@ public final class ResolutionDocExporter {
             // ---- 三、利率调整(从什么利率到什么利率) ----
             section(doc, "三、利率调整");
             dataTable(doc, "利率调整明细", items, new String[][]{
-                    {"分项编号", "pricing_item_no", "pricingItemNo"},
                     {"产品", "product_code", "productCode"},
+                    {"授信协议编号", "agreement_no_display"},
+                    {"担保方式", "guarantee_type_display"},
                     {"原执行利率(%)", "original_rate", "originalRate"},
                     {"申请利率(%)", "requested_rate", "requestedRate"},
                     {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},

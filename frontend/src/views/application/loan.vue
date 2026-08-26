@@ -538,7 +538,7 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 基础字段一行四列(§2026-08-26 用户要求):担保方式/产品/期限/授信金额 + 申请利率/币种;GROUP 涉及成员与存量原利率随条件追加 -->
+        <!-- 基础字段一行四列(§2026-08-26 用户要求):担保方式/产品/期限/授信金额 + 申请利率/测算利率;币种已删默认 CNY;GROUP 涉及成员与存量原利率随条件追加 -->
         <div class="mortgage-item__grid loan-basic-grid">
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
@@ -583,12 +583,6 @@
           <div class="form-field">
             <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="g.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.60" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">币种</label>
-            <select class="form-select" v-model="g.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
-            </select>
           </div>
         </div>
         <!-- 抵押物明细 -->
@@ -904,7 +898,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  AGREEMENT_TYPES, currencyText, maritalStatusCode,
+  AGREEMENT_TYPES, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
@@ -921,7 +915,6 @@ const step = ref(0)
 // ---------- 字典 ----------
 const guaranteeTypes = GUARANTEE_TYPES
 const agreementTypes = AGREEMENT_TYPES
-const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 贷款期限固定三档(一年期/三年期/五年期),取消自由输入月/天;存量带出非标准期限保留原值(下拉不显示,可重选覆盖)
 const loanTermOptions = [
   { value: '1Y', label: '一年期', years: 1 },
@@ -1162,8 +1155,12 @@ const userPickedBusinessType = ref(false)
 const scopeLabel = computed(() =>
   form.customerScope === 'GROUP' ? '集团客户' : form.customerScope === 'INDIVIDUAL' ? '个人' : '企业单户'
 )
-/** 下一步审批人:提交后第一步审批岗位(路由链路首节点,多分项统一;未预览/失败显示 —) */
+/** 下一步审批人:优先显示首节点审批人姓名,未解析出时降级显示审批岗位(路由链路首节点,多分项统一) */
 const nextApproverText = computed(() => {
+  for (const it of routeResult.value?.items || []) {
+    const names = (it.nextApproverNames || []).filter(Boolean)
+    if (names.length) return names.join('、')
+  }
   for (const it of routeResult.value?.items || []) {
     if (it.routeChain?.length) return nodeLabel(it.routeChain[0])
   }
@@ -1234,7 +1231,7 @@ async function loadCustomerDetail() {
       // 需求:存量不再自动拉入数仓拆分项,仅默认进入存量模式;分项与利率由业务人员手工录入
       if (creditSplits.value.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
-        form.guarantees = [newGuarantee()]
+        ensureGuaranteeRows()
         selectedAgreementNo.value = ''
         autoSelectAgreement()
         syncTotalCredit()
@@ -1475,8 +1472,8 @@ function onBusinessTypeChange() {
     form.creditAgreementNo = ''
     form.creditInfo = initialCreditInfo()
     selectedAgreementNo.value = ''
-    // 需求:存量不再自动拉入拆分项,保留一条空白分项由业务人员手工录入
-    form.guarantees = [newGuarantee()]
+    // 需求:存量不再自动拉入拆分项,已录入分项保留,仅当无分项时补一条空白(§2026-08-26 不再清空避免分项丢失)
+    ensureGuaranteeRows()
     if (form.customerNo) {
       getCustomerBusinessView(form.customerNo)
         .then((view: any) => {
@@ -1489,12 +1486,12 @@ function onBusinessTypeChange() {
     }
     ElMessage.info('存量调息:请选择本次申请对应的授信协议(默认已选第一条有效协议),授信总金额按所选协议额度带出,分项与利率请手工录入')
   } else {
-    // 新增授信:无数仓拆分项,重置为一条空白分项由客户经理按担保方式手工补充
+    // 新增授信:已录入分项保留,仅当无分项时补一条空白(§2026-08-26 不再清空避免分项丢失)
     form.creditAgreementNo = ''
     form.totalCredit = ''
     form.creditInfo = initialCreditInfo()
     selectedAgreementNo.value = ''
-    form.guarantees = [newGuarantee()]
+    ensureGuaranteeRows()
   }
   userPickedBusinessType.value = true
 }
@@ -1620,6 +1617,10 @@ function finGuaranteeType(contractNo: string): string {
   return fin?.guaranteeType || ''
 }
 
+function ensureGuaranteeRows() {
+  // 切换业务类型/重选客户时保留已录入分项,仅当无分项时补一条空白(§2026-08-26 修复分项被静默清空)
+  if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+}
 function addGuarantee() {
   // 需求②:存量与新增一致,按担保项拆分,直接追加空白担保行(可参考合同带出预填)
   form.guarantees.push(newGuarantee())
@@ -1776,63 +1777,7 @@ function validateStep(s: number): string | null {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
   }
-  if (s === 1) {
-    // 他行融资概要 vs 明细对应校验(口径与后端 submit checkCreditSummaryConsistency 一致;概要任一要素非空即校验,§2026-08-25)
-    const summary = buildCreditSummary()
-    if (summary) {
-      const rows = otherLoans.value.filter((d) => !isBlank(d.lenderName))
-      if (!rows.length) return '他行融资概要已填写,请同步补录融资明细(概要/明细需对应一致)'
-      const creditTotal = rows.reduce((acc, d) => acc + (Number(d.creditAmount) || 0), 0)
-      const usedTotal = rows.reduce((acc, d) => acc + (Number(d.usedAmount) || 0), 0)
-      const distinctLenders = new Set(rows.map((d) => String(d.lenderName).trim())).size
-      if (summary.creditAmountTotal !== undefined && Math.abs(creditTotal - Number(summary.creditAmountTotal)) > 1) {
-        return `他行融资授信总额(概要 ${summary.creditAmountTotal} 万元)与明细合计(${creditTotal} 万元)不一致`
-      }
-      if (summary.usedAmountTotal !== undefined && Math.abs(usedTotal - Number(summary.usedAmountTotal)) > 1) {
-        return `他行融资已用额合计(概要 ${summary.usedAmountTotal} 万元)与明细合计(${usedTotal} 万元)不一致`
-      }
-      if (summary.lenderCount !== undefined && Number(summary.lenderCount) !== distinctLenders) {
-        return `他行融资授信机构数(概要 ${summary.lenderCount})与明细机构数(${distinctLenders})不一致`
-      }
-      if (summary.loanAccountCount !== undefined && Number(summary.loanAccountCount) !== rows.length) {
-        return `他行融资未结清笔数(概要 ${summary.loanAccountCount})与明细笔数(${rows.length})不一致`
-      }
-    }
-    // 概要数字格式校验(计数非负整数,金额范围兜底;type=number+min/max/step 拦输入,此处拦非法值,§2026-08-25)
-    const os = otherSummary.value
-    const osCounts: Array<[number, string]> = [
-      [Number(os.lenderCount), '授信机构数'],
-      [Number(os.loanAccountCount), '未结清笔数'],
-      [Number(os.overdueAccountCount), '逾期笔数'],
-    ]
-    for (const [v, label] of osCounts) {
-      if (!Number.isNaN(v) && (!Number.isInteger(v) || v < 0)) return `他行融资概要「${label}」须为非负整数(当前 ${v})`
-    }
-    const osAmts: Array<[number, string]> = [
-      [Number(os.creditAmountTotal), '授信总额'],
-      [Number(os.usedAmountTotal), '已用额'],
-      [Number(os.overdueBalance), '逾期余额'],
-      [Number(os.nplBalance), '不良余额'],
-      [Number(os.specialMentionBalance), '关注类余额'],
-      [Number(os.externalGuaranteeBalance), '对外担保余额'],
-    ]
-    for (const [v, label] of osAmts) {
-      if (!Number.isNaN(v) && !(v >= 0 && v <= 999999999.99)) return `他行融资概要「${label}」须在 0~999999999.99 万元之间(当前 ${v})`
-    }
-    // 明细数字格式校验(金额范围/年化利率 0~100)
-    for (const dl of otherLoans.value) {
-      const dlAmts: Array<[number, string]> = [
-        [Number(dl.creditAmount), '授信金额'],
-        [Number(dl.usedAmount), '已用额'],
-        [Number(dl.balanceAmount), '余额'],
-      ]
-      for (const [v, label] of dlAmts) {
-        if (!Number.isNaN(v) && !(v >= 0 && v <= 999999999.99)) return `他行融资明细「${label}」须在 0~999999999.99 万元之间(当前 ${v})`
-      }
-      const ar = Number(dl.annualRate)
-      if (!Number.isNaN(ar) && !(ar >= 0 && ar <= 100)) return `他行融资明细「年化利率」须在 0~100 之间(当前 ${dl.annualRate})`
-    }
-  }
+  // s===1 他行融资:不做任何校验(§2026-08-26 用户要求;概要/明细可自由填写,不再强制对应一致)
   if (s === 2) {
     for (let i = 0; i < form.guarantees.length; i++) {
       const g = form.guarantees[i]

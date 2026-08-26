@@ -260,6 +260,79 @@ public final class ResolutionPdfExporter {
         };
     }
 
+    /** 分项增强:担保方式(按分项聚合去重)+授信协议编号(存量分项=有原执行利率取申请协议,新增显示「新增业务」)
+     *  §2026-08-26 决议书与申请档案定价分项口径同步(分项编号不再展示) */
+    private static void enrichPricingItems(Map<String, Object> archive, Map<String, Object> app, List<Map<String, Object>> items, Map<String, Object> guarantees) {
+        String agreementNo = agreementNoOf(archive, app);
+        for (Map<String, Object> item : items) {
+            item.put("guarantee_type_display", guaranteeTypesOf(guarantees, item));
+            boolean existing = pick(item, "original_rate", "originalRate") != null
+                    && !pick(item, "original_rate", "originalRate").isEmpty();
+            item.put("agreement_no_display", existing ? (agreementNo == null ? "—" : agreementNo) : "新增业务");
+        }
+    }
+
+    /** 决议书授信协议编号:申请提交时授信协议(creditInfoJson.agreementNo)优先;缺失兜底数仓/补录合并协议第一条 */
+    private static String agreementNoOf(Map<String, Object> archive, Map<String, Object> app) {
+        Object ci = app == null ? null : app.get("creditInfoJson");
+        if (ci != null) {
+            String no = agreementNoFromJson(ci.toString());
+            if (no != null) {
+                return no;
+            }
+        }
+        List<Map<String, Object>> agreements = list(archive.get("creditAgreements"));
+        if (!agreements.isEmpty()) {
+            String no = pick(agreements.get(0), "agreementNo");
+            if (no != null && !no.isEmpty()) {
+                return no;
+            }
+        }
+        return null;
+    }
+
+    /** 轻量提取 creditInfoJson 中 agreementNo(结构简单,不引入 JSON 解析依赖) */
+    private static String agreementNoFromJson(String json) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"agreementNo\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** 分项担保方式合并(多担保方式去重顿号分隔,与前端担保明细口径一致) */
+    private static String guaranteeTypesOf(Map<String, Object> guarantees, Map<String, Object> item) {
+        Object id = item.get("id");
+        if (id == null) {
+            return "—";
+        }
+        Object g = guarantees.get(id);
+        if (g == null) {
+            g = guarantees.get(String.valueOf(id));
+        }
+        if (!(g instanceof List<?> list) || list.isEmpty()) {
+            return "—";
+        }
+        java.util.LinkedHashSet<String> types = new java.util.LinkedHashSet<>();
+        for (Object o : list) {
+            if (o instanceof Map<?, ?> gm) {
+                Object t = gm.get("guaranteeType");
+                if (t != null) {
+                    types.add(t.toString());
+                }
+            }
+        }
+        if (types.isEmpty()) {
+            return "—";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String t : types) {
+            String zh = guaranteeText(t);
+            if (sb.length() > 0) {
+                sb.append("、");
+            }
+            sb.append(zh == null ? t : zh);
+        }
+        return sb.toString();
+    }
+
     /** 贡献度指标编码→中文名(与指标字典口径一致) */
     private static String metricText(String code) {
         if (code == null) {
@@ -406,6 +479,13 @@ public final class ResolutionPdfExporter {
         List<Map<String, Object>> execs = list(archive.get("resolutionExecutions"));
         List<Map<String, Object>> commitments = list(archive.get("commitments"));
         Map<String, Object> guarantees = map(archive.get("guaranteesByItem"));
+        // 分项增强(§2026-08-26 决议书与申请档案同步):担保方式聚合 + 授信协议编号(存量分项取申请协议,新增显示「新增业务」)
+        enrichPricingItems(archive, app, items, guarantees);
+        // 业务类型区分:存款决议书保留完整审批留痕;贷款决议书按用户要求精简为三部分(客户基本信息/审批利率调整/贡献度信息)
+        boolean isDeposit = "DEPOSIT".equals(pick(app, "business_type", "businessType"));
+        Map<String, Object> res = resolutions.isEmpty() ? null : resolutions.get(0);
+        boolean committeeReject = res != null
+                && "COMMITTEE_REJECT".equals(pick(res, "decisionSource", "decision_source"));
 
         try (PDDocument doc = new PDDocument();
              InputStream hi = loadFont("fonts/simhei.ttf");
@@ -417,10 +497,9 @@ public final class ResolutionPdfExporter {
             // ---- 标题 ----
             ctx.title("利率定价决议书");
 
+            // ---- 存款决议书:完整审批留痕(抬头/申请贷款信息/审批情况/担保/执行核验) ----
+            if (isDeposit) {
             // ---- 抬头信息 ----
-            Map<String, Object> res = resolutions.isEmpty() ? null : resolutions.get(0);
-            boolean committeeReject = res != null
-                    && "COMMITTEE_REJECT".equals(pick(res, "decisionSource", "decision_source"));
             String[][] metaRows = {
                     {"申请号", pick(app, "application_no", "applicationNo")},
                     {"决议编号", res == null ? "—" : pick(res, "resolutionNo", "resolution_no")},
@@ -431,9 +510,10 @@ public final class ResolutionPdfExporter {
             };
             ctx.descTable(metaRows);
             ctx.gap(8);
+            }
 
-            // ---- 一、客户信息 ----
-            ctx.section("一、客户信息");
+            // ---- 一、客户信息(贷款决议书标题为"客户基本信息") ----
+            ctx.section(isDeposit ? "一、客户信息" : "一、客户基本信息");
             ctx.descTable(new String[][]{
                     {"客户名称", pick(customer, "customerName", "cust_nm")},
                     {"客户号", pick(customer, "customerNo", "cust_no")},
@@ -458,7 +538,8 @@ public final class ResolutionPdfExporter {
             });
             ctx.gap(8);
 
-            // ---- 二、申请的贷款信息 ----
+            // ---- 二、申请的贷款信息(仅存款决议书保留) ----
+            if (isDeposit) {
             ctx.section("二、申请的贷款信息");
             String businessType = pick(app, "business_type", "businessType");
             ctx.descTable(new String[][]{
@@ -475,21 +556,24 @@ public final class ResolutionPdfExporter {
             itemFmt.put("term_unit", ResolutionPdfExporter::termUnitText);
             itemFmt.put("currency", ResolutionPdfExporter::currencyText);
             ctx.dataTable("定价分项", items, new String[][]{
-                    {"分项编号", "pricing_item_no", "pricingItemNo"},
                     {"定价客户", "pricing_customer_no", "pricingCustomerNo"},
                     {"产品", "product_code", "productCode"},
+                    {"授信协议编号", "agreement_no_display"},
+                    {"担保方式", "guarantee_type_display"},
                     {"金额(万元)", "pricing_amount", "pricingAmount"},
                     {"期限", "term_value", "termValue"},
                     {"期限单位", "term_unit", "termUnit"},
                     {"币种", "currency"},
             }, itemFmt);
             ctx.gap(8);
+            }
 
-            // ---- 三、利率调整 ----
-            ctx.section("三、利率调整");
+            // ---- 三、利率调整(贷款决议书标题为"审批利率调整") ----
+            ctx.section(isDeposit ? "三、利率调整" : "二、审批利率调整");
             ctx.dataTable("利率调整明细", items, new String[][]{
-                    {"分项编号", "pricing_item_no", "pricingItemNo"},
                     {"产品", "product_code", "productCode"},
+                    {"授信协议编号", "agreement_no_display"},
+                    {"担保方式", "guarantee_type_display"},
                     {"原执行利率(%)", "original_rate", "originalRate"},
                     {"申请利率(%)", "requested_rate", "requestedRate"},
                     {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
@@ -510,7 +594,8 @@ public final class ResolutionPdfExporter {
             }
             ctx.gap(8);
 
-            // ---- 四、审批情况 ----
+            // ---- 四、审批情况(仅存款决议书保留) ----
+            if (isDeposit) {
             ctx.section("四、审批情况");
             if (resolutions != null && !resolutions.isEmpty()) {
                 ctx.para(committeeReject
@@ -551,8 +636,10 @@ public final class ResolutionPdfExporter {
                     {"时间", "operation_time", "operationTime"},
             }, actionFmt);
             ctx.gap(8);
+            }
 
-            // ---- 五、其他信息 ----
+            // ---- 五、其他信息(贷款决议书仅保留贡献度承诺,独立成"三、贡献度信息") ----
+            if (isDeposit) {
             ctx.section("五、其他信息");
             if (!guarantees.isEmpty()) {
                 List<String> types = new ArrayList<>();
@@ -571,6 +658,9 @@ public final class ResolutionPdfExporter {
                 ctx.para("担保方式:" + String.join("、",
                         types.stream().map(ResolutionPdfExporter::guaranteeText).toList()), 9, 0);
             }
+            } else if (commitments != null && !commitments.isEmpty()) {
+            ctx.section("三、贡献度信息");
+            }
             if (commitments != null && !commitments.isEmpty()) {
                 Map<String, UnaryOperator<String>> commitmentFmt = new HashMap<>();
                 commitmentFmt.put("metricCode", ResolutionPdfExporter::metricText);
@@ -587,7 +677,7 @@ public final class ResolutionPdfExporter {
                         {"截止日期", "endDate", "end_date"},
                 }, commitmentFmt);
             }
-            if (execs != null && !execs.isEmpty()) {
+            if (isDeposit && execs != null && !execs.isEmpty()) {
                 ctx.dataTable("决议执行核验", execs, new String[][]{
                         {"贷款合同号", "loanContractNo", "loan_contract_no"},
                         {"补充协议号", "supplementAgreementNo", "supplement_agreement_no"},

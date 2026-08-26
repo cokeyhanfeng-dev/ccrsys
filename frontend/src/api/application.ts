@@ -222,6 +222,7 @@ export interface RoutePreview {
     startNodeCode?: string
     finalNodeCode?: string
     routeChain?: string[]
+    nextApproverNames?: string[]
     hardBoundaryPass?: boolean
     hardBoundaryRate?: number
     lprVersionCode?: string

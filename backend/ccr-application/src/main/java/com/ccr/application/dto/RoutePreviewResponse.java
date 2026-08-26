@@ -59,6 +59,9 @@ public class RoutePreviewResponse {
         /** 完整路由链路 */
         private List<String> routeChain;
 
+        /** 下一步审批人姓名(routeChain 首节点解析,§2026-08-26 客户经理提交预览显示审批人) */
+        private List<String> nextApproverNames;
+
         /** 硬边界是否通过(未配置边界视为通过) */
         private Boolean hardBoundaryPass;
 

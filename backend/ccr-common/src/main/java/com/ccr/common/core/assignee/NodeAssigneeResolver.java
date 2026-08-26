@@ -393,6 +393,11 @@ public class NodeAssigneeResolver {
         public List<Long> userIds() {
             return users.stream().map(AssigneeUser::getUserId).toList();
         }
+
+        /** 解析出的处理人列表(含姓名昵称,§2026-08-26 提交预览下一步审批人姓名) */
+        public List<AssigneeUser> users() {
+            return users;
+        }
     }
 
     /** 解析出的处理人 */

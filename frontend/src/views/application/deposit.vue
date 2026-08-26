@@ -79,7 +79,7 @@
           <span class="deposit-item__title">存款分项 {{ i + 1 }}</span>
           <button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button>
         </div>
-        <!-- 8 字段均匀 2 行×4 列:账户方式/存款账户/产品/期限 + 金额/币种/当前执行利率/申请利率 -->
+        <!-- 8 字段均匀 2 行×4 列:账户方式/存款账户/产品/期限 + 金额/当前执行利率/申请利率/测算利率(币种已删,提交默认 CNY,§2026-08-26) -->
         <div class="mortgage-item__grid">
           <div class="form-field">
             <label class="form-field__label">账户方式 <span class="req">*</span></label>
@@ -88,7 +88,7 @@
               <option value="PLANNED">拟开户方案</option>
             </select>
           </div>
-          <div class="form-field dep-field--wide">
+          <div class="form-field">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
               <!-- 存量账户下拉:按当前客户数仓账户列表选择并自动带出(§2026-08-25);集团/无数仓账户时回退手工输入+反查 -->
@@ -130,12 +130,6 @@
           <div class="form-field">
             <label class="form-field__label">金额(万元) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="d.amount" type="number" min="0" max="999999999.99" step="0.0001" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">币种</label>
-            <select class="form-select" v-model="d.currency">
-              <option v-for="c in currencies" :key="c" :value="c">{{ currencyText(c) }}</option>
-            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">当前执行利率(%)</label>
@@ -244,13 +238,12 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, currencyText, normalizeFiveLevelClass } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
 
-const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY']
 // 存款产品(product_code 与产品边界/数仓账户口径对齐)
 // P2-4:以产品目录 ccr_product 为权威来源,目录为空时回退内置字典(避免新建环境缺目录不可用)
 const depositProducts = ref<Array<{ code: string; name: string }>>(
@@ -508,7 +501,6 @@ function onAccountPick(d: DepositItemRow, ev: Event) {
     d.termValue = a.termValue != null ? String(a.termValue) : d.termValue
     d.termUnit = a.termUnit || d.termUnit
     d.termOption = d.termValue && d.termUnit ? `${d.termValue}:${d.termUnit}` : ''
-    d.currency = a.currency || d.currency
     d.originalRate = a.executionRate != null ? String(a.executionRate) : ''
   } else {
     d.lookupFound = false
@@ -1020,9 +1012,8 @@ async function loadDraftIntoForm(id: number | string) {
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
 .deposit-item { margin-bottom: 10px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
-/* 存款分项字段 5 列一行(§2026-08-26 用户要求;9 字段 5+5 两行填满:存款账户跨 2 列容纳下拉+提示文字,其余等宽) */
-.deposit-item .mortgage-item__grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
-.deposit-item .mortgage-item__grid .dep-field--wide { grid-column: span 2; }
+/* 存款分项字段 4 列×2 行(§2026-08-26 删币种后 8 字段均匀:账户方式/存款账户/产品/期限 + 金额/当前执行利率/申请利率/测算利率) */
+.deposit-item .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 @media (max-width: 1100px) {
   .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
