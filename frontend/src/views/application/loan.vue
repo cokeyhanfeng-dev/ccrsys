@@ -541,7 +541,7 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 基础字段 3 列×2 行(上面三个下面三个):担保方式/产品/期限 + 授信金额/申请利率/币种;GROUP 涉及成员与存量原利率随条件追加 -->
+        <!-- 基础字段一行四列(§2026-08-26 用户要求):担保方式/产品/期限/授信金额 + 申请利率/币种;GROUP 涉及成员与存量原利率随条件追加 -->
         <div class="mortgage-item__grid loan-basic-grid">
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
@@ -2745,8 +2745,8 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* 贷款分项基础字段 3 列×2 行(用户要求上面三个下面三个;GROUP 涉及成员/存量原利率多出字段 flow 第三行) */
-.loan-basic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+/* 贷款分项基础字段一行四列(§2026-08-26 用户要求 4 列紧凑;GROUP 涉及成员/存量原利率多出字段 flow 换行) */
+.loan-basic-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 @media (max-width: 1100px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
 .mortgage-sub { margin-bottom: 10px; }
