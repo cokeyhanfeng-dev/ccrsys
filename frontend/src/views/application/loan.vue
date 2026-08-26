@@ -2663,8 +2663,8 @@ async function loadDraftIntoForm(id: number | string) {
 .member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 /* 集团成员整块跨满整行(外层 form-grid 4 列,grid-column 跨全部列铺满页面,§2026-08-25 用户要求表格拉满) */
 .member-block { width: 100%; grid-column: 1 / -1; }
-/* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满,不突兀) */
-.member-table { width: 100%; }
+/* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满;须 display:table 覆盖 .table 的 display:block,否则列不伸展、多余空间全留右侧) */
+.member-table { display: table; width: 100%; }
 /* 成员勾选复选框 */
 .member-check { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
 /* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
