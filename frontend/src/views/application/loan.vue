@@ -710,9 +710,7 @@
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
       </div>
 
-      <div class="sub-title">当前贡献度参考 <span class="badge badge--info">数仓取数</span></div>
-      <ContributionPanel :contribution="contributionCurrent" :show-commitments="false" />
-
+      <!-- 当前贡献度仅审批页对照展示,申请页不展示给客户经理;选指标时基线值自动带出当前贡献度(§2026-08-26) -->
       <div class="sub-title">拟达成承诺</div>
       <div v-if="commitments.length" class="commitment-list">
         <div v-for="(c, i) in commitments" :key="i" class="commitment-card">
@@ -923,7 +921,6 @@ import {
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
-import ContributionPanel from '@/components/ContributionPanel.vue'
 
 const userStore = useUserStore()
 const route = useRoute()
