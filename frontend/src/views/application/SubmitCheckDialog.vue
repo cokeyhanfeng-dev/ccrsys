@@ -90,13 +90,6 @@
             </table>
           </div>
         </template>
-        <!-- 下一步审批人(§2026-08-26 贷款/存款提交确认弹窗展示审批去向) -->
-        <template v-if="nextApprover">
-          <div class="check-section">
-            <div class="check-section__title">下一步审批</div>
-            <div class="next-approver-tip">提交后审批将首先流转至 <b>{{ nextApprover }}</b></div>
-          </div>
-        </template>
         <template v-if="check">
           <!-- 数据批次差异清单(仅校验明细场景展示,贷款 showCheckDetails=false 隐藏;§2026-08-26) -->
           <template v-if="showCheckDetails">
@@ -189,8 +182,6 @@ const props = defineProps<{
   detailRows?: Array<{ itemNo: string; member?: string; guaranteeType: string; term: string; amount: string; rate: string }>
   /** 审批路由预览结果(提交确认弹窗展示;§2026-08-26 贷款/存款均传 routeResult) */
   routePreview?: RoutePreview | null
-  /** 下一步审批人姓名(贷款/存款提交确认弹窗展示审批去向) */
-  nextApprover?: string
   /** 是否展示数据批次差异/硬边界等校验明细(贷款提交确认精简为 false,存款保持 true;§2026-08-26) */
   showCheckDetails?: boolean
 }>()
@@ -248,13 +239,6 @@ function onCancel() {
   font-size: 14px; color: var(--color-text-main); font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* 下一步审批人提示条(§2026-08-26) */
-.next-approver-tip {
-  padding: 10px 14px; border-radius: var(--radius-sm);
-  background: var(--color-primary-light); color: var(--color-primary);
-  font-size: 13px;
-}
-.next-approver-tip b { font-size: 14px; font-weight: 600; }
 /* 审批路由预览节点徽标(§2026-08-26 提交确认弹窗展示路由链路) */
 .route-node {
   display: inline-block; padding: 2px 8px; margin-right: 4px;

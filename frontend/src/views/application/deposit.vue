@@ -129,19 +129,19 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">金额(万元) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.amount" type="number" min="0" max="999999999.99" step="0.0001" />
+            <input class="form-input form-input--amount" v-model="d.amount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" />
           </div>
           <div class="form-field">
             <label class="form-field__label">执行利率(%)</label>
-            <input class="form-input form-input--amount" v-model="d.originalRate" placeholder="存量账户自动带出,可修改" />
+            <input class="form-input form-input--amount" v-model="d.originalRate" type="number" min="0" max="100" step="0.000001" placeholder="存量账户自动带出,可修改" @keydown="onNumKeydown" />
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于执行利率" />
+            <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于执行利率" @keydown="onNumKeydown" />
           </div>
           <div class="form-field">
             <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 1.65" />
+            <input class="form-input form-input--amount" v-model="d.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 1.65" @keydown="onNumKeydown" />
           </div>
         </div>
       </div>
@@ -152,7 +152,7 @@
     <div class="form-card">
       <div class="form-card__title">
         提交预览
-        <InfoTip content="点击「提交申请」后在确认弹窗中核对客户信息、申请概要、审批路由与下一步审批人,再正式提交。" />
+        <InfoTip content="点击「提交申请」后在确认弹窗中核对客户信息、申请概要与审批路由,再正式提交。" />
       </div>
       <div class="form-field form-field--stack">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
@@ -172,7 +172,6 @@
       :summary="depositSummary"
       :customer-summary="depositCustomerSummary"
       :route-preview="routeResult"
-      :next-approver="nextApproverText"
       :show-check-details="false"
       :submitting="submitting"
       @confirm="onConfirmSubmit"
@@ -378,7 +377,7 @@ const routeResult = ref<RoutePreview | null>(null)
 const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
 
-// ---------- 提交确认弹窗展示(§2026-08-26 客户信息 + 申请概要 + 申请利率 + 审批路由预览 + 下一步审批人) ----------
+// ---------- 提交确认弹窗展示(§2026-08-26 客户信息 + 申请概要 + 申请利率 + 审批路由预览) ----------
 /** 存款总额(万元) */
 const depositTotalText = computed(() =>
   (Math.round(items.value.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100).toString()
@@ -387,17 +386,6 @@ const depositTotalText = computed(() =>
 const existingCountText = computed(() => {
   const ex = items.value.filter((d) => d.accountMode === 'EXISTING').length
   return `${ex} 存量 / ${items.value.length - ex} 拟开户`
-})
-/** 下一步审批人:优先首节点审批人姓名,未解析出降级显示审批岗位(路由链路首节点) */
-const nextApproverText = computed(() => {
-  for (const it of routeResult.value?.items || []) {
-    const names = (it.nextApproverNames || []).filter(Boolean)
-    if (names.length) return names.join('、')
-  }
-  for (const it of routeResult.value?.items || []) {
-    if (it.routeChain?.length) return nodeLabel(it.routeChain[0])
-  }
-  return '—'
 })
 /** 提交确认弹窗:客户信息键值对 */
 const depositCustomerSummary = computed(() => [
@@ -654,6 +642,13 @@ function isBlank(v: any) {
   return v === undefined || v === null || String(v).trim() === ''
 }
 
+/** 数值输入防乱输:type=number 框拦截 e/E/+/-/字母等非数字键,仅允许数字与小数点(§2026-08-26 用户要求不能输字符串) */
+function onNumKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.key.length !== 1) return // 功能键(方向/退格/删除/回车/Tab 等)放行
+  if (!/[0-9.]/.test(e.key)) e.preventDefault()
+}
+
 function validateForDraft(): string | null {
   // 集团主体:按集团整体申请,校验集团编号已查询(不校验客户号/证件号)
   if (form.customerScope === 'GROUP') {
@@ -811,7 +806,7 @@ async function onRoutePreview() {
 async function onSubmit() {
   // 存款申请无关联人录入,不存在关联人校验(勿从 loan.vue 拷入 missingRel 校验,该变量未定义会抛 ReferenceError)
   if (!(await ensureDraft()) || !draft.id) return
-  // 提交前刷新路由预览:保证弹窗「审批路由预览/下一步审批人」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+  // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
   await onRoutePreview()
   try {
     checkResult.value = await submitCheck(draft.id)

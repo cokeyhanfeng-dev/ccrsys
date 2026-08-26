@@ -402,6 +402,8 @@ const doneToday = computed(
 )
 
 // ---------- KPI 卡(按角色差异化) ----------
+// 审批中=复合多状态(与历史申请页筛选/后端 status IN 口径一致;§2026-08-26 统计卡点击跳转历史并自动筛选)
+const IN_PROGRESS_STATUS = 'ROUTING,SUBMITTED,SUBMITTING,APPROVED_LEVEL,PROCESSING,VOTING,COMMITTEE_PASS,PRESIDENT_DECISION'
 const stats = computed(() => {
   const s = planStats.value
   const trackCard = {
@@ -420,15 +422,15 @@ const stats = computed(() => {
   const r = role.value
   if (r === 'customer_manager') {
     return [
-      { icon: 'Document', label: '我的申请', value: applications.value.length, cls: 'stat-card__num--primary', to: '', sub: '本人发起的全部申请', subDanger: false },
-      { icon: 'Loading', label: '审批中', value: inProgressCount.value, cls: 'stat-card__num--primary', to: '/history', sub: '正在流转审批的申请', subDanger: false },
-      { icon: 'RefreshLeft', label: '被否决/可重提', value: rejectedCount.value, cls: rejectedCount.value ? 'stat-card__num--danger' : '', to: '/history', sub: '终态否决,可重新发起', subDanger: rejectedCount.value > 0 },
+      { icon: 'Document', label: '我的申请', value: applications.value.length, cls: 'stat-card__num--primary', to: '/history', sub: '本人发起的全部申请', subDanger: false },
+      { icon: 'Loading', label: '审批中', value: inProgressCount.value, cls: 'stat-card__num--primary', to: `/history?status=${IN_PROGRESS_STATUS}`, sub: '正在流转审批的申请', subDanger: false },
+      { icon: 'RefreshLeft', label: '被否决/可重提', value: rejectedCount.value, cls: rejectedCount.value ? 'stat-card__num--danger' : '', to: '/history?status=REJECTED', sub: '终态否决,可重新发起', subDanger: rejectedCount.value > 0 },
       trackCard
     ]
   }
   if (r === 'admin' || r === 'auditor') {
     return [
-      { icon: 'Document', label: '在途申请', value: inProgressCount.value, cls: 'stat-card__num--primary', to: '/history', sub: '全行流转中的申请', subDanger: false },
+      { icon: 'Document', label: '在途申请', value: inProgressCount.value, cls: 'stat-card__num--primary', to: `/history?status=${IN_PROGRESS_STATUS}`, sub: '全行流转中的申请', subDanger: false },
       { icon: 'Timer', label: '跟踪中计划', value: s.tracking, cls: 'stat-card__num--primary', to: '/commitment', sub: '生效跟踪中的承诺计划', subDanger: false },
       { icon: 'Warning', label: '有风险计划', value: s.atRisk, cls: s.atRisk ? 'stat-card__num--danger' : '', to: '/commitment', sub: '计划或指标评估有风险', subDanger: s.atRisk > 0 },
       todayCard

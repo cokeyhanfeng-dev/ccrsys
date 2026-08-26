@@ -19,20 +19,6 @@
 
     <div v-if="loading" class="card empty-block">加载中…</div>
     <template v-else-if="archive.application">
-      <!-- 0. 数据来源与快照信息(§12.16-7):档案展示提交冻结快照/人工录入/人工修正/实时取数来源 -->
-      <div class="card" v-if="source">
-        <div class="card__head">
-          <span>数据来源</span>
-          <span class="badge" :class="source === 'SNAPSHOT' ? 'badge--success' : source === 'MANUAL' ? 'badge--danger' : 'badge--warning'">{{ sourceText }}</span>
-        </div>
-        <div class="desc-grid" v-if="source === 'SNAPSHOT'">
-          <div class="desc-item"><span class="desc-label">数据日期</span>{{ snapshotInfo.dataDt || '—' }}</div>
-          <div class="desc-item"><span class="desc-label">冻结时间</span>{{ fmtTime(snapshotInfo.freezeTime) }}</div>
-          <div class="desc-item"><span class="desc-label">快照批次号</span>{{ snapshotInfo.bundleNo || '—' }}</div>
-        </div>
-        <div v-else class="empty-block">{{ sourceNote }}</div>
-      </div>
-
       <!-- 1. 申请内容 -->
       <div class="card">
         <div class="card__head"><span>申请内容</span><span :class="badgeClass(val(archive.application, 'status'))">{{ appStatusText(val(archive.application, 'status')) }}</span></div>
@@ -267,8 +253,8 @@
         <ContributionPanel :contribution="contribution" :commitments="archive.commitments || []" />
       </div>
 
-      <!-- 5e. 机构达成(申请机构最新批次) -->
-      <div class="card" v-if="orgPerformance.length">
+      <!-- 5e. 机构达成(仅贷款场景;存款无机构达成概念,§2026-08-26 用户要求删除) -->
+      <div class="card" v-if="isLoan && orgPerformance.length">
         <div class="card__head"><span>机构达成</span></div>
         <table class="table table--full">
           <thead><tr><th>机构</th><th>统计月份</th><th>达成金额(万元)</th><th>目标金额(万元)</th><th>达成率</th><th>数据日期</th></tr></thead>
@@ -527,19 +513,7 @@ const isGroup = computed(() => {
   return scope === 'GROUP'
 })
 
-// ===== 申请内容留痕(§14.4):数据来源 / 客户 / 授信 / 融资 / 附件 / 担保 / 贡献度 / 机构达成 =====
-const source = computed(() => archive.value.source || '')
-const sourceText = computed(() =>
-  source.value === 'SNAPSHOT' ? '冻结快照'
-    : source.value === 'MANUAL' ? '人工录入'
-    : source.value === 'MANUAL_OVERRIDE' ? '人工修正'
-    : source.value === 'REALTIME' ? '实时取数' : '—')
-const sourceNote = computed(() =>
-  source.value === 'MANUAL' ? '未找到数仓/快照客户数据,客户信息由客户经理手工录入,以人工填写为准。'
-    : source.value === 'MANUAL_OVERRIDE' ? '数仓/快照客户信息已由客户经理人工修正,以人工填写为准。'
-    : source.value === 'REALTIME' ? '未找到提交时冻结快照,客户/融资/贡献度为数仓实时查询结果,可能与提交时点存在差异。'
-    : '—')
-const snapshotInfo = computed(() => archive.value.snapshotInfo || {})
+// ===== 申请内容留痕(§14.4):客户 / 授信 / 融资 / 附件 / 担保 / 贡献度 / 机构达成 =====
 const customer = computed(() => (archive.value.customer && archive.value.customer.length) ? archive.value.customer[0] : {})
 const hasCustomer = computed(() => !!customer.value.customerName)
 const customerName = computed(() => customer.value.customerName || val(archive.value.application || {}, 'customer_no', 'customerNo') || '—')

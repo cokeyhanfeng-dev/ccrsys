@@ -50,9 +50,12 @@ public interface ApprovalService {
     /**
      * 历史审批分页(§13.2/§14.4):客户经理看本人申请、审批人看本人审批过、行长/审计看全部
      *
+     * @param applicationNo 申请号模糊(可空)
+     * @param status        状态筛选,逗号分隔多状态(可空;工作台「审批中/否决」聚合跳转)
+     * @param keyword       客户/集团名称模糊(可空,匹配 JSON 快照)
      * @return {total, records}
      */
-    Map<String, Object> pageHistory(int pageNum, int pageSize);
+    Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword);
 
     /**
      * 申请审批档案(§14.4):申请+成员+分项+快照包与质量结果+审批轨迹+调价记录+

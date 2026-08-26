@@ -1300,11 +1300,14 @@ public class ApprovalController {
         return R.ok(approvalService.listDone());
     }
 
-    /** 历史审批分页(§13.2/§14.4,按登录人角色/数据权限) */
+    /** 历史审批分页(§13.2/§14.4,按登录人角色/数据权限;§2026-08-26 支持申请号/状态/客户名称筛选) */
     @GetMapping("/history")
     public R<Map<String, Object>> history(@RequestParam(defaultValue = "1") int pageNum,
-                                          @RequestParam(defaultValue = "10") int pageSize) {
-        return R.ok(approvalService.pageHistory(pageNum, pageSize));
+                                          @RequestParam(defaultValue = "10") int pageSize,
+                                          @RequestParam(required = false) String applicationNo,
+                                          @RequestParam(required = false) String status,
+                                          @RequestParam(required = false) String keyword) {
+        return R.ok(approvalService.pageHistory(pageNum, pageSize, applicationNo, status, keyword));
     }
 
     /** 申请审批档案(§14.4) */

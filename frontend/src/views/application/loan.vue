@@ -133,7 +133,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
-              <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
+              <input class="form-input form-input--amount" v-model="form.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
             </div>
           </template>
           <template v-else>
@@ -147,7 +147,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">年收入(万元)</label>
-              <input class="form-input form-input--amount" v-model="form.annualIncome" placeholder="数仓带出,可修改" />
+              <input class="form-input form-input--amount" v-model="form.annualIncome" type="number" min="0" max="999999999.99" step="0.0001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
             </div>
             <div class="form-field">
               <label class="form-field__label">婚姻状况</label>
@@ -219,7 +219,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
-              <input class="form-input form-input--amount" v-model="groupSupplement.registeredCapital" placeholder="可空" />
+              <input class="form-input form-input--amount" v-model="groupSupplement.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="可空" @keydown="onNumKeydown" />
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
@@ -308,7 +308,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
-              <input class="form-input form-input--amount" v-model="m.registeredCapital" placeholder="可空" />
+              <input class="form-input form-input--amount" v-model="m.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="可空" @keydown="onNumKeydown" />
             </div>
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
@@ -353,17 +353,26 @@
       </template>
 
 
-      <!-- 关联人员(§12.4④,随申请备注结构附带提交;证件号失焦全行判重+录入即绑定,§6.2/§10.3.21) -->
-      <RelatedPersonsEditor v-model="relations" :customer-no="form.customerNo" :group-no="isGroup ? form.groupNo : ''" :application-id="draft.id || undefined" style="margin-top:16px" />
-
       <div class="wizard-actions">
         <span></span>
-        <button class="btn btn--primary" @click="goNext(1)">下一步:融资情况</button>
+        <button class="btn btn--primary" @click="goNext(1)">下一步:关联人员</button>
       </div>
     </div>
 
-    <!-- 第二步:业务/合同(融资情况:本行融资+他行融资) -->
+    <!-- 第二步:关联人员(§12.4④;独立步骤展示更简洁,§2026-08-26 用户要求;证件号失焦全行判重+录入即绑定,§6.2/§10.3.21) -->
     <div v-show="step === 1" class="form-card">
+      <div class="form-card__title">关联人员</div>
+      <InfoTip content="关联人员随申请一并提交;证件号填写后系统自动判重并绑定,已绑定其他客户的证件号无法重复录入" />
+      <RelatedPersonsEditor v-model="relations" :customer-no="form.customerNo" :group-no="isGroup ? form.groupNo : ''" :application-id="draft.id || undefined" style="margin-top:16px" />
+
+      <div class="wizard-actions">
+        <button class="btn btn--secondary" @click="step = 0">上一步</button>
+        <button class="btn btn--primary" @click="goNext(2)">下一步:融资情况</button>
+      </div>
+    </div>
+
+    <!-- 第三步:业务/合同(融资情况:本行融资+他行融资) -->
+    <div v-show="step === 2" class="form-card">
       <div class="form-card__title">融资情况</div>
 
       <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
@@ -379,15 +388,15 @@
         </thead>
         <tbody>
           <tr>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.lenderCount" type="number" min="0" step="1" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.loanAccountCount" type="number" min="0" step="1" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueAccountCount" type="number" min="0" step="1" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" /></td>
+            <td><input class="form-input form-input--amount" :value="otherSummary.lenderCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'lenderCount')" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" :value="otherSummary.loanAccountCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'loanAccountCount')" /></td>
+            <td><input class="form-input form-input--amount" :value="otherSummary.overdueAccountCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'overdueAccountCount')" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
           </tr>
         </tbody>
       </table>
@@ -400,10 +409,10 @@
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
             <td><input class="form-input" v-model="d.lenderName" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.creditAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.usedAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
-            <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" max="100" step="0.000001" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.creditAmount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.usedAmount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" /></td>
+            <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" max="100" step="0.000001" @keydown="onNumKeydown" /></td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
             <td><button class="btn btn--text" @click="otherLoans.splice(i, 1)">删除</button></td>
           </tr>
@@ -419,13 +428,13 @@
       <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 0">上一步</button>
-        <button class="btn btn--primary" @click="goNext(2)">下一步:利率申请</button>
+        <button class="btn btn--secondary" @click="step = 1">上一步</button>
+        <button class="btn btn--primary" @click="goNext(3)">下一步:利率申请</button>
       </div>
     </div>
 
     <!-- 第三步:利率申请(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
-    <div v-show="step === 2" class="form-card">
+    <div v-show="step === 3" class="form-card">
       <div class="form-card__title">
         利率申请
       </div>
@@ -448,7 +457,7 @@
         <template v-else>
           <div class="credit-overview__item">
             <span>总授信额度(万元)</span>
-            <input class="form-input form-input--amount" v-model="form.totalCredit" placeholder="手工录入" />
+            <input class="form-input form-input--amount" v-model="form.totalCredit" type="number" min="0" max="999999999.99" step="0.0001" placeholder="手工录入" @keydown="onNumKeydown" />
           </div>
           <div class="credit-overview__item credit-overview__item--static">
             <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
@@ -503,7 +512,7 @@
               </div>
               <div class="form-field">
                 <label class="form-field__label">授信协议总额(万元)</label>
-                <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" placeholder="0" @change="syncTotalCredit" />
+                <input class="form-input form-input--amount" v-model="form.creditInfo.creditAmount" type="number" min="0" max="999999999.99" step="0.0001" placeholder="0" @change="syncTotalCredit" @keydown="onNumKeydown" />
               </div>
               <div class="form-field">
                 <label class="form-field__label">授信协议日期</label>
@@ -565,19 +574,19 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">授信金额(万元) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="g.amount" type="number" min="0" max="999999999.99" step="0.0001" />
+            <input class="form-input form-input--amount" v-model="g.amount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" />
           </div>
           <div class="form-field" v-if="form.businessType === 'EXISTING'">
             <label class="form-field__label">原利率(%)</label>
-            <input class="form-input form-input--amount" v-model="g.originalRate" placeholder="数仓带出,可修改" />
+            <input class="form-input form-input--amount" v-model="g.originalRate" type="number" min="0" max="100" step="0.000001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="g.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.40" />
+            <input class="form-input form-input--amount" v-model="g.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.40" @keydown="onNumKeydown" />
           </div>
           <div class="form-field">
             <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="g.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.60" />
+            <input class="form-input form-input--amount" v-model="g.calculatedRate" type="number" min="0" max="100" step="0.000001" placeholder="如 3.60" @keydown="onNumKeydown" />
           </div>
         </div>
         <!-- 抵押物明细 -->
@@ -593,18 +602,18 @@
                     <div class="form-field"><label class="form-field__label">{{ m.type === '土地' ? '地块名称' : m.type === '设备' ? '设备名称' : m.type === '车辆' ? '品牌型号' : '名称' }}</label><input class="form-input" v-model="m.name" /></div>
                     <template v-if="m.type === '住宅' || m.type === '厂房'">
                       <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
-                      <div class="form-field"><label class="form-field__label">建筑面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" /></div>
+                      <div class="form-field"><label class="form-field__label">建筑面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></div>
                       <div class="form-field"><label class="form-field__label">产权证号</label><input class="form-input" v-model="m.certNo" /></div>
                     </template>
                     <template v-else-if="m.type === '土地'">
                       <div class="form-field"><label class="form-field__label">坐落位置</label><input class="form-input" v-model="m.addr" /></div>
-                      <div class="form-field"><label class="form-field__label">土地面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" /></div>
+                      <div class="form-field"><label class="form-field__label">土地面积(㎡)</label><input class="form-input form-input--amount" v-model="m.area" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></div>
                       <div class="form-field"><label class="form-field__label">使用权类型</label><select class="form-select" v-model="m.landUseType"><option>出让</option><option>划拨</option></select></div>
                       <div class="form-field"><label class="form-field__label">使用权到期日</label><input class="form-input" type="date" v-model="m.landUseExpiry" /></div>
                     </template>
                     <template v-else-if="m.type === '设备'">
                       <div class="form-field"><label class="form-field__label">规格型号</label><input class="form-input" v-model="m.specModel" /></div>
-                      <div class="form-field"><label class="form-field__label">数量(台/套)</label><input class="form-input form-input--amount" v-model="m.quantity" type="number" min="0" step="1" /></div>
+                      <div class="form-field"><label class="form-field__label">数量(台/套)</label><input class="form-input form-input--amount" :value="m.quantity" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, m, 'quantity')" /></div>
                       <div class="form-field"><label class="form-field__label">购置日期</label><input class="form-input" type="date" v-model="m.purchaseDate" /></div>
                     </template>
                     <template v-else-if="m.type === '车辆'">
@@ -612,9 +621,9 @@
                       <div class="form-field"><label class="form-field__label">车架号(VIN)</label><input class="form-input" v-model="m.vin" /></div>
                       <div class="form-field"><label class="form-field__label">登记日期</label><input class="form-input" type="date" v-model="m.regDate" /></div>
                     </template>
-                    <div class="form-field"><label class="form-field__label">评估价值(万元)</label><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" /></div>
+                    <div class="form-field"><label class="form-field__label">评估价值(万元)</label><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></div>
                     <div class="form-field"><label class="form-field__label">权属人</label><input class="form-input" v-model="m.owner" /></div>
-                    <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" /></div>
+                    <div class="form-field"><label class="form-field__label">抵押率(%)</label><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" @keydown="onNumKeydown" /></div>
                   </div>
                 </div>
         </div>
@@ -627,7 +636,7 @@
                     <tr v-for="(m, mi) in g.pledges" :key="mi">
                       <td><select class="form-select" v-model="m.type"><option>存单</option><option>股权</option><option>应收账款</option><option>存货</option><option>仓单</option></select></td>
                       <td><input class="form-input" v-model="m.name" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.value" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></td>
                       <td><input class="form-input" v-model="m.owner" /></td>
                       <td><button class="btn btn--text" @click="g.pledges.splice(mi, 1)">删除</button></td>
                     </tr>
@@ -641,9 +650,9 @@
                   <thead><tr><th>保证金金额(万元)</th><th>保证金比例(%)</th><th>期限(月)</th><th></th></tr></thead>
                   <tbody>
                     <tr v-for="(m, mi) in g.margins" :key="mi">
-                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.term" type="number" min="1" step="1" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.ratio" type="number" min="0" max="100" step="0.000001" @keydown="onNumKeydown" /></td>
+                      <td><input class="form-input form-input--amount" :value="m.term" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, m, 'term')" /></td>
                       <td><button class="btn btn--text" @click="g.margins.splice(mi, 1)">删除</button></td>
                     </tr>
                   </tbody>
@@ -657,7 +666,7 @@
                   <tbody>
                     <tr v-for="(m, mi) in g.cds" :key="mi">
                       <td><input class="form-input" v-model="m.cdNo" /></td>
-                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="m.amount" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></td>
                       <td><input class="form-input" type="date" v-model="m.maturityDate" /></td>
                       <td><button class="btn btn--text" @click="g.cds.splice(mi, 1)">删除</button></td>
                     </tr>
@@ -673,8 +682,8 @@
                     <tr v-for="(gt, gi) in g.guarantors" :key="gi">
                       <td><input class="form-input" v-model="gt.name" /></td>
                       <td><input class="form-input" v-model="gt.certNo" /></td>
-                      <td><input class="form-input form-input--amount" v-model="gt.amount" type="number" min="0" step="0.0001" /></td>
-                      <td><input class="form-input form-input--amount" v-model="gt.balance" type="number" min="0" step="0.0001" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.amount" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></td>
+                      <td><input class="form-input form-input--amount" v-model="gt.balance" type="number" min="0" step="0.0001" @keydown="onNumKeydown" /></td>
                       <td><button class="btn btn--text" @click="g.guarantors.splice(gi, 1)">删除</button></td>
                     </tr>
                   </tbody>
@@ -684,13 +693,13 @@
       <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 1">上一步</button>
-        <button class="btn btn--primary" @click="goNext(3)">下一步:贡献承诺</button>
+        <button class="btn btn--secondary" @click="step = 2">上一步</button>
+        <button class="btn btn--primary" @click="goNext(4)">下一步:贡献承诺</button>
       </div>
     </div>
 
     <!-- 第四步:贡献承诺(拟达成贡献度,随申请提交 commitments) -->
-    <div v-show="step === 3" class="form-card">
+    <div v-show="step === 4" class="form-card">
       <div class="form-card__title">
         贡献承诺
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
@@ -713,7 +722,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">基线值</label>
-              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="默认带出当前贡献度，可修改" />
+              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="默认带出当前贡献度，可修改" @keydown="onNumKeydown" />
               <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
@@ -730,7 +739,7 @@
               <template v-if="c.metricCode === 'OTHER'">
                 <input class="form-input" v-model="c.commitmentDesc" placeholder="目标描述(金额或文本)" />
               </template>
-              <input v-else class="form-input form-input--amount" v-model="c.targetValue" type="number" min="0" step="0.0001" />
+              <input v-else class="form-input form-input--amount" v-model="c.targetValue" type="number" min="0" step="0.0001" @keydown="onNumKeydown" />
             </div>
             <div class="form-field">
               <label class="form-field__label">截止日期 <span class="req">*</span></label>
@@ -761,13 +770,13 @@
       <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 2">上一步</button>
-        <button class="btn btn--primary" @click="goNext(4)">下一步:材料附件</button>
+        <button class="btn btn--secondary" @click="step = 3">上一步</button>
+        <button class="btn btn--primary" @click="goNext(5)">下一步:材料附件</button>
       </div>
     </div>
 
     <!-- 第五步:材料附件(他行融资 Excel 导入 + 其他附件前端暂存) -->
-    <div v-show="step === 4" class="form-card">
+    <div v-show="step === 5" class="form-card">
       <div class="form-card__title">材料附件</div>
 
       <div class="sub-title">
@@ -790,13 +799,13 @@
       <div class="empty" v-else>暂无附件</div>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 3">上一步</button>
-        <button class="btn btn--primary" @click="goNext(5)">下一步:提交预览</button>
+        <button class="btn btn--secondary" @click="step = 4">上一步</button>
+        <button class="btn btn--primary" @click="goNext(6)">下一步:提交预览</button>
       </div>
     </div>
 
-    <!-- 第六步:提交预览(申请备注 + 提交确认;§2026-08-26 申请概要/额度明细/审批路由预览/下一步审批人全部移入提交确认弹窗展示核对) -->
-    <div v-show="step === 5" class="form-card">
+    <!-- 第六步:提交预览(申请备注 + 提交确认;§2026-08-26 申请概要/额度明细/审批路由预览全部移入提交确认弹窗展示核对) -->
+    <div v-show="step === 6" class="form-card">
       <div class="form-card__title">
         提交预览
       </div>
@@ -806,7 +815,7 @@
       </div>
 
       <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 4">上一步</button>
+        <button class="btn btn--secondary" @click="step = 5">上一步</button>
         <div style="display:flex;gap:12px">
           <button class="btn btn--secondary" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
           <button class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
@@ -821,7 +830,6 @@
       :summary="confirmSummary"
       :detail-rows="confirmDetailRows"
       :route-preview="routeResult"
-      :next-approver="nextApproverText"
       :show-check-details="false"
       :submitting="submitting"
       @confirm="onConfirmSubmit"
@@ -873,7 +881,7 @@ const route = useRoute()
 const router = useRouter()
 
 // ---------- 步骤条(§14.1) ----------
-const steps = ['客户信息', '融资情况', '利率申请', '贡献承诺', '材料附件', '提交预览']
+const steps = ['客户信息', '关联人员', '融资情况', '利率申请', '贡献承诺', '材料附件', '提交预览']
 const step = ref(0)
 
 // ---------- 字典 ----------
@@ -1119,19 +1127,7 @@ const userPickedBusinessType = ref(false)
 const scopeLabel = computed(() =>
   form.customerScope === 'GROUP' ? '集团客户' : form.customerScope === 'INDIVIDUAL' ? '个人' : '企业单户'
 )
-/** 下一步审批人:优先显示首节点审批人姓名,未解析出时降级显示审批岗位(路由链路首节点,多分项统一) */
-const nextApproverText = computed(() => {
-  for (const it of routeResult.value?.items || []) {
-    const names = (it.nextApproverNames || []).filter(Boolean)
-    if (names.length) return names.join('、')
-  }
-  for (const it of routeResult.value?.items || []) {
-    if (it.routeChain?.length) return nodeLabel(it.routeChain[0])
-  }
-  return '—'
-})
-
-/** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细/路由/审批人移入弹窗核对) */
+/** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细/路由移入弹窗核对) */
 const confirmSummary = computed(() => [
   { label: '客户主体', value: scopeLabel.value },
   { label: '客户名称', value: form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') },
@@ -1749,6 +1745,20 @@ function isBlank(v: any) {
   return v === undefined || v === null || String(v).trim() === ''
 }
 
+/** 整数输入过滤:仅保留数字字符,禁止输入字符串/小数(§2026-08-26 用户要求需输入整数值的字段提示+防乱输) */
+function onIntInput(ev: Event, obj: Record<string, any>, key: string) {
+  const t = ev.target as HTMLInputElement
+  const cleaned = t.value.replace(/[^\d]/g, '')
+  t.value = cleaned
+  obj[key] = cleaned
+}
+/** 数值输入防乱输:type=number 框拦截 e/E/+/-/字母等非数字键,仅允许数字与小数点(§2026-08-26 用户要求不能输字符串) */
+function onNumKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.key.length !== 1) return // 功能键(方向/退格/删除/回车/Tab 等)放行
+  if (!/[0-9.]/.test(e.key)) e.preventDefault()
+}
+
 // ---------- 分步校验(点击下一步/跳步时提示当前必填项) ----------
 // 单户场景客户身份:已查客户或有证件号(新增客户无客户号,允许先录证件号,提交时后端反查数仓/占位,2026-08-20 #017)
 function hasCustomerIdentity(): boolean {
@@ -1769,8 +1779,9 @@ function validateStep(s: number): string | null {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
   }
-  // s===1 他行融资:不做任何校验(§2026-08-26 用户要求;概要/明细可自由填写,不再强制对应一致)
-  if (s === 2) {
+  // s===1 关联人员:可空,不做强制校验(证件号必填/判重等全量校验在提交 onSubmit 统一拦截,§2026-08-26)
+  // s===2 他行融资:不做任何校验(§2026-08-26 用户要求;概要/明细可自由填写,不再强制对应一致)
+  if (s === 3) {
     for (let i = 0; i < form.guarantees.length; i++) {
       const g = form.guarantees[i]
       if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
@@ -1811,7 +1822,7 @@ function validateStep(s: number): string | null {
       }
     }
   }
-  if (s === 3) {
+  if (s === 4) {
     for (let i = 0; i < commitments.value.length; i++) {
       const c = commitments.value[i]
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
@@ -1839,8 +1850,8 @@ async function goNext(target: number) {
   // 自动暂存:点"下一步"先把上一步信息存为草稿,未完成可稍后从历史申请继续编辑(§用户要求 2026-08-25)
   await autoSaveDraft()
   step.value = target
-  // 提交预览:进入即自动加载路由,展示下一步审批人(§2026-08-26 精简提交页,不再手动点路由预览)
-  if (target === 5) onRoutePreview()
+  // 提交预览:进入即自动加载路由,供确认弹窗展示审批路由预览(§2026-08-26 精简提交页,不再手动点路由预览)
+  if (target === 6) onRoutePreview()
 }
 async function goStep(i: number) {
   if (i <= step.value) {
@@ -1857,7 +1868,7 @@ async function goStep(i: number) {
   await autoSaveDraft()
   step.value = i
   // 提交预览:进入即自动加载路由(同上,§2026-08-26)
-  if (i === 5) onRoutePreview()
+  if (i === 6) onRoutePreview()
 }
 
 function validateForDraft(): string | null {
@@ -2226,7 +2237,7 @@ async function onSubmit() {
   }
   if (!(await ensureDraft()) || !draft.id) return
   await uploadPendingAttachments()
-  // 提交前刷新路由预览:保证弹窗「审批路由预览/下一步审批人」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+  // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
   try { routeResult.value = await routePreview(draft.id) } catch { routeResult.value = null }
   try {
     checkResult.value = await submitCheck(draft.id)

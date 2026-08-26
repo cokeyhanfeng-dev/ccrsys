@@ -85,6 +85,10 @@ public class CcrApplication extends BaseEntity {
     /** 集团补录/申请额度快照(JSON;集团对公客户全套 + 本次申请额度 + 手工补录成员;审批详情优先展示) */
     private String groupInfoJson;
 
+    /** 客户/集团显示名称(历史列表展示;非表字段,pageHistory 从 JSON 快照解析填充;§2026-08-26) */
+    @TableField(exist = false)
+    private String customerName;
+
     /** 集团场景涉及成员(非表字段,仅接收,落 ccr_application_member;逐成员金额/币种/角色) */
     @TableField(exist = false)
     private List<MemberInput> members;

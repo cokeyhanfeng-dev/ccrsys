@@ -10,6 +10,7 @@ import com.ccr.application.service.CcrApplicationService;
 import com.ccr.common.core.domain.R;
 import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -79,5 +80,12 @@ public class CcrApplicationController {
     @PostMapping("/{id}/reapply")
     public R<CcrApplication> reapply(@PathVariable Long id) {
         return R.ok(applicationSubmitService.reapply(id));
+    }
+
+    /** 删除草稿申请(§2026-08-26 历史申请删除:仅本人未提交的草稿可删,级联清理子表与附件) */
+    @DeleteMapping("/{id}")
+    public R<Void> delete(@PathVariable Long id) {
+        applicationService.deleteDraft(id);
+        return R.ok();
     }
 }

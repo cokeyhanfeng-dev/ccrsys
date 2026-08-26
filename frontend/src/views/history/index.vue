@@ -6,6 +6,16 @@
     </div>
 
     <div class="card">
+      <!-- 筛选(§13.2 历史申请查询:申请号/状态/客户名称;工作台统计卡可带 query 跳转) -->
+      <div class="filter-bar">
+        <input class="form-input" v-model="filters.applicationNo" placeholder="申请号" />
+        <el-select v-model="filters.status" placeholder="状态" clearable>
+          <el-option v-for="s in statusOptions" :key="s.value || '_all'" :label="s.label" :value="s.value" />
+        </el-select>
+        <input class="form-input" v-model="filters.keyword" placeholder="客户名称" />
+        <button class="btn btn--primary" @click="onSearch">查询</button>
+        <button class="btn btn--secondary" @click="onReset">重置</button>
+      </div>
       <table class="table table--full">
         <thead>
           <tr>
@@ -17,7 +27,7 @@
           <tr v-for="row in records" :key="row.id">
             <td>{{ row.applicationNo }}</td>
             <td>{{ businessTypeText(row.businessType) }}</td>
-            <td>{{ row.groupNo ? `集团 ${row.groupNo}` : row.customerNo || '—' }}</td>
+            <td>{{ row.customerName || (row.groupNo ? `集团 ${row.groupNo}` : row.customerNo || '—') }}</td>
             <td>{{ fmtTime(row.submitTime || row.createTime) }}</td>
             <td><span :class="badgeClass(row.status)">{{ statusText(row.status) }}</span></td>
             <td>{{ fmtTime(row.finalTime) }}</td>
@@ -25,6 +35,7 @@
               <button class="btn btn--text" @click="goArchive(row)">档案</button>
               <button class="btn btn--text" @click="openProgress(row)">进度</button>
               <button v-if="row.status === 'DRAFT'" class="btn btn--text" @click="goEdit(row)">继续编辑</button>
+              <button v-if="row.status === 'DRAFT'" class="btn btn--text btn--danger" @click="onDelete(row)">删除</button>
               <button v-if="canReapply(row)" class="btn btn--text" @click="goReapply(row)">重新发起</button>
               <button v-if="row.hasResolution" class="btn btn--text" @click="downloadResolution(row)">决议书</button>
             </td>
@@ -85,10 +96,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { pageHistory, getApprovalProgress, downloadResolutionDoc } from '@/api/history'
+import { del } from '@/api/request'
 import { appStatusText, businessTypeText } from '@/utils/dict'
 
 const router = useRouter()
@@ -105,9 +118,37 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
 
+// ---------- 筛选(§13.2:申请号/状态/客户名称;工作台统计卡可带 query 跳转) ----------
+const route = useRoute()
+const filters = reactive({ applicationNo: '', status: '', keyword: '' })
+// 审批中=复合多状态(与工作台「审批中/在途」统计卡跳转的 query 值一致,便于回显)
+const IN_PROGRESS_STATUS = 'ROUTING,SUBMITTED,SUBMITTING,APPROVED_LEVEL,PROCESSING,VOTING,COMMITTEE_PASS,PRESIDENT_DECISION'
+const statusOptions = [
+  { label: '全部', value: '' },
+  { label: '审批中', value: IN_PROGRESS_STATUS },
+  { label: '草稿', value: 'DRAFT' },
+  { label: '已通过', value: 'APPROVED' },
+  { label: '终态', value: 'FINAL' },
+  { label: '已否决', value: 'REJECTED' },
+  { label: '已关闭', value: 'CLOSED' }
+]
+
+// 支持工作台统计卡跳转:读 route.query 初始化筛选并查询
+function initFromQuery() {
+  filters.applicationNo = String(route.query.applicationNo || '')
+  filters.status = String(route.query.status || '')
+  filters.keyword = String(route.query.keyword || '')
+}
+
 async function load() {
   try {
-    const data = await pageHistory(pageNum.value, pageSize)
+    const data = await pageHistory({
+      pageNum: pageNum.value,
+      pageSize,
+      applicationNo: filters.applicationNo || undefined,
+      status: filters.status || undefined,
+      keyword: filters.keyword || undefined
+    })
     records.value = data.records || []
     total.value = Number(data.total) || 0
   } catch {
@@ -118,6 +159,32 @@ async function load() {
 function onPage(p: number) {
   pageNum.value = p
   load()
+}
+function onSearch() {
+  pageNum.value = 1
+  load()
+}
+function onReset() {
+  filters.applicationNo = ''
+  filters.status = ''
+  filters.keyword = ''
+  pageNum.value = 1
+  load()
+}
+// 删除未提交草稿(后端 DELETE /ccr/applications/{id} 物理删除;§2026-08-26)
+async function onDelete(row: any) {
+  try {
+    await ElMessageBox.confirm(`确认删除申请「${row.applicationNo}」吗?该申请为未提交草稿,删除后不可恢复。`, '删除确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await del(`/ccr/applications/${row.id}`)
+    ElMessage.success('已删除')
+    load()
+  } catch {
+    ElMessage.error('删除失败')
+  }
 }
 
 function fmtTime(t: string) {
@@ -130,9 +197,17 @@ function badgeClass(s: string) {
   const map: Record<string, string> = {
     APPROVED: 'badge badge--success',
     PARTIAL_APPROVED: 'badge badge--success',
+    FINAL: 'badge badge--success',
+    COMMITTEE_PASS: 'badge badge--success',
     REJECTED: 'badge badge--danger',
+    VETOED: 'badge badge--danger',
     PROCESSING: 'badge badge--info',
     SUBMITTING: 'badge badge--info',
+    ROUTING: 'badge badge--info',
+    SUBMITTED: 'badge badge--info',
+    APPROVED_LEVEL: 'badge badge--info',
+    VOTING: 'badge badge--info',
+    PRESIDENT_DECISION: 'badge badge--warning',
     CLOSED: 'badge badge--neutral',
     DRAFT: 'badge badge--neutral'
   }
@@ -189,10 +264,16 @@ function downloadResolution(row: any) {
   downloadResolutionDoc(row.id)
 }
 
-onMounted(load)
+onMounted(() => {
+  initFromQuery()
+  load()
+})
 </script>
 
 <style scoped>
+.filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-bar .form-input { width: 180px; }
+.filter-bar .el-select { width: 160px; }
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .progress-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }

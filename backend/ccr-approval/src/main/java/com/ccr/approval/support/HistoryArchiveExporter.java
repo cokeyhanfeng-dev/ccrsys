@@ -238,13 +238,17 @@ public final class HistoryArchiveExporter {
                     new Col("大小(字节)", "fileSize"),
                     new Col("上传时间", "createTime")));
 
-            writeTable(wb, "机构达成", watermark, (List<Map<String, Object>>) archive.get("orgPerformance"), List.of(
-                    new Col("机构", "orgCode"),
-                    new Col("统计月份", "statMonth"),
-                    new Col("达成金额(万元)", "achievedAmount"),
-                    new Col("目标金额(万元)", "expectedAmount"),
-                    new Col("达成率", "completionRate"),
-                    new Col("数据日期", "dataDt")));
+            // 机构达成(§2026-08-26 存款档案已置空 orgPerformance,贷款无数据亦不写空表)
+            List<Map<String, Object>> orgPerformance = (List<Map<String, Object>>) archive.get("orgPerformance");
+            if (orgPerformance != null && !orgPerformance.isEmpty()) {
+                writeTable(wb, "机构达成", watermark, orgPerformance, List.of(
+                        new Col("机构", "orgCode"),
+                        new Col("统计月份", "statMonth"),
+                        new Col("达成金额(万元)", "achievedAmount"),
+                        new Col("目标金额(万元)", "expectedAmount"),
+                        new Col("达成率", "completionRate"),
+                        new Col("数据日期", "dataDt")));
+            }
 
             writeTable(wb, "集团授信", watermark, (List<Map<String, Object>>) archive.get("groupCredit"), List.of(
                     new Col("授信总额(万元)", "approvedTotalAmount"),

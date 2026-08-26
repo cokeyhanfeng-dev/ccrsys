@@ -59,6 +59,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -655,7 +656,7 @@ public class ApprovalServiceImpl implements ApprovalService {
     // ---------- 历史审批(§13.2/§14.4) ----------
 
     @Override
-    public Map<String, Object> pageHistory(int pageNum, int pageSize) {
+    public Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword) {
         SysUserRead user = currentLoginUser.requireCurrentUser();
         Page<CcrApplication> page = new Page<>(Math.max(pageNum, 1), Math.min(Math.max(pageSize, 1), 200));
         LambdaQueryWrapper<CcrApplication> wrapper = new LambdaQueryWrapper<>();
@@ -668,14 +669,61 @@ public class ApprovalServiceImpl implements ApprovalService {
             // 审计(admin)为全局监管视角,保留查看全部
             wrapper.inSql(CcrApplication::getId, participatedApplicationSql(user.getId()));
         }
+        // 筛选:申请号模糊(§2026-08-26 历史申请查询)
+        if (StrUtil.isNotBlank(applicationNo)) {
+            wrapper.like(CcrApplication::getApplicationNo, applicationNo.trim());
+        }
+        // 状态筛选:逗号分隔多状态(工作台「审批中/否决」等聚合跳转;§2026-08-26)
+        if (StrUtil.isNotBlank(status)) {
+            List<String> statuses = Arrays.stream(status.split(","))
+                    .map(String::trim).filter(StrUtil::isNotBlank).distinct().toList();
+            if (!statuses.isEmpty()) {
+                wrapper.in(CcrApplication::getStatus, statuses);
+            }
+        }
+        // 客户/集团名称模糊:匹配 JSON 快照键值(快照为系统序列化,键顺序/格式稳定;§2026-08-26)
+        if (StrUtil.isNotBlank(keyword)) {
+            String k = keyword.trim();
+            wrapper.and(w -> w
+                    .like(CcrApplication::getCustomerInfoJson, "\"customerName\":\"" + k)
+                    .or().like(CcrApplication::getGroupInfoJson, "\"groupName\":\"" + k));
+        }
         wrapper.orderByDesc(CcrApplication::getCreateTime);
         Page<CcrApplication> result = applicationMapper.selectPage(page, wrapper);
+        // 历史列表展示客户/集团名称(客户快照 customerName,集团回退 group_info_json.groupName;§2026-08-26)
+        fillDisplayCustomerName(result.getRecords());
         // 决议书可用性:仅已签发决议的申请提供决议书下载(前端"决议书"按钮显隐)
         markHasResolution(result.getRecords());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("total", result.getTotal());
         data.put("records", result.getRecords());
         return data;
+    }
+
+    /** 历史列表客户/集团显示名称:优先客户快照 customerName,集团申请回退 group_info_json.groupName(§2026-08-26) */
+    private void fillDisplayCustomerName(List<CcrApplication> records) {
+        for (CcrApplication r : records) {
+            String name = extractJsonName(r.getCustomerInfoJson(), "customerName");
+            if (StrUtil.isBlank(name)) {
+                name = extractJsonName(r.getGroupInfoJson(), "groupName");
+            }
+            r.setCustomerName(name);
+        }
+    }
+
+    /** 从 JSON 快照提取指定 key 的字符串值(快照为系统序列化,格式稳定: "\"key\":\"value\"") */
+    private String extractJsonName(String json, String key) {
+        if (StrUtil.isBlank(json)) {
+            return null;
+        }
+        String marker = "\"" + key + "\":\"";
+        int from = json.indexOf(marker);
+        if (from < 0) {
+            return null;
+        }
+        int start = from + marker.length();
+        int end = json.indexOf('"', start);
+        return end < 0 ? null : json.substring(start, end);
     }
 
     /** 批量标记申请是否有已签发决议(一次 IN 查询避免 N+1) */
@@ -904,8 +952,9 @@ public class ApprovalServiceImpl implements ApprovalService {
             result.put("groupCredit", List.of());
             result.put("groupContribution", List.of());
         }
-        // 机构达成(申请机构最新批次)
-        result.put("orgPerformance", orgPerformance(applicationId));
+        // 机构达成(申请机构最新批次;§2026-08-26 存款申请无机构达成概念,置空不组装)
+        result.put("orgPerformance", "DEPOSIT".equals(application.get("business_type"))
+                ? List.of() : orgPerformance(applicationId));
     }
 
     /** 快照信息(bundle_no/freeze_time/数据日期,数据日期=记录最大 source_data_dt) */

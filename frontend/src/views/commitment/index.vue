@@ -262,41 +262,6 @@
         <div v-if="!planMetrics.length" class="empty">暂无指标数据</div>
       </div>
 
-      <!-- 月报入口(§12.11:月报汇总 + 风险/结论分布) -->
-      <div class="card">
-        <div class="card__head"><span>承诺月报</span></div>
-        <div class="report-bar">
-          <input class="form-input" type="month" v-model="reportMonth" style="width:180px" />
-          <input class="form-input" v-model="reportOrgId" placeholder="机构ID(可空,默认本机构)" style="width:200px" />
-          <button class="btn btn--primary" :disabled="reportLoading" @click="loadReport">查询月报</button>
-        </div>
-        <div class="report-summary" v-if="report.month">
-          <div><span class="dg-label">统计月份</span>{{ report.month }}</div>
-          <div><span class="dg-label">承诺计划数</span>{{ report.planCount ?? '—' }}</div>
-          <div><span class="dg-label">评估笔数</span>{{ report.evaluationCount ?? '—' }}</div>
-          <div><span class="dg-label">平均达成率</span>{{ report.avgAchievementRatio != null ? Number(report.avgAchievementRatio).toFixed(2) + '%' : '—' }}</div>
-        </div>
-        <table class="table" v-if="report.riskDistribution?.length" style="margin-top:12px">
-          <thead><tr><th>风险等级</th><th>评估笔数</th></tr></thead>
-          <tbody>
-            <tr v-for="(d, i) in report.riskDistribution" :key="i">
-              <td><span class="badge" :class="riskBadge(d.riskLevel)">{{ riskLevelText(d.riskLevel) }}</span></td>
-              <td class="num">{{ d.evaluationCount ?? '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table class="table" v-if="report.resultDistribution?.length" style="margin-top:8px">
-          <thead><tr><th>评估结论</th><th>评估笔数</th></tr></thead>
-          <tbody>
-            <tr v-for="(d, i) in report.resultDistribution" :key="i">
-              <td>{{ evalResultText(d.resultStatus) }}</td>
-              <td class="num">{{ d.evaluationCount ?? '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="report.month && !report.riskDistribution?.length && !report.resultDistribution?.length" class="empty" style="margin-top:12px">该月份暂无月报数据</div>
-        <div v-else-if="!report.month" class="empty" style="margin-top:12px">{{ reportHint }}</div>
-      </div>
     </template>
 
   </div>
@@ -306,7 +271,7 @@
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listCommitmentPlans, saveMetricTrackDesc } from '@/api/commitment'
-import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
+import { getCommitmentPlanDetail } from '@/api/approval2'
 import {
   planStatusText, evalResultText, appStatusText,
   customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText
@@ -453,13 +418,8 @@ function goUp() {
   }
 }
 
-// ---------- 三级:指标钻取(计划详情 + 总体进度 + 月报) ----------
+// ---------- 三级:指标钻取(计划详情 + 总体进度) ----------
 const planDetail = ref<any | null>(null)
-const reportMonth = ref(new Date().toISOString().slice(0, 7))
-const reportOrgId = ref('')
-const report = ref<any>({})
-const reportLoading = ref(false)
-const reportHint = ref('选择月份后查询承诺月报')
 
 // 指标行:计划详情接口返回 items=[{metric, latestEvaluation}],缺失时用列表行兜底
 const planMetrics = computed<any[]>(() => {
@@ -558,8 +518,6 @@ function gapBadge(m: any): string {
 async function enterPlan(p: any) {
   currentPlan.value = p
   planDetail.value = null
-  report.value = {}
-  reportHint.value = '选择月份后查询承诺月报'
   level.value = 3
   try {
     const d = await getCommitmentPlanDetail(p.id)
@@ -592,35 +550,6 @@ async function saveTrack(m: any) {
   }
 }
 
-async function loadReport() {
-  if (!reportMonth.value) {
-    ElMessage.warning('请选择月份')
-    return
-  }
-  reportLoading.value = true
-  try {
-    // P1-3 月报联调:后端返回 {month,planCount,evaluationCount,avgAchievementRatio,riskDistribution,resultDistribution}
-    const data = await getCommitmentMonthlyReport(reportMonth.value, reportOrgId.value || undefined)
-    report.value = (data || {}) as any
-    if (!report.value.month) report.value.month = reportMonth.value
-    reportHint.value = report.value.planCount != null ? '' : '该月份暂无月报数据'
-  } catch {
-    report.value = {}
-    reportHint.value = '月报查询失败或接口暂未开放'
-  } finally {
-    reportLoading.value = false
-  }
-}
-
-// P1-3 月报联调:风险等级文案与徽标(ccr_tracking_evaluation.risk_level)
-function riskLevelText(code?: string) {
-  const map: Record<string, string> = { LOW: '低', MEDIUM: '中', HIGH: '高', UNKNOWN: '未知' }
-  return map[code || ''] || (code || '—')
-}
-function riskBadge(code?: string) {
-  const map: Record<string, string> = { LOW: 'badge--success', MEDIUM: 'badge--warning', HIGH: 'badge--danger', UNKNOWN: 'badge--neutral' }
-  return map[code || ''] || 'badge--neutral'
-}
 
 // ---------- 数据加载(无参,服务端定数据范围) ----------
 async function load() {
@@ -745,8 +674,6 @@ onMounted(load)
 .period-block { margin-top: 6px; }
 .other-track__desc { font-size: 13px; margin-bottom: 8px; }
 .other-track__edit { max-width: 560px; }
-.report-bar { display: flex; gap: 8px; align-items: center; }
-.report-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 16px; font-size: 14px; margin-top: 12px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .dlg-section-title { font-weight: 600; margin-bottom: 8px; }
 </style>

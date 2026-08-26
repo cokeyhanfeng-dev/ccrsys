@@ -2,9 +2,14 @@ import { get, download } from './request'
 
 // 历史审批/档案接口封装(W3-C)
 
-/** 历史审批分页:{ total, records } */
-export const pageHistory = (pageNum: number, pageSize: number) =>
-  get<{ total: number; records: any[] }>('/ccr/approval/history', { pageNum, pageSize })
+/** 历史审批分页:{ total, records };支持筛选(申请号模糊/状态逗号分隔多值/客户名称模糊,§13.2) */
+export const pageHistory = (params: {
+  pageNum: number
+  pageSize: number
+  applicationNo?: string
+  status?: string
+  keyword?: string
+}) => get<{ total: number; records: any[] }>('/ccr/approval/history', params)
 
 /** 申请审批档案(§14.4 全区块 Map) */
 export const getArchive = (applicationId: number | string) =>

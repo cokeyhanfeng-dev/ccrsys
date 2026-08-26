@@ -51,7 +51,9 @@ function textOf(map: Record<string, string>, code?: string, fallback = '—'): s
 export const APP_STATUS: Record<string, string> = {
   DRAFT: '草稿', SUBMITTING: '提交中', PROCESSING: '审批中', PARTIAL_APPROVED: '部分通过',
   APPROVED: '已通过', REJECTED: '已否决', CLOSED: '已关闭',
-  ROUTING: '审批中', FINAL: '终态'
+  ROUTING: '审批中', FINAL: '终态',
+  SUBMITTED: '已提交', APPROVED_LEVEL: '权限内已批', VOTING: '小组表决',
+  COMMITTEE_PASS: '小组通过', PRESIDENT_DECISION: '行长决议', VETOED: '一票否决'
 }
 export function appStatusText(code?: string, fallback = '—'): string {
   return textOf(APP_STATUS, code, fallback)

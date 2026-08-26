@@ -32,4 +32,9 @@ public interface CcrApplicationService {
      * 申请列表(数据权限§5.4:申请人/机构过滤由服务端按登录人角色决定,仅接受状态过滤)
      */
     java.util.List<CcrApplication> listApplications(String status);
+
+    /**
+     * 删除草稿申请(§2026-08-26 历史申请删除):仅本人未提交的草稿可删,级联删除分项/担保/合同账户关系/成员/承诺/附件
+     */
+    void deleteDraft(Long id);
 }

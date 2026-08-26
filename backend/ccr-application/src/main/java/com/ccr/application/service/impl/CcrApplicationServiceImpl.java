@@ -745,6 +745,22 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     }
 
     @Override
+    public void deleteDraft(Long id) {
+        applicationAccessService.requireOwner(id);
+        CcrApplication app = applicationMapper.selectById(id);
+        if (app == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在或已被删除");
+        }
+        if (!"DRAFT".equals(app.getStatus())) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "仅未提交的草稿可删除,已提交的申请请按流程处理");
+        }
+        deleteChildren(id);
+        jdbcTemplate.update("DELETE FROM ccr_application_attachment WHERE application_id = ?", id);
+        applicationMapper.deleteById(id);
+    }
+
+    @Override
     public CcrApplication getApplication(Long id) {
         applicationAccessService.requireView(id);
         CcrApplication exist = applicationMapper.selectById(id);
