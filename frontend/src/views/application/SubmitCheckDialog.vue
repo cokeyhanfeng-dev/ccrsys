@@ -3,6 +3,17 @@
     <div class="modal__card modal__card--wide">
       <div class="modal__title">提交确认</div>
       <div class="modal__body">
+        <!-- 客户信息(存款提交确认弹窗;§2026-08-26) -->
+        <template v-if="customerSummary?.length">
+          <div class="check-section">
+            <div class="check-section__title">客户信息</div>
+            <div class="confirm-summary">
+              <div class="confirm-summary__item" v-for="(s, i) in customerSummary" :key="i">
+                <span>{{ s.label }}</span><b>{{ s.value }}</b>
+              </div>
+            </div>
+          </div>
+        </template>
         <!-- 申请概要(贷款提交前核对;§2026-08-26 概要/明细移入确认弹窗,存款不传保持原样) -->
         <template v-if="summary?.length">
           <div class="check-section">
@@ -133,6 +144,8 @@ const props = defineProps<{
   submitting?: boolean
   /** 申请概要键值对(贷款提交确认弹窗核对用;§2026-08-26 概要/明细移入弹窗,存款不传保持原样) */
   summary?: Array<{ label: string; value: string }>
+  /** 客户信息键值对(存款提交确认弹窗;§2026-08-26 客户信息+概要+下一步审批人) */
+  customerSummary?: Array<{ label: string; value: string }>
   /** 额度明细行(贷款提交确认弹窗核对用) */
   detailRows?: Array<{ itemNo: string; member?: string; guaranteeType: string; term: string; amount: string; rate: string }>
   /** 下一步审批人姓名(贷款提交确认弹窗展示审批去向) */

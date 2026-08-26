@@ -79,7 +79,7 @@
           <span class="deposit-item__title">存款分项 {{ i + 1 }}</span>
           <button class="btn btn--text" @click="items.splice(i, 1)" v-if="items.length > 1">删除</button>
         </div>
-        <!-- 8 字段均匀 2 行×4 列:账户方式/存款账户/产品/期限 + 金额/当前执行利率/申请利率/测算利率(币种已删,提交默认 CNY,§2026-08-26) -->
+        <!-- 8 字段均匀 2 行×4 列:账户方式/存款账户/产品/期限 + 金额/执行利率/申请利率/测算利率(币种已删,提交默认 CNY,§2026-08-26) -->
         <div class="mortgage-item__grid">
           <div class="form-field">
             <label class="form-field__label">账户方式 <span class="req">*</span></label>
@@ -100,10 +100,10 @@
               </select>
               <input v-else class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
               <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
-                数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 当前利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
+                数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 执行利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
               </div>
               <div v-else-if="d.lookupDone" class="section-tip" style="color:var(--color-warning);margin-top:4px">
-                数仓未找到该账户,请手工完善产品/期限/原利率
+                数仓未找到该账户,请手工完善产品/期限/执行利率
               </div>
             </template>
             <span v-else class="badge badge--neutral">拟开户(未开户业务)</span>
@@ -132,12 +132,12 @@
             <input class="form-input form-input--amount" v-model="d.amount" type="number" min="0" max="999999999.99" step="0.0001" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">当前执行利率(%)</label>
-            <input class="form-input form-input--amount" v-model="d.originalRate" disabled placeholder="账户带出" />
+            <label class="form-field__label">执行利率(%)</label>
+            <input class="form-input form-input--amount" v-model="d.originalRate" placeholder="存量账户自动带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-            <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于当前执行利率" />
+            <input class="form-input form-input--amount" v-model="d.requestedRate" type="number" min="0" max="100" step="0.000001" placeholder="高于执行利率" />
           </div>
           <div class="form-field">
             <label class="form-field__label">测算利率(%) <span class="req">*</span></label>
@@ -157,6 +157,28 @@
       <div class="form-field form-field--stack">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
+      </div>
+
+      <!-- 客户信息(§2026-08-26 提交预览展示,与贷款申请对齐) -->
+      <div class="submit-summary">
+        <div class="submit-summary__head">客户信息</div>
+        <div class="submit-summary__grid">
+          <div class="submit-summary__item"><span>客户主体</span><b>{{ form.customerScope === 'GROUP' ? '集团客户' : '企业单户' }}</b></div>
+          <div class="submit-summary__item"><span>客户名称</span><b>{{ form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') }}</b></div>
+          <div class="submit-summary__item"><span>{{ form.customerScope === 'GROUP' ? '集团编号' : '客户号' }}</span><b>{{ form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') }}</b></div>
+          <div class="submit-summary__item"><span>统一社会信用代码</span><b>{{ form.ucrCode || '—' }}</b></div>
+        </div>
+      </div>
+
+      <!-- 申请概要(§2026-08-26 提交预览展示) -->
+      <div class="submit-summary">
+        <div class="submit-summary__head">申请概要</div>
+        <div class="submit-summary__grid">
+          <div class="submit-summary__item"><span>申请号</span><b>{{ draft.applicationNo || '—' }}</b></div>
+          <div class="submit-summary__item"><span>存款总额(万元)</span><b>{{ depositTotalText }}</b></div>
+          <div class="submit-summary__item"><span>分项笔数</span><b>{{ items.length }} 笔</b></div>
+          <div class="submit-summary__item"><span>存量/拟开户</span><b>{{ existingCountText }}</b></div>
+        </div>
       </div>
 
       <template v-if="routeResult">
@@ -205,12 +227,21 @@
     </div>
 
     <!-- 提交前校验确认弹窗 -->
-    <SubmitCheckDialog v-model="checkDialogVisible" :check="checkResult" :submitting="submitting" @confirm="onConfirmSubmit" />
+    <SubmitCheckDialog
+      v-model="checkDialogVisible"
+      :check="checkResult"
+      :summary="depositSummary"
+      :customer-summary="depositCustomerSummary"
+      :next-approver="nextApproverText"
+      :show-check-details="false"
+      :submitting="submitting"
+      @confirm="onConfirmSubmit"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -406,6 +437,42 @@ const submitting = ref(false)
 const routeResult = ref<RoutePreview | null>(null)
 const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
+
+// ---------- 提交预览展示(§2026-08-26 客户信息 + 申请概要 + 下一步审批人,与贷款申请对齐) ----------
+/** 存款总额(万元) */
+const depositTotalText = computed(() =>
+  (Math.round(items.value.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100).toString()
+)
+/** 存量/拟开户笔数概览 */
+const existingCountText = computed(() => {
+  const ex = items.value.filter((d) => d.accountMode === 'EXISTING').length
+  return `${ex} 存量 / ${items.value.length - ex} 拟开户`
+})
+/** 下一步审批人:优先首节点审批人姓名,未解析出降级显示审批岗位(路由链路首节点) */
+const nextApproverText = computed(() => {
+  for (const it of routeResult.value?.items || []) {
+    const names = (it.nextApproverNames || []).filter(Boolean)
+    if (names.length) return names.join('、')
+  }
+  for (const it of routeResult.value?.items || []) {
+    if (it.routeChain?.length) return nodeLabel(it.routeChain[0])
+  }
+  return '—'
+})
+/** 提交确认弹窗:客户信息键值对 */
+const depositCustomerSummary = computed(() => [
+  { label: '客户主体', value: form.customerScope === 'GROUP' ? '集团客户' : '企业单户' },
+  { label: '客户名称', value: form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') },
+  { label: form.customerScope === 'GROUP' ? '集团编号' : '客户号', value: form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') },
+  { label: '统一社会信用代码', value: form.ucrCode || '—' },
+])
+/** 提交确认弹窗:申请概要键值对 */
+const depositSummary = computed(() => [
+  { label: '申请号', value: draft.applicationNo || '—' },
+  { label: '存款总额(万元)', value: depositTotalText.value },
+  { label: '分项笔数', value: `${items.value.length} 笔` },
+  { label: '存量/拟开户', value: existingCountText.value },
+])
 
 // ---------- 客户查询带出(与贷款申请同一逻辑) ----------
 /** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
@@ -1012,10 +1079,20 @@ async function loadDraftIntoForm(id: number | string) {
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
 .deposit-item { margin-bottom: 10px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
-/* 存款分项字段 4 列×2 行(§2026-08-26 删币种后 8 字段均匀:账户方式/存款账户/产品/期限 + 金额/当前执行利率/申请利率/测算利率) */
+/* 存款分项字段 4 列×2 行(§2026-08-26 删币种后 8 字段均匀:账户方式/存款账户/产品/期限 + 金额/执行利率/申请利率/测算利率) */
 .deposit-item .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 @media (max-width: 1100px) {
   .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+/* 提交预览:客户信息/申请概要(§2026-08-26,与贷款申请提交页对齐) */
+.submit-summary { margin-top: 16px; }
+.submit-summary__head { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.submit-summary__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
+.submit-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.submit-summary__item span { font-size: 12px; color: var(--color-text-sub); }
+.submit-summary__item b {
+  font-size: 14px; color: var(--color-text-main); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
 @media (max-width: 1100px) {
