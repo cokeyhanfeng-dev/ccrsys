@@ -586,13 +586,13 @@ export const AGREEMENT_TYPES: DictItem[] = [
   { code: 'TEMPORARY', name: '临时授信' }
 ]
 
-/** 授信协议类型(dw_credit_agreement.agreement_type;TEMPORARY 为新录入码值,保留 SINGLE/REVOLVING 兼容存量展示) */
+/** 授信协议类型(dw_credit_agreement.agreement_type;2026-08-26 统一:只分综合授信/临时授信,SINGLE/REVOLVING 旧值归并综合授信) */
 export function agreementTypeText(code?: string): string {
   const map: Record<string, string> = {
     COMPREHENSIVE: '综合授信',
     TEMPORARY: '临时授信',
-    SINGLE: '单笔单批',
-    REVOLVING: '循环授信'
+    SINGLE: '综合授信',
+    REVOLVING: '综合授信'
   }
   return code ? (map[code] || code) : '—'
 }
