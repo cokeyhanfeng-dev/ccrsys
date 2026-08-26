@@ -203,29 +203,6 @@
       <div v-else class="empty">暂无授信协议数据</div>
     </div>
 
-    <!-- 7. 授信/账户与本行融资(贷款合同快照;合同状态/期限/利率类型等全字段展示,避免大段空白;仅贷款场景) -->
-    <div class="card" v-if="isLoan">
-      <div class="card__head"><span>本行融资</span><span class="badge badge--info">数仓</span></div>
-      <table class="table" v-if="financing.length">
-        <thead><tr><th>合同号</th><th>授信协议号</th><th>合同金额(万元)</th><th>余额(万元)</th><th>执行利率</th><th>利率类型</th><th>期限</th><th>合同状态</th><th>担保类型</th><th>币种</th></tr></thead>
-        <tbody>
-          <tr v-for="f in financing" :key="f.contractNo">
-            <td>{{ f.contractNo }}</td>
-            <td>{{ f.agreementNo || '—' }}</td>
-            <td class="num">{{ f.contractAmount ?? '—' }}</td>
-            <td class="num">{{ f.loanBalance ?? '—' }}</td>
-            <td class="num">{{ fmtRate(f.contractRate) }}</td>
-            <td>{{ rateTypeText(f.rateType) }}{{ f.lprTerm ? `·${termTierText(f.lprTerm)}` : '' }}</td>
-            <td class="nowrap">{{ f.startDate ? `${String(f.startDate).slice(0, 10)} ~ ${f.maturityDate ? String(f.maturityDate).slice(0, 10) : '—'}` : '—' }}</td>
-            <td><span class="badge" :class="contractStatusBadge(f.contractStatus)">{{ contractStatusText(f.contractStatus) }}</span></td>
-            <td>{{ guaranteeTypeText(f.guaranteeType) }}</td>
-            <td>{{ currencyText(f.currency) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty">暂无数据</div>
-    </div>
-
     <!-- 6b. 申请材料附件(仅贷款场景;存款无申请材料附件概念) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
@@ -335,33 +312,13 @@
       </template>
     </div>
 
-    <!-- 8. 存款账户(仅存款申请:存款额度与利率优惠挂钩;贷款场景合同/借据/担保已并入审批决定区,不展示存款账户) -->
-    <div class="card" v-if="!isLoan">
-      <div class="card__head"><span>存款账户</span></div>
-      <template>
-        <table class="table" v-if="depositAccounts.length">
-          <thead>
-            <tr><th>存款账号</th><th>产品</th><th>余额(万元)</th><th>当前执行利率(%)</th><th>期限</th><th>开户日</th><th>到期日</th><th>标识</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(a, i) in depositAccounts" :key="i">
-              <td>{{ a.accountNo || '—' }}</td>
-              <td>{{ productName(a.productCode || pi.product_code) }}</td>
-              <td class="num">{{ a.accountBalance ?? '—' }}</td>
-              <td class="num">{{ a.executionRate ?? '—' }}</td>
-              <td>{{ a.termValue ? `${a.termValue}${termUnitText(a.termUnit || pi.term_unit)}` : '—' }}</td>
-              <td>{{ a.openDate || '—' }}</td>
-              <td>{{ a.maturityDate || '—' }}</td>
-              <td><span class="badge" :class="a.plannedAccountFlag === 'Y' ? 'badge--neutral' : 'badge--success'">{{ a.plannedAccountFlag === 'Y' ? '拟开户' : '存量账户' }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty" style="padding:8px">暂无账户数据</div>
-        <div class="section-tip" style="margin-top:8px" v-if="pi.boundary_rate != null">
-          本节点权限上限 {{ pi.boundary_rate }}%(超过上限将上送小组表决)
-          <span v-if="pi.requested_rate != null"> · 申请利率较上限 {{ ((pi.requested_rate - pi.boundary_rate) * 100).toFixed(0) }} BP</span>
-        </div>
-      </template>
+    <!-- 8. 存款权限上限提示(存款账户列表已取消展示;本节点权限上限为审批决策依据,保留) -->
+    <div class="card" v-if="!isLoan && pi.boundary_rate != null">
+      <div class="card__head"><span>本节点权限</span></div>
+      <div class="section-tip">
+        本节点权限上限 {{ pi.boundary_rate }}%(超过上限将上送小组表决)
+        <span v-if="pi.requested_rate != null"> · 申请利率较上限 {{ ((pi.requested_rate - pi.boundary_rate) * 100).toFixed(0) }} BP</span>
+      </div>
     </div>
 
     <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示) -->
@@ -647,27 +604,17 @@
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
-          <!-- 合同信息(要审批的内容:贷款=合同号/拟签订+借据,存款=仅金额/期限/产品;借据仅作参考,链接弹窗查看) -->
-          <div class="op-item__subhead">{{ isLoan ? '贷款合同' : '存款信息' }}</div>
+          <!-- 申请内容(要审批的金额/期限/产品;贷款合同号与合同下借据展示已取消) -->
+          <div class="op-item__subhead">{{ isLoan ? '申请内容' : '存款信息' }}</div>
           <table class="table">
             <thead><tr>
-              <th v-if="isLoan">贷款合同</th>
               <th>金额(万元)</th><th>期限</th><th>产品</th>
-              <th v-if="isLoan">借据</th>
             </tr></thead>
             <tbody>
               <tr>
-                <td v-if="isLoan">{{ it.contractNo ? it.contractNo : '拟签订(尚未签订正式合同)' }}</td>
                 <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
                 <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
                 <td>{{ productName(it.productCode) }}</td>
-                <td v-if="isLoan">
-                  <template v-if="it.contractNo && itemNotes(it).length">
-                    <a class="link" href="javascript:;" @click.prevent="openNotes(it)">查看借据({{ itemNotes(it).length }} 笔)</a>
-                  </template>
-                  <template v-else-if="it.contractNo"><span class="text-sub">暂无借据</span></template>
-                  <template v-else><span class="text-sub">拟签订 · 尚未放款</span></template>
-                </td>
               </tr>
             </tbody>
           </table>
@@ -820,27 +767,6 @@
         </div>
       </div>
 
-      <!-- 借据弹窗:借据仅作参考(数仓快照,灌数未必能匹配放款状态),点击「查看借据」链接弹出 -->
-      <el-dialog v-model="notesDialog.show" title="借据信息" width="760px">
-        <div class="dlg-tip">以下借据信息来自数仓快照,仅作参考,不作为本次审批的主要依据。</div>
-        <table class="table">
-          <thead><tr><th>合同号</th><th>借据号</th><th>余额(万元)</th><th>执行利率(%)</th><th>利率类型</th><th>放款日</th><th>到期日</th><th>状态</th></tr></thead>
-          <tbody>
-            <tr v-for="(n, ni) in notesDialog.items" :key="ni">
-              <td>{{ n.contractNo || '—' }}</td>
-              <td>{{ n.loanNoteNo || '—' }}</td>
-              <td class="num">{{ n.loanBalance ?? '—' }}</td>
-              <td class="num">{{ n.executionRate != null ? `${n.executionRate}%` : '—' }}</td>
-              <td>{{ rateTypeText(n.rateType) }}{{ n.lprTerm ? `·${termTierText(n.lprTerm)}` : '' }}</td>
-              <td>{{ n.startDate || '—' }}</td>
-              <td>{{ n.maturityDate || '—' }}</td>
-              <td><span class="badge" :class="n.noteStatus === 'NORMAL' ? 'badge--success' : n.noteStatus === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'">{{ noteStatusText(n.noteStatus) }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!notesDialog.items.length" class="empty">暂无借据数据</div>
-      </el-dialog>
-
       <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
       <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
         <div class="dlg-tip">该申请为客户经理登记的新增客户,提交时数仓尚未收录客户号。数仓生成客户号后请在此回填真实客户号,系统将同步申请/分项/快照与后续承诺数据;也可输入证件号自动反查数仓。</div>
@@ -880,8 +806,8 @@ import {
   execStatusText, roundStatusText, evalResultText, ruleLevelText, voteChoiceText,
   productName, metricName, termUnitText, carrierTypeText, measureTypeText,
   customerTypeText, memberRoleText, rateTypeText,
-  customerClassText, certTypeText, contractStatusText, currencyText,
-  entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
+  customerClassText, certTypeText, currencyText,
+  entpScaleText, genderText, maritalStatusText, decisionSourceText,
   fiveLevelClassText, groupTypeText, customerNoText, isPlaceholderCustomerNo
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
@@ -898,7 +824,6 @@ const pricingItemId = computed(() => route.params.id as string)
 const pi = ref<any>({})
 const application = ref<any>({})
 const customer = ref<any>({})
-const financing = ref<any[]>([])
 const contribution = ref<any[]>([])
 const commitments = ref<any[]>([])
 const guarantees = ref<any[]>([])
@@ -923,7 +848,6 @@ const source = ref('')
 const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
 const orgPerformance = ref<any[]>([])
-const depositAccounts = ref<any[]>([])
 const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
@@ -932,8 +856,7 @@ const rawCreditAgreements = ref<any[]>([])
 /** 授信信息只展示存量已有授信(数仓);本次申请补录/新增授信不进"本行授信情况"(§用户要求) */
 const creditAgreements = computed(() =>
   (rawCreditAgreements.value || []).filter((a: any) => a.source !== 'APPLICATION'))
-// P1-2:合同下借据(数仓借据快照最新批次) / 集团贡献度(数仓 GROUP 口径 TOTAL)
-const loanNotes = ref<any[]>([])
+// 集团贡献度(数仓 GROUP 口径 TOTAL)
 const groupContribution = ref<any>(null)
 const attachments = ref<any[]>([])
 const resolutions = ref<any[]>([])
@@ -961,12 +884,6 @@ function voteResultOfItem(it: any) {
 }
 
 const opComment = ref('')
-// 借据弹窗(审批决定区「合同下借据」改为链接弹出;借据仅作参考,不作为主要审批依据)
-const notesDialog = ref<{ show: boolean; items: any[] }>({ show: false, items: [] })
-
-function openNotes(it: any) {
-  notesDialog.value = { show: true, items: itemNotes(it) }
-}
 
 // 分项审批(参照 demo):同申请分项摘要、每分项审批利率、本次会话内已同意分项
 const siblingItems = ref<any[]>([])
@@ -1177,11 +1094,6 @@ const groupContributionText = computed(() => {
 })
 
 
-// 本行融资合同状态徽标(数仓 contract_status)
-function contractStatusBadge(s?: string) {
-  return s === 'EFFECTIVE' ? 'badge--success' : s === 'SETTLED' ? 'badge--neutral' : s === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
-}
-
 // 部门归属文案(§D16a 矩阵透出:机构org_code——3202233912公司金融部/3202233943授信评审部/3202233991零售金融)
 function deptText(code?: string) {
   const map: Record<string, string> = { '3202233912': '公司金融部', '3202233943': '授信评审部', '3202233991': '零售金融' }
@@ -1200,12 +1112,6 @@ function extOf(g: any): any {
   if (!j) return null
   if (typeof j === 'object') return j
   try { return JSON.parse(j) } catch { return null }
-}
-
-// 分项对应合同下的借据(拟签订合同无合同号 → 无借据)
-function itemNotes(it: any): any[] {
-  if (!it.contractNo) return []
-  return loanNotes.value.filter((n) => n.contractNo === it.contractNo)
 }
 
 // 流程轨迹动作徽标:否决/终审红,提交灰蓝,通过绿
@@ -1292,7 +1198,6 @@ async function load() {
     pi.value = data.pricingItem || {}
     application.value = data.application?.[0] || {}
     customer.value = data.customer?.[0] || {}
-    financing.value = data.financing || []
     contribution.value = data.contribution || []
     commitments.value = data.commitments || []
     guarantees.value = data.guarantees || []
@@ -1308,13 +1213,11 @@ async function load() {
     snapshotInfo.value = data.snapshotInfo || {}
     tracking.value = data.tracking || []
     orgPerformance.value = data.orgPerformance || []
-    depositAccounts.value = data.depositAccounts || []
     otherLoanSummary.value = data.otherLoanSummary || []
     otherLoans.value = [...(data.otherLoans || []), ...(data.appOtherLoans || [])]
     relations.value = data.relations || []
     relatedPersons.value = data.relatedPersons || []
     rawCreditAgreements.value = data.creditAgreements || []
-    loanNotes.value = data.loanNotes || []
     groupContribution.value = data.groupContribution || null
     attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []
