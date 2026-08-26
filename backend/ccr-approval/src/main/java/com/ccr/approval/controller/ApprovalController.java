@@ -499,9 +499,24 @@ public class ApprovalController {
             result.put("creditAgreements", merged);
         }
 
-        // 他行融资(申请人工补录/Excel 导入与数仓征信,最新批次)
-        result.put("otherLoanSummary", jdbcTemplate.queryForList(
-                "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo));
+        // 他行融资概要(数仓征信最新批次;概要与授信协议/客户信息一致,补录快照优先)
+        List<Map<String, Object>> otherLoanSummaryRows = new ArrayList<>();
+        if (appId != null) {
+            // 申请页「他行融资概要」随单持久化的补录快照(ccr_application_credit_summary,del_flag=0 取最新;数仓无征信时也能展示申请录入概要)
+            List<Map<String, Object>> snapshotSummary = jdbcTemplate.queryForList(
+                    "SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, npl_balance nplBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance"
+                            + " FROM ccr_application_credit_summary WHERE application_id = ? AND del_flag = '0' ORDER BY id DESC LIMIT 1", appId);
+            if (!snapshotSummary.isEmpty()) {
+                otherLoanSummaryRows.addAll(snapshotSummary);
+            }
+        }
+        // 数仓征信概要(同字段集;已有补录快照时作回退,不重复展示)
+        List<Map<String, Object>> dwSummary = jdbcTemplate.queryForList(
+                "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo);
+        if (otherLoanSummaryRows.isEmpty() && !dwSummary.isEmpty()) {
+            otherLoanSummaryRows.addAll(dwSummary);
+        }
+        result.put("otherLoanSummary", otherLoanSummaryRows);
         result.put("otherLoans", jdbcTemplate.queryForList(
                 "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
 
