@@ -84,7 +84,7 @@
           <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
           <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
+          <div><span class="dg-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
           <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
@@ -121,7 +121,7 @@
         <template v-else>
           <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
           <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
+          <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
           <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
           <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>

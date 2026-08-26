@@ -61,7 +61,7 @@
           <div v-if="isGroup && customer.applyAmount != null" class="desc-item"><span class="desc-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ customer.certNo || '—' }}</div>
           <div v-if="isIndivCustomer" class="desc-item"><span class="desc-label">证件号码</span>{{ customer.certNo || '—' }}</div>
-          <div v-if="customer.entpCharic" class="desc-item"><span class="desc-label">企业性质</span>{{ customerTypeText(customer.entpCharic) }}</div>
+          <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
           <div v-if="customer.entpScale" class="desc-item"><span class="desc-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
           <div v-if="customer.industry" class="desc-item"><span class="desc-label">所属行业</span>{{ customer.industry }}</div>
           <div v-if="customer.creditLevel" class="desc-item"><span class="desc-label">内部信用等级</span>{{ customer.creditLevel }}</div>
