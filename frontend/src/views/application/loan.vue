@@ -2507,7 +2507,7 @@ async function loadDraftIntoForm(id: number | string) {
   align-items: center;
   column-gap: 6px;
 }
-.form-field__label { margin-bottom: 0; font-size: 12px; text-align: right; padding-right: 2px; }
+.form-field__label { margin-bottom: 0; font-size: 13px; text-align: right; padding-right: 2px; }
 .form-field > .form-input,
 .form-field > .form-select,
 .form-field > .el-select,
@@ -2526,14 +2526,14 @@ async function loadDraftIntoForm(id: number | string) {
 /* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
 .form-field--stack { display: block; }
 .form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
-/* 文本框内字体优化:紧凑字号+字体族统一+数字等宽对齐+占位提示可读(原生控件与 Element 控件一致) */
+/* 文本框内字体优化:字号与页面正文一致(14px)+字体族统一+数字等宽对齐+占位提示可读(原生控件与 Element 控件一致) */
 .form-field .form-input,
 .form-field .form-select,
 .form-field :deep(.el-input__inner),
 .form-field :deep(.el-select__selected-item),
 .form-field :deep(.el-select__placeholder),
 .form-field :deep(.el-textarea__inner) {
-  font-size: 13px;
+  font-size: 14px;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
