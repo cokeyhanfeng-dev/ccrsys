@@ -527,7 +527,7 @@
       <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
-            分项{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
+            额度{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
             <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
@@ -558,7 +558,7 @@
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
             <!-- 贷款期限固定一年期/三年期/五年期下拉(取消自由输入月/天,§用户要求) -->
-            <select class="form-select term-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
+            <select class="form-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
               <option value="" disabled>选择期限</option>
               <option v-for="opt in loanTermOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
@@ -815,18 +815,18 @@
           <div class="submit-summary__item"><span>申请号</span><b>{{ draft.applicationNo || '—' }}</b></div>
           <div class="submit-summary__item"><span>业务类型</span><b>{{ form.businessType === 'EXISTING' ? '存量调息' : '新增授信' }}</b></div>
           <div class="submit-summary__item"><span>授信总额(万元)</span><b>{{ guaranteesTotalText }}</b></div>
-          <div class="submit-summary__item"><span>分项笔数</span><b>{{ form.guarantees.length }} 笔</b></div>
+          <div class="submit-summary__item"><span>额度笔数</span><b>{{ form.guarantees.length }} 笔</b></div>
           <div class="submit-summary__item"><span>下一步审批</span><b class="submit-summary__approver">{{ nextApproverText }}</b></div>
         </div>
       </div>
 
       <!-- 分项明细(提交内容核心:担保方式/产品/期限/金额/申请利率) -->
       <template v-if="form.guarantees.length">
-        <div class="sub-title" style="margin-top:14px">分项明细</div>
+        <div class="sub-title" style="margin-top:14px">额度明细</div>
         <table class="table">
           <thead>
             <tr>
-              <th>分项</th>
+              <th>额度</th>
               <th v-if="form.customerScope === 'GROUP'">成员</th>
               <th>担保方式</th><th>期限</th>
               <th>授信金额(万元)</th><th>申请利率</th>
@@ -2668,13 +2668,16 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* 贷款分项基础字段:产品(贷款类型)已隐藏(后台按客户类型自动同步),字段尽量单行铺开 auto-fit,窄屏自动降列(§2026-08-26) */
-.loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
-/* 防止 select 选中长文本(如集团成员名)撑宽单列,保证各栏位列宽均等、间距平衡(§2026-08-26) */
+/* 贷款分项基础字段(§2026-08-26 整体优化):label 置上+输入框全宽——避免 108px 定宽 label 挤窄输入框致期限文字截断;
+   auto-fit 等宽列 + 统一 10px 间距保证栏位平衡;字段尽量排一行,窄屏自动降列 */
+.loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; gap: 10px !important; }
+.loan-basic-grid .form-field { display: block; }
+.loan-basic-grid .form-field__label { display: block; margin-bottom: 4px; text-align: left; padding-right: 0; }
+.loan-basic-grid .form-field > .form-input,
+.loan-basic-grid .form-field > .form-select { width: 100%; }
+/* 防止 select 选中长文本(如集团成员名)撑宽单列,保证各栏位列宽均等 */
 .loan-basic-grid > .form-field { min-width: 0; }
 @media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* 期限下拉:字号与其他字段一致(全局 14px),仅微收内边距+列最小宽 170px 确保一年期/三年期/五年期完整显示(§2026-08-26) */
-.term-select { padding: 0 6px; }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
 .mortgage-sub { margin-bottom: 10px; }
 .mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
