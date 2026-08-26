@@ -116,7 +116,8 @@ public class ApprovalController {
         // 申请概要
         if (appId != null) {
             List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                    "SELECT id, application_no applicationNo, business_type businessType, customer_no customerNo, group_no groupNo, application_remark applicationRemark, snapshot_bundle_id snapshotBundleId, customer_info_json customerInfoJson, credit_info_json creditInfoJson, submit_time submitTime, applicant_user_id applicantUserId, group_info_json groupInfoJson FROM ccr_application WHERE id = ?", appId);
+                    "SELECT a.id, a.application_no applicationNo, a.business_type businessType, a.customer_no customerNo, a.group_no groupNo, a.application_remark applicationRemark, a.snapshot_bundle_id snapshotBundleId, a.customer_info_json customerInfoJson, a.credit_info_json creditInfoJson, a.submit_time submitTime, a.applicant_user_id applicantUserId, a.group_info_json groupInfoJson, a.applicant_org_id applicantOrgId, d.dept_name applicantOrgName"
+                            + " FROM ccr_application a LEFT JOIN ccr_sys_dept d ON d.id = a.applicant_org_id AND d.del_flag = '0' WHERE a.id = ?", appId);
             result.put("application", apps);
             if (!apps.isEmpty()) {
                 businessType = apps.get(0).get("businessType") == null ? null : apps.get(0).get("businessType").toString();

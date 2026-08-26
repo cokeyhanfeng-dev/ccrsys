@@ -171,10 +171,6 @@
               </select>
             </div>
           </template>
-          <div class="form-field">
-            <label class="form-field__label">申请机构</label>
-            <input class="form-input" :value="applyOrgText" disabled />
-          </div>
         </template>
       </div>
 
@@ -758,16 +754,7 @@
                 <option value="COUNT">户/笔</option>
               </select>
             </div>
-            <div class="form-field">
-              <label class="form-field__label">适用范围</label>
-              <select class="form-select" v-model="c.metricScope">
-                <option value="PUBLIC">对公</option>
-                <option value="PRIVATE_SELF">本人对私</option>
-                <option value="RELATED">关联人</option>
-                <option value="GROUP">集团</option>
-                <option value="GROUP_MEMBER">集团成员</option>
-              </select>
-            </div>
+            <!-- 适用范围不再手动选择(§2026-08-26 用户要求:按客户已填关联人自动匹配,addCommitment 时判定) -->
             <div class="form-field" v-if="form.customerScope === 'GROUP'">
               <label class="form-field__label">成员</label>
               <select class="form-select" v-model="c.memberCustomerNo">
@@ -1044,7 +1031,6 @@ interface CommitmentRow {
   /** 承诺类型"其它"手工目标描述(金额或文本,§6.4;后端 application_commitment 未接收字段,登记依赖) */
   commitmentDesc: string
   unit: string
-  metricScope: string
   memberCustomerNo: string
   /** 承诺完成截止日期(在什么时间点内完成,审批端拟达成贡献度同步展示) */
   endDate: string
@@ -1095,8 +1081,6 @@ const form = reactive({
   applicationRemark: '',
   guarantees: [newGuarantee('CORPORATE')] as GuaranteeRow[]
 })
-
-const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
 
 // 数仓带出数据
 const ownFinancing = ref<any[]>([])
@@ -1705,7 +1689,8 @@ function addCommitment() {
   commitments.value.push({
     metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'TARGET_BALANCE',
     baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
-    metricScope: form.customerScope === 'GROUP' ? 'GROUP' : 'PUBLIC', memberCustomerNo: '', endDate: ''
+    // 适用范围概念已删除(§2026-08-26 用户要求):后台按客户号/证件号匹配,承诺不再携带 metricScope
+    memberCustomerNo: '', endDate: ''
   })
 }
 
@@ -2095,7 +2080,6 @@ function buildPayload(): ApplicationPayload {
       targetValue: c.metricCode === 'OTHER' ? undefined : c.targetValue,
       commitmentDesc: c.metricCode === 'OTHER' ? c.commitmentDesc : undefined,
       unit: c.unit || 'WAN_YUAN',
-      metricScope: c.metricScope || 'PUBLIC',
       memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo,
       endDate: isBlank(c.endDate) ? undefined : c.endDate
     })),
@@ -2519,7 +2503,6 @@ async function loadDraftIntoForm(id: number | string) {
     targetValue: c.targetValue != null ? String(c.targetValue) : '',
     commitmentDesc: c.commitmentDesc || '',
     unit: c.unit || 'WAN_YUAN',
-    metricScope: c.metricScope || 'PUBLIC',
     memberCustomerNo: c.memberCustomerNo || '',
     endDate: c.endDate ? String(c.endDate).slice(0, 10) : ''
   }))

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { get } from '@/api/request'
-import { METRIC_CODES, registerMetricDict } from '@/utils/dict'
+import { ACTIVE_METRIC_CODES, registerMetricDict } from '@/utils/dict'
 
 export interface MetricDefinition {
   metricCode: string
@@ -16,7 +16,7 @@ export interface MetricDefinition {
 // load() 拉取启用指标并注册给 dict.ts(metricName 展示优先字典);
 // 接口未加载/失败时回退静态 METRIC_CODES,行为与改造前一致;幂等(loaded 防重复拉取)。
 export const useMetricDict = defineStore('metricDict', () => {
-  const list = ref(METRIC_CODES)
+  const list = ref(ACTIVE_METRIC_CODES)
   const loaded = ref(false)
 
   async function load() {

@@ -71,6 +71,9 @@
           {{ source === 'MANUAL' ? '人工录入' : source === 'MANUAL_OVERRIDE' ? '含人工修正' : '数仓' }}
         </span>
       </div>
+      <div v-if="application.applicantOrgName" class="detail-grid" style="margin-top:12px">
+        <div><span class="dg-label">申请机构</span>{{ application.applicantOrgName }}</div>
+      </div>
       <div class="detail-grid" v-if="hasCustomer">
         <!-- 对公客户(§20 ①:名称/客户号/统一社会信用代码/企业性质/行业/信用等级/五级分类等) -->
         <template v-if="isCorpCustomer">
@@ -223,8 +226,8 @@
       <div v-else class="empty">暂无数据</div>
     </div>
 
-    <!-- 6b. 申请材料附件(始终展示区块;有附件列表,无附件提示,避免审批人误以为无此功能) -->
-    <div class="card">
+    <!-- 6b. 申请材料附件(仅贷款场景;存款无申请材料附件概念) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
       <table class="table" v-if="attachments.length">
         <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
@@ -367,8 +370,8 @@
       <ContributionPanel :contribution="contribution" :commitments="commitments" />
     </div>
 
-    <!-- 10. 历史履约:该客户每一次申请的履约比例 + 总额(按申请聚合,Σ实际/Σ目标,口径同承诺跟踪页) -->
-    <div class="card">
+    <!-- 10. 历史履约:该客户每一次申请的履约比例 + 总额(按申请聚合,Σ实际/Σ目标,口径同承诺跟踪页);仅贷款场景,存款无承诺概念 -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>历史履约</span><span class="badge badge--info">按申请聚合</span></div>
       <template v-if="tracking.length">
         <div v-if="unmetTracking.length" class="warn-bar">
@@ -435,8 +438,8 @@
       <div v-else class="empty">该客户暂无历史承诺申请</div>
     </div>
 
-    <!-- 11. 机构达成(orgPerformance:申请机构最新批次) -->
-    <div class="card">
+    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念) -->
+    <div class="card" v-if="isLoan">
       <div class="card__head"><span>机构达成</span><span class="badge badge--info">数仓</span></div>
       <table class="table" v-if="orgPerformance.length">
         <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>达成率</th><th>数据日期</th></tr></thead>

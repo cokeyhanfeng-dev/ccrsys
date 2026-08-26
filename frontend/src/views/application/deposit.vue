@@ -88,7 +88,7 @@
               <option value="PLANNED">拟开户方案</option>
             </select>
           </div>
-          <div class="form-field">
+          <div class="form-field dep-field--wide">
             <label class="form-field__label">存款账户</label>
             <template v-if="d.accountMode === 'EXISTING'">
               <!-- 存量账户下拉:按当前客户数仓账户列表选择并自动带出(§2026-08-25);集团/无数仓账户时回退手工输入+反查 -->
@@ -216,7 +216,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -405,8 +405,6 @@ function onProductChange(d: DepositItemRow) {
   d.termUnit = ''
   d.termOption = ''
 }
-
-const applyOrgText = computed(() => userStore.userInfo?.orgName || (userStore.userInfo?.orgId ? `机构 #${userStore.userInfo.orgId}` : '暂无数据'))
 
 // 草稿与提交闭环状态
 const draft = reactive<{ id: number | null; versionNo: number | null; applicationNo: string }>({ id: null, versionNo: null, applicationNo: '' })
@@ -1022,6 +1020,12 @@ async function loadDraftIntoForm(id: number | string) {
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
 .deposit-item { margin-bottom: 10px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
+/* 存款分项字段 5 列一行(§2026-08-26 用户要求;9 字段 5+5 两行填满:存款账户跨 2 列容纳下拉+提示文字,其余等宽) */
+.deposit-item .mortgage-item__grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+.deposit-item .mortgage-item__grid .dep-field--wide { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
 /* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
 @media (max-width: 1100px) {
   .form-grid { grid-template-columns: repeat(2, 1fr); }

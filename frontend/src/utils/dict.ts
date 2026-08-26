@@ -505,10 +505,10 @@ export function datasetName(code?: string, fallback = '—'): string {
 
 // ---------- 贡献度指标 ----------
 
-/** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径)
- * 权威来源为 ccr_metric_definition(enabled 接口),此处为接口加载失败/历史码展示的回退映射。
- * 对公启用指标已收敛为恰好 8 项(20260820 增量),历史码(如 TOTAL/GM_* 等对私码)保留映射仅用于历史数据名称回退。 */
-export const METRIC_CODES: DictItem[] = [
+/** 启用指标下拉(§9;对公启用指标恰好 8 项,20260820 收敛)
+ * store/metricDict 初始回退源:接口未加载/数仓无数据时下拉仅展示这 8 项;
+ * 数仓表 ccr_metric_definition 非空时以接口返回为准(覆盖此回退)。 */
+export const ACTIVE_METRIC_CODES: DictItem[] = [
   { code: 'PUBLIC_DEPOSIT_AVG', name: '存款年日均' },
   { code: 'PUBLIC_PROJECT_LOAN_AVG', name: '贷款年日均' },
   { code: 'PUBLIC_DISCOUNT_SPREAD', name: '贴现年日均' },
@@ -516,7 +516,14 @@ export const METRIC_CODES: DictItem[] = [
   { code: 'PUBLIC_PAYROLL_AMOUNT', name: '当年代发金额' },
   { code: 'PUBLIC_PAYROLL_CONTRIBUTION', name: '当年代发户数' },
   { code: 'PUBLIC_WEALTH_INCOME', name: '理财年日均余额' },
-  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇余额' },
+  { code: 'PUBLIC_EXCHANGE_SPREAD', name: '结售汇余额' }
+]
+
+/** 指标编码→中文名(§9;合并贡献度组件与申请向导两套口径)
+ * 权威来源为 ccr_metric_definition(enabled 接口),此处为接口加载失败/历史码展示的回退映射。
+ * 启用下拉取 ACTIVE_METRIC_CODES(恰好 8 项);历史码(如 TOTAL/GM_* 等对私码)仅保留名称回退,不进下拉。 */
+export const METRIC_CODES: DictItem[] = [
+  ...ACTIVE_METRIC_CODES,
   // ---- 以下为历史/系统内部码,仅作历史数据名称回退,不进启用下拉 ----
   { code: 'TOTAL', name: '综合贡献总额' },
   { code: 'GM_LOAN_CONTRIBUTION', name: '贷款贡献' },

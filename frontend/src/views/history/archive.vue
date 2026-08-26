@@ -5,7 +5,7 @@
         申请档案
         <span v-if="archive.application" class="app-no">{{ val(archive.application, 'application_no', 'applicationNo') }}</span>
       </div>
-      <InfoTip content="申请档案:展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
+      <InfoTip content="申请档案:展示申请材料、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
       <div class="head-actions">
         <button class="btn btn--secondary" @click="router.push('/history')">返回列表</button>
         <button v-if="hasResolution" class="btn btn--secondary" :disabled="resolving" @click="doResolutionDoc">
@@ -406,26 +406,6 @@
         <div v-else class="empty-block">暂无数据</div>
       </div>
 
-      <!-- 7. 资料校验(提交时质量校验 PASS/WARN/BLOCK 明细) -->
-      <div class="card" v-if="archive.qualityResults?.length">
-        <div class="card__head">
-          <span>资料校验</span>
-          <span :class="qualityBadge">{{ ruleLevelText(qualityOverall) }}</span>
-        </div>
-        <table class="table table--full">
-          <thead><tr><th>校验规则</th><th>级别</th><th>对象</th><th>提示</th><th>校验时间</th></tr></thead>
-          <tbody>
-            <tr v-for="(q, i) in archive.qualityResults" :key="i">
-              <td>{{ ruleCodeText(val(q, 'ruleCode', 'rule_code')) }}</td>
-              <td><span class="badge" :class="ruleLevelBadge(val(q, 'ruleLevel', 'rule_level'))">{{ ruleLevelText(val(q, 'ruleLevel', 'rule_level')) }}</span></td>
-              <td>{{ subjectTypeText(val(q, 'subjectType', 'subject_type')) }} · {{ val(q, 'subjectId', 'subject_id') }}</td>
-              <td>{{ val(q, 'message') }}</td>
-              <td>{{ fmtTime(val(q, 'checkedTime', 'checked_time')) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
       <!-- 8. 审批轨迹 -->
       <div class="card">
         <div class="card__head"><span>审批轨迹</span></div>
@@ -580,11 +560,11 @@ import {
   businessTypeText, customerScopeText, nodeLabel, roleText, actionText,
   productName, metricName, memberRoleText, termUnitText, commitmentUnitText,
   currencyText, decisionText,
-  roundStatusText, execStatusText, ruleLevelText,
+  roundStatusText, execStatusText,
   evalResultText, planStatusText,
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
   rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
-  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge,
+  entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, decisionSourceText, noteStatusText, noteStatusBadge,
   fiveLevelClassText, groupTypeText
 } from '@/utils/dict'
 
@@ -695,18 +675,6 @@ function downloadAttachment(a: any) {
   download(`/ccr/applications/${applicationId}/attachments/${a.id}/download`)
 }
 
-const qualityOverall = computed(() => {
-  const list: any[] = archive.value.qualityResults || []
-  if (list.some((q) => val(q, 'ruleLevel', 'rule_level') === 'BLOCK')) return 'BLOCK'
-  if (list.some((q) => val(q, 'ruleLevel', 'rule_level') === 'WARN')) return 'WARN'
-  return 'PASS'
-})
-const qualityBadge = computed(() => ({
-  BLOCK: 'badge badge--danger',
-  WARN: 'badge badge--warning',
-  PASS: 'badge badge--success'
-}[qualityOverall.value] || 'badge badge--neutral'))
-
 /** 多键取值(后端档案 Map 混用 snake/camel;空值显示暂无口径) */
 function val(row: any, ...keys: string[]): any {
   for (const k of keys) {
@@ -747,10 +715,6 @@ function actionBadge(a: any) {
     ADJUST: 'badge badge--warning', RETURN: 'badge badge--warning'
   }
   return map[a] || 'badge badge--info'
-}
-// 校验级别徽标(简式,配合 <span class="badge">)
-function ruleLevelBadge(l?: any) {
-  return l === 'BLOCK' ? 'badge--danger' : l === 'WARN' ? 'badge--warning' : 'badge--success'
 }
 // 表决计票汇总:按轮次从 voteResults 合并 通过/否决
 function voteResultOf(roundId: any) {
