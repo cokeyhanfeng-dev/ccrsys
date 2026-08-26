@@ -108,6 +108,9 @@ public class GroupQueryController {
             Map<String, Object> corp = dataWarehouseService.findCorpCustomer(memberNo);
             row.put("memberName", corp == null ? null : corp.get("cust_name"));
             row.put("idNo", corp == null ? null : corp.get("cert_no"));
+            // 行业类型/五级分类(成员客户主数据带出,§2026-08-26 集团成员表展示)
+            row.put("industry", corp == null ? null : corp.get("blgd_idsty"));
+            row.put("fiveLevelClass", corp == null ? null : corp.get("ffthlv_class"));
             Map<String, Object> limit = groupCreditNo == null ? null
                     : dataWarehouseService.findMemberLimit(groupCreditNo, memberNo);
             row.put("creditLimit", limit == null ? null : camel(limit));

@@ -183,20 +183,22 @@
           <table class="table member-table">
             <thead>
               <tr>
-                <th>成员客户号</th><th>成员名称</th><th>证件号码</th><th style="width:40px"></th>
+                <th style="width:40px"></th><th>成员客户号</th><th>成员名称</th><th>证件号码</th><th>行业类型</th><th>五级分类</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="m in groupMembers" :key="m.memberCustomerNo" :class="{ 'member-row--checked': isMemberChecked(m.memberCustomerNo) }">
+                <td>
+                  <input type="checkbox" class="member-check" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m.memberCustomerNo)" />
+                </td>
                 <td>
                   {{ customerNoText(m.memberCustomerNo) }}
                   <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
                 </td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td>{{ m.idNo || m.ucrCode || '—' }}</td>
-                <td>
-                  <input type="checkbox" class="member-check" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m.memberCustomerNo)" />
-                </td>
+                <td>{{ m.industry || '—' }}</td>
+                <td>{{ fiveLevelClassText(normalizeFiveLevelClass(m.fiveLevelClass)) }}</td>
               </tr>
             </tbody>
           </table>
@@ -918,7 +920,7 @@ import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, groupStatusText, currencyText, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, customerNoText, isManualCustomerNo
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
