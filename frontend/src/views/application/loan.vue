@@ -558,7 +558,7 @@
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
             <!-- 贷款期限固定一年期/三年期/五年期下拉(取消自由输入月/天,§用户要求) -->
-            <select class="form-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
+            <select class="form-select term-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
               <option value="" disabled>选择期限</option>
               <option v-for="opt in loanTermOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
@@ -2671,6 +2671,8 @@ async function loadDraftIntoForm(id: number | string) {
 /* 贷款分项基础字段:产品(贷款类型)已隐藏(后台按客户类型自动同步),字段尽量单行铺开 auto-fit,窄屏自动降列(§2026-08-26) */
 .loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
 @media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+/* 期限下拉:auto-fit 窄列下 14px 选项文字被截,调小字号+收窄内边距保证一年期/三年期/五年期完整显示(§2026-08-26) */
+.term-select { font-size: 12px; padding: 0 8px; }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
 .mortgage-sub { margin-bottom: 10px; }
 .mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
