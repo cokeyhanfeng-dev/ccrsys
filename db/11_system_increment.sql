@@ -293,15 +293,16 @@ CREATE TABLE IF NOT EXISTS `ccr_dept_vp` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='部门-分管行领导映射(§D16a;一人可分管多部门,纯配置)';
 
 -- ---------- 种子:部门-分管行长映射(org_code;2026-08-14 统一 org_code;幂等) ----------
--- 公司金融部/零售金融部 → 吴分管行长(1022 vice_president);授信评审部 → 郑分管行长(1023 vice_president)
+-- 公司金融部(3202233912) → 陈开成(2092000000000002001)/授信评审部(3202233943) → 史志明(2092000000000002002)/零售金融(3202233991) → 侯允杰(2092000000000002003);
+-- 2026-08-26 修正:原误填部门 id 1022/1023(万桥/新庄支行,非用户),3 位 VP 账号已随真实行领导种子重建(见 publish_full.sql 用户段)
 INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
-SELECT 2092000000000000001,'000000','3202233912',1022,'ACTIVE',1,'1004',NOW(),'0'
+SELECT 2092000000000000001,'000000','3202233912',2092000000000002001,'ACTIVE',1,'1004',NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233912' AND del_flag='0');
 INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
-SELECT 2092000000000000002,'000000','3202233943',1023,'ACTIVE',1,'1004',NOW(),'0'
+SELECT 2092000000000000002,'000000','3202233943',2092000000000002002,'ACTIVE',1,'1004',NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233943' AND del_flag='0');
 INSERT INTO `ccr_dept_vp` (`id`,`tenant_id`,`dept_code`,`vp_user_id`,`status`,`version_no`,`create_by`,`create_time`,`del_flag`)
-SELECT 2092000000000000003,'000000','3202233991',1022,'ACTIVE',1,'1004',NOW(),'0'
+SELECT 2092000000000000003,'000000','3202233991',2092000000000002003,'ACTIVE',1,'1004',NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233991' AND del_flag='0');
 
 -- ---------- 种子:支行行长节点指派(2026-08-14 真实支行行长数据落地) ----------
