@@ -66,7 +66,7 @@
     <div v-if="activeTab === 'matrix'" class="card">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center">
-          <span>权限矩阵(PRD §7.2 LPR±BP 路由阈值;生效行禁止原位修改,调整=新建行发布替换)</span>
+          <span>权限矩阵(LPR±BP 路由阈值;生效行禁止原位修改,调整=新建行发布替换)</span>
           <select class="form-select" v-model="matrixStatus" style="width:140px" @change="loadMatrix">
             <option value="">仅生效</option>
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
@@ -111,7 +111,7 @@
     <div v-if="activeTab === 'product'" class="card">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center">
-          <span>产品业务硬边界(全行业务硬边界,任何节点调价/矩阵边界不得突破,§8.2/§8A.5)</span>
+          <span>产品业务硬边界(全行业务硬边界,任何节点调价/矩阵边界不得突破)</span>
           <select class="form-select" v-model="productStatus" style="width:140px" @change="loadProductLimit">
             <option value="">全部状态</option>
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
@@ -999,7 +999,7 @@
           <div style="display:flex;justify-content:flex-end;margin-top:6px">
             <button class="btn btn--secondary" @click="parseVoteCondition">从 JSON 回填构建器</button>
           </div>
-          <div class="section-tip" style="margin-top:8px">未配置链路时自动按默认链路运行：对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置。路由引擎读取 vote_condition：金额档按集团批复总额度/申请金额定档（§B18），企业类型取 SOE/NON_SOE；JSON 解析失败按不命中处理。</div>
+          <div class="section-tip" style="margin-top:8px">未配置链路时自动按默认链路运行：对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置。路由引擎读取 vote_condition：金额档按集团批复总额度/申请金额定档，企业类型取 SOE/NON_SOE；JSON 解析失败按不命中处理。</div>
         </div>
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="routeDialog.show = false">取消</button>
@@ -1166,7 +1166,7 @@
                 <td><input class="form-input" v-model="lprCfgDialog.grid[p.productCode].remark" style="width:140px" /></td>
               </tr>
               <tr v-if="!lprCfgDialog.products.length">
-                <td colspan="7" class="empty-cell">暂无启用产品,请先在产品目录新增并发布启用产品(§P2-4)</td>
+                <td colspan="7" class="empty-cell">暂无启用产品,请先在产品目录新增并发布启用产品</td>
               </tr>
             </tbody>
           </table>

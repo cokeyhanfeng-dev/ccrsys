@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">审计管理</div>
-      <InfoTip content="实际投票人反查 / 导出记录 / 配置版本查询(§12.14,仅审计人员与管理员)" />
+      <InfoTip content="实际投票人反查 / 导出记录 / 配置版本查询(仅审计人员与管理员)" />
     </div>
 
     <!-- 审计四个功能区块以分段页签展示(参照流程配置页) -->

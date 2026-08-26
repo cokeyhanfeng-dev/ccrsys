@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">数据中心</div>
-      <InfoTip content="批次落地监控与数据源时效看板(§9.6 F8,数据来源于数仓落地批次)" />
+      <InfoTip content="批次落地监控与数据源时效看板(数据来源于数仓落地批次)" />
     </div>
 
     <div class="dc-grid">

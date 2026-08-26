@@ -1,11 +1,11 @@
 <template>
   <div class="relations-editor">
     <div class="sub-title">
-      关联人员(§12.4④)
+      关联人员
       <span class="badge badge--neutral">随申请备注结构附带提交</span>
       <InfoTip>
         录入与本笔业务相关的配偶/直系亲属/担保人等;姓名行内自动匹配客户号,匹配不到可手工补录。
-        证件号(对公 USCC/对私身份证)必填,失焦全行判重并<strong>录入即绑定</strong>:已绑定其他客户/集团将标红阻断(§6.2/§10.3.21)。
+        证件号(对公 USCC/对私身份证)必填,失焦全行判重并<strong>录入即绑定</strong>:已绑定其他客户/集团将标红阻断。
       </InfoTip>
     </div>
 

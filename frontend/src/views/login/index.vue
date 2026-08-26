@@ -66,7 +66,7 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <p class="login-tip">首期本地账号演示;SSO 统一认证预留适配(§4.1)</p>
+        <p class="login-tip">首期本地账号演示;SSO 统一认证预留适配</p>
       </el-card>
       <p class="login-panel__foot">客户贡献度与利率决策系统 · CCR</p>
     </section>

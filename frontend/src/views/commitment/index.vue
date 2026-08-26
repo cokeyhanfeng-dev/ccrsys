@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">贡献度跟踪</div>
-      <InfoTip content="承诺计划三级钻取(§12.11):客户 → 承诺记录 → 指标明细;数据范围由服务端按登录人角色确定。" />
+      <InfoTip content="承诺计划三级钻取:客户 → 承诺记录 → 指标明细;数据范围由服务端按登录人角色确定。" />
     </div>
 
     <!-- 返回上级导航(二级/三级) -->
@@ -36,7 +36,6 @@
       <div class="card">
         <div class="card__head">
           <span>客户承诺概览</span>
-          <button class="btn btn--secondary" @click="openPolicies">策略管理</button>
         </div>
         <table class="table customer-overview" v-if="customerRows.length">
           <thead>
@@ -179,7 +178,7 @@
             <div class="other-track__desc">
               <span class="dg-label">跟踪描述</span>
               <span v-if="m.trackDesc">{{ m.trackDesc }}</span>
-              <span v-else class="section-tip">暂无跟踪描述,手工录入留痕(§6.4)</span>
+              <span v-else class="section-tip">暂无跟踪描述,手工录入留痕</span>
             </div>
             <div class="other-track__edit">
               <textarea class="form-input" rows="2"
@@ -300,63 +299,16 @@
       </div>
     </template>
 
-    <!-- 策略管理弹窗:策略列表 + 试算 -->
-    <el-dialog v-model="policyDialog.show" title="跟踪策略管理" width="760px">
-      <div class="dlg-section-title">策略列表</div>
-      <table class="table">
-        <thead>
-          <tr><th>策略编号</th><th>名称</th><th>指标</th><th>业务类型</th><th>机构</th><th>优先级</th><th>状态</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in policyDialog.list" :key="p.id">
-            <td>{{ p.policyNo }}</td>
-            <td>{{ p.policyName }}</td>
-            <td>{{ metricName(p.metricCode) }}</td>
-            <td>{{ businessTypeText(p.businessType, '不限') }}</td>
-            <td>{{ p.orgCode || '通用' }}</td>
-            <td class="num">{{ p.priority }}</td>
-            <td><span :class="statusBadge(p.status)">{{ configStatusText(p.status) }}</span></td>
-          </tr>
-          <tr v-if="!policyDialog.list.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
-        </tbody>
-      </table>
-
-      <div class="dlg-section-title" style="margin-top:16px">策略试算(§11.7:传入历史计划,返回命中策略与预警判定)</div>
-      <div class="simulate-bar">
-        <select class="form-select" v-model="policyDialog.simPlanId" style="width:280px">
-          <option value="">选择承诺计划</option>
-          <option v-for="p in planList" :key="p.id" :value="p.id">{{ p.plan_no }}({{ p.customer_no || '集团' }})</option>
-        </select>
-        <button class="btn btn--primary" @click="runSimulate">试算</button>
-      </div>
-      <table class="table" v-if="policyDialog.simResult" style="margin-top:8px">
-        <thead>
-          <tr><th>指标</th><th>命中策略</th><th>命中版本</th><th>达成线</th><th>预警线</th><th>达成率</th><th>判定</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="(m, i) in policyDialog.simResult.metrics || []" :key="i">
-            <td>{{ metricName(m.metricCode) }}</td>
-            <td>{{ m.matchedPolicyName || m.matchedPolicyNo || '默认策略' }}</td>
-            <td>{{ m.matchedVersionCode || '—' }}</td>
-            <td class="num">{{ m.achieveLine ?? '—' }}</td>
-            <td class="num">{{ m.atRiskLine ?? '—' }}</td>
-            <td class="num">{{ m.achievementRatio != null ? m.achievementRatio + '%' : '暂无数据' }}</td>
-            <td><span :class="resultBadge(m.judgeResult)">{{ resultText(m.judgeResult) }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="section-tip" style="margin-top:8px">选择计划后点击"试算",输出各指标命中策略与判定。</div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listCommitmentPlans, listTrackingPolicies, simulatePolicy, saveMetricTrackDesc } from '@/api/commitment'
+import { listCommitmentPlans, saveMetricTrackDesc } from '@/api/commitment'
 import { getCommitmentPlanDetail, getCommitmentMonthlyReport } from '@/api/approval2'
 import {
-  planStatusText, configStatusText, evalResultText, appStatusText,
+  planStatusText, evalResultText, appStatusText,
   customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText
 } from '@/utils/dict'
 
@@ -679,34 +631,6 @@ async function load() {
   }
 }
 
-// ---------- 策略管理 ----------
-const policyDialog = reactive({
-  show: false,
-  list: [] as any[],
-  simPlanId: '' as any,
-  simResult: null as any
-})
-
-async function openPolicies() {
-  policyDialog.show = true
-  policyDialog.simResult = null
-  try {
-    policyDialog.list = await listTrackingPolicies()
-  } catch {
-    policyDialog.list = []
-  }
-}
-async function runSimulate() {
-  if (!policyDialog.simPlanId) {
-    ElMessage.warning('请选择承诺计划')
-    return
-  }
-  try {
-    policyDialog.simResult = await simulatePolicy(Number(policyDialog.simPlanId))
-  } catch {
-    policyDialog.simResult = null
-  }
-}
 
 // ---------- 展示映射 ----------
 function scopeText(s?: string) {
@@ -825,5 +749,4 @@ onMounted(load)
 .report-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 16px; font-size: 14px; margin-top: 12px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .dlg-section-title { font-weight: 600; margin-bottom: 8px; }
-.simulate-bar { display: flex; gap: 8px; }
 </style>

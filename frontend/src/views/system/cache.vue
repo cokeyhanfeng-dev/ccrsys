@@ -3,7 +3,7 @@
     <div class="section-head">
       <div class="section-title">缓存配置</div>
       <InfoTip>
-        Redis 缓存项定义管理(详设 §3.6 v2):缓存项可<strong>动态增删改</strong>(精确 key / key 前缀、
+        Redis 缓存项定义管理:缓存项可<strong>动态增删改</strong>(精确 key / key 前缀、
         TTL、写入开关、描述),并可配置<strong>数据加载器</strong>把数仓等数据手动/定时写入 Redis。
         内置项(lpr/matrix/rate-limit)由业务代码写入,不可删除、不可改 key;修改后<strong>立即生效不重启</strong>。
       </InfoTip>
