@@ -395,7 +395,7 @@
       <div class="sub-title" style="margin-top:20px">他行融资明细</div>
       <table class="table" v-if="otherLoans.length">
         <thead>
-          <tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率</th><th>来源</th></tr>
+          <tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率</th><th>来源</th><th>操作</th></tr>
         </thead>
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
@@ -405,6 +405,7 @@
             <td><input class="form-input form-input--amount" v-model="d.balanceAmount" type="number" min="0" max="999999999.99" step="0.0001" /></td>
             <td><input class="form-input form-input--amount" v-model="d.annualRate" type="number" min="0" max="100" step="0.000001" /></td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
+            <td><button class="btn btn--text" @click="otherLoans.splice(i, 1)">删除</button></td>
           </tr>
         </tbody>
       </table>
