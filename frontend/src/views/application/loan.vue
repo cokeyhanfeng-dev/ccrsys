@@ -40,7 +40,7 @@
           </select>
         </div>
 
-        <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;授信总额已删(§2026-08-26),编号/信用代码 span2 补满 2 行,联想面板跟随输入框不拉宽) -->
+        <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;授信总额已删(§2026-08-26),全部字段 span1 等宽 4 列不补字段,联想面板跟随输入框不拉宽) -->
         <template v-if="form.customerScope === 'GROUP'">
           <div class="form-field">
             <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
@@ -55,7 +55,7 @@
               @keyup.enter="queryGroup"
             />
           </div>
-          <div class="form-field form-field--span2">
+          <div class="form-field">
             <label class="form-field__label">集团客户编号</label>
             <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" />
           </div>
@@ -67,7 +67,7 @@
               <option value="N">非国企</option>
             </select>
           </div>
-          <div class="form-field form-field--span2">
+          <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="查询后带出,可修改" />
           </div>
@@ -103,7 +103,7 @@
             <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
           </div>
 
-          <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人 12 字段 3 行满等宽,企业 span2 补满 4 行,§2026-08-26) -->
+          <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人/企业全部字段 span1 等宽 4 列,企业 13 字段末尾留白不补字段,§2026-08-26) -->
           <template v-if="form.customerScope !== 'INDIVIDUAL'">
             <div class="form-field">
               <label class="form-field__label">企业性质</label>
@@ -112,7 +112,7 @@
                 <option value="SOE">国企</option>
               </select>
             </div>
-            <div class="form-field form-field--span2">
+            <div class="form-field">
               <label class="form-field__label">统一社会信用代码</label>
               <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
             </div>
@@ -131,11 +131,11 @@
               <label class="form-field__label">所属行业</label>
               <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
             </div>
-            <div class="form-field form-field--span2">
+            <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
               <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
             </div>
-            <div class="form-field form-field--span2">
+            <div class="form-field">
               <label class="form-field__label">基本户账户</label>
               <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
             </div>
@@ -2681,8 +2681,6 @@ async function loadDraftIntoForm(id: number | string) {
 .member-table { width: 100%; }
 /* 成员勾选复选框 */
 .member-check { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
-/* 单字段跨两列(集团编号/信用代码 + 企业信用代码/注册资本/基本户补满 4 列网格消除末尾孤零;个人 12 字段全 span1 等宽,§2026-08-26) */
-.form-field--span2 { grid-column: span 2; }
 /* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
 .member-head--bare { justify-content: flex-end; }
 /* 涉及成员行内切换按钮:紧凑小号 */
