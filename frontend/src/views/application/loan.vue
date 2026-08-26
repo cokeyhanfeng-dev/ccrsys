@@ -2670,9 +2670,11 @@ async function loadDraftIntoForm(id: number | string) {
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 /* 贷款分项基础字段:产品(贷款类型)已隐藏(后台按客户类型自动同步),字段尽量单行铺开 auto-fit,窄屏自动降列(§2026-08-26) */
 .loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
+/* 防止 select 选中长文本(如集团成员名)撑宽单列,保证各栏位列宽均等、间距平衡(§2026-08-26) */
+.loan-basic-grid > .form-field { min-width: 0; }
 @media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* 期限下拉:auto-fit 窄列下 14px 选项文字被截,调小字号+收窄内边距保证一年期/三年期/五年期完整显示(§2026-08-26) */
-.term-select { font-size: 12px; padding: 0 8px; }
+/* 期限下拉:字号与其他字段一致(全局 14px),仅微收内边距+列最小宽 170px 确保一年期/三年期/五年期完整显示(§2026-08-26) */
+.term-select { padding: 0 6px; }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
 .mortgage-sub { margin-bottom: 10px; }
 .mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
