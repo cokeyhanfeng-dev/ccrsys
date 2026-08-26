@@ -40,7 +40,7 @@
           </select>
         </div>
 
-        <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;全部字段等宽 span1,4列 grid 自动对齐,联想面板跟随输入框不拉宽) -->
+        <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;授信总额已删(§2026-08-26),编号/信用代码 span2 补满 2 行,联想面板跟随输入框不拉宽) -->
         <template v-if="form.customerScope === 'GROUP'">
           <div class="form-field">
             <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
@@ -55,7 +55,7 @@
               @keyup.enter="queryGroup"
             />
           </div>
-          <div class="form-field">
+          <div class="form-field form-field--span2">
             <label class="form-field__label">集团客户编号</label>
             <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" />
           </div>
@@ -67,13 +67,9 @@
               <option value="N">非国企</option>
             </select>
           </div>
-          <div class="form-field">
-            <label class="form-field__label">集团状态</label>
-            <input class="form-input" :value="groupStatusText(groupInfo?.groupStatus)" readonly placeholder="查询后带出" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">授信总额(万元)</label>
-            <input class="form-input" :value="groupCredit?.approvedTotalAmount ?? ''" readonly placeholder="查询后带出" />
+          <div class="form-field form-field--span2">
+            <label class="form-field__label">统一社会信用代码</label>
+            <input class="form-input" v-model="form.ucrCode" placeholder="查询后带出,可修改" />
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
@@ -90,7 +86,7 @@
 
         <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
         <template v-else>
-          <div class="form-field form-field--span2">
+          <div class="form-field">
             <label class="form-field__label">客户名称 <span class="req">*</span></label>
             <el-autocomplete
               v-model="form.customerName"
@@ -105,6 +101,93 @@
           <div class="form-field">
             <label class="form-field__label">客户号</label>
             <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
+          </div>
+
+          <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人 12 字段 3 行满等宽,企业 span2 补满 4 行,§2026-08-26) -->
+          <template v-if="form.customerScope !== 'INDIVIDUAL'">
+            <div class="form-field">
+              <label class="form-field__label">企业性质</label>
+              <select class="form-select" v-model="form.customerType">
+                <option value="NON_SOE">非国企</option>
+                <option value="SOE">国企</option>
+              </select>
+            </div>
+            <div class="form-field form-field--span2">
+              <label class="form-field__label">统一社会信用代码</label>
+              <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">五级分类</label>
+              <select class="form-select" v-model="form.fiveLevelClass">
+                <option value="">请选择</option>
+                <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">内部信用等级</label>
+              <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">所属行业</label>
+              <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field form-field--span2">
+              <label class="form-field__label">注册资本(万元)</label>
+              <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field form-field--span2">
+              <label class="form-field__label">基本户账户</label>
+              <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
+            </div>
+          </template>
+          <template v-else>
+            <div class="form-field">
+              <label class="form-field__label">证件号码</label>
+              <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">职业</label>
+              <input class="form-input" v-model="form.occupation" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">年收入(万元)</label>
+              <input class="form-input form-input--amount" v-model="form.annualIncome" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">婚姻状况</label>
+              <select class="form-select" v-model="form.maritalStatus">
+                <option value="" disabled>选择婚姻状况</option>
+                <option value="MARRIED">已婚</option>
+                <option value="SINGLE">未婚</option>
+                <option value="DIVORCED">离异</option>
+                <option value="WIDOWED">丧偶</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">联系电话</label>
+              <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
+            </div>
+            <div class="form-field">
+              <label class="form-field__label">五级分类</label>
+              <select class="form-select" v-model="form.fiveLevelClass">
+                <option value="">请选择</option>
+                <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+              </select>
+            </div>
+          </template>
+          <div class="form-field">
+            <label class="form-field__label">开户机构</label>
+            <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
+              <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+            </el-select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">开户日期</label>
+            <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label">申请机构</label>
+            <input class="form-input" :value="applyOrgText" disabled />
           </div>
         </template>
       </div>
@@ -287,94 +370,6 @@
         </div>
       </template>
 
-      <!-- 单户基本信息(数仓带出,只读) -->
-      <div class="form-grid" v-if="form.customerScope !== 'GROUP'" style="margin-top:4px">
-        <template v-if="form.customerScope !== 'INDIVIDUAL'">
-          <div class="form-field">
-            <label class="form-field__label">企业性质</label>
-            <select class="form-select" v-model="form.customerType">
-              <option value="NON_SOE">非国企</option>
-              <option value="SOE">国企</option>
-            </select>
-          </div>
-          <div class="form-field form-field--span2">
-            <label class="form-field__label">统一社会信用代码</label>
-            <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">五级分类</label>
-            <select class="form-select" v-model="form.fiveLevelClass">
-              <option value="">请选择</option>
-              <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">内部信用等级</label>
-            <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">所属行业</label>
-            <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">注册资本(万元)</label>
-            <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">基本户账户</label>
-            <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
-          </div>
-        </template>
-        <template v-else>
-          <div class="form-field">
-            <label class="form-field__label">证件号码</label>
-            <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">职业</label>
-            <input class="form-input" v-model="form.occupation" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">年收入(万元)</label>
-            <input class="form-input form-input--amount" v-model="form.annualIncome" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">婚姻状况</label>
-            <select class="form-select" v-model="form.maritalStatus">
-              <option value="" disabled>选择婚姻状况</option>
-              <option value="MARRIED">已婚</option>
-              <option value="SINGLE">未婚</option>
-              <option value="DIVORCED">离异</option>
-              <option value="WIDOWED">丧偶</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">联系电话</label>
-            <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">五级分类</label>
-            <select class="form-select" v-model="form.fiveLevelClass">
-              <option value="">请选择</option>
-              <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
-            </select>
-          </div>
-        </template>
-        <div class="form-field form-field--span2">
-          <label class="form-field__label">开户机构</label>
-          <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
-            <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
-          </el-select>
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">开户日期</label>
-          <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
-        </div>
-        <div class="form-field">
-          <label class="form-field__label">申请机构</label>
-          <input class="form-input" :value="applyOrgText" disabled />
-        </div>
-      </div>
 
       <!-- 关联人员(§12.4④,随申请备注结构附带提交;证件号失焦全行判重+录入即绑定,§6.2/§10.3.21) -->
       <RelatedPersonsEditor v-model="relations" :customer-no="form.customerNo" :group-no="isGroup ? form.groupNo : ''" :application-id="draft.id || undefined" style="margin-top:16px" />
@@ -476,10 +471,6 @@
             <span>拆分细项合计(万元)</span><b>{{ guaranteesTotalText }}</b>
           </div>
         </template>
-        <template v-if="form.customerScope === 'GROUP'">
-          <div class="credit-overview__item credit-overview__item--static"><span>集团批复总额度(万元)</span><b>{{ groupCredit?.approvedTotalAmount ?? '暂无数据' }}</b></div>
-          <div class="credit-overview__item credit-overview__item--static"><span>集团可用额度(万元)</span><b>{{ groupCredit?.availableAmount ?? '暂无数据' }}</b></div>
-        </template>
       </div>
 
       <!-- 存量授信协议(需求六:每份协议独立申请不可合并;下拉选择,选中即展示该协议完整内容,授信总金额随之带出;数仓无协议数据时不展示空模块,§2026-08-25) -->
@@ -496,20 +487,14 @@
           </div>
           <div v-if="selectedAgreement" class="agreement-detail">
             <div class="agreement-detail__item agreement-detail__item--amount">
-              <span class="agreement-detail__label">授信金额</span><b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b>
+              <span class="agreement-detail__label">授信总额</span><b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b>
             </div>
             <div class="agreement-detail__item">
-              <span class="agreement-detail__label">可用额度</span><b>{{ selectedAgreement.availableAmount ?? '—' }} 万</b>
-            </div>
-            <div class="agreement-detail__item">
-              <span class="agreement-detail__label">已用额度</span><b>{{ selectedAgreement.usedAmount ?? '—' }} 万</b>
-            </div>
-            <div class="agreement-detail__item agreement-detail__item--grow">
-              <span class="agreement-detail__label">授信期间</span><b>{{ [selectedAgreement.startDate, selectedAgreement.endDate].filter(Boolean).join(' 至 ') || '—' }}</b>
-            </div>
-            <div class="agreement-detail__item">
-              <span class="agreement-detail__label">状态</span>
+              <span class="agreement-detail__label">授信状态</span>
               <span class="badge" :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span>
+            </div>
+            <div class="agreement-detail__item">
+              <span class="agreement-detail__label">到期日期</span><b>{{ selectedAgreement.endDate || '—' }}</b>
             </div>
           </div>
           <div v-else class="empty agreement-detail-empty">请选择本次申请对应的授信协议</div>
@@ -558,10 +543,8 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">产品 <span class="req">*</span></label>
-            <select class="form-select" v-model="g.productCode">
-              <option value="" disabled>选择产品</option>
-              <option v-for="p in loanProducts" :key="p.code" :value="p.code">{{ p.name }}</option>
-            </select>
+            <!-- 产品按客户类型固定:对公/集团→对公贷款(LOAN_A),个人→个人经营性贷款(LOAN_P);不再分项选择(§2026-08-26 用户要求) -->
+            <input class="form-input" :value="productName(defaultProductByScope(form.customerScope))" readonly />
           </div>
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
@@ -820,7 +803,7 @@
       </div>
     </div>
 
-    <!-- 第六步:提交预览(路由预览 + 提交校验确认 + 正式提交) -->
+    <!-- 第六步:提交预览(申请概要 + 下一步审批人 + 提交确认;§2026-08-26 精简:路由技术明细不再展示) -->
     <div v-show="step === 5" class="form-card">
       <div class="form-card__title">
         提交预览
@@ -830,52 +813,51 @@
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
 
-      <!-- 路由预览结果(真实接口逐分项) -->
-      <template v-if="routeResult">
-        <div class="sub-title">
-          审批路由预览
-          <span class="badge badge--info">LPR 版本:{{ routeResult.lprVersionCode || '暂无数据' }}</span>
-          <span v-if="routeResult.groupCreditTotal != null" class="badge badge--neutral">集团授信总额 {{ routeResult.groupCreditTotal }} 万</span>
+      <!-- 当前申请概要(进入本步骤自动加载路由,展示下一步审批人) -->
+      <div class="submit-summary">
+        <div class="submit-summary__head">申请概要</div>
+        <div class="submit-summary__grid">
+          <div class="submit-summary__item"><span>客户主体</span><b>{{ scopeLabel }}</b></div>
+          <div class="submit-summary__item"><span>客户名称</span><b>{{ form.customerScope === 'GROUP' ? form.groupName : (form.customerName || '—') }}</b></div>
+          <div class="submit-summary__item"><span>客户号</span><b>{{ form.customerScope === 'GROUP' ? form.groupNo : (form.customerNo || '—') }}</b></div>
+          <div class="submit-summary__item"><span>申请号</span><b>{{ draft.applicationNo || '—' }}</b></div>
+          <div class="submit-summary__item"><span>业务类型</span><b>{{ form.businessType === 'EXISTING' ? '存量调息' : '新增授信' }}</b></div>
+          <div class="submit-summary__item"><span>授信总额(万元)</span><b>{{ guaranteesTotalText }}</b></div>
+          <div class="submit-summary__item"><span>分项笔数</span><b>{{ form.guarantees.length }} 笔</b></div>
+          <div class="submit-summary__item"><span>下一步审批</span><b class="submit-summary__approver">{{ nextApproverText }}</b></div>
         </div>
-        <table class="table" v-if="routeResult.items?.length">
+      </div>
+
+      <!-- 分项明细(提交内容核心:担保方式/产品/期限/金额/申请利率) -->
+      <template v-if="form.guarantees.length">
+        <div class="sub-title" style="margin-top:14px">分项明细</div>
+        <table class="table">
           <thead>
-            <tr><th>分项编号</th><th v-if="form.customerScope === 'GROUP'">成员</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
+            <tr>
+              <th>分项</th>
+              <th v-if="form.customerScope === 'GROUP'">成员</th>
+              <th>担保方式</th><th>产品</th><th>期限</th>
+              <th>授信金额(万元)</th><th>申请利率</th>
+            </tr>
           </thead>
           <tbody>
-            <tr v-for="it in routeResult.items" :key="it.pricingItemId">
-              <td>{{ it.pricingItemNo }}</td>
-              <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(it.memberCustomerNo || '') }}</td>
-              <td>{{ productName(it.productCode) }}</td>
-              <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-              <td>{{ rateDirectionText(it.rateDirection) }}</td>
-              <td>
-                <template v-if="it.errorCode">
-                  <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
-                </template>
-                <template v-else-if="it.routeChain?.length">
-                  <span v-for="(n, ni) in it.routeChain" :key="ni">
-                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
-                  </span>
-                </template>
-                <span v-else>暂无数据</span>
-              </td>
-              <td>{{ nodeLabel(it.finalNodeCode) }}</td>
-              <td>
-                <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
-                <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
-                <span v-else class="badge badge--neutral">暂无数据</span>
-              </td>
+            <tr v-for="(g, i) in form.guarantees" :key="i">
+              <td>{{ cnOrdinal(i + 1) }}</td>
+              <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
+              <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
+              <td>{{ productName(g.productCode) }}</td>
+              <td>{{ termTextOf(g) }}</td>
+              <td class="num">{{ g.amount }}</td>
+              <td class="num">{{ g.requestedRate }}%</td>
             </tr>
           </tbody>
         </table>
-        <div class="empty" v-else>暂无定价分项,无法预览路由</div>
       </template>
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 4">上一步</button>
         <div style="display:flex;gap:12px">
           <button class="btn btn--secondary" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
-          <button class="btn btn--secondary" :disabled="saving || submitted" @click="onRoutePreview">路由预览</button>
           <button class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
         </div>
       </div>
@@ -917,9 +899,9 @@ import {
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
-  GUARANTEE_TYPES, guaranteeTypeText, nodeLabel, rateDirectionText,
+  GUARANTEE_TYPES, guaranteeTypeText, nodeLabel,
   productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
-  AGREEMENT_TYPES, groupStatusText, currencyText, maritalStatusCode,
+  AGREEMENT_TYPES, currencyText, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
@@ -958,6 +940,15 @@ function onTermChange(g: { termValue?: string; termUnit?: string }, e: Event) {
   if (!opt) return
   g.termValue = String(opt.years)
   g.termUnit = 'YEAR'
+}
+/** 分项期限展示(三档固定名 + 存量非标保留原值;提交预览用) */
+function termTextOf(g: { termValue?: string | number; termUnit?: string }): string {
+  const c = termChoiceOf(g)
+  const opt = loanTermOptions.find((o) => o.value === c)
+  if (opt) return opt.label
+  const v = String(g.termValue ?? '').trim()
+  if (!v) return '—'
+  return `${v} ${g.termUnit === 'MONTH' ? '个月' : '年'}`
 }
 // 五级分类下拉(数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;补录与对公可修改表单统一)
 const fiveLevelOptions = FIVE_LEVEL_OPTIONS
@@ -1168,6 +1159,17 @@ const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
 /** 用户是否手动选定过业务类型(存量调息/新增授信);true 时带出客户不再自动切存量(§用户要求) */
 const userPickedBusinessType = ref(false)
+/** 客户主体展示名(表单 customerScope: CORPORATE/INDIVIDUAL/GROUP;提交预览用) */
+const scopeLabel = computed(() =>
+  form.customerScope === 'GROUP' ? '集团客户' : form.customerScope === 'INDIVIDUAL' ? '个人' : '企业单户'
+)
+/** 下一步审批人:提交后第一步审批岗位(路由链路首节点,多分项统一;未预览/失败显示 —) */
+const nextApproverText = computed(() => {
+  for (const it of routeResult.value?.items || []) {
+    if (it.routeChain?.length) return nodeLabel(it.routeChain[0])
+  }
+  return '—'
+})
 
 // ---------- 客户查询带出(数仓) ----------
 /** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
@@ -1288,6 +1290,8 @@ async function queryGroup() {
     groupAllocatedTotal.value = g.allocatedTotal ?? null
     // 集团名称带出(autocomplete 显示,§2026-08-25 名称框/编号框对齐对公)
     if (g.group?.groupName) form.groupName = g.group.groupName
+    // 统一社会信用代码(数仓有则带出,无则留空手填;集团区块原「集团状态」展示已替换,§2026-08-26)
+    if (g.group?.ucrCode) form.ucrCode = g.group.ucrCode
     // 五级分类自动带出(数仓码值,可下拉修改,§2026-08-25)
     form.fiveLevelClass = normalizeFiveLevelClass(g.group?.fiveLevelClass || '')
     // 集团属性自动带出(国企/非国企,可下拉修改)
@@ -1299,6 +1303,7 @@ async function queryGroup() {
     groupAllocatedTotal.value = null
     form.fiveLevelClass = ''
     form.stateOwnedFlag = ''
+    form.ucrCode = ''
   }
   groupQueried.value = true
   // 成员:数仓有效成员 + 已落表手工成员(§4.4);未收录则置空(新增集团可手工补录成员)
@@ -1888,6 +1893,8 @@ async function goNext(target: number) {
   // 自动暂存:点"下一步"先把上一步信息存为草稿,未完成可稍后从历史申请继续编辑(§用户要求 2026-08-25)
   await autoSaveDraft()
   step.value = target
+  // 提交预览:进入即自动加载路由,展示下一步审批人(§2026-08-26 精简提交页,不再手动点路由预览)
+  if (target === 5) onRoutePreview()
 }
 async function goStep(i: number) {
   if (i <= step.value) {
@@ -1903,6 +1910,8 @@ async function goStep(i: number) {
   }
   await autoSaveDraft()
   step.value = i
+  // 提交预览:进入即自动加载路由(同上,§2026-08-26)
+  if (i === 5) onRoutePreview()
 }
 
 function validateForDraft(): string | null {
@@ -2666,13 +2675,13 @@ async function loadDraftIntoForm(id: number | string) {
 /* 集团概要 */
 /* 涉及成员标题行:label + 小号「添加成员」按钮同行(§2026-08-25,不单独占行) */
 .member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-/* 集团成员整块独立占宽(避免 form-field 2 列网格约束,表格拉满,§2026-08-25) */
-.member-block { width: 100%; }
+/* 集团成员整块跨满整行(外层 form-grid 4 列,grid-column 跨全部列铺满页面,§2026-08-25 用户要求表格拉满) */
+.member-block { width: 100%; grid-column: 1 / -1; }
 /* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满,不突兀) */
 .member-table { width: 100%; }
 /* 成员勾选复选框 */
 .member-check { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
-/* 单字段跨两列(对公/个人网格末尾行铺满,消除孤零单列,§2026-08-25) */
+/* 单字段跨两列(集团编号/信用代码 + 企业信用代码/注册资本/基本户补满 4 列网格消除末尾孤零;个人 12 字段全 span1 等宽,§2026-08-26) */
 .form-field--span2 { grid-column: span 2; }
 /* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
 .member-head--bare { justify-content: flex-end; }
@@ -2689,12 +2698,19 @@ async function loadDraftIntoForm(id: number | string) {
 .group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
 .group-summary__item b { font-variant-numeric: tabular-nums; }
 
-/* 路由链路节点 */
-.route-node {
-  display: inline-block; padding: 1px 8px; border-radius: 999px;
-  background: var(--color-primary-light); color: var(--color-primary);
-  font-size: 12px; font-weight: 500;
+/* 提交预览申请概要(§2026-08-26) */
+.submit-summary {
+  border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px 14px;
 }
+.submit-summary__head { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.submit-summary__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
+.submit-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.submit-summary__item span { font-size: 12px; color: var(--color-text-sub); }
+.submit-summary__item b {
+  font-size: 13px; font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.submit-summary__approver { color: var(--color-primary); }
 
 /* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }

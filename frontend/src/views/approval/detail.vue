@@ -78,7 +78,6 @@
           <div><span class="dg-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
           <div><span class="dg-label">客户类型</span>{{ isGroup ? '集团' : '对公' }}</div>
           <div v-if="isGroup && customer.groupType"><span class="dg-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
-          <div v-if="isGroup && customer.groupStatus"><span class="dg-label">集团状态</span>{{ groupStatusText(customer.groupStatus) }}</div>
           <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
           <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
@@ -880,7 +879,7 @@ import {
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, contractStatusText, currencyText,
   entpScaleText, genderText, maritalStatusText, termTierText, decisionSourceText, noteStatusText,
-  fiveLevelClassText, groupTypeText, groupStatusText, customerNoText, isPlaceholderCustomerNo
+  fiveLevelClassText, groupTypeText, customerNoText, isPlaceholderCustomerNo
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'

@@ -5,7 +5,7 @@
         申请档案
         <span v-if="archive.application" class="app-no">{{ val(archive.application, 'application_no', 'applicationNo') }}</span>
       </div>
-      <InfoTip content="申请档案(§14.4):展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
+      <InfoTip content="申请档案:展示申请材料、资料校验、审批轨迹、调价记录、表决与行长决策、决议与执行核验等审批全过程完整留痕;承诺履约等后续跟踪不在档案展示。" />
       <div class="head-actions">
         <button class="btn btn--secondary" @click="router.push('/history')">返回列表</button>
         <button v-if="hasResolution" class="btn btn--secondary" :disabled="resolving" @click="doResolutionDoc">
@@ -57,7 +57,6 @@
           <div class="desc-item"><span class="desc-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
           <div class="desc-item"><span class="desc-label">客户类型</span>{{ isGroup ? '集团' : (isCorpCustomer ? '对公' : isIndivCustomer ? '个人' : '—') }}</div>
           <div v-if="isGroup && customer.groupType" class="desc-item"><span class="desc-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
-          <div v-if="isGroup && customer.groupStatus" class="desc-item"><span class="desc-label">集团状态</span>{{ groupStatusText(customer.groupStatus) }}</div>
           <div v-if="isGroup && customer.currency" class="desc-item"><span class="desc-label">币种</span>{{ currencyText(customer.currency) }}</div>
           <div v-if="isGroup && customer.applyAmount != null" class="desc-item"><span class="desc-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
           <div v-if="isCorpCustomer" class="desc-item"><span class="desc-label">统一社会信用代码</span>{{ customer.certNo || '—' }}</div>
@@ -586,7 +585,7 @@ import {
   guaranteeTypeText, measureTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge,
   rateTypeText, contractStatusText, contractStatusBadge, customerTypeText, customerClassText, certTypeText, inputModeText,
   entpScaleText, maritalStatusText, creditStatusText, termTierText, snapshotStatusText, ruleCodeText, subjectTypeText, decisionSourceText, noteStatusText, noteStatusBadge,
-  fiveLevelClassText, groupTypeText, groupStatusText
+  fiveLevelClassText, groupTypeText
 } from '@/utils/dict'
 
 const route = useRoute()

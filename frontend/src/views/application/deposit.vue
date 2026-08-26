@@ -44,7 +44,7 @@
           </div>
         </template>
 
-        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 精简为集团客户/集团名称/证件号码/统一社会信用代码;证件号与信用代码数仓无字段,可编辑) -->
+        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 精简为集团客户/集团编号/统一社会信用代码;证件号码已删,信用代码数仓无字段可编辑,§2026-08-26) -->
         <template v-else>
           <div class="form-field">
             <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
@@ -53,21 +53,15 @@
           </div>
           <div class="form-field"><label class="form-field__label">集团客户编号</label>
             <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">证件号码</label>
-            <input class="form-input" v-model="form.idNo" placeholder="数仓无,请手工填写" /></div>
           <div class="form-field"><label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="数仓无,请手工填写" /></div>
         </template>
 
-        <!-- 对公字段(数仓带出,可修改) -->
+        <!-- 对公字段(数仓带出,可修改;所属行业已删,后续需要再加,§2026-08-26) -->
         <template v-if="form.customerScope === 'CORPORATE'">
           <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
             <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">所属行业</label>
-            <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
           </div>
         </template>
       </div>
