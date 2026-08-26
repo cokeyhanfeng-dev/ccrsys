@@ -303,21 +303,7 @@ public final class ResolutionDocExporter {
                     {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
                     {"最终决议利率(%)", "final_rate", "finalRate"},
             });
-            for (Map<String, Object> item : items) {
-                String no = pick(item, "pricing_item_no", "pricingItemNo");
-                String original = pick(item, "original_rate", "originalRate");
-                String requested = pick(item, "requested_rate", "requestedRate");
-                String finalRate = pick(item, "final_rate", "finalRate");
-                String from = original != null && !original.isEmpty() ? original
-                        : (requested != null && !requested.isEmpty() ? requested : "—");
-                XWPFParagraph p = doc.createParagraph();
-                p.setIndentationLeft(240);
-                XWPFRun run = p.createRun();
-                run.setText("该分项(" + no + ")利率由 " + from + "% 调整为 " + (finalRate == null ? "—" : finalRate) + "%");
-                setEastAsia(run, FONT_BODY);
-                run.setFontFamily(FONT_BODY);
-                run.setFontSize(21);
-            }
+            // 利率调整明细以表格呈现,不再输出冗余文字描述(§2026-08-26 用户要求:保留表格,删除文字)
             blank(doc);
 
             // ---- 四、审批情况 ----
@@ -373,7 +359,8 @@ public final class ResolutionDocExporter {
                         }
                     }
                 }
-                addMeta(doc, "担保方式", String.join("、", types));
+                addMeta(doc, "担保方式", String.join("、",
+                        types.stream().map(ResolutionDocExporter::guaranteeText).toList()));
             }
             if (commitments != null && !commitments.isEmpty()) {
                 dataTable(doc, "拟达成贡献度承诺", commitments, new String[][]{

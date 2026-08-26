@@ -579,17 +579,14 @@ public final class ResolutionPdfExporter {
                     {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
                     {"最终决议利率(%)", "final_rate", "finalRate"},
             }, Map.of("product_code", ResolutionPdfExporter::productText));
-            for (Map<String, Object> item : items) {
-                String no = pick(item, "pricing_item_no", "pricingItemNo");
-                String original = pick(item, "original_rate", "originalRate");
-                String requested = pick(item, "requested_rate", "requestedRate");
-                String finalRate = pick(item, "final_rate", "finalRate");
-                String from = rate(original != null && !original.isEmpty() ? original
-                        : (requested != null && !requested.isEmpty() ? requested : null));
-                if (committeeReject) {
+            // 利率调整明细以表格呈现,删除冗余文字描述(§2026-08-26 用户要求);
+            // 例外:小组表决否决时表格无法表达「未形成最终利率」,保留一行说明
+            if (committeeReject) {
+                for (Map<String, Object> item : items) {
+                    String no = pick(item, "pricing_item_no", "pricingItemNo");
+                    String original = pick(item, "original_rate", "originalRate");
+                    String from = rate(original != null && !original.isEmpty() ? original : null);
                     ctx.para("该分项(" + no + ")经小组表决否决,未形成最终利率(原执行 " + from + "%)。", 9, 12);
-                } else {
-                    ctx.para("该分项(" + no + ")利率由 " + from + "% 调整为 " + rate(finalRate) + "%", 9, 12);
                 }
             }
             ctx.gap(8);
