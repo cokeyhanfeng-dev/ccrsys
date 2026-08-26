@@ -250,26 +250,25 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             String productCode = strVal(g.get("productCode"));
             Integer termValue = toInteger(g.get("termValue"));
             String termUnit = strVal(g.get("termUnit"));
+            // 草稿宽松(§2026-08-26 用户要求"融资情况不强制校验"):不完整担保分项跳过不落库,不阻断自动暂存/存草稿;
+            // 正式提交完整性由 ApplicationSubmitServiceImpl.checkCompleteness(至少一分项+必填字段)兜底
             if (requestedRate == null || StrUtil.isBlank(productCode) || termValue == null || StrUtil.isBlank(termUnit)) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条担保分项缺少必填项(requestedRate/productCode/termValue/termUnit)");
+                continue;
             }
             // 申请利率范围兜底(§bug 2026-08-25):落库列 DECIMAL(9,6) 整数上限 999,超范围报 MySQL out of range 晦涩错误;
-            // 此处用 0~100 合理利率范围,报清晰中文错误替代
+            // 草稿阶段同样宽松跳过,提交时完整性/硬边界校验把关
             if (requestedRate.compareTo(BigDecimal.ZERO) <= 0 || requestedRate.compareTo(new BigDecimal("100")) > 0) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条担保分项申请利率须在 0~100 之间(当前 " + requestedRate + ")");
+                continue;
             }
-            // 测算利率(需求:分项必填,业务人员手工录入)
+            // 测算利率(需求:分项必填,业务人员手工录入;草稿宽松跳过)
             BigDecimal calculatedRate = toBigDecimal(g.get("calculatedRate"));
             if (calculatedRate == null || calculatedRate.compareTo(BigDecimal.ZERO) <= 0
                     || calculatedRate.compareTo(new BigDecimal("100")) > 0) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条担保分项测算利率必填且须在 0~100 之间(当前 " + calculatedRate + ")");
+                continue;
             }
             BigDecimal pricingAmount = toBigDecimal(g.get("amount"));
             if (pricingAmount == null) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条担保分项金额(amount)必填");
+                continue;
             }
             String memberCustomerNo = strVal(g.get("memberCustomerNo"));
             CcrPricingItem pi = newPricingItem(entity, groupScope, memberCustomerNo);
@@ -322,32 +321,29 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             if (d == null) {
                 continue;
             }
+            // 草稿宽松(§2026-08-26 用户要求"融资情况不强制校验"):不完整存款分项跳过不落库,提交时由 checkCompleteness 兜底
             if (d.getRequestedRate() == null || StrUtil.isBlank(d.getProductCode())) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条存款分项缺少必填项(requestedRate/productCode)");
+                continue;
             }
             // 期限:仅对公定期(CORP_TIME_DEPOSIT)与通知存款(NOTICE_DEPOSIT)有期限必填;协定存款与保证金存款(银票/信用证)无期限
             boolean needsTerm = "CORP_TIME_DEPOSIT".equals(d.getProductCode())
                     || "NOTICE_DEPOSIT".equals(d.getProductCode());
             if (needsTerm && (d.getTermValue() == null || StrUtil.isBlank(d.getTermUnit()))) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条存款分项必须选择期限(termValue/termUnit)");
+                continue;
             }
-            // 申请利率范围兜底(同贷款分项,§bug 2026-08-25)
+            // 申请利率范围兜底(同贷款分项,§bug 2026-08-25;草稿宽松跳过)
             if (d.getRequestedRate().compareTo(BigDecimal.ZERO) <= 0
                     || d.getRequestedRate().compareTo(new BigDecimal("100")) > 0) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条存款分项申请利率须在 0~100 之间(当前 " + d.getRequestedRate() + ")");
+                continue;
             }
-            // 测算利率(需求:分项必填,业务人员手工录入)
+            // 测算利率(需求:分项必填,业务人员手工录入;草稿宽松跳过)
             if (d.getCalculatedRate() == null || d.getCalculatedRate().compareTo(BigDecimal.ZERO) <= 0
                     || d.getCalculatedRate().compareTo(new BigDecimal("100")) > 0) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "第" + index + "条存款分项测算利率必填且须在 0~100 之间(当前 " + d.getCalculatedRate() + ")");
+                continue;
             }
             boolean planned = "Y".equals(d.getPlannedAccountFlag()) || StrUtil.isBlank(d.getDepositAccountNo());
             if (d.getAmount() == null) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "第" + index + "条存款分项金额(amount)必填");
+                continue;
             }
             CcrPricingItem pi = newPricingItem(entity, groupScope, d.getMemberCustomerNo());
             pi.setPricingCarrierType("DEPOSIT_ACCOUNT");
