@@ -538,7 +538,7 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 基础字段一行四列(§2026-08-26 用户要求):担保方式/产品/期限/授信金额 + 申请利率/测算利率;币种已删默认 CNY;GROUP 涉及成员与存量原利率随条件追加 -->
+        <!-- 基础字段(§2026-08-26):担保方式/期限/授信金额 + 申请利率/测算利率;产品(贷款类型)已隐藏,后台按客户类型自动同步;币种默认 CNY;GROUP 涉及成员与存量原利率随条件追加 -->
         <div class="mortgage-item__grid loan-basic-grid">
           <div class="form-field" v-if="form.customerScope === 'GROUP'">
             <label class="form-field__label">涉及成员 <span class="req">*</span></label>
@@ -554,11 +554,6 @@
             <select class="form-select" v-model="g.guaranteeType">
               <option v-for="t in guaranteeTypes" :key="t.code" :value="t.code">{{ t.name }}</option>
             </select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">产品 <span class="req">*</span></label>
-            <!-- 产品按客户类型固定:对公/集团→对公贷款(LOAN_A),个人→个人经营性贷款(LOAN_P);不再分项选择(§2026-08-26 用户要求) -->
-            <input class="form-input" :value="productName(defaultProductByScope(form.customerScope))" readonly />
           </div>
           <div class="form-field">
             <label class="form-field__label">期限 <span class="req">*</span></label>
@@ -833,7 +828,7 @@
             <tr>
               <th>分项</th>
               <th v-if="form.customerScope === 'GROUP'">成员</th>
-              <th>担保方式</th><th>产品</th><th>期限</th>
+              <th>担保方式</th><th>期限</th>
               <th>授信金额(万元)</th><th>申请利率</th>
             </tr>
           </thead>
@@ -842,7 +837,6 @@
               <td>{{ cnOrdinal(i + 1) }}</td>
               <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
               <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
-              <td>{{ productName(g.productCode) }}</td>
               <td>{{ termTextOf(g) }}</td>
               <td class="num">{{ g.amount }}</td>
               <td class="num">{{ g.requestedRate }}%</td>
@@ -897,7 +891,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel,
-  productName, inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
+  inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
 } from '@/utils/dict'
@@ -2674,9 +2668,9 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* 贷款分项基础字段一行四列(§2026-08-26 用户要求 4 列紧凑;GROUP 涉及成员/存量原利率多出字段 flow 换行) */
-.loan-basic-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
-@media (max-width: 1100px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+/* 贷款分项基础字段:产品(贷款类型)已隐藏(后台按客户类型自动同步),字段尽量单行铺开 auto-fit,窄屏自动降列(§2026-08-26) */
+.loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
+@media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
 .mortgage-sub { margin-bottom: 10px; }
 .mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
