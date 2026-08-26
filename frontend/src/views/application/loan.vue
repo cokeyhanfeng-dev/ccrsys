@@ -103,7 +103,7 @@
             <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
           </div>
 
-          <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人/企业全部字段 span1 等宽 4 列,企业 13 字段末尾留白不补字段,§2026-08-26) -->
+          <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人/企业全部字段 span1 等宽 4 列;开户机构/开户日期/基本户账户申请页不展示,由审批页数仓同步展示(§2026-08-26)) -->
           <template v-if="form.customerScope !== 'INDIVIDUAL'">
             <div class="form-field">
               <label class="form-field__label">企业性质</label>
@@ -134,10 +134,6 @@
             <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
               <input class="form-input form-input--amount" v-model="form.registeredCapital" placeholder="数仓带出,可修改" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">基本户账户</label>
-              <input class="form-input" v-model="form.basicAccount" placeholder="请输入基本户账号,可空" />
             </div>
           </template>
           <template v-else>
@@ -175,16 +171,6 @@
               </select>
             </div>
           </template>
-          <div class="form-field">
-            <label class="form-field__label">开户机构</label>
-            <el-select class="open-org-select" v-model="form.openOrg" filterable allow-create default-first-option clearable placeholder="数仓带出,可修改">
-              <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
-            </el-select>
-          </div>
-          <div class="form-field">
-            <label class="form-field__label">开户日期</label>
-            <input class="form-input" type="date" v-model="form.openDate" placeholder="数仓带出,可修改" />
-          </div>
           <div class="form-field">
             <label class="form-field__label">申请机构</label>
             <input class="form-input" :value="applyOrgText" disabled />
