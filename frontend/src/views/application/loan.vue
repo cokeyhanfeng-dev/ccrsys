@@ -795,7 +795,7 @@
       </div>
     </div>
 
-    <!-- 第六步:提交预览(申请概要 + 下一步审批人 + 提交确认;§2026-08-26 精简:路由技术明细不再展示) -->
+    <!-- 第六步:提交预览(申请备注 + 下一步审批人 + 审批路由预览 + 提交确认;§2026-08-26 申请概要/额度明细移入提交确认弹窗核对,路由预览保留本页) -->
     <div v-show="step === 5" class="form-card">
       <div class="form-card__title">
         提交预览
@@ -805,44 +805,52 @@
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
 
-      <!-- 当前申请概要(进入本步骤自动加载路由,展示下一步审批人) -->
+      <!-- 下一步审批人(§2026-08-26 提交页仅展示审批去向,申请概要/额度明细移入提交确认弹窗核对) -->
       <div class="submit-summary">
-        <div class="submit-summary__head">申请概要</div>
-        <div class="submit-summary__grid">
-          <div class="submit-summary__item"><span>客户主体</span><b>{{ scopeLabel }}</b></div>
-          <div class="submit-summary__item"><span>客户名称</span><b>{{ form.customerScope === 'GROUP' ? form.groupName : (form.customerName || '—') }}</b></div>
-          <div class="submit-summary__item"><span>客户号</span><b>{{ form.customerScope === 'GROUP' ? form.groupNo : (form.customerNo || '—') }}</b></div>
-          <div class="submit-summary__item"><span>申请号</span><b>{{ draft.applicationNo || '—' }}</b></div>
-          <div class="submit-summary__item"><span>业务类型</span><b>{{ form.businessType === 'EXISTING' ? '存量调息' : '新增授信' }}</b></div>
-          <div class="submit-summary__item"><span>授信总额(万元)</span><b>{{ guaranteesTotalText }}</b></div>
-          <div class="submit-summary__item"><span>额度笔数</span><b>{{ form.guarantees.length }} 笔</b></div>
-          <div class="submit-summary__item"><span>下一步审批</span><b class="submit-summary__approver">{{ nextApproverText }}</b></div>
+        <div class="submit-summary__head">下一步审批</div>
+        <div class="submit-summary__grid" style="grid-template-columns:1fr">
+          <div class="submit-summary__item">
+            <span>提交后审批将首先流转至</span>
+            <b class="submit-summary__approver" style="font-size:14px">{{ nextApproverText }}</b>
+          </div>
         </div>
       </div>
 
-      <!-- 分项明细(提交内容核心:担保方式/产品/期限/金额/申请利率) -->
-      <template v-if="form.guarantees.length">
-        <div class="sub-title" style="margin-top:14px">额度明细</div>
-        <table class="table">
+      <!-- 审批路由预览(每条额度:路由链路/终审岗位/硬边界/LPR版本;§2026-08-26 恢复完整路由预览,与存款申请对齐) -->
+      <template v-if="routeResult">
+        <div class="sub-title" style="margin-top:14px">
+          审批路由预览
+          <span class="badge badge--info">LPR 版本:{{ routeResult.lprVersionCode || '暂无数据' }}</span>
+        </div>
+        <table class="table" v-if="routeResult.items?.length">
           <thead>
-            <tr>
-              <th>额度</th>
-              <th v-if="form.customerScope === 'GROUP'">成员</th>
-              <th>担保方式</th><th>期限</th>
-              <th>授信金额(万元)</th><th>申请利率</th>
-            </tr>
+            <tr><th>额度</th><th>申请利率</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
           </thead>
           <tbody>
-            <tr v-for="(g, i) in form.guarantees" :key="i">
-              <td>{{ cnOrdinal(i + 1) }}</td>
-              <td v-if="form.customerScope === 'GROUP'">{{ memberNameOf(g.memberCustomerNo) }}</td>
-              <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
-              <td>{{ termTextOf(g) }}</td>
-              <td class="num">{{ g.amount }}</td>
-              <td class="num">{{ g.requestedRate }}%</td>
+            <tr v-for="(it, i) in routeResult.items" :key="it.pricingItemId ?? i">
+              <td>额度{{ cnOrdinal(i + 1) }}</td>
+              <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
+              <td>
+                <template v-if="it.errorCode">
+                  <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
+                </template>
+                <template v-else-if="it.routeChain?.length">
+                  <span v-for="(n, ni) in it.routeChain" :key="ni">
+                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
+                  </span>
+                </template>
+                <span v-else>暂无数据</span>
+              </td>
+              <td>{{ it.errorCode ? '—' : nodeLabel(it.finalNodeCode) }}</td>
+              <td>
+                <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
+                <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
+                <span v-else class="badge badge--neutral">暂无数据</span>
+              </td>
             </tr>
           </tbody>
         </table>
+        <div class="empty" v-else>暂无额度,无法预览路由</div>
       </template>
 
       <div class="wizard-actions">
@@ -855,7 +863,16 @@
     </div>
 
     <!-- 提交前校验确认弹窗 -->
-    <SubmitCheckDialog v-model="checkDialogVisible" :check="checkResult" :submitting="submitting" @confirm="onConfirmSubmit" />
+    <SubmitCheckDialog
+      v-model="checkDialogVisible"
+      :check="checkResult"
+      :summary="confirmSummary"
+      :detail-rows="confirmDetailRows"
+      :next-approver="nextApproverText"
+      :show-check-details="false"
+      :submitting="submitting"
+      @confirm="onConfirmSubmit"
+    />
   </div>
 </template>
 
@@ -1160,6 +1177,28 @@ const nextApproverText = computed(() => {
   }
   return '—'
 })
+
+/** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细移入弹窗核对,step5 仅留下一步审批人+路由预览) */
+const confirmSummary = computed(() => [
+  { label: '客户主体', value: scopeLabel.value },
+  { label: '客户名称', value: form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') },
+  { label: '客户号', value: form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') },
+  { label: '申请号', value: draft.applicationNo || '—' },
+  { label: '业务类型', value: form.businessType === 'EXISTING' ? '存量调息' : '新增授信' },
+  { label: '授信总额(万元)', value: guaranteesTotalText.value },
+  { label: '额度笔数', value: `${form.guarantees.length} 笔` },
+])
+/** 提交确认弹窗额度明细行(§2026-08-26;集团成员带 member 才展示成员列) */
+const confirmDetailRows = computed(() =>
+  form.guarantees.map((g, i) => ({
+    itemNo: `额度${cnOrdinal(i + 1)}`,
+    member: g.memberCustomerNo ? memberNameOf(g.memberCustomerNo) : undefined,
+    guaranteeType: guaranteeTypeText(g.guaranteeType),
+    term: termTextOf(g),
+    amount: String(g.amount),
+    rate: `${g.requestedRate}%`,
+  }))
+)
 
 // ---------- 客户查询带出(数仓) ----------
 /** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
