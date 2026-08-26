@@ -51,7 +51,46 @@
             </table>
           </div>
         </template>
-        <!-- 下一步审批人(§2026-08-26 贷款提交确认弹窗展示审批去向) -->
+        <!-- 审批路由预览(参照存款预览样式;§2026-08-26 提交确认弹窗统一展示,贷款/存款均传 routeResult) -->
+        <template v-if="routePreview?.items?.length">
+          <div class="check-section">
+            <div class="check-section__title">
+              审批路由预览
+              <span class="badge badge--info">LPR 版本:{{ routePreview.lprVersionCode || '暂无数据' }}</span>
+            </div>
+            <table class="table">
+              <thead>
+                <tr><th>分项编号</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="it in routePreview.items" :key="it.pricingItemId">
+                  <td>{{ it.pricingItemNo }}</td>
+                  <td>{{ productName(it.productCode || '') }}</td>
+                  <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
+                  <td>{{ rateDirectionText(it.rateDirection) }}</td>
+                  <td>
+                    <template v-if="it.errorCode">
+                      <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
+                    </template>
+                    <template v-else-if="it.routeChain?.length">
+                      <span v-for="(n, ni) in it.routeChain" :key="ni">
+                        <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
+                      </span>
+                    </template>
+                    <span v-else>暂无数据</span>
+                  </td>
+                  <td>{{ it.errorCode ? '—' : nodeLabel(it.finalNodeCode) }}</td>
+                  <td>
+                    <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
+                    <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
+                    <span v-else class="badge badge--neutral">暂无数据</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+        <!-- 下一步审批人(§2026-08-26 贷款/存款提交确认弹窗展示审批去向) -->
         <template v-if="nextApprover">
           <div class="check-section">
             <div class="check-section__title">下一步审批</div>
@@ -135,8 +174,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SubmitCheck } from '@/api/application'
-import { productName, datasetName } from '@/utils/dict'
+import type { SubmitCheck, RoutePreview } from '@/api/application'
+import { nodeLabel, rateDirectionText, productName, datasetName } from '@/utils/dict'
 
 const props = defineProps<{
   modelValue: boolean
@@ -148,7 +187,9 @@ const props = defineProps<{
   customerSummary?: Array<{ label: string; value: string }>
   /** 额度明细行(贷款提交确认弹窗核对用) */
   detailRows?: Array<{ itemNo: string; member?: string; guaranteeType: string; term: string; amount: string; rate: string }>
-  /** 下一步审批人姓名(贷款提交确认弹窗展示审批去向) */
+  /** 审批路由预览结果(提交确认弹窗展示;§2026-08-26 贷款/存款均传 routeResult) */
+  routePreview?: RoutePreview | null
+  /** 下一步审批人姓名(贷款/存款提交确认弹窗展示审批去向) */
   nextApprover?: string
   /** 是否展示数据批次差异/硬边界等校验明细(贷款提交确认精简为 false,存款保持 true;§2026-08-26) */
   showCheckDetails?: boolean
@@ -214,4 +255,10 @@ function onCancel() {
   font-size: 13px;
 }
 .next-approver-tip b { font-size: 14px; font-weight: 600; }
+/* 审批路由预览节点徽标(§2026-08-26 提交确认弹窗展示路由链路) */
+.route-node {
+  display: inline-block; padding: 2px 8px; margin-right: 4px;
+  border-radius: var(--radius-sm); background: var(--color-primary-light);
+  color: var(--color-primary); font-size: 12px;
+}
 </style>

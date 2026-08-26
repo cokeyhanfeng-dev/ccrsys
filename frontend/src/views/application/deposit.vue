@@ -152,76 +152,15 @@
     <div class="form-card">
       <div class="form-card__title">
         提交预览
-        <InfoTip content="提交前先生成/保存草稿,再预览审批路由;正式提交需通过数据批次差异与质量预校验确认。" />
+        <InfoTip content="点击「提交申请」后在确认弹窗中核对客户信息、申请概要、审批路由与下一步审批人,再正式提交。" />
       </div>
       <div class="form-field form-field--stack">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
 
-      <!-- 客户信息(§2026-08-26 提交预览展示,与贷款申请对齐) -->
-      <div class="submit-summary">
-        <div class="submit-summary__head">客户信息</div>
-        <div class="submit-summary__grid">
-          <div class="submit-summary__item"><span>客户主体</span><b>{{ form.customerScope === 'GROUP' ? '集团客户' : '企业单户' }}</b></div>
-          <div class="submit-summary__item"><span>客户名称</span><b>{{ form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') }}</b></div>
-          <div class="submit-summary__item"><span>{{ form.customerScope === 'GROUP' ? '集团编号' : '客户号' }}</span><b>{{ form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') }}</b></div>
-          <div class="submit-summary__item"><span>统一社会信用代码</span><b>{{ form.ucrCode || '—' }}</b></div>
-        </div>
-      </div>
-
-      <!-- 申请概要(§2026-08-26 提交预览展示) -->
-      <div class="submit-summary">
-        <div class="submit-summary__head">申请概要</div>
-        <div class="submit-summary__grid">
-          <div class="submit-summary__item"><span>申请号</span><b>{{ draft.applicationNo || '—' }}</b></div>
-          <div class="submit-summary__item"><span>存款总额(万元)</span><b>{{ depositTotalText }}</b></div>
-          <div class="submit-summary__item"><span>分项笔数</span><b>{{ items.length }} 笔</b></div>
-          <div class="submit-summary__item"><span>存量/拟开户</span><b>{{ existingCountText }}</b></div>
-        </div>
-      </div>
-
-      <template v-if="routeResult">
-        <div class="sub-title">
-          审批路由预览
-          <span class="badge badge--info">LPR 版本:{{ routeResult.lprVersionCode || '暂无数据' }}</span>
-        </div>
-        <table class="table" v-if="routeResult.items?.length">
-          <thead>
-            <tr><th>分项编号</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="it in routeResult.items" :key="it.pricingItemId">
-              <td>{{ it.pricingItemNo }}</td>
-              <td>{{ productName(it.productCode || '') }}</td>
-              <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-              <td>{{ rateDirectionText(it.rateDirection) }}</td>
-              <td>
-                <template v-if="it.errorCode">
-                  <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
-                </template>
-                <template v-else-if="it.routeChain?.length">
-                  <span v-for="(n, ni) in it.routeChain" :key="ni">
-                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
-                  </span>
-                </template>
-                <span v-else>暂无数据</span>
-              </td>
-              <td>{{ nodeLabel(it.finalNodeCode) }}</td>
-              <td>
-                <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
-                <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
-                <span v-else class="badge badge--neutral">暂无数据</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="empty" v-else>暂无存款分项,无法预览路由</div>
-      </template>
-
       <div style="display:flex;gap:12px;margin-top:12px">
         <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
-        <button class="btn btn--secondary" :disabled="saving" @click="onRoutePreview">路由预览</button>
         <button class="btn btn--primary" :disabled="saving" @click="onSubmit">提交申请</button>
       </div>
     </div>
@@ -232,6 +171,7 @@
       :check="checkResult"
       :summary="depositSummary"
       :customer-summary="depositCustomerSummary"
+      :route-preview="routeResult"
       :next-approver="nextApproverText"
       :show-check-details="false"
       :submitting="submitting"
@@ -269,7 +209,7 @@ import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, rateDirectionText, productName, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass } from '@/utils/dict'
+import { nodeLabel, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -438,7 +378,7 @@ const routeResult = ref<RoutePreview | null>(null)
 const checkResult = ref<SubmitCheck | null>(null)
 const checkDialogVisible = ref(false)
 
-// ---------- 提交预览展示(§2026-08-26 客户信息 + 申请概要 + 下一步审批人,与贷款申请对齐) ----------
+// ---------- 提交确认弹窗展示(§2026-08-26 客户信息 + 申请概要 + 申请利率 + 审批路由预览 + 下一步审批人) ----------
 /** 存款总额(万元) */
 const depositTotalText = computed(() =>
   (Math.round(items.value.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100).toString()
@@ -472,7 +412,13 @@ const depositSummary = computed(() => [
   { label: '存款总额(万元)', value: depositTotalText.value },
   { label: '分项笔数', value: `${items.value.length} 笔` },
   { label: '存量/拟开户', value: existingCountText.value },
+  { label: '申请利率', value: depositRateText.value },
 ])
+/** 提交确认弹窗申请利率:各分项申请利率(多分项顿号连接;§2026-08-26 概要仅展示申请利率,不展示其他利率) */
+const depositRateText = computed(() => {
+  const rates = items.value.map((d) => d.requestedRate).filter((r) => r !== '' && r != null)
+  return rates.length ? rates.map((r) => `${r}%`).join('、') : '—'
+})
 
 // ---------- 客户查询带出(与贷款申请同一逻辑) ----------
 /** 客户名称联想下拉(el-autocomplete fetch-suggestions;输入即查,取消独立查询按钮) */
@@ -865,6 +811,8 @@ async function onRoutePreview() {
 async function onSubmit() {
   // 存款申请无关联人录入,不存在关联人校验(勿从 loan.vue 拷入 missingRel 校验,该变量未定义会抛 ReferenceError)
   if (!(await ensureDraft()) || !draft.id) return
+  // 提交前刷新路由预览:保证弹窗「审批路由预览/下一步审批人」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+  await onRoutePreview()
   try {
     checkResult.value = await submitCheck(draft.id)
     checkDialogVisible.value = true
@@ -1083,16 +1031,6 @@ async function loadDraftIntoForm(id: number | string) {
 .deposit-item .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 @media (max-width: 1100px) {
   .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-}
-/* 提交预览:客户信息/申请概要(§2026-08-26,与贷款申请提交页对齐) */
-.submit-summary { margin-top: 16px; }
-.submit-summary__head { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-.submit-summary__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
-.submit-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.submit-summary__item span { font-size: 12px; color: var(--color-text-sub); }
-.submit-summary__item b {
-  font-size: 14px; color: var(--color-text-main); font-weight: 600;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
 @media (max-width: 1100px) {

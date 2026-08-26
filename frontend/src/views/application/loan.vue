@@ -795,7 +795,7 @@
       </div>
     </div>
 
-    <!-- 第六步:提交预览(申请备注 + 下一步审批人 + 审批路由预览 + 提交确认;§2026-08-26 申请概要/额度明细移入提交确认弹窗核对,路由预览保留本页) -->
+    <!-- 第六步:提交预览(申请备注 + 提交确认;§2026-08-26 申请概要/额度明细/审批路由预览/下一步审批人全部移入提交确认弹窗展示核对) -->
     <div v-show="step === 5" class="form-card">
       <div class="form-card__title">
         提交预览
@@ -804,54 +804,6 @@
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
-
-      <!-- 下一步审批人(§2026-08-26 提交页仅展示审批去向,申请概要/额度明细移入提交确认弹窗核对) -->
-      <div class="submit-summary">
-        <div class="submit-summary__head">下一步审批</div>
-        <div class="submit-summary__grid" style="grid-template-columns:1fr">
-          <div class="submit-summary__item">
-            <span>提交后审批将首先流转至</span>
-            <b class="submit-summary__approver" style="font-size:14px">{{ nextApproverText }}</b>
-          </div>
-        </div>
-      </div>
-
-      <!-- 审批路由预览(每条额度:路由链路/终审岗位/硬边界/LPR版本;§2026-08-26 恢复完整路由预览,与存款申请对齐) -->
-      <template v-if="routeResult">
-        <div class="sub-title" style="margin-top:14px">
-          审批路由预览
-          <span class="badge badge--info">LPR 版本:{{ routeResult.lprVersionCode || '暂无数据' }}</span>
-        </div>
-        <table class="table" v-if="routeResult.items?.length">
-          <thead>
-            <tr><th>额度</th><th>申请利率</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(it, i) in routeResult.items" :key="it.pricingItemId ?? i">
-              <td>额度{{ cnOrdinal(i + 1) }}</td>
-              <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-              <td>
-                <template v-if="it.errorCode">
-                  <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
-                </template>
-                <template v-else-if="it.routeChain?.length">
-                  <span v-for="(n, ni) in it.routeChain" :key="ni">
-                    <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
-                  </span>
-                </template>
-                <span v-else>暂无数据</span>
-              </td>
-              <td>{{ it.errorCode ? '—' : nodeLabel(it.finalNodeCode) }}</td>
-              <td>
-                <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
-                <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
-                <span v-else class="badge badge--neutral">暂无数据</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="empty" v-else>暂无额度,无法预览路由</div>
-      </template>
 
       <div class="wizard-actions">
         <button class="btn btn--secondary" @click="step = 4">上一步</button>
@@ -868,6 +820,7 @@
       :check="checkResult"
       :summary="confirmSummary"
       :detail-rows="confirmDetailRows"
+      :route-preview="routeResult"
       :next-approver="nextApproverText"
       :show-check-details="false"
       :submitting="submitting"
@@ -1178,7 +1131,7 @@ const nextApproverText = computed(() => {
   return '—'
 })
 
-/** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细移入弹窗核对,step5 仅留下一步审批人+路由预览) */
+/** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细/路由/审批人移入弹窗核对) */
 const confirmSummary = computed(() => [
   { label: '客户主体', value: scopeLabel.value },
   { label: '客户名称', value: form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') },
@@ -1186,8 +1139,14 @@ const confirmSummary = computed(() => [
   { label: '申请号', value: draft.applicationNo || '—' },
   { label: '业务类型', value: form.businessType === 'EXISTING' ? '存量调息' : '新增授信' },
   { label: '授信总额(万元)', value: guaranteesTotalText.value },
+  { label: '申请利率', value: confirmRateText.value },
   { label: '额度笔数', value: `${form.guarantees.length} 笔` },
 ])
+/** 提交确认弹窗申请利率:各额度申请利率(多分项顿号连接;§2026-08-26 概要仅展示申请利率,不展示其他利率) */
+const confirmRateText = computed(() => {
+  const rates = form.guarantees.map((g) => g.requestedRate).filter((r) => r !== '' && r != null)
+  return rates.length ? rates.map((r) => `${r}%`).join('、') : '—'
+})
 /** 提交确认弹窗额度明细行(§2026-08-26;集团成员带 member 才展示成员列) */
 const confirmDetailRows = computed(() =>
   form.guarantees.map((g, i) => ({
@@ -2267,6 +2226,8 @@ async function onSubmit() {
   }
   if (!(await ensureDraft()) || !draft.id) return
   await uploadPendingAttachments()
+  // 提交前刷新路由预览:保证弹窗「审批路由预览/下一步审批人」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+  try { routeResult.value = await routePreview(draft.id) } catch { routeResult.value = null }
   try {
     checkResult.value = await submitCheck(draft.id)
     checkDialogVisible.value = true
@@ -2688,20 +2649,6 @@ async function loadDraftIntoForm(id: number | string) {
 .group-summary__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
 .group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
 .group-summary__item b { font-variant-numeric: tabular-nums; }
-
-/* 提交预览申请概要(§2026-08-26) */
-.submit-summary {
-  border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px 14px;
-}
-.submit-summary__head { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-.submit-summary__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
-.submit-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.submit-summary__item span { font-size: 12px; color: var(--color-text-sub); }
-.submit-summary__item b {
-  font-size: 13px; font-variant-numeric: tabular-nums;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.submit-summary__approver { color: var(--color-primary); }
 
 /* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
