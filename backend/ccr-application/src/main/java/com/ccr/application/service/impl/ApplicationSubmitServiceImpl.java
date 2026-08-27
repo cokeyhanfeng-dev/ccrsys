@@ -692,9 +692,18 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景客户号必填");
         }
         for (CcrPricingItem item : items) {
-            if (item.getRequestedRate() == null || item.getPricingAmount() == null
-                    || StrUtil.isBlank(item.getProductCode()) || item.getTermValue() == null
-                    || StrUtil.isBlank(item.getTermUnit())) {
+            // 存款无期限产品(2026-08-26 修复):协定存款与银票/信用证保证金无固定期限,期限可空;
+            // 与前端 deposit.vue termRequired 口径一致(仅对公定期/通知存款强制期限)。贷款等非存款载体仍强制期限必填。
+            boolean isDeposit = "DEPOSIT_ACCOUNT".equals(item.getPricingCarrierType());
+            boolean termRequired = !isDeposit
+                    || "CORP_TIME_DEPOSIT".equals(item.getProductCode())
+                    || "NOTICE_DEPOSIT".equals(item.getProductCode());
+            boolean missing = item.getRequestedRate() == null || item.getPricingAmount() == null
+                    || StrUtil.isBlank(item.getProductCode());
+            if (termRequired) {
+                missing = missing || item.getTermValue() == null || StrUtil.isBlank(item.getTermUnit());
+            }
+            if (missing) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "分项[" + item.getPricingItemNo() + "]必填字段不全(产品/期限/金额/申请利率)");
             }

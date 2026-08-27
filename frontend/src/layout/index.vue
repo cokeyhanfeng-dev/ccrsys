@@ -29,7 +29,7 @@
                 '/system/dept': 'OfficeBuilding',
                 '/system/flow': 'Share',
                 '/system/params': 'Setting',
-                '/system/cache': 'Coin',
+                '/system/cache': 'Odometer', // §UI审查:缓存配置换 Odometer,与存款申请 Coin 区分
                 '/system/run-log': 'Monitor'
               }[item.path] || 'Menu'"
             />
@@ -52,7 +52,15 @@
             :max="99"
             class="msg-badge"
           >
-            <el-icon class="msg-bell" :size="20" @click="openDrawer"><Bell /></el-icon>
+            <!-- §UI审查:铃铛包 button 提供 32px+ 热区与键盘可达 -->
+            <button
+              type="button"
+              class="msg-bell-btn"
+              :aria-label="`消息中心${unreadCount ? `(${unreadCount}条未读)` : ''}`"
+              @click="openDrawer"
+            >
+              <el-icon class="msg-bell" :size="20"><Bell /></el-icon>
+            </button>
           </el-badge>
           <span class="topbar__divider"></span>
           <el-dropdown @command="onCommand">
@@ -99,7 +107,11 @@
           :key="log.id"
           class="msg-item"
           :class="{ 'msg-item--unread': !log.receiptTime }"
+          role="button"
+          tabindex="0"
           @click="onClickMessage(log)"
+          @keydown.enter="onClickMessage(log)"
+          @keydown.space.prevent="onClickMessage(log)"
         >
           <span class="msg-item__icon" :class="`msg-item__icon--${classify(log)}`">
             {{ typeIcon(classify(log)) }}
@@ -295,12 +307,16 @@ function onCommand(cmd: string) {
 .app-sidebar__foot {
   padding: 16px 20px 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, .32);
+  color: rgba(255, 255, 255, .6); /* §UI审查:透明度 .32→.6,深色底对比达标 */
   letter-spacing: .5px;
 }
 .app-main {
   margin-left: 208px;
   min-height: 100vh;
+}
+/* §UI审查:移动端隐藏侧栏后内容区不再预留 208px 空档 */
+@media (max-width: 767px) {
+  .app-main { margin-left: 0; }
 }
 .brand {
   display: flex;
@@ -358,13 +374,28 @@ function onCommand(cmd: string) {
 .msg-badge :deep(.el-badge__content) {
   border: none;
 }
-.msg-bell {
+/* §UI审查:铃铛包 button 提供 32px+ 热区,键盘可聚焦 */
+.msg-bell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
   cursor: pointer;
+  transition: background-color .15s;
+}
+.msg-bell-btn:hover { background: var(--color-bg); }
+.msg-bell-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.msg-bell {
   color: var(--color-text-sub);
   vertical-align: middle;
   transition: color .15s;
 }
-.msg-bell:hover {
+.msg-bell-btn:hover .msg-bell {
   color: var(--color-primary);
 }
 .user-name {
@@ -432,14 +463,19 @@ function onCommand(cmd: string) {
   border-radius: 6px;
   cursor: pointer;
 }
+.msg-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
 .msg-item:hover {
   background: #f9fafb;
 }
 .msg-item--unread {
   background: var(--color-primary-light);
 }
+/* §UI审查:未读消息 hover 加深一档提供反馈 */
 .msg-item--unread:hover {
-  background: var(--color-primary-light);
+  background: #dbeafe;
 }
 .msg-item__icon {
   flex: none;

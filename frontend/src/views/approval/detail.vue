@@ -1,4 +1,9 @@
 <template>
+  <div v-if="loadError" class="empty">
+    加载失败,请刷新
+    <div style="margin-top:12px"><button class="btn btn--secondary" @click="load">重新加载</button></div>
+  </div>
+  <div v-else class="detail-wrap" v-loading="loading">
   <div v-if="loaded">
     <div class="section-head">
       <div class="section-title">
@@ -52,7 +57,7 @@
             <td>{{ productName(it.productCode) }}</td>
             <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-            <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
+            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
             <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
             <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
             <td>{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</td>
@@ -82,7 +87,7 @@
           <div><span class="dg-label">客户类型</span>{{ isGroup ? '集团' : '对公' }}</div>
           <div v-if="isGroup && customer.groupType"><span class="dg-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
           <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
-          <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ customer.applyAmount }}</div>
+          <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ fmtAmount(customer.applyAmount) }}</div>
           <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
           <div><span class="dg-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
           <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
@@ -90,8 +95,8 @@
           <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
           <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
           <div v-if="customer.empeNum != null"><span class="dg-label">员工人数</span>{{ customer.empeNum }}</div>
-          <div v-if="customer.totalAssets != null"><span class="dg-label">总资产(万元)</span>{{ customer.totalAssets }}</div>
-          <div v-if="customer.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ customer.registeredCapital }}</div>
+          <div v-if="customer.totalAssets != null"><span class="dg-label">总资产(万元)</span>{{ fmtAmount(customer.totalAssets) }}</div>
+          <div v-if="customer.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ fmtAmount(customer.registeredCapital) }}</div>
           <div v-if="customer.estbDate"><span class="dg-label">成立日期</span>{{ customer.estbDate }}</div>
           <div v-if="customer.restAddr"><span class="dg-label">注册地址</span>{{ customer.restAddr }}</div>
           <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
@@ -108,7 +113,7 @@
           <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
           <div v-if="customer.gender"><span class="dg-label">性别</span>{{ genderText(customer.gender) }}</div>
           <div v-if="customer.occupation"><span class="dg-label">职业</span>{{ customer.occupation }}</div>
-          <div v-if="customer.annualIncome != null"><span class="dg-label">年收入(万元)</span>{{ customer.annualIncome }}</div>
+          <div v-if="customer.annualIncome != null"><span class="dg-label">年收入(万元)</span>{{ fmtAmount(customer.annualIncome) }}</div>
           <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
           <div v-if="customer.address"><span class="dg-label">居住地址</span>{{ customer.address }}</div>
           <div v-if="customer.phone"><span class="dg-label">联系电话</span>{{ customer.phone }}</div>
@@ -138,7 +143,7 @@
       <div class="detail-grid">
         <div><span class="dg-label">集团号</span>{{ application.groupNo }}</div>
         <div><span class="dg-label">成员数</span>{{ groupMembers.length }} 户</div>
-        <div><span class="dg-label">合计申请金额</span>{{ groupTotalAmount }} 万元</div>
+        <div><span class="dg-label">合计申请金额</span>{{ fmtAmount(groupTotalAmount) }} 万元</div>
         <!-- P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额) -->
         <div><span class="dg-label">集团贡献度</span>{{ groupContributionText }}</div>
       </div>
@@ -151,12 +156,12 @@
                       class="btn btn--primary" @click="openMemberBackfillDlg(m.memberCustomerNo)">回填客户号</button>
             </div>
             <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
-            <div><span class="dg-label">申请金额(万元)</span>{{ m.requestAmount ?? '—' }}</div>
+            <div><span class="dg-label">申请金额(万元)</span>{{ fmtAmount(m.requestAmount) }}</div>
             <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
             <div v-if="m.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(m.fiveLevelClass) }}</div>
             <div v-if="m.creditLevel"><span class="dg-label">内部信用等级</span>{{ m.creditLevel }}</div>
             <div v-if="m.industry"><span class="dg-label">所属行业</span>{{ m.industry }}</div>
-            <div v-if="m.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ m.registeredCapital }}</div>
+            <div v-if="m.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ fmtAmount(m.registeredCapital) }}</div>
             <div v-if="m.openOrgName"><span class="dg-label">开户机构</span>{{ m.openOrgName }}</div>
             <div v-if="m.openDate"><span class="dg-label">开户日期</span>{{ m.openDate }}</div>
             <div v-if="m.basicAccount"><span class="dg-label">基本户账户</span>{{ m.basicAccount }}</div>
@@ -194,9 +199,9 @@
             <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
             <td>{{ a.startDate || '—' }}</td>
             <td>{{ a.endDate || '—' }}</td>
-            <td class="num">{{ a.creditAmount ?? '—' }}</td>
-            <td class="num">{{ a.usedAmount ?? '—' }}</td>
-            <td class="num">{{ a.availableAmount ?? '—' }}</td>
+            <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
+            <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
+            <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
           </tr>
         </tbody>
       </table>
@@ -211,7 +216,7 @@
         <tbody>
           <tr v-for="(a, i) in attachments" :key="i">
             <td>{{ a.fileName }}</td>
-            <td class="num">{{ (a.fileSize / 1024).toFixed(1) }} KB</td>
+            <td class="num">{{ fmtSize(a.fileSize) }}</td>
             <td>{{ a.createTime ? String(a.createTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
             <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
           </tr>
@@ -225,23 +230,24 @@
       <div class="card__head"><span>他行融资</span></div>
       <div class="detail-grid" v-if="otherLoanSummary.length">
         <div><span class="dg-label">他行机构数</span>{{ otherLoanSummary[0].lenderCount ?? '—' }}</div>
-        <div><span class="dg-label">授信总额</span>{{ otherLoanSummary[0].creditAmountTotal ?? '—' }} 万元</div>
-        <div><span class="dg-label">已用总额</span>{{ otherLoanSummary[0].usedAmountTotal ?? '—' }} 万元</div>
+        <div><span class="dg-label">授信总额</span>{{ fmtAmount(otherLoanSummary[0].creditAmountTotal) }} 万元</div>
+        <div><span class="dg-label">已用总额</span>{{ fmtAmount(otherLoanSummary[0].usedAmountTotal) }} 万元</div>
         <div><span class="dg-label">未结清笔数</span>{{ otherLoanSummary[0].loanAccountCount ?? '—' }}</div>
         <div><span class="dg-label">逾期账户</span>{{ otherLoanSummary[0].overdueAccountCount ?? '—' }}</div>
-        <div><span class="dg-label">逾期余额</span>{{ otherLoanSummary[0].overdueBalance ?? '—' }} 万元</div>
-        <div><span class="dg-label">不良余额</span>{{ otherLoanSummary[0].nplBalance ?? '—' }} 万元</div>
-        <div><span class="dg-label">关注类余额</span>{{ otherLoanSummary[0].specialMentionBalance ?? '—' }} 万元</div>
-        <div><span class="dg-label">对外担保余额</span>{{ otherLoanSummary[0].externalGuaranteeBalance ?? '—' }} 万元</div>
+        <div><span class="dg-label">逾期余额</span>{{ fmtAmount(otherLoanSummary[0].overdueBalance) }} 万元</div>
+        <div><span class="dg-label">不良余额</span>{{ fmtAmount(otherLoanSummary[0].nplBalance) }} 万元</div>
+        <div><span class="dg-label">关注类余额</span>{{ fmtAmount(otherLoanSummary[0].specialMentionBalance) }} 万元</div>
+        <div><span class="dg-label">对外担保余额</span>{{ fmtAmount(otherLoanSummary[0].externalGuaranteeBalance) }} 万元</div>
+        <div><span class="dg-label">报告日期(征信)</span>{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div>
       </div>
       <table class="table" v-if="otherLoans.length" style="margin-top:8px">
         <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
         <tbody>
           <tr v-for="(d, i) in otherLoans" :key="i">
             <td>{{ d.lenderName }}</td>
-            <td class="num">{{ d.creditAmount ?? '—' }}</td>
-            <td class="num">{{ d.usedAmount ?? '—' }}</td>
-            <td class="num">{{ d.balanceAmount ?? '—' }}</td>
+            <td class="num">{{ fmtAmount(d.creditAmount) }}</td>
+            <td class="num">{{ fmtAmount(d.usedAmount) }}</td>
+            <td class="num">{{ fmtAmount(d.balanceAmount) }}</td>
             <td class="num">{{ d.annualRate ?? '—' }}</td>
             <td>{{ d.dataDt ? String(d.dataDt).slice(0, 10) : '—' }}</td>
             <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
@@ -274,7 +280,7 @@
             <td v-else>—</td>
             <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
             <td v-else>—</td>
-            <td v-if="r.custType === 'INDIV'">{{ r.annualIncome ?? '—' }}</td>
+            <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
             <td v-else>—</td>
             <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
             <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
@@ -301,7 +307,7 @@
               <td v-else>—</td>
               <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
               <td v-else>—</td>
-              <td v-if="r.custType === 'INDIV'">{{ r.annualIncome ?? '—' }}</td>
+              <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
               <td v-else>—</td>
               <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
               <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
@@ -349,7 +355,10 @@
           <thead><tr><th>申请号</th><th>申请时间</th><th>承诺计划</th><th>履约比例</th><th>贡献总额</th><th>指标数</th><th class="num"></th></tr></thead>
           <tbody>
             <template v-for="(t, i) in tracking" :key="i">
-              <tr class="app-row" @click="t.open = !t.open">
+              <tr class="app-row" tabindex="0" role="button" :aria-expanded="t.open"
+                  @click="t.open = !t.open"
+                  @keydown.enter.prevent="t.open = !t.open"
+                  @keydown.space.prevent="t.open = !t.open">
                 <td>{{ t.applicationNo || '—' }}</td>
                 <td>{{ t.submitTime ? fmtDate(t.submitTime) : '—' }}</td>
                 <td><span class="badge badge--info">{{ t.planNo }}</span></td>
@@ -357,7 +366,7 @@
                   <span v-if="t.ratio != null" :class="ratioClass(t.ratio)">{{ t.ratio }}%</span>
                   <span v-else class="muted">暂无评估</span>
                 </td>
-                <td class="num">{{ t.sumActual != null ? t.sumActual + ' 万' : '—' }}</td>
+                <td class="num">{{ t.sumActual != null ? fmtAmount(t.sumActual) + ' 万' : '—' }}</td>
                 <td class="num">{{ (t.metrics || []).length }}</td>
                 <td class="num muted">{{ t.open ? '收起 ▲' : '展开 ▼' }}</td>
               </tr>
@@ -404,8 +413,8 @@
           <tr v-for="(o, i) in orgPerformance" :key="i">
             <td>{{ o.orgCode || '—' }}</td>
             <td>{{ o.statMonth || '—' }}</td>
-            <td class="num">{{ o.achievedAmount ?? '—' }}</td>
-            <td class="num">{{ o.expectedAmount ?? '—' }}</td>
+            <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
+            <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
             <td class="num">
               <span v-if="o.completionRate != null" :class="Number(o.completionRate) >= 100 ? 'rate-ok' : 'rate-bad'">
                 {{ o.completionRate }}%
@@ -457,7 +466,7 @@
         <tbody>
           <tr v-for="(v, i) in voteRounds" :key="i">
             <td>{{ v.roundName || v.roundNo || '—' }}</td>
-            <td><span class="badge" :class="v.status === 'PASSED' ? 'badge--success' : v.status === 'FAILED' ? 'badge--danger' : 'badge--warning'">{{ roundStatusText(v.status) }}</span></td>
+            <td><span :class="roundStatusBadge(v.status)">{{ roundStatusText(v.status) }}</span></td>
             <td class="num">{{ voteResultOf(v.id) }}</td>
             <td>{{ fmtDate(v.roundStartTime) }}</td>
             <td>{{ fmtDate(v.roundEndTime) }}</td>
@@ -468,7 +477,7 @@
         <thead><tr><th>行长决策</th><th>意见</th><th>决策时间</th></tr></thead>
         <tbody>
           <tr v-for="(d, i) in presidentDecisions" :key="i">
-            <td><span class="badge" :class="d.decision === 'AGREE' ? 'badge--success' : d.decision === 'VETO' ? 'badge--danger' : 'badge--warning'">{{ decisionText(d.decision) }}</span></td>
+            <td><span :class="decisionBadge(d.decision)">{{ decisionText(d.decision) }}</span></td>
             <td>{{ d.opinion || '—' }}</td>
             <td>{{ fmtDate(d.decisionTime) }}</td>
           </tr>
@@ -496,11 +505,11 @@
         <el-collapse-item v-for="it in presidentDecisionItems" :key="it.id" :name="`item-${it.id}`">
           <template #title>
             <span style="font-weight:600;margin-right:8px">{{ itemName(it) }}</span>
-            <span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteResultOfItem(it).approveCount }}:{{ voteResultOfItem(it).rejectCount }} 通过</span>
+            <span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteText(voteResultOfItem(it)) }}</span>
           </template>
           <div class="stat-card__sub" style="margin-bottom:6px">
             申请利率 {{ fmtRate(it.requestedRate) }} · 审批利率 {{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}
-            · 六人表决 {{ voteResultOfItem(it) ? `${voteResultOfItem(it).approveCount}:${voteResultOfItem(it).rejectCount}` : '—' }}
+            · 六人表决 {{ voteText(voteResultOfItem(it)) }}
           </div>
           <table class="table">
             <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
@@ -508,7 +517,7 @@
               <tr v-for="(o, i) in (presidentOpinions[it.id] || [])" :key="i">
                 <td>{{ o.anonymNo || '—' }}</td>
                 <td>
-                  <span class="badge" :class="o.voteChoice === 'APPROVE' ? 'badge--success' : 'badge--danger'">
+                  <span :class="voteChoiceBadge(o.voteChoice)">
                     {{ voteChoiceText(o.voteChoice) }}
                   </span>
                 </td>
@@ -550,7 +559,12 @@
             <span class="flow-step__label">{{ nodeLabel(code) }}</span>
             <span v-if="idx < currentNodeIndex" class="flow-step__tag">已经审批完成</span>
             <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound" class="flow-step__tag">
-              {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 同意 {{ voteRound.approveCount }} 票(通过线 ≥{{ voteRound.requiredCount }})
+              <template v-if="voteRound.roundStatus === 'PASSED' || voteRound.roundStatus === 'FAILED'">
+                表决{{ voteRound.roundStatus === 'PASSED' ? '通过' : '未通过' }} · 赞成 {{ voteRound.approveCount }} / 反对 {{ voteRound.rejectCount }} (通过线 ≥{{ voteRound.requiredCount }})
+              </template>
+              <template v-else>
+                {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 通过线 ≥{{ voteRound.requiredCount }}
+              </template>
             </span>
             <span v-else-if="idx === currentNodeIndex" class="flow-step__tag">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
             <span v-else class="flow-step__tag">待办</span>
@@ -594,12 +608,12 @@
           <div class="op-item__head">
             <span class="op-item__name">{{ itemName(it) }}</span>
             <strong>
-              <template v-if="itemPassed(it)"><span class="badge badge--info">上级节点已通过 · 仅展示</span></template>
+              <template v-if="itemPassed(it)"><span class="badge badge--info"><el-icon style="margin-right:4px"><CircleCheck /></el-icon>上级节点已通过 · 仅展示</span></template>
               <template v-else-if="isCommitteeVoting && itemApproved(it)">
-                <span class="badge badge--success">已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }}</span>
+                <span class="badge badge--success"><el-icon style="margin-right:4px"><Select /></el-icon>已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }}</span>
               </template>
-              <template v-else-if="itemApproved(it)"><span class="badge badge--success">已同意 · {{ fmtRate(opRates[it.id]) }}</span></template>
-              <template v-else-if="canOperate(it)"><span class="badge badge--warning">{{ isCommitteeVoting ? '待投票' : '待处理' }}</span></template>
+              <template v-else-if="itemApproved(it)"><span class="badge badge--success"><el-icon style="margin-right:4px"><Check /></el-icon>已同意 · {{ fmtRate(opRates[it.id]) }}</span></template>
+              <template v-else-if="canOperate(it)"><span class="badge badge--warning"><el-icon style="margin-right:4px"><Clock /></el-icon>{{ isCommitteeVoting ? '待投票' : '待处理' }}</span></template>
               <template v-else-if="isCommitteeVoting"><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
@@ -612,7 +626,7 @@
             </tr></thead>
             <tbody>
               <tr>
-                <td class="num">{{ it.pricingAmount != null ? it.pricingAmount : '—' }}</td>
+                <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
                 <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
                 <td>{{ productName(it.productCode) }}</td>
               </tr>
@@ -628,7 +642,7 @@
                 <tr>
                   <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
                   <td>{{ measureTypeText(g.measureType) }}</td>
-                  <td class="num">{{ g.guaranteeAmount ?? '—' }}</td>
+                  <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
                 </tr>
                 <!-- 担保措施明细(抵押物/保证人/质押/保证金/存单,取快照 extJson;键值表格与贷款区风格一致) -->
                 <tr class="measure-detail" v-if="extOf(g)">
@@ -657,7 +671,7 @@
                             <tr><th>产权证号</th><td colspan="3">{{ extOf(g).certNo || '—' }}</td></tr>
                           </template>
                           <tr>
-                            <th>估值(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td>
+                            <th>估值(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td>
                             <th>权属人</th><td>{{ extOf(g).owner || '—' }}</td>
                           </tr>
                           <tr><th>抵押率</th><td colspan="3">{{ extOf(g).mortgageRatio ? extOf(g).mortgageRatio + '%' : '—' }}</td></tr>
@@ -668,7 +682,7 @@
                       <table class="measure-table">
                         <tbody>
                           <tr><th>保证人名称</th><td colspan="3">{{ extOf(g).name || '—' }}</td></tr>
-                          <tr><th>证件号码</th><td>{{ extOf(g).certNo || '—' }}</td><th>担保余额(万元)</th><td>{{ extOf(g).balance ?? '—' }}</td></tr>
+                          <tr><th>证件号码</th><td>{{ extOf(g).certNo || '—' }}</td><th>担保余额(万元)</th><td>{{ fmtAmount(extOf(g).balance) }}</td></tr>
                         </tbody>
                       </table>
                     </template>
@@ -676,14 +690,14 @@
                       <table class="measure-table">
                         <tbody>
                           <tr><th>质押物类型</th><td>{{ extOf(g).pledgeType || '—' }}</td><th>名称</th><td>{{ extOf(g).name || '—' }}</td></tr>
-                          <tr><th>估值(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td><th>权属人</th><td>{{ extOf(g).owner || '—' }}</td></tr>
+                          <tr><th>估值(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td><th>权属人</th><td>{{ extOf(g).owner || '—' }}</td></tr>
                         </tbody>
                       </table>
                     </template>
                     <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN' || g.measureType === 'MARGIN_PLEDGE'">
                       <table class="measure-table">
                         <tbody>
-                          <tr><th>保证金(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td><th>比例</th><td>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '—' }}</td></tr>
+                          <tr><th>保证金(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td><th>比例</th><td>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '—' }}</td></tr>
                           <tr><th>期限(月)</th><td colspan="3">{{ extOf(g).termMonths || '—' }}</td></tr>
                         </tbody>
                       </table>
@@ -691,7 +705,7 @@
                     <template v-else-if="g.measureType === 'CERTIFICATE_DEPOSIT'">
                       <table class="measure-table">
                         <tbody>
-                          <tr><th>存单号</th><td>{{ extOf(g).certificateNo || '—' }}</td><th>金额(万元)</th><td>{{ g.guaranteeAmount ?? '—' }}</td></tr>
+                          <tr><th>存单号</th><td>{{ extOf(g).certificateNo || '—' }}</td><th>金额(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td></tr>
                           <tr><th>到期日</th><td colspan="3">{{ extOf(g).maturityDate || '—' }}</td></tr>
                         </tbody>
                       </table>
@@ -741,7 +755,7 @@
             </template>
             <template v-else>
               <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doApproveItem(it)">同意本项</button>
-              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doRejectItem(it)">否决本项</button>
+              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doRejectItem(it)">否决整单</button>
             </template>
           </div>
           <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && itemApproved(it)">本人已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }},提交后不可修改。</div>
@@ -755,6 +769,7 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <template v-if="isCommitteeVoting">
             <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll()">提交本人全部同意票</button>
+            <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAllReject()">提交本人全部否决票</button>
             <span class="stat-card__sub" style="align-self:center">
               已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
             </span>
@@ -788,7 +803,7 @@
       <div class="empty">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
     </div>
   </div>
-  <div v-else class="empty">加载中...</div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -808,16 +823,20 @@ import {
   customerTypeText, memberRoleText, rateTypeText,
   customerClassText, certTypeText, currencyText,
   entpScaleText, genderText, maritalStatusText, decisionSourceText,
-  fiveLevelClassText, groupTypeText, customerNoText, isPlaceholderCustomerNo
+  fiveLevelClassText, groupTypeText, customerNoText, isPlaceholderCustomerNo,
+  roundStatusBadge, decisionBadge, voteChoiceBadge
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
 import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
+import { fmtAmount, fmtSize } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
 const loaded = ref(false)
+const loading = ref(true)
+const loadError = ref(false)
 const submitting = ref(false)
 const pricingItemId = computed(() => route.params.id as string)
 
@@ -964,6 +983,11 @@ function canOperate(it: any): boolean {
   if (isCommitteeVoting.value) {
     return it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP' && !myBallotChoice(it)
   }
+  // 秘书岗兼岗(§需求四,计划财务部总经理兼任,主角色 dept_gm + 附加 secretary):
+  // SECRETARY 节点按 roles 含 secretary 判定(与 actionable 一致,不只看主角色),否则按钮恒禁用
+  if (it.currentNodeCode === 'SECRETARY' && (userStore.userInfo?.roles || []).includes('secretary')) {
+    return it.status === 'ROUTING'
+  }
   return it.status === 'ROUTING' && !!it.currentNodeCode && currentRoleNode.value === it.currentNodeCode
 }
 
@@ -1041,7 +1065,7 @@ function itemApproved(it: any): boolean {
 
 function itemName(it: any): string {
   const carrier = carrierTypeText(it.carrierType)
-  const amount = it.pricingAmount != null ? `${it.pricingAmount} 万` : ''
+  const amount = it.pricingAmount != null ? `${fmtAmount(it.pricingAmount)} 万` : ''
   let name = `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
   // 集团场景:审批决定区标明是哪家成员申请的、申请利率是多少(成员级定价,非整个集团)
   const memberNo = it.memberCustomerNo || it.member_customer_no
@@ -1164,10 +1188,10 @@ function progressPct(ratio: any): number {
 
 function progressColor(ratio: any): string {
   const r = Number(ratio)
-  if (!Number.isFinite(r)) return '#909399'
-  if (r >= 100) return '#52c41a'
-  if (r >= 80) return '#faad14'
-  return '#f56c6c'
+  if (!Number.isFinite(r)) return 'var(--color-text-light)'
+  if (r >= 100) return 'var(--color-success)'
+  if (r >= 80) return 'var(--color-warning)'
+  return 'var(--color-danger)'
 }
 
 // 评估结论徽标:ACHIEVED/ON_TRACK 达标绿、AT_RISK 红、其余黄
@@ -1192,7 +1216,14 @@ function voteResultOf(roundId: any) {
   return r ? `${r.approveCount ?? 0} / ${r.rejectCount ?? 0}` : '—'
 }
 
+// 计票文案(全中文):「赞成 X 票 / 反对 Y 票」,避免「5:1」冒号写法对非技术读者晦涩
+function voteText(r: any): string {
+  return r ? `赞成 ${r.approveCount ?? 0} 票 / 反对 ${r.rejectCount ?? 0} 票` : '—'
+}
+
 async function load() {
+  loading.value = true
+  loadError.value = false
   try {
     const data = await getApprovalDetail(pricingItemId.value)
     pi.value = data.pricingItem || {}
@@ -1242,6 +1273,9 @@ async function load() {
     loaded.value = true
   } catch {
     ElMessage.error('审批详情加载失败')
+    loadError.value = true
+  } finally {
+    loading.value = false
   }
 }
 
@@ -1351,34 +1385,50 @@ async function doApproveItem(it: any) {
   }
 }
 
-// 一键通过审批:后端整单推进——一次 approve 即把同申请全部 ROUTING 分项一起上送/终审(§14.7 整单流转),
-// 故只需对任一待办分项发起一次;不能对每个分项循环调用,否则首调推进后其余分项 current_node 已变,
-// 第二次调用会报 1007"分项当前不在节点[旧节点],实际节点[新节点]"
+// 一键通过审批:后端整单流转(§14.7)——「权限内通过但未齐套」时一次 approve 只记当前分项 agreed,
+// 仍停留原节点,故需对每个待办分项逐项 approve;最后一项权限内通过时后端自动整单齐套终审(terminal),
+// 任一分项超权限时后端将全部 ROUTING 分项整单上送/终审,后续项已随整单推进,循环遇节点变化即停止。
+// 不能对已推进的分项二次调用(会报 1007"分项当前不在节点[旧节点],实际节点[新节点]"),故 catch 后 break 收尾。
 async function doApproveAll() {
   const pending = pendingItems.value
-  const it = pending[0]
-  if (!it) {
+  if (!pending.length) {
     ElMessage.warning('没有待审批的分项')
     return
   }
-  if (opRates.value[it.id] == null) {
-    ElMessage.warning(`请填写分项 ${it.pricingItemNo || it.id} 的审批利率`)
-    return
+  // 校验所有待审批分项利率都已填写(不只 pending[0],避免后续分项缺利率导致整单报错)
+  for (const it of pending) {
+    if (opRates.value[it.id] == null) {
+      ElMessage.warning(`请填写分项 ${it.pricingItemNo || it.id} 的审批利率`)
+      return
+    }
   }
   submitting.value = true
+  let okCount = 0
   try {
-    const res = await approveTask({
-      pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
-      nodeCode: it.currentNodeCode,
-      adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
-      rateAdjustments: collectRateAdjustments(),
-      comment: opComment.value || undefined,
-      versionNo: it.versionNo
-    }, newIdempotencyKey())
-    ElMessage.success(approveSuccessMsg(res, it.currentNodeCode))
+    for (const it of pending) {
+      try {
+        const res = await approveTask({
+          pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
+          nodeCode: it.currentNodeCode,
+          adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
+          rateAdjustments: collectRateAdjustments(),
+          comment: opComment.value || undefined,
+          versionNo: it.versionNo
+        }, newIdempotencyKey())
+        okCount++
+        // 整单已上送/终审(节点推进或终态):剩余分项已随整单一并处理,停止循环
+        if (res?.terminal || (res?.nextNodeCode && res.nextNodeCode !== it.currentNodeCode)) break
+      } catch {
+        // 分项已不在当前节点(整单上送/终审连带推进)或并发冲突:剩余由整单流程处理,结束循环
+        break
+      }
+    }
+    if (okCount === pending.length) {
+      ElMessage.success(`审批提交成功,共通过 ${pending.length} 个分项`)
+    } else {
+      ElMessage.success(`已处理 ${okCount}/${pending.length} 个分项,申请已整单推进/终审`)
+    }
     goBack()
-  } catch {
-    load() // 版本冲突/已处理等:刷新最新状态
   } finally {
     submitting.value = false
   }
@@ -1409,8 +1459,7 @@ async function doVoteItem(it: any, choice: string) {
 }
 
 // 委员一键提交本人全部同意票(对未投分项逐项 submitBallot)。
-// 六人小组按"一人一票、集体计票"表决:委员否决只能逐分项投否决票(doVoteItem),
-// 不提供整单一键否决入口——单委员无权直接否决整单,否决须由计票(≥4 票赞成才通过)决定。
+// 六人小组按"一人一票、集体计票"表决:单委员无权直接否决整单,否决须由计票(≥4 票赞成才通过)决定。
 async function doVoteAll() {
   const roundId = voteRound.value?.roundId
   if (!roundId) {
@@ -1433,6 +1482,38 @@ async function doVoteAll() {
       locallyApproved.value.add(it.id)
     }
     ElMessage.success(`已提交 ${pending.length} 项同意票,等待其他委员投票`)
+    await load()
+  } catch {
+    load()
+  } finally {
+    submitting.value = false
+  }
+}
+
+// 委员一键提交本人全部否决票(对未投分项逐项 submitBallot,与 doVoteAll 对称)。
+// 全员投完后统一计票,分项独立:该分项否决不牵连其他分项。
+async function doVoteAllReject() {
+  const roundId = voteRound.value?.roundId
+  if (!roundId) {
+    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
+    return
+  }
+  const pending = pendingItems.value
+  if (!pending.length) {
+    ElMessage.warning('没有待投票的分项')
+    return
+  }
+  submitting.value = true
+  try {
+    for (const it of pending) {
+      await submitBallot(roundId, {
+        pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
+        choice: 'REJECT',
+        comment: opComment.value || undefined
+      }, newIdempotencyKey())
+      locallyApproved.value.add(it.id)
+    }
+    ElMessage.success(`已提交 ${pending.length} 项否决票,等待其他委员投票`)
     await load()
   } catch {
     load()
@@ -1491,12 +1572,10 @@ onMounted(load)
 }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
-/* 表格铺满容器:design-system .table 为 display:block(为横向滚动),列少时表格不占满、右侧留白;
-   宽屏恢复 table 布局让列自动拉伸占满,窄屏回退 block 保持横向滚动 */
+/* 表格自然宽:design-system .table 为 fit-content + overflow-x:auto,宽表(关联人 12 列/他行融资等)横向滚动,
+   长文本列不再被 width:100% 压缩换行、行高失控(UI 审查 T9) */
 .table { border-radius: var(--radius-sm); }
-@media (min-width: 1101px) {
-  .card .table { display: table; width: 100%; }
-}
+.detail-wrap { min-height: 200px; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
@@ -1536,7 +1615,7 @@ onMounted(load)
 .dlg-tip { margin-bottom: 10px; font-size: 13px; color: var(--color-text-sub); }
 .rate-ok { color: var(--color-success); font-weight: 600; }
 .rate-bad { color: var(--color-danger); font-weight: 600; }
-.rate-warn { color: #faad14; font-weight: 600; }
+.rate-warn { color: var(--color-warning); font-weight: 600; }
 .muted { color: var(--color-text-secondary, #909399); }
 
 /* 历史履约:按申请聚合总览 */
@@ -1548,6 +1627,7 @@ onMounted(load)
 
 /* 历史履约:按申请行(可点击展开)+ 明细表 */
 .app-row { cursor: pointer; }
+.app-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .app-row:hover td { background: var(--color-fill, #f5f7fa); }
 .sub-table { margin: 10px 0 4px; padding: 12px; background: var(--color-fill, #f8f9fa); border-radius: 6px; }
 .sub-table__title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }

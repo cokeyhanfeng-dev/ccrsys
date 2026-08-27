@@ -45,7 +45,7 @@
         <p class="login-sub">客户贡献度与利率决策系统</p>
         <el-form :model="form" @submit.prevent="onSubmit">
           <el-form-item>
-            <el-input v-model="form.username" placeholder="用户名" size="large">
+            <el-input v-model="form.username" placeholder="用户名" size="large" autocomplete="username" aria-label="用户名">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </el-form-item>
@@ -56,13 +56,15 @@
               placeholder="密码"
               size="large"
               show-password
+              autocomplete="current-password"
+              aria-label="密码"
             >
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="onSubmit">
-              {{ loading ? '登录中…' : '登 录' }}
+              {{ loading ? '登录中…' : '登录' }}
             </el-button>
           </el-form-item>
         </el-form>
@@ -203,7 +205,6 @@ async function onSubmit() {
     font-weight: 600;
     letter-spacing: 1px;
     color: rgba(255, 255, 255, 0.92);
-    white-space: nowrap;
   }
 
   &__slogan {
@@ -254,7 +255,7 @@ async function onSubmit() {
     left: 72px;
     bottom: 28px;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.6);
     letter-spacing: 1px;
   }
 }
@@ -315,7 +316,7 @@ async function onSubmit() {
     width: 100%;
     height: 44px;
     font-size: 15px;
-    letter-spacing: 6px;
+    letter-spacing: 4px;
     border-radius: 8px;
     background: var(--grad-primary);
     border: none;
@@ -328,7 +329,7 @@ async function onSubmit() {
 
   .login-tip {
     text-align: center;
-    color: #9ca3af;
+    color: #6b7280;
     font-size: 12px;
     margin-top: 4px;
   }

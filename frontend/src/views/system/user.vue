@@ -70,34 +70,39 @@
         <div class="modal__title">{{ dialog.isEdit ? '编辑用户' : '新建用户' }}</div>
         <div class="modal__body">
           <div class="form-grid">
+            <!-- §UI审查:表单 label 补 for/id 关联 -->
             <div class="form-field">
-              <label class="form-field__label">登录名 <span class="req">*</span></label>
-              <input class="form-input" v-model="dialog.form.username" :disabled="dialog.isEdit" />
+              <label class="form-field__label" for="u-username">登录名 <span class="req">*</span></label>
+              <input id="u-username" class="form-input" v-model="dialog.form.username" :disabled="dialog.isEdit" autocomplete="username" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">姓名 <span class="req">*</span></label>
-              <input class="form-input" v-model="dialog.form.nickName" />
+              <label class="form-field__label" for="u-nickname">姓名 <span class="req">*</span></label>
+              <input id="u-nickname" class="form-input" v-model="dialog.form.nickName" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">角色 <span class="req">*</span></label>
-              <select class="form-select" v-model="dialog.form.roleCode">
+              <label class="form-field__label" for="u-role">角色 <span class="req">*</span></label>
+              <select id="u-role" class="form-select" v-model="dialog.form.roleCode">
                 <option v-for="r in roleOptions" :key="r.value" :value="r.value">{{ r.label }}</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">密码{{ dialog.isEdit ? '(留空不修改)' : '(留空用统一初始密码)' }}</label>
-              <input class="form-input" v-model="dialog.form.password" type="password" @input="newPwdHint = pwdHint(dialog.form.password)" />
+              <label class="form-field__label" for="u-password">密码{{ dialog.isEdit ? '(留空不修改)' : '(留空用统一初始密码)' }}</label>
+              <!-- §UI审查:密码框加显隐切换 -->
+              <div class="pwd-field">
+                <input id="u-password" class="form-input" v-model="dialog.form.password" :type="showPwd ? 'text' : 'password'" autocomplete="new-password" @input="newPwdHint = pwdHint(dialog.form.password)" />
+                <button type="button" class="pwd-toggle" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @click="showPwd = !showPwd">{{ showPwd ? '隐藏' : '显示' }}</button>
+              </div>
               <span v-if="newPwdHint" class="pwd-hint" :class="{ 'pwd-hint--ok': newPwdHint.startsWith('✓') }">{{ newPwdHint }}</span>
             </div>
             <div class="form-field">
-              <label class="form-field__label">归属机构</label>
-              <select class="form-select" v-model="dialog.form.orgId">
+              <label class="form-field__label" for="u-org">归属机构</label>
+              <select id="u-org" class="form-select" v-model="dialog.form.orgId">
                 <option v-for="d in depts" :key="d.id" :value="d.id">{{ d.deptName }}</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">手机</label>
-              <input class="form-input" v-model="dialog.form.phone" />
+              <label class="form-field__label" for="u-phone">手机</label>
+              <input id="u-phone" class="form-input" v-model="dialog.form.phone" autocomplete="off" />
             </div>
           </div>
 
@@ -186,6 +191,8 @@ const dialog = reactive({
 })
 // 密码强度逐步提示(与后端强密码规则一致)
 const newPwdHint = ref('')
+// §UI审查:密码显隐切换
+const showPwd = ref(false)
 
 async function load() {
   // 查询条件变化时从第一页开始
@@ -221,19 +228,26 @@ async function loadDepts() {
   }
 }
 function deptName(id: number) {
-  return depts.value.find((d) => d.id === id)?.deptName || id
+  // §UI审查:未知机构兜底「—」,不再显示原始数字 id
+  return depts.value.find((d) => d.id === id)?.deptName || '—'
 }
 function roleName(code: string) {
-  return roleOptions.value.find((r) => r.value === code)?.label || code
+  // §UI审查:未知角色兜底「—」,不再显示原始编码
+  return roleOptions.value.find((r) => r.value === code)?.label || '—'
 }
 
 function openCreate() {
   dialog.isEdit = false
   const role = roleOptions.value[0]?.value || ''
   const orgId = depts.value.find((d) => d.status === 'ENABLE')?.id ?? ''
+  // §UI审查:无可用机构前置提示,避免绑定行校验必败
+  if (!orgId) {
+    ElMessage.warning('暂无启用机构,请先在机构管理中启用机构后再创建用户')
+  }
   dialog.form = { username: '', nickName: '', roleCode: role, password: '', orgId, phone: '', status: 'ENABLE' }
   dialog.bindings = [{ orgId, postCode: role, isDefault: '1' }]
   newPwdHint.value = ''
+  showPwd.value = false
   dialog.show = true
 }
 async function openEdit(u: any) {
@@ -248,6 +262,7 @@ async function openEdit(u: any) {
     dialog.bindings = [{ orgId: u.orgId ?? '', postCode: u.roleCode || '', isDefault: '1' }]
   }
   newPwdHint.value = ''
+  showPwd.value = false
   dialog.show = true
 }
 
@@ -300,11 +315,16 @@ async function save() {
   }
   dialog.show = false
   ElMessage.success(pwdReset ? '保存成功,该用户下次登录需强制改密' : '保存成功')
-  load()
+  fetchPage() // §UI审查:保存后保持当前页,与删除「当前页剩最后一条回退一页」策略一致
 }
 async function toggleStatus(u: any) {
-  await updateUserStatus(u.id, u.status === 'ENABLE' ? 'DISABLE' : 'ENABLE')
-  ElMessage.success('状态已更新')
+  const disabling = u.status === 'ENABLE'
+  // 停用直接改登录状态,加确认防误点(UI 审查 P0-5);启用可免
+  if (disabling) {
+    await ElMessageBox.confirm(`确认停用用户「${u.nickName || u.username}」?停用后该用户将无法登录。`, '停用确认', { type: 'warning' })
+  }
+  await updateUserStatus(u.id, disabling ? 'DISABLE' : 'ENABLE')
+  ElMessage.success(disabling ? '已停用' : '已启用')
   fetchPage()
 }
 async function handleDel(u: any) {
@@ -329,6 +349,22 @@ onMounted(() => {
 .req { color: var(--color-danger); }
 .modal__card--wide { width: 720px; max-width: 92vw; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+/* §UI审查:密码显隐切换按钮 */
+.pwd-field { position: relative; }
+.pwd-field .form-input { padding-right: 52px; }
+.pwd-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--color-text-sub);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.pwd-toggle:hover { color: var(--color-primary); }
 .pwd-hint { font-size: 12px; line-height: 1.6; color: var(--color-warning); }
 .pwd-hint--ok { color: var(--color-success); }
 .binding-block { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }

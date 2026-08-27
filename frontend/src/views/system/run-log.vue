@@ -180,7 +180,8 @@
                       <span v-if="n.decision">决策 {{ n.decision }}</span>
                     </div>
                     <div v-else-if="n.submittedCount != null" class="node-meta vote">
-                      <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="n.approveCount != null && n.requiredCount != null && n.approveCount >= n.requiredCount ? '#67C23A' : '#409EFF'" />
+                      <!-- §UI审查:进度条硬编码色换设计 token -->
+                      <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="n.approveCount != null && n.requiredCount != null && n.approveCount >= n.requiredCount ? 'var(--color-success)' : 'var(--color-primary)'" />
                       <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})<span v-if="n.approveCount != null && n.requiredCount != null && n.approveCount >= n.requiredCount" class="vote-pass"> · 已达通过线</span></span>
                     </div>
                     <div v-else-if="n.status === 'SKIPPED'" class="node-meta">该节点无需审批，流程自动跳过</div>
@@ -195,8 +196,9 @@
           <template #default="{ row }">{{ row.applicationNo }}</template>
         </el-table-column>
         <el-table-column label="业务类型" width="90">
+          <!-- §UI审查:业务类型为「类别」标签,统一中性色;语义色只留给状态 -->
           <template #default="{ row }">
-            <span :class="row.businessType === 'DEPOSIT' ? 'badge badge--warning' : 'badge badge--info'">{{ businessTypeText(row.businessType) }}</span>
+            <span class="badge badge--neutral">{{ businessTypeText(row.businessType) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="客户范围" width="110">
@@ -529,7 +531,7 @@ onBeforeUnmount(() => {
 /* 查询栏(label 在上/控件在下,与 audit 等页一致,避免字与框紧贴) */
 .query-bar { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .query-field { display: flex; flex-direction: column; gap: 4px; }
-.query-label { font-size: 11px; color: var(--color-text-sub); }
+.query-label { font-size: 12px; color: var(--color-text-sub); } /* §UI审查:查询栏 label 11px→12px */
 .error-stats {
   display: flex;
   align-items: center;
@@ -539,18 +541,19 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm, 6px);
   margin-bottom: 10px;
 }
-.stat { font-size: 13px; color: #606266; }
+/* §UI审查:统计条颜色与表格徽章统一(待处理=info 蓝),并换设计 token */
+.stat { font-size: 13px; color: var(--color-text-main); }
 .stat b { font-size: 16px; margin-left: 2px; }
-.stat--pending b { color: #e6a23c; }
-.stat--handled b { color: #52c41a; }
-.stat--ignored b { color: #909399; }
+.stat--pending b { color: var(--color-info); }
+.stat--handled b { color: var(--color-success); }
+.stat--ignored b { color: var(--color-text-sub); }
 .stat-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.auto-hint { font-size: 12px; color: #909399; }
+.auto-hint { font-size: 12px; color: var(--color-text-sub); }
 .detail-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.detail-time { color: #606266; font-size: 13px; }
-.detail-logger { color: #909399; font-size: 12px; }
-.detail-row { font-size: 13px; color: #303133; margin-bottom: 8px; }
-.detail-label { display: inline-block; width: 72px; color: #909399; font-size: 12px; margin-bottom: 4px; }
+.detail-time { color: var(--color-text-sub); font-size: 13px; }
+.detail-logger { color: var(--color-text-sub); font-size: 12px; }
+.detail-row { font-size: 13px; color: var(--color-text-main); margin-bottom: 8px; }
+.detail-label { display: inline-block; width: 72px; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
 .stack {
   margin: 6px 0 0;
   padding: 12px;
@@ -565,33 +568,34 @@ onBeforeUnmount(() => {
   max-height: 420px;
   overflow: auto;
 }
-.tab-toolbar__hint { font-size: 12px; color: #909399; margin-right: auto; }
+.tab-toolbar__hint { font-size: 12px; color: var(--color-text-sub); margin-right: auto; }
 .preview-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.preview-hint { font-size: 12px; color: #909399; }
+.preview-hint { font-size: 12px; color: var(--color-text-sub); }
 
 /* 流程监控:展开行链路形态/当前原因 + 节点时间线(与 history 进度弹窗同款配色) */
 .flow-detail { padding: 6px 8px 2px; }
 .flow-reason { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .flow-reason__item { display: flex; gap: 8px; font-size: 13px; line-height: 1.6; }
-.flow-reason__label { flex-shrink: 0; width: 64px; color: #909399; font-size: 12px; padding-top: 1px; }
-.flow-reason__text { color: #303133; }
+.flow-reason__label { flex-shrink: 0; width: 64px; color: var(--color-text-sub); font-size: 12px; padding-top: 1px; }
+.flow-reason__text { color: var(--color-text-main); }
 .progress-nodes { padding-left: 4px; }
 .progress-node { display: flex; }
 .node-rail { display: flex; flex-direction: column; align-items: center; width: 20px; margin-right: 12px; }
 .node-dot { width: 12px; height: 12px; border-radius: 50%; background: #d9d9d9; flex-shrink: 0; margin-top: 2px; }
 .node-line { width: 2px; flex: 1; min-height: 28px; background: #e8e8e8; }
-.node--DONE .node-dot { background: #52c41a; }
-.node--CURRENT .node-dot { background: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2); }
+/* §UI审查:节点时间线硬编码色换设计 token */
+.node--DONE .node-dot { background: var(--color-success); }
+.node--CURRENT .node-dot { background: var(--color-primary); box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.2); }
 .node-body { flex: 1; padding-bottom: 22px; }
 .node-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
 .node-state { font-size: 12px; font-weight: 400; padding: 1px 8px; border-radius: 10px; }
-.state--DONE { color: #52c41a; background: rgba(82, 196, 26, 0.12); }
-.state--CURRENT { color: #409eff; background: rgba(64, 158, 255, 0.12); }
-.state--PENDING, .state--SKIPPED { color: #909399; background: rgba(144, 147, 153, 0.12); }
-.node-meta { margin-top: 4px; font-size: 12px; color: #909399; display: flex; gap: 12px; }
+.state--DONE { color: var(--color-success); background: var(--color-success-light); }
+.state--CURRENT { color: var(--color-primary); background: var(--color-primary-light); }
+.state--PENDING, .state--SKIPPED { color: var(--color-text-sub); background: var(--color-disabled); }
+.node-meta { margin-top: 4px; font-size: 12px; color: var(--color-text-sub); display: flex; gap: 12px; }
 .node-meta.vote { display: block; margin-top: 8px; }
-.vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
-.vote-pass { color: #67c23a; font-weight: 500; }
+.vote-text { font-size: 12px; color: var(--color-text-sub); margin-top: 4px; display: inline-block; }
+.vote-pass { color: var(--color-success); font-weight: 500; }
 
 /* 紧凑化特例(全局类已全局收紧,此处仅保留本页特定组件) */
 /* 查询栏按钮与 small 控件对齐 */

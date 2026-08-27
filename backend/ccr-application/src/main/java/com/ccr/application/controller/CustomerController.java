@@ -63,6 +63,36 @@ public class CustomerController {
         return R.ok(jdbcTemplate.queryForList(sql, like, like, mgrNo, like, like, mgrNo));
     }
 
+    /**
+     * 按证件类型+证件号反查客户(关联人录入自动带出姓名/客户号,§2026-08-26)。
+     * 对公 USCC 查 caps_corp_cust_basic_info,对私 ID_CARD 查 caps_indv_cust_basic_info;
+     * 最新批次 + etl_md5 DESC 取一条,命中返回 {customerNo, customerName, custType},未命中返回 null。
+     * 不做管户过滤(关联人可为其他支行客户,仅补全信息不涉及数据范围)。
+     */
+    @GetMapping("/by-cert")
+    public R<Map<String, Object>> searchByCert(@RequestParam String certType, @RequestParam String certNo) {
+        if (certNo == null || certNo.isBlank()) {
+            return R.ok(null);
+        }
+        if ("USCC".equals(certType)) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT cust_no customerNo, cust_name customerName, 'CORP' custType
+                    FROM caps_corp_cust_basic_info
+                    WHERE cert_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cert_no = caps_corp_cust_basic_info.cert_no)
+                    ORDER BY etl_md5 DESC LIMIT 1""", certNo);
+            return R.ok(rows.isEmpty() ? null : rows.get(0));
+        }
+        if ("ID_CARD".equals(certType)) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT cust_no customerNo, cust_nm customerName, 'INDV' custType
+                    FROM caps_indv_cust_basic_info
+                    WHERE cert_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cert_no = caps_indv_cust_basic_info.cert_no)
+                    ORDER BY etl_md5 DESC LIMIT 1""", certNo);
+            return R.ok(rows.isEmpty() ? null : rows.get(0));
+        }
+        return R.ok(null);
+    }
+
     /** 开户机构下拉(§用户要求):启用机构列表,客户经理填单选填开户机构(数据源 ccr_sys_dept,与数仓开户机构名对齐)
      *  2026-08-25 补回:增量022曾加入,后续重构丢失导致 /{customerNo} 抢占 open-orgs → 申请页初始化报"客户不存在" */
     @GetMapping("/open-orgs")
@@ -112,13 +142,15 @@ public class CustomerController {
         result.put("contribution", mergeWithRelated(jdbcTemplate.queryForList("""
                 SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
                 FROM dw_contribution_metric WHERE cust_no = ?""", customerNo), customerNo));
-        // 4. 他行融资概要 + 明细
+        // 4. 他行融资概要 + 明细(报告日期=数仓征信报告日期 dw_credit_report_snapshot,§2026-08-26)
         result.put("creditSummary", jdbcTemplate.queryForList("""
-                SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal,
-                       used_amount_total usedAmountTotal, loan_account_count loanAccountCount,
-                       overdue_account_count overdueAccountCount, overdue_balance overdueBalance,
-                       special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance
-                FROM dw_credit_financing_summary WHERE cust_no = ? LIMIT 1""", customerNo));
+                SELECT f.lender_count lenderCount, f.npl_balance nplBalance, f.credit_amount_total creditAmountTotal,
+                       f.used_amount_total usedAmountTotal, f.loan_account_count loanAccountCount,
+                       f.overdue_account_count overdueAccountCount, f.overdue_balance overdueBalance,
+                       f.special_mention_balance specialMentionBalance, f.external_guarantee_balance externalGuaranteeBalance,
+                       (SELECT r.report_date FROM dw_credit_report_snapshot r WHERE r.cust_no = f.cust_no
+                        ORDER BY r.data_dt DESC, r.report_date DESC LIMIT 1) reportDate
+                FROM dw_credit_financing_summary f WHERE f.cust_no = ? LIMIT 1""", customerNo));
         result.put("creditDetail", jdbcTemplate.queryForList("""
                 SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate
                 FROM dw_credit_financing_detail WHERE customer_no = ?""", customerNo));

@@ -26,6 +26,8 @@
               <button class="btn btn--text" @click="handleDel(r)">删除</button>
             </td>
           </tr>
+          <!-- §UI审查:角色列表补空态行 -->
+          <tr v-if="!roles.length"><td colspan="6" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
     </div>
@@ -83,12 +85,14 @@ async function load() {
     roles.value = []
   }
   // 菜单(与实际前端侧边栏一致,对应 ccr_sys_menu 种子 db/08_system.sql)
+  // §UI审查:补齐「缓存配置」「运行监控」两项,与侧边栏一致
   menus.value = [
     { id: 1, menuName: '工作台' }, { id: 2, menuName: '贷款利率申请' }, { id: 3, menuName: '存款利率申请' },
     { id: 10, menuName: '利率审批' }, { id: 4, menuName: '贡献度跟踪' }, { id: 5, menuName: '历史' },
     { id: 11, menuName: '数据中心' }, { id: 12, menuName: '审计管理' },
     { id: 6, menuName: '用户管理' }, { id: 7, menuName: '权限管理' }, { id: 13, menuName: '机构管理' },
-    { id: 8, menuName: '流程配置' }, { id: 9, menuName: '参数管理' }
+    { id: 8, menuName: '流程配置' }, { id: 9, menuName: '参数管理' },
+    { id: 14, menuName: '缓存配置' }, { id: 15, menuName: '运行监控' }
   ]
 }
 function menuText(ids: string) {
@@ -109,6 +113,15 @@ function openEdit(r: any) {
   dialog.show = true
 }
 async function save() {
+  // §UI审查:角色编码/名称标 * 必填,保存前客户端校验
+  if (!dialog.form.roleCode?.trim()) {
+    ElMessage.warning('角色编码必填')
+    return
+  }
+  if (!dialog.form.roleName?.trim()) {
+    ElMessage.warning('角色名称必填')
+    return
+  }
   const payload = { ...dialog.form, menuIds: selectedMenus.value.join(',') }
   if (dialog.isEdit) {
     await put(`/system/roles/${dialog.form.id}`, payload)

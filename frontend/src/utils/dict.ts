@@ -635,3 +635,98 @@ export function customerNoText(no?: string | null): string {
   if (isPlaceholderCustomerNo(no)) return '新增客户(待回填)'
   return no || '—'
 }
+
+/* ========================================================================
+ * 统一状态 → 徽标类映射(全系统单一来源,2026-08-26 UI 审查 T2)
+ * 解决跨页不一致(PARTIAL_APPROVED 历史页绿/贡献度页黄等)与映射缺失落灰。
+ * 语义约定:success=通过/终态绿;danger=否决/异常红;warning=待办/关注黄;
+ * info=流转中蓝;neutral=中性灰(草稿/关闭/弃权等无倾向态)。
+ * 返回值含基类,模板直接 <span :class="appStatusBadge(s)"> 使用。
+ * ===================================================================== */
+
+function badgeOf(mod: string): string {
+  return `badge badge--${mod}`
+}
+
+/** 申请主单状态徽标(历史/档案/贡献度全系统统一) */
+export function appStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    APPROVED: 'success', COMMITTEE_PASS: 'success', FINAL: 'success',
+    REJECTED: 'danger', VETOED: 'danger',
+    PRESIDENT_DECISION: 'warning', PARTIAL_APPROVED: 'warning',
+    SUBMITTING: 'info', PROCESSING: 'info', ROUTING: 'info', SUBMITTED: 'info',
+    APPROVED_LEVEL: 'info', VOTING: 'info',
+    DRAFT: 'neutral', CLOSED: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 定价分项状态徽标(审批流转/档案) */
+export function itemStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    COMMITTEE_PASS: 'success', FINAL: 'success', APPROVED_LEVEL: 'info',
+    VETOED: 'danger', REJECTED: 'danger',
+    PRESIDENT_DECISION: 'warning',
+    SUBMITTED: 'info', ROUTING: 'info', VOTING: 'info',
+    DRAFT: 'neutral', CLOSED: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 表决批次状态徽标 */
+export function roundStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    PASSED: 'success', FAILED: 'danger', VOTING: 'info',
+    CANCELLED: 'neutral', CLOSED: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 决议/执行状态徽标(档案) */
+export function execStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    ISSUED: 'success', EXECUTED: 'success', CONTRACT_BOUND: 'info',
+    CONTRACT_PENDING: 'warning', RECONCILE_EXCEPTION: 'danger',
+    VOID: 'neutral', CLOSED: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 承诺计划状态徽标(贡献度) */
+export function planStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    ACHIEVED: 'success',
+    AT_RISK: 'danger', EXPIRED_UNMET: 'danger',
+    TRACKING: 'info',
+    DATA_PENDING: 'warning',
+    PENDING: 'neutral', TERMINATED: 'neutral', SUPERSEDED: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 表决票型徽标(ABSTAIN 弃权=中性灰,勿误标为否决红) */
+export function voteChoiceBadge(code?: string): string {
+  const map: Record<string, string> = {
+    APPROVE: 'success', AGREE: 'success',
+    REJECT: 'danger', DISAGREE: 'danger',
+    ABSTAIN: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 行长决策徽标 */
+export function decisionBadge(code?: string): string {
+  const map: Record<string, string> = {
+    AGREE: 'success', APPROVE: 'success', VETO: 'danger'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}
+
+/** 配置状态徽标(参数管理) */
+export function configStatusBadge(code?: string): string {
+  const map: Record<string, string> = {
+    EFFECTIVE: 'success', DRAFT: 'neutral',
+    REVIEW: 'warning', INVALID: 'neutral'
+  }
+  return badgeOf(map[code || ''] || 'neutral')
+}

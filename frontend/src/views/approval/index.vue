@@ -8,8 +8,18 @@
 
 
     <!-- 待办卡片列表(按申请聚合:一个申请一张卡片,多分项在卡内展开) -->
-    <div class="todo-list">
-      <div class="todo-card" v-for="c in todoCards" :key="c.applicationId">
+    <div class="todo-list" v-loading="loading">
+      <div class="empty" v-if="loadError">
+        加载失败,请刷新
+        <div style="margin-top:12px"><button class="btn btn--secondary" @click="load">重新加载</button></div>
+      </div>
+      <template v-else>
+      <div class="todo-card" v-for="c in todoCards" :key="c.applicationId"
+           tabindex="0" role="button"
+           :aria-label="`进入 ${c.customer} 的完整审批`"
+           @click="goDetail(c)"
+           @keydown.enter.prevent="goDetail(c)"
+           @keydown.space.prevent="goDetail(c)">
         <div class="todo-card__body">
           <div class="todo-card__customer">
             {{ c.customer }}
@@ -20,14 +30,14 @@
           <div class="todo-card__grid">
             <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ c.rate }}{{ c.single ? '%' : '' }}</b></div>
             <div class="tc-item"><span class="dg-label">原执行利率</span><b>{{ c.originalRate }}</b></div>
-            <div class="tc-item"><span class="dg-label">分项金额</span><b>{{ c.amount }} 万元</b></div>
+            <div class="tc-item"><span class="dg-label">分项金额</span><b>{{ fmtAmount(c.amount) }} 万元</b></div>
             <div class="tc-item"><span class="dg-label">产品编码</span><b>{{ c.productCode }}</b></div>
             <div class="tc-item"><span class="dg-label">提交时间</span><b>{{ c.createTime }}</b></div>
           </div>
           <div class="todo-card__items" v-if="!c.single">
             <div class="tc-item-row" v-for="it in c.items" :key="it.id">
               <span class="tc-item-row__no">{{ it.pricingItemNo }}</span>
-              <span>{{ it.amount }} 万元</span>
+              <span>{{ fmtAmount(it.amount) }} 万元</span>
               <span>申请 {{ it.rate }}%</span>
               <span>原执行 {{ it.originalRate }}%</span>
               <span class="dg-label">{{ nodeLabel(it.nodeCode) }}</span>
@@ -35,11 +45,12 @@
           </div>
         </div>
         <div class="todo-card__action">
-          <button class="btn btn--secondary" @click="openCheck(c)">核验资料</button>
-          <button class="btn btn--primary" @click="goDetail(c)">进入完整审批</button>
+          <button class="btn btn--secondary" @click.stop="openCheck(c)">核验资料</button>
+          <button class="btn btn--primary" @click.stop="goDetail(c)">进入完整审批</button>
         </div>
       </div>
-      <div class="empty" v-if="!todoCards.length">暂无待审批任务</div>
+      <div class="empty" v-if="!loading && !todoCards.length">暂无待审批任务</div>
+      </template>
     </div>
 
 
@@ -56,7 +67,20 @@
             <div class="check-item"><span class="dg-label">快照数据日期</span><b>{{ check.dataDt }}</b></div>
           </div>
         </div>
-        <div class="modal__body" v-else><div class="empty">加载中...</div></div>
+        <div class="modal__body" v-else-if="check.error">
+          <div class="empty">
+            {{ check.error }}
+            <div style="margin-top:12px">
+              <button class="btn btn--secondary" @click="openCheck(check)">重试</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal__body" v-else>
+          <div class="check-loading">
+            <el-icon class="is-loading" style="font-size:22px"><Loading /></el-icon>
+            <span>核验资料加载中...</span>
+          </div>
+        </div>
         <div class="modal__actions">
           <button class="btn btn--secondary" @click="check.show = false">关闭</button>
           <button class="btn btn--primary" @click="goDetail(check)">进入完整审批</button>
@@ -70,22 +94,27 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listApprovalTasks, getApprovalDetail } from '@/api/approval'
-import { listVoteTodo } from '@/api/vote'
+import { listVoteTodo, listPresidentTodo } from '@/api/vote'
 import { useUserStore } from '@/store/user'
 import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict'
+import { fmtAmount } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()
 const todoCards = ref<any[]>([])
+const loading = ref(true)
+const loadError = ref(false)
 // 委员身份(role_code=committee_member 或六人小组配置名单兼岗,§D-7):待办走表决待办(listVoteTodo),入口与普通审批一致
 const isCommitteeMember = computed(() => (userStore.userInfo?.roles || []).includes('committee_member'))
 // 审批角色(§D-7 兼岗):与委员身份并存,同时加载普通审批待办
 const isApprovalRole = computed(() => (userStore.userInfo?.roles || [])
   .some((r) => ['branch_manager', 'dept_gm', 'vice_president'].includes(r)))
+// 行长(总行):待决策分项走行长决策接口(表决通过/行长决议状态),在利率审批页一并展示
+const isPresident = computed(() => (userStore.userInfo?.roles || []).includes('president'))
 
 const check = ref<any>({
   show: false, loaded: false, id: null,
-  customer: '', amount: '', rate: '', originalRate: '', dataDt: ''
+  customer: '', amount: '', rate: '', originalRate: '', dataDt: '', error: ''
 })
 
 function statusText(s?: string) {
@@ -93,13 +122,26 @@ function statusText(s?: string) {
 }
 
 async function load() {
+  loading.value = true
+  loadError.value = false
   try {
-    // §D-7 兼岗:委员身份走表决待办、审批角色走普通审批待办,合并后统一按申请聚合
-    const [voteRows, taskRows] = await Promise.all([
+    // §D-7 兼岗:委员身份走表决待办、审批角色走普通审批待办、行长走行长决策待办,合并后统一按申请聚合
+    const [voteRows, taskRows, presRows] = await Promise.all([
       isCommitteeMember.value ? listVoteTodo<any[]>() : Promise.resolve([]),
-      isApprovalRole.value ? listApprovalTasks<any[]>() : Promise.resolve([])
+      isApprovalRole.value ? listApprovalTasks<any[]>() : Promise.resolve([]),
+      isPresident.value ? listPresidentTodo<any[]>() : Promise.resolve([])
     ])
-    const data = [...(voteRows || []), ...(taskRows || [])]
+    // 行长待决策为按申请聚合(items 分项明细在顶层),展平成分项行以便统一聚合(与审批/表决待办同粒度)
+    const presFlat = (presRows || []).flatMap((p: any) =>
+      (p.items || []).map((it: any) => ({
+        applicationId: p.applicationId, applicationNo: p.applicationNo,
+        businessType: p.businessType, customerNo: p.customerNo,
+        id: it.pricingItemId, pricingItemId: it.pricingItemId, pricingItemNo: it.pricingItemNo,
+        pricingAmount: it.pricingAmount, requestedRate: it.requestedRate,
+        originalRate: it.originalRate, productCode: it.productCode,
+        status: it.status, currentNodeCode: 'PRESIDENT', createTime: ''
+      })))
+    const data = [...(voteRows || []), ...(taskRows || []), ...presFlat]
     // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部担保分项
     const byApp = new Map<string, any[]>()
     for (const p of data) {
@@ -143,6 +185,9 @@ async function load() {
     })
   } catch {
     todoCards.value = []
+    loadError.value = true
+  } finally {
+    loading.value = false
   }
 }
 
@@ -151,21 +196,21 @@ async function load() {
 async function openCheck(c: any) {
   check.value = {
     show: true, loaded: false, id: c.id,
-    customer: c.customer, amount: `${c.amount} 万元`, rate: `${c.rate}%`,
-    originalRate: c.originalRate, qualityOverall: '', dataDt: '—'
+    customer: c.customer, amount: `${fmtAmount(c.amount)} 万元`, rate: `${c.rate}%`,
+    originalRate: c.originalRate, qualityOverall: '', dataDt: '—', error: ''
   }
   try {
     const d = await getApprovalDetail(c.id)
     const pi = d.pricingItem || {}
     const customer = d.customer?.[0] || {}
     check.value.customer = customer.customerName || pi.pricing_customer_no || c.customer
-    check.value.amount = pi.pricing_amount != null ? `${pi.pricing_amount} 万元` : `${c.amount} 万元`
+    check.value.amount = pi.pricing_amount != null ? `${fmtAmount(pi.pricing_amount)} 万元` : `${fmtAmount(c.amount)} 万元`
     check.value.rate = pi.requested_rate != null ? `${pi.requested_rate}%` : `${c.rate}%`
     check.value.originalRate = pi.original_rate != null ? `${pi.original_rate}%` : '新增业务'
     check.value.dataDt = d.source === 'SNAPSHOT' ? (d.snapshotInfo?.dataDt || '—') : '实时取数(未冻结快照)'
     check.value.loaded = true
   } catch {
-    check.value.show = false
+    check.value.error = '核验资料加载失败,请重试或进入完整审批查看'
   }
 }
 
@@ -180,6 +225,8 @@ onMounted(load)
 <style scoped>
 .stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
+.todo-card { cursor: pointer; }
+.todo-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .todo-card__customer { font-weight: 600; font-size: 16px; }
 .tc-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; color: #b45309; background: #fef3c7; vertical-align: middle; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
@@ -193,4 +240,5 @@ onMounted(load)
 .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; font-size: 14px; }
 .check-item .dg-label { display: block; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
+.check-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 80px; color: var(--color-text-sub); }
 </style>

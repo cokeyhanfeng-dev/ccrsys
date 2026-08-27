@@ -11,20 +11,24 @@
 
         <el-form :model="form" @submit.prevent="onSubmit">
           <el-form-item label="原密码">
+            <!-- §UI审查:密码框补 autocomplete -->
             <el-input
               v-model="form.oldPassword"
               type="password"
               placeholder="请输入原密码"
               size="large"
+              autocomplete="current-password"
               show-password
             />
           </el-form-item>
           <el-form-item label="新密码">
+            <!-- §UI审查:密码框补 autocomplete -->
             <el-input
               v-model="form.newPassword"
               type="password"
               placeholder="不少于8位,含大写/小写/特殊字符"
               size="large"
+              autocomplete="new-password"
               show-password
               @input="newHint = pwdHint(form.newPassword)"
             />
@@ -33,11 +37,13 @@
             </span>
           </el-form-item>
           <el-form-item label="确认新密码">
+            <!-- §UI审查:密码框补 autocomplete -->
             <el-input
               v-model="form.confirmPassword"
               type="password"
               placeholder="再次输入新密码"
               size="large"
+              autocomplete="new-password"
               show-password
             />
           </el-form-item>
@@ -134,10 +140,10 @@ async function onSubmit() {
   width: 100%;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-warning);
+  color: #92400e; /* §UI审查:警告态加深提升白底对比 */
   margin-top: 2px;
 }
-.pwd-hint--ok { color: var(--color-success); }
+.pwd-hint--ok { color: #047857; } /* §UI审查:成功态加深提升白底对比 */
 .change-btn { width: 100%; height: 44px; font-size: 15px; letter-spacing: 4px; border-radius: 8px; }
-.change-page__foot { margin-top: 20px; font-size: 12px; color: rgba(255,255,255,.45); letter-spacing: 1px; }
+.change-page__foot { margin-top: 20px; font-size: 12px; color: rgba(255,255,255,.6); letter-spacing: 1px; }
 </style>

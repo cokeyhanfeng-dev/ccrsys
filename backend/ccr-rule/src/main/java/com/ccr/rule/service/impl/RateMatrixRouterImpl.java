@@ -589,8 +589,11 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         result.setMatchedRuleName(terminalRow.getRemark());
         // 终审命中行编号(小组兜底行同样记录,审计溯源 §8.6)
         result.setMatchedMatrixNo(terminalRow.getMatrixNo());
-        // 部门归属编码(矩阵透出,§D16a 部门分流:对公存量→3202233912公司金融部/对公新增→3202233943授信评审部/个人经营→3202233991零售金融)
-        result.setDeptCode(terminalRow.getDeptCode());
+        // 部门归属编码(矩阵透出,§D16a 部门分流):新增贷款(对公/个人经营)一律→3202233943授信评审部;
+        // 存量贷款按部门归属分→3202233912公司金融部(对公)/3202233991零售金融部(个人经营及对公<1000万)。
+        // 上会兜底时终审行为小组触发行(start_node_code=SIX_PEOPLE_GROUP,dept_code 恒空),须继承主业务路由行的部门归属,
+        // 否则部门总经理/分管行长节点解析为空退化为全部门可见可审(2026-08-26 串扰根因修复)
+        result.setDeptCode(resolveDeptCode(matched, terminalRow));
         // 终审节点有效边界:矩阵边界 ∩ 产品硬边界(D3)
         result.setBoundaryRate(intersectBoundary(boundary, hardBoundary, isLoan));
         if (lpr != null) {
@@ -599,6 +602,22 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         }
         result.setMessage(msg);
         return result;
+    }
+
+    /**
+     * 分项部门归属编码:优先终审行矩阵透出;终审行为上会小组行(§上会触发,dept_code 恒空)时,
+     * 取主业务路由行(非小组行)的部门归属——同一业务所有命中行部门归属一致(§D16a)。
+     */
+    private String resolveDeptCode(List<CcrRateMatrix> matched, CcrRateMatrix terminalRow) {
+        if (StrUtil.isNotBlank(terminalRow.getDeptCode())) {
+            return terminalRow.getDeptCode();
+        }
+        return matched.stream()
+                .filter(r -> !GROUP_NODE.equals(r.getStartNodeCode()))
+                .map(CcrRateMatrix::getDeptCode)
+                .filter(StrUtil::isNotBlank)
+                .findFirst()
+                .orElse(null);
     }
 
     /** 路由链路:BRANCH_MANAGER(必经) → …中间层级… → 终审岗位 */

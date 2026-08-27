@@ -137,21 +137,33 @@ public class ApprovalServiceImpl implements ApprovalService {
             return pricingItemMapper.selectList(wrapper);
         }
         String nodeCode = currentLoginUser.nodeOfRole(user.getRoleCode());
-        // 无节点角色(客户经理)或小组节点(走表决待办) → 普通审批待办为空
-        if (nodeCode == null || RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
-            return List.of();
-        }
-        // 支行行长(含网点)只见本支行及下辖网点客户经理的申请(§5.4 DEPT 级:apply_branch_code 前缀匹配)
-        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(user.getRoleCode())) {
-            String branchPrefix = branchCodeOf(user.getOrgId());
-            if (branchPrefix != null) {
-                wrapper.inSql(CcrPricingItem::getApplicationId,
-                        "SELECT id FROM ccr_application WHERE del_flag = '0' AND apply_branch_code LIKE '" + branchPrefix + "%'");
+        List<CcrPricingItem> merged = new ArrayList<>();
+        // 主角色节点待办;无节点角色(客户经理)或小组节点(走表决待办) → 跳过
+        if (nodeCode != null && !RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
+            // 支行行长(含网点)只见本支行及下辖网点客户经理的申请(§5.4 DEPT 级:apply_branch_code 前缀匹配)
+            if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(user.getRoleCode())) {
+                String branchPrefix = branchCodeOf(user.getOrgId());
+                if (branchPrefix != null) {
+                    wrapper.inSql(CcrPricingItem::getApplicationId,
+                            "SELECT id FROM ccr_application WHERE del_flag = '0' AND apply_branch_code LIKE '" + branchPrefix + "%'");
+                }
             }
+            merged.addAll(filterByNodeAssignee(
+                    pricingItemMapper.selectList(
+                            wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode)),
+                    nodeCode, user.getId()));
         }
-        List<CcrPricingItem> items = pricingItemMapper.selectList(
-                wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode));
-        return filterByNodeAssignee(items, nodeCode, user.getId());
+        // 秘书岗兼岗(§需求四:贷审会秘书由计划财务部总经理兼任,主角色 dept_gm 映射不到 SECRETARY 节点):
+        // 在 SECRETARY 节点指派内的用户额外查该节点 ROUTING 待办
+        if (nodeAssigneeResolver.isUserInAssignees("SECRETARY", user.getId())) {
+            merged.addAll(filterByNodeAssignee(
+                    pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                            .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                            .eq(CcrPricingItem::getCurrentNodeCode, "SECRETARY")
+                            .orderByAsc(CcrPricingItem::getCreateTime)),
+                    "SECRETARY", user.getId()));
+        }
+        return merged;
     }
 
     /** 支行编码(机构 org_id → ccr_sys_dept.branch_code;网点用户上溯所属支行) */
@@ -927,9 +939,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         result.put("creditAgreements", mergeCreditAgreements(application, custNoStr));
         // 担保分项明细(按分项挂载,前端定价分项表内嵌展示)
         result.put("guaranteesByItem", guaranteesByItem(applicationId));
-        // 他行融资(申请人工补录/Excel 导入 + 数仓征信,最新批次)
+        // 他行融资(申请人工补录/Excel 导入 + 数仓征信,最新批次;报告日期=数仓征信报告日期,§2026-08-26)
         result.put("otherLoanSummary", jdbcTemplate.queryForList(
-                "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNoStr));
+                "SELECT f.lender_count lenderCount, f.npl_balance nplBalance, f.credit_amount_total creditAmountTotal, f.used_amount_total usedAmountTotal, f.loan_account_count loanAccountCount, f.overdue_account_count overdueAccountCount, f.overdue_balance overdueBalance, f.special_mention_balance specialMentionBalance, f.external_guarantee_balance externalGuaranteeBalance, (SELECT r.report_date FROM dw_credit_report_snapshot r WHERE r.cust_no = f.cust_no ORDER BY r.data_dt DESC, r.report_date DESC LIMIT 1) reportDate FROM dw_credit_financing_summary f WHERE f.cust_no = ? ORDER BY f.data_dt DESC LIMIT 1", custNoStr));
         result.put("otherLoans", jdbcTemplate.queryForList(
                 "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNoStr, custNoStr));
         result.put("appOtherLoans", jdbcTemplate.queryForList(
@@ -1744,6 +1756,14 @@ public class ApprovalServiceImpl implements ApprovalService {
         List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
                 application.getApplicantOrgId(), deptCode);
         if (assignees.isEmpty()) {
+            // 部门类节点(部门总经理/分管行长)按分项 dept_code 部门归属解析:解析为空说明申请缺少部门归属
+            // (如历史申请矩阵漏配冻结 dept_code=NULL),必须拒绝而非角色兜底放行——否则全部门总经理/
+            // 分管行长都能越权审批(2026-08-26 串扰根因修复);其余节点保持原角色兜底语义
+            if (RouteChains.DEPT_GENERAL_MANAGER.equals(nodeCode)
+                    || RouteChains.VICE_PRESIDENT.equals(nodeCode)) {
+                throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                        "申请缺少部门归属配置,请联系管理员补全矩阵部门归属后重新提交");
+            }
             // 未配置指定审批人:按节点角色校验兜底(§5.5.1)
             currentLoginUser.requireNodeRole(nodeCode);
         } else if (!assignees.contains(operator.getId())) {

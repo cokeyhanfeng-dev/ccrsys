@@ -2,6 +2,7 @@ package com.ccr.approval.service;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,6 +33,8 @@ public class FlowMonitorService {
 
     @Resource
     private JdbcTemplate jdbcTemplate;
+    @Resource
+    private AppLoginUser appLoginUser;
 
     /** 在途分项状态(排除终态):路由中/表决中/已过会待行长决策/行长决策 */
     private static final List<String> IN_FLIGHT = List.of("ROUTING", "VOTING", "COMMITTEE_PASS", "PRESIDENT_DECISION");
@@ -43,6 +47,11 @@ public class FlowMonitorService {
             "SECRETARY", "贷审会秘书岗",
             "SIX_PEOPLE_GROUP", "审批小组成员",
             "PRESIDENT", "总行行长");
+
+    /** 节点规范顺序(与流程定义 flow_node 一致;多分项链路并集后按此重排,避免缺失节点被 append 到链尾错位) */
+    private static final List<String> NODE_ORDER = List.of(
+            "BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT", "SECRETARY",
+            "SIX_PEOPLE_GROUP", "PRESIDENT");
 
     /** 终审岗位中文名(route_code 截断文案用) */
     private static final Map<String, String> FINAL_ROLE_LABEL = Map.of(
@@ -215,6 +224,14 @@ public class FlowMonitorService {
                 }
             }
         }
+        // §2026-08-26 修复:并集按规范节点顺序重排——多分项 route_chain 不一致时(如某分项因金额/利率未触发
+        // 秘书岗而链路不含 SECRETARY、另一分项含 SECRETARY),后遍历分项缺失的节点会被 append 到链尾,
+        // 曾导致「贷审会秘书岗」显示在「总行行长」之后;重排保证秘书岗固定于分管行长后、六人小组前。
+        // 不在规范顺序内的自定义节点保持原相对顺序排到末尾。
+        chain.sort(Comparator.comparingInt(n -> {
+            int i = NODE_ORDER.indexOf(n);
+            return i < 0 ? NODE_ORDER.size() : i;
+        }));
         // 当前节点:任一分项流转中(ROUTING/VOTING/COMMITTEE_PASS/PRESIDENT_DECISION)时取链上最靠后的 current_node_code;全终态则链路全部 DONE
         int curIdx = -1;
         String curNode = null;
@@ -332,10 +349,12 @@ public class FlowMonitorService {
                     node.put("submittedCount", jdbcTemplate.queryForObject(
                             "SELECT COUNT(*) FROM ccr_vote_assignment WHERE round_id = ? AND status = 'SUBMITTED'",
                             Integer.class, round.get("id")));
-                    // 匿名同意票数(只给汇总,不暴露委员身份)
-                    node.put("approveCount", jdbcTemplate.queryForObject(
-                            "SELECT COUNT(*) FROM ccr_ballot WHERE round_id = ? AND vote_choice = 'APPROVE'",
-                            Integer.class, round.get("id")));
+                    // 实时同意票数仅行长/审计/超管可见(§用户拍板:委员互不知票,投票中不泄露票数)
+                    if (isPrivilegedVoteViewer()) {
+                        node.put("approveCount", jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM ccr_ballot WHERE round_id = ? AND vote_choice = 'APPROVE'",
+                                Integer.class, round.get("id")));
+                    }
                 } else {
                     node.put("status", i == curIdx && anyRouting ? "CURRENT" : "PENDING");
                 }
@@ -366,6 +385,19 @@ public class FlowMonitorService {
         }
         result.put("nodes", nodes);
         return result;
+    }
+
+    /** 表决汇总特权角色(行长/审计/超管):审批进度页实时票数仅其可见;委员等其余角色不泄露(互不知票) */
+    private boolean isPrivilegedVoteViewer() {
+        try {
+            String roleCode = appLoginUser.requireCurrentUser().getRoleCode();
+            return AppLoginUser.ROLE_PRESIDENT.equals(roleCode)
+                    || AppLoginUser.ROLE_AUDITOR.equals(roleCode)
+                    || AppLoginUser.ROLE_ADMIN.equals(roleCode);
+        } catch (Exception e) {
+            // 未登录/角色解析异常:按非特权处理(不泄露票数)
+            return false;
+        }
     }
 
     /** 路由原因文案:routeReason 链路形态(静态) + currentReason 当前节点原因(动态),均为系统规则推导 */

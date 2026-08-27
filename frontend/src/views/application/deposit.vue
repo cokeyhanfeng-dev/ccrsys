@@ -7,7 +7,7 @@
     <!-- 关联重提/草稿提示 -->
     <div v-if="draft.id" class="form-card draft-banner">
       <span class="badge badge--info">草稿</span>
-      申请号 {{ draft.applicationNo }}(版本 v{{ draft.versionNo }})
+      申请号 {{ draft.applicationNo }}（版本 v{{ draft.versionNo }}）
       <InfoTip content="草稿保存仅更新主单信息,存款分项以创建时内容为准" />
     </div>
 
@@ -160,8 +160,8 @@
       </div>
 
       <div style="display:flex;gap:12px;margin-top:12px">
-        <button class="btn btn--secondary" :disabled="saving" @click="onSaveDraft">存草稿</button>
-        <button class="btn btn--primary" :disabled="saving" @click="onSubmit">提交申请</button>
+        <button class="btn btn--secondary" :disabled="saving || submitting" @click="onSaveDraft">存草稿</button>
+        <button class="btn btn--primary" :disabled="saving || submitting" @click="onSubmit">{{ submitting ? '提交中…' : '提交申请' }}</button>
       </div>
     </div>
 
@@ -172,7 +172,6 @@
       :summary="depositSummary"
       :customer-summary="depositCustomerSummary"
       :route-preview="routeResult"
-      :show-check-details="false"
       :submitting="submitting"
       @confirm="onConfirmSubmit"
     />
@@ -205,7 +204,6 @@ import {
   type SubmitCheck
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
-import ContributionPanel from '@/components/ContributionPanel.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
 import { nodeLabel, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass } from '@/utils/dict'
@@ -956,8 +954,8 @@ async function loadDraftIntoForm(id: number | string) {
 /* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
 .form-field > .section-tip,
 .form-field > .limit-hint { grid-column: 2; }
-/* 客户信息区 5 列一行(企业单户/集团均 5 字段,§2026-08-25 用户要求五列紧凑一行):label 上置缩小+控件全宽 */
-.form-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+/* 客户信息区自适应列(§UI审查:固定 5 列在字段不足时右侧留空,改 auto-fit 贴合实际字段) */
+.form-grid--5 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .form-grid--5 .form-field { display: block; }
 .form-grid--5 .form-field__label { display: block; margin-bottom: 3px; font-size: 13px; text-align: left; padding-right: 0; }
 .form-grid--5 .form-field > .form-input,
@@ -1024,6 +1022,11 @@ async function loadDraftIntoForm(id: number | string) {
 .deposit-item__title { font-size: 14px; font-weight: 600; }
 /* 存款分项字段 4 列×2 行(§2026-08-26 删币种后 8 字段均匀:账户方式/存款账户/产品/期限 + 金额/执行利率/申请利率/测算利率) */
 .deposit-item .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+/* §UI审查:存款分项卡 label 方向与客户信息区统一(label 置上) */
+.deposit-item .mortgage-item__grid .form-field { display: block; }
+.deposit-item .mortgage-item__grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+.deposit-item .mortgage-item__grid .form-field > .form-input,
+.deposit-item .mortgage-item__grid .form-field > .form-select { width: 100%; min-width: 0; }
 @media (max-width: 1100px) {
   .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }

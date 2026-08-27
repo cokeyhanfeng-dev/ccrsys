@@ -9,7 +9,7 @@
     <div class="breadcrumb-bar" v-if="level > 1">
       <button class="btn btn--secondary" @click="goUp">← 返回上级</button>
       <span class="section-tip">
-        {{ level === 2 ? `客户 ${currentCustomer}` : `客户 ${currentCustomer} · 计划 ${currentPlan?.plan_no || ''}` }}
+        {{ level === 2 ? currentCustomerLabel : `客户 ${currentCustomer} · 计划 ${currentPlan?.plan_no || ''}` }}
       </span>
     </div>
 
@@ -37,6 +37,7 @@
         <div class="card__head">
           <span>客户承诺概览</span>
         </div>
+        <div v-loading="listLoading">
         <table class="table customer-overview" v-if="customerRows.length">
           <thead>
             <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>含关联人达成率</th><th>有风险指标</th><th>操作</th></tr>
@@ -65,7 +66,8 @@
             </tr>
           </tbody>
         </table>
-        <div v-else class="empty">暂无数据</div>
+        <div v-else class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div>
+        </div>
       </div>
     </template>
 
@@ -74,10 +76,10 @@
       <div class="card">
         <div class="card__head"><span>申请承诺</span><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></div>
         <div class="plan-grid" v-if="applicationRows.length">
-          <div v-for="app in applicationRows" :key="app.applicationNo || app.plan_no || app.id" class="plan-card" @click="enterApplication(app)">
+          <div v-for="app in applicationRows" :key="app.applicationNo || app.plan_no || app.id" class="plan-card" role="button" tabindex="0" @click="enterApplication(app)" @keydown.enter.prevent="enterApplication(app)" @keydown.space.prevent="enterApplication(app)">
             <div class="plan-card__head">
               <b class="app-card__no">{{ app.applicationNo || '—' }}</b>
-              <span :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span>
+              <span class="app-card__head-badges"><span class="app-card__label">申请</span><span :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span></span>
             </div>
             <div class="app-card__row"><span class="dg-label">业务类型</span>{{ businessTypeText(app.business_type) }}</div>
             <div class="app-card__row">
@@ -94,7 +96,9 @@
               <span class="dg-label">平均达成率</span>
               <span v-if="app.avgRatio != null" :class="ratioClass(app.avgRatio)">{{ app.avgRatio }}%</span>
               <span v-else class="section-tip">暂无数据</span>
-              <span :class="statusBadge(app.status)" style="margin-left:8px">{{ statusText(app.status) }}</span>
+              <span class="app-card__sep">·</span>
+              <span class="app-card__label">计划</span>
+              <span :class="statusBadge(app.status)">{{ statusText(app.status) }}</span>
             </div>
             <div class="app-card__foot">
               <span class="app-card__time">{{ app.submitTime ? String(app.submitTime).replace('T', ' ').slice(0, 16) : '' }}</span>
@@ -108,6 +112,7 @@
 
     <!-- ============ 三级:指标钻取(计划详情) ============ -->
     <template v-else>
+      <div v-loading="planLoading">
       <div class="card">
         <div class="card__head">
           <span>计划 {{ currentPlan?.plan_no }}</span>
@@ -137,7 +142,7 @@
       <!-- 总体跟踪进度(Σ实际 / Σ目标,按各项指标加总计算) -->
       <div class="card">
         <div class="card__head">
-          <span>总体跟踪进度 <InfoTip content="按各项指标达成率的平均值计算(不含&quot;其它&quot;手工承诺)" style="margin-left:6px" /></span>
+          <span>总体跟踪进度 <InfoTip content="按各项指标达成率的平均值计算（不含&quot;其它&quot;手工承诺）；累计实际值/目标值为各指标数值直接加总，可能跨越不同单位" style="margin-left:6px" /></span>
         </div>
         <div v-if="overall" class="overall">
           <div class="overall__sum">
@@ -181,11 +186,11 @@
               <span v-else class="section-tip">暂无跟踪描述,手工录入留痕</span>
             </div>
             <div class="other-track__edit">
-              <textarea class="form-input" rows="2"
+              <textarea class="form-input other-track__textarea" rows="2"
                 :value="trackDraft[m.metricId ?? m.id] || ''"
                 @input="setTrackDraft(m, ($event.target as HTMLTextAreaElement).value)"
-                placeholder="录入本期跟踪描述(留痕;以文本替代数值对比)" style="width:100%;resize:vertical" />
-              <button class="btn btn--secondary" style="margin-top:6px" @click="saveTrack(m)">保存跟踪描述</button>
+                placeholder="录入本期跟踪描述（留痕；以文本替代数值对比）" />
+              <button class="btn btn--secondary other-track__save" :disabled="savingTrack" @click="saveTrack(m)">{{ savingTrack ? '保存中…' : '保存跟踪描述' }}</button>
             </div>
           </div>
           <template v-else>
@@ -261,6 +266,7 @@
         </div>
         <div v-if="!planMetrics.length" class="empty">暂无指标数据</div>
       </div>
+      </div>
 
     </template>
 
@@ -274,7 +280,8 @@ import { listCommitmentPlans, saveMetricTrackDesc } from '@/api/commitment'
 import { getCommitmentPlanDetail } from '@/api/approval2'
 import {
   planStatusText, evalResultText, appStatusText,
-  customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText
+  customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText,
+  appStatusBadge as dictAppStatusBadge, planStatusBadge as dictPlanStatusBadge
 } from '@/utils/dict'
 
 // ---------- 钻取层级(§12.11):1 客户列表 / 2 客户承诺记录 / 3 指标明细 ----------
@@ -283,6 +290,10 @@ const currentCustomer = ref('')
 const currentPlan = ref<any | null>(null)
 
 const rows = ref<any[]>([])
+const listLoading = ref(false)
+const listError = ref(false)
+const planLoading = ref(false)
+const savingTrack = ref(false)
 
 // 计划状态:当前(跟踪中口径) vs 历史(终态口径)
 const CURRENT_STATUS = ['PENDING', 'TRACKING', 'AT_RISK', 'DATA_PENDING']
@@ -418,6 +429,17 @@ function goUp() {
   }
 }
 
+// 二级面包屑带出客户名称(§UI审查 ⑦)
+const currentCustomerName = computed(() => {
+  const row = customerRows.value.find((c) => c.customerNo === currentCustomer.value)
+  return row?.customerName || ''
+})
+const currentCustomerLabel = computed(() => {
+  const base = `客户 ${currentCustomer.value}`
+  const name = currentCustomerName.value
+  return name && name !== currentCustomer.value ? `${base}（${name}）` : base
+})
+
 // ---------- 三级:指标钻取(计划详情 + 总体进度) ----------
 const planDetail = ref<any | null>(null)
 
@@ -519,11 +541,14 @@ async function enterPlan(p: any) {
   currentPlan.value = p
   planDetail.value = null
   level.value = 3
+  planLoading.value = true
   try {
     const d = await getCommitmentPlanDetail(p.id)
     planDetail.value = d
   } catch {
     // 计划详情接口不可用/无数据:以列表最新评估兜底展示
+  } finally {
+    planLoading.value = false
   }
 }
 
@@ -533,12 +558,14 @@ function setTrackDraft(m: any, v: string) {
   trackDraft[Number(m.metricId ?? m.id)] = v
 }
 async function saveTrack(m: any) {
+  if (savingTrack.value) return
   const metricId = Number(m.metricId ?? m.id)
   const desc = (trackDraft[metricId] || '').trim()
   if (!desc) {
     ElMessage.warning('请录入跟踪描述')
     return
   }
+  savingTrack.value = true
   try {
     await saveMetricTrackDesc(metricId, desc)
     // 更新本地行数据与当前计划指标,无需重拉列表
@@ -547,16 +574,23 @@ async function saveTrack(m: any) {
     ElMessage.success('跟踪描述已保存留痕')
   } catch {
     ElMessage.error('跟踪描述保存失败')
+  } finally {
+    savingTrack.value = false
   }
 }
 
 
 // ---------- 数据加载(无参,服务端定数据范围) ----------
 async function load() {
+  listLoading.value = true
+  listError.value = false
   try {
     rows.value = await listCommitmentPlans()
   } catch {
     rows.value = []
+    listError.value = true
+  } finally {
+    listLoading.value = false
   }
 }
 
@@ -582,22 +616,12 @@ function statusText(s?: string) {
   return planStatusText(s)
 }
 function statusBadge(s?: string) {
-  const map: Record<string, string> = {
-    TRACKING: 'badge badge--info', PENDING: 'badge badge--warning', AT_RISK: 'badge badge--warning',
-    ACHIEVED: 'badge badge--success', EFFECTIVE: 'badge badge--success',
-    DATA_PENDING: 'badge badge--warning', DRAFT: 'badge badge--neutral', REVIEW: 'badge badge--warning'
-  }
-  return map[s || ''] || 'badge badge--neutral'
+  return dictPlanStatusBadge(s)
 }
 // 申请状态徽标(ccr_application.status:草稿/审批中/已通过/已否决等,承诺跟踪页展示所属申请)
+// §UI审查 ④:跨页统一口径复用 dict.appStatusBadge(SUBMITTING=info、PARTIAL_APPROVED=warning)
 function appStatusBadge(s?: string) {
-  const map: Record<string, string> = {
-    DRAFT: 'badge badge--neutral', SUBMITTING: 'badge badge--warning', PROCESSING: 'badge badge--info',
-    PARTIAL_APPROVED: 'badge badge--warning', APPROVED: 'badge badge--success',
-    REJECTED: 'badge badge--danger', CLOSED: 'badge badge--neutral',
-    ROUTING: 'badge badge--info', FINAL: 'badge badge--success'
-  }
-  return map[s || ''] || 'badge badge--neutral'
+  return dictAppStatusBadge(s)
 }
 // 申请金额(万元)展示:千分位,空值显示 —
 function fmtAmount(v: any): string {
@@ -643,37 +667,42 @@ onMounted(load)
 .customer-overview { width: 100%; display: table; }
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .stat-row { grid-template-columns: 1fr; } }
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
+@media (max-width: 1200px) { .detail-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .detail-grid { grid-template-columns: 1fr; } }
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (max-width: 1200px) { .plan-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 800px) { .plan-grid { grid-template-columns: 1fr; } }
 .plan-card { border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 14px; cursor: pointer; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: border-color .18s, box-shadow .18s, transform .18s; }
 .plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow); transform: translateY(-2px); }
+.plan-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .plan-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.plan-card__meta { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
 /* 二级:申请承诺卡片内容行(替代原 12 列表格) */
 .app-card__no { font-size: 14px; font-weight: 600; }
+.app-card__head-badges { display: inline-flex; align-items: center; gap: 4px; }
+.app-card__label { color: var(--color-text-sub); font-size: 12px; font-weight: 400; }
 .app-card__row { font-size: 13px; color: var(--color-text-main); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .app-card__sep { color: var(--color-text-light); }
 .app-card__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--color-border); font-size: 12px; color: var(--color-text-sub); }
 .app-card__go { color: var(--color-primary); font-weight: 500; }
 .metric-row { margin-bottom: 14px; }
-.metric-row__related { margin-top: 2px; padding: 8px 12px; background: #f8fafc; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
+.metric-row__related { margin-top: 2px; padding: 8px 12px; background: var(--color-bg); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
 .metric-row__related-head { display: flex; align-items: center; gap: 12px; font-size: 13px; margin-bottom: 2px; }
 .metric-row__head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; font-size: 14px; }
-.metric-row__code { font-size: 12px; color: var(--color-text-light); }
 .metric-row__vals { display: flex; flex-wrap: wrap; gap: 24px; padding: 8px 0 4px; }
 .metric-val { display: inline-flex; align-items: baseline; gap: 6px; font-size: 14px; }
 .metric-val__num { font-size: 16px; font-weight: 700; }
 .metric-val__unit { font-size: 12px; color: var(--color-text-light); }
 .overall__sum { display: flex; flex-wrap: wrap; gap: 32px; margin-bottom: 10px; }
 .overall__sum-item { display: inline-flex; align-items: baseline; gap: 8px; font-size: 14px; }
-.other-track { background: #f8fafc; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 6px; }
+.other-track { background: var(--color-bg); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 6px; }
 .period-block { margin-top: 6px; }
 .other-track__desc { font-size: 13px; margin-bottom: 8px; }
 .other-track__edit { max-width: 560px; }
-.dg-label { color: var(--color-text-sub); margin-right: 6px; }
-.dlg-section-title { font-weight: 600; margin-bottom: 8px; }
+.other-track__textarea { width: 100%; resize: vertical; }
+.other-track__save { margin-top: 6px; }
 </style>

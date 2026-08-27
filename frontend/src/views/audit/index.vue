@@ -60,7 +60,8 @@
           </tr>
         </tbody>
       </table>
-      <div v-else class="empty-cell">{{ ballotQueried ? '无匹配投票记录' : '输入批次/分项后查询' }}</div>
+      <!-- §UI审查:空态统一全局 .empty 插画 -->
+      <div v-else class="empty">{{ ballotQueried ? '无匹配投票记录' : '输入批次/分项后查询' }}</div>
       <div v-if="ballotQueried && ballotTotal > 0" class="pagination-wrap">
         <el-pagination
           background
@@ -82,7 +83,8 @@
           导出
         </button>
       </div>
-      <table class="table table--full">
+      <!-- §UI审查:导出记录加载态 v-loading;失败/真空态区分,空态统一全局 .empty 插画 -->
+      <table class="table table--full" v-loading="exportLoading">
         <thead>
           <tr>
             <th>导出对象</th><th>导出类型</th><th>导出人</th><th>所属机构</th><th>导出时间</th><th>水印标识</th>
@@ -97,7 +99,8 @@
             <td>{{ fmtTime(row.exportTime || row.createTime) }}</td>
             <td>{{ row.watermark || '—' }}</td>
           </tr>
-          <tr v-if="!exportRecords.length"><td colspan="6" class="empty-cell">暂无导出记录</td></tr>
+          <tr v-if="exportError && !exportLoading"><td colspan="6"><div class="empty">加载失败，请刷新</div></td></tr>
+          <tr v-else-if="!exportRecords.length && !exportLoading"><td colspan="6"><div class="empty">暂无导出记录</div></td></tr>
         </tbody>
       </table>
       <div v-if="exportTotal > 0" class="pagination-wrap">
@@ -136,7 +139,8 @@
           {{ changeLogLoading ? '查询中…' : '查询' }}
         </button>
       </div>
-      <table class="table table--full">
+      <!-- §UI审查:变更日志加载态 v-loading;失败/真空态区分,空态统一全局 .empty 插画 -->
+      <table class="table table--full" v-loading="changeLogLoading">
         <thead>
           <tr>
             <th>配置域</th><th>配置ID</th><th>动作</th><th>操作人</th><th>操作时间</th><th>复核意见</th>
@@ -147,11 +151,13 @@
             <td>{{ configTypeText(row.configType) }}</td>
             <td>{{ row.configId ?? '—' }}</td>
             <td><span :class="actionBadge(row.action)">{{ actionText(row.action) }}</span></td>
-            <td>{{ row.operatorId ?? '—' }}</td>
+            <!-- §UI审查:操作人列带出 operatorName(后端无该字段时维持 operatorId) -->
+            <td>{{ row.operatorName || (row.operatorId ?? '—') }}</td>
             <td>{{ fmtTime(row.operateTime) }}</td>
             <td>{{ row.opinion || '—' }}</td>
           </tr>
-          <tr v-if="!changeLogs.length"><td colspan="6" class="empty-cell">暂无变更记录</td></tr>
+          <tr v-if="changeLogError && !changeLogLoading"><td colspan="6"><div class="empty">加载失败，请刷新</div></td></tr>
+          <tr v-else-if="!changeLogs.length && !changeLogLoading"><td colspan="6"><div class="empty">暂无变更记录</div></td></tr>
         </tbody>
       </table>
       <div v-if="changeLogTotal > 0" class="pagination-wrap">
@@ -204,7 +210,8 @@
           {{ logsLoading ? '查询中…' : '查询' }}
         </button>
       </div>
-      <table class="table table--full">
+      <!-- §UI审查:操作日志加载态 v-loading;失败/真空态区分,空态统一全局 .empty 插画 -->
+      <table class="table table--full" v-loading="logsLoading">
         <thead>
           <tr>
             <th>类型</th><th>操作人</th><th>操作时间</th><th>对象</th><th>内容</th>
@@ -215,10 +222,12 @@
             <td><span :class="logBadge(row.logType)">{{ auditTypeText(row.logType) }}</span></td>
             <td>{{ row.operatorName || row.operatorId || '—' }}</td>
             <td>{{ fmtTime(row.operateTime) }}</td>
-            <td>{{ row.bizId || '—' }}</td>
+            <!-- §UI审查:对象列优先显示可读标识,无则 #内部主键 + title -->
+            <td><span :title="bizTargetTitle(row)">{{ bizTargetText(row) }}</span></td>
             <td class="log-content">{{ row.content || '—' }}</td>
           </tr>
-          <tr v-if="!auditLogs.length"><td colspan="5" class="empty-cell">暂无操作日志</td></tr>
+          <tr v-if="logError && !logsLoading"><td colspan="5"><div class="empty">加载失败，请刷新</div></td></tr>
+          <tr v-else-if="!auditLogs.length && !logsLoading"><td colspan="5"><div class="empty">暂无操作日志</div></td></tr>
         </tbody>
       </table>
       <div v-if="logTotal > 0" class="pagination-wrap">
@@ -247,7 +256,7 @@ import {
   listAuditLogs,
   type BallotDetailRow
 } from '@/api/audit'
-import { voteChoiceText, exportTypeText, configTypeText, configActionText } from '@/utils/dict'
+import { voteChoiceText, voteChoiceBadge, exportTypeText, configTypeText, configActionText } from '@/utils/dict'
 
 // ---------- 分段页签(参照流程配置页) ----------
 const auditTabs = [
@@ -305,7 +314,8 @@ function ballotText(t?: string) {
   return voteChoiceText(t)
 }
 function ballotBadge(t?: string) {
-  return ['APPROVE', 'AGREE'].includes(t || '') ? 'badge badge--success' : 'badge badge--danger'
+  // 弃权(ABSTAIN)/未投为中性灰,勿误标为否决红(UI 审查 P0-4)
+  return voteChoiceBadge(t)
 }
 
 // ---------- ② 导出记录 ----------
@@ -313,8 +323,13 @@ const exportRecords = ref<any[]>([])
 const exportTotal = ref(0)
 const exportPageNum = ref(1)
 const exportPageSize = ref(20)
+// §UI审查:导出记录表加载/失败态标志
+const exportLoading = ref(false)
+const exportError = ref(false)
 
 async function loadExportRecords() {
+  exportLoading.value = true
+  exportError.value = false
   try {
     const data = await listExportRecords({ pageNum: exportPageNum.value, pageSize: exportPageSize.value })
     exportRecords.value = data?.records || []
@@ -322,6 +337,9 @@ async function loadExportRecords() {
   } catch {
     exportRecords.value = []
     exportTotal.value = 0
+    exportError.value = true
+  } finally {
+    exportLoading.value = false
   }
 }
 // 每页条数变更:回到第 1 页
@@ -337,9 +355,12 @@ const changeLogTotal = ref(0)
 const changeLogPageNum = ref(1)
 const changeLogPageSize = ref(20)
 const changeLogLoading = ref(false)
+// §UI审查:变更日志失败态标志
+const changeLogError = ref(false)
 
 async function loadChangeLog() {
   changeLogLoading.value = true
+  changeLogError.value = false
   try {
     const data = await listConfigChangeLog({
       configType: changeLogType.value || undefined,
@@ -351,6 +372,7 @@ async function loadChangeLog() {
   } catch {
     changeLogs.value = []
     changeLogTotal.value = 0
+    changeLogError.value = true
   } finally {
     changeLogLoading.value = false
   }
@@ -386,7 +408,8 @@ function fmtTime(t?: string) {
 interface CsvCol {
   title: string
   key: string
-  fmt?: (v: any) => any
+  // §UI审查:fmt 接收整行与当前值,便于导出与表格展示同口径兜底(voterName||userName 等)
+  fmt?: (row: any, value: any) => any
 }
 function exportCsv(rows: any[], cols: CsvCol[], name: string) {
   if (!rows.length) return
@@ -396,7 +419,7 @@ function exportCsv(rows: any[], cols: CsvCol[], name: string) {
   }
   const head = cols.map(c => esc(c.title)).join(',')
   const body = rows
-    .map(r => cols.map(c => esc(c.fmt ? c.fmt(r[c.key]) : r[c.key])).join(','))
+    .map(r => cols.map(c => esc(c.fmt ? c.fmt(r, r[c.key]) : r[c.key])).join(','))
     .join('\n')
   const blob = new Blob(['﻿' + head + '\n' + body], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
@@ -409,34 +432,37 @@ function exportCsv(rows: any[], cols: CsvCol[], name: string) {
 }
 // 各页签导出列(值取原始字段;fmt 用于枚举→中文)
 const ballotCsvCols: CsvCol[] = [
-  { title: '真实投票人', key: 'voterName' },
+  // §UI审查:导出与表格同口径兜底 voterName || userName(不再只取 voterName)
+  { title: '真实投票人', key: 'voterName', fmt: r => r.voterName || r.userName || '—' },
   { title: '岗位', key: 'postName' },
   { title: '机构', key: 'orgName' },
-  { title: '票型', key: 'ballotType', fmt: v => ballotText(v) },
+  { title: '票型', key: 'ballotType', fmt: (_r, v) => ballotText(v) },
   { title: '匿名码对照', key: 'anonymousCode' },
-  { title: '投票时间', key: 'voteTime', fmt: v => fmtTime(v) }
+  { title: '投票时间', key: 'voteTime', fmt: (_r, v) => fmtTime(v) }
 ]
 const exportCsvCols: CsvCol[] = [
   { title: '导出对象', key: 'targetNo' },
-  { title: '导出类型', key: 'exportType', fmt: v => exportTypeText(v) },
+  { title: '导出类型', key: 'exportType', fmt: (_r, v) => exportTypeText(v) },
   { title: '导出人', key: 'operatorName' },
   { title: '所属机构', key: 'orgName' },
-  { title: '导出时间', key: 'exportTime', fmt: v => fmtTime(v) },
+  { title: '导出时间', key: 'exportTime', fmt: (_r, v) => fmtTime(v) },
   { title: '水印标识', key: 'watermark' }
 ]
 const changeLogCsvCols: CsvCol[] = [
-  { title: '配置域', key: 'configType', fmt: v => configTypeText(v) },
+  { title: '配置域', key: 'configType', fmt: (_r, v) => configTypeText(v) },
   { title: '配置ID', key: 'configId' },
-  { title: '动作', key: 'action', fmt: v => actionText(v) },
-  { title: '操作人', key: 'operatorId' },
-  { title: '操作时间', key: 'operateTime', fmt: v => fmtTime(v) },
+  { title: '动作', key: 'action', fmt: (_r, v) => actionText(v) },
+  // §UI审查:导出与表格同口径——后端变更日志无 operatorName 字段时维持 operatorId
+  { title: '操作人', key: 'operatorId', fmt: r => r.operatorName || (r.operatorId ?? '—') },
+  { title: '操作时间', key: 'operateTime', fmt: (_r, v) => fmtTime(v) },
   { title: '复核意见', key: 'opinion' }
 ]
 const auditLogCsvCols: CsvCol[] = [
-  { title: '类型', key: 'logType', fmt: v => auditTypeText(v) },
+  { title: '类型', key: 'logType', fmt: (_r, v) => auditTypeText(v) },
   { title: '操作人', key: 'operatorName' },
-  { title: '操作时间', key: 'operateTime', fmt: v => fmtTime(v) },
-  { title: '对象', key: 'bizId' },
+  { title: '操作时间', key: 'operateTime', fmt: (_r, v) => fmtTime(v) },
+  // §UI审查:导出与表格「对象」列同口径(可读标识 → #内部主键)
+  { title: '对象', key: 'bizId', fmt: r => bizTargetText(r) },
   { title: '内容', key: 'content' }
 ]
 
@@ -453,6 +479,8 @@ const logTotal = ref(0)
 const logPageNum = ref(1)
 const logPageSize = ref(20)
 const logsLoading = ref(false)
+// §UI审查:操作日志失败态标志
+const logError = ref(false)
 
 const auditTypeMap: Record<string, string> = {
   LOGIN: '登录',
@@ -469,6 +497,15 @@ const auditTypeMap: Record<string, string> = {
 }
 function auditTypeText(t?: string) {
   return (t && auditTypeMap[t]) || t || '—'
+}
+// §UI审查:操作日志「对象」列——有可读标识(申请号/单号等)则显示,否则显示内部主键 #id
+function bizTargetText(row: any): string {
+  const readable = row.bizNo || row.applicationNo || row.targetNo
+  if (readable) return readable
+  return row.bizId ? `#${row.bizId}` : '—'
+}
+function bizTargetTitle(row: any): string {
+  return row.bizId ? `内部主键 ${row.bizId}` : ''
 }
 function logBadge(t?: string) {
   const map: Record<string, string> = {
@@ -487,6 +524,7 @@ function logBadge(t?: string) {
 }
 async function loadLogs() {
   logsLoading.value = true
+  logError.value = false
   try {
     const data = await listAuditLogs({ ...logQuery, pageNum: logPageNum.value, pageSize: logPageSize.value })
     auditLogs.value = data?.records || []
@@ -494,6 +532,7 @@ async function loadLogs() {
   } catch {
     auditLogs.value = []
     logTotal.value = 0
+    logError.value = true
   } finally {
     logsLoading.value = false
   }

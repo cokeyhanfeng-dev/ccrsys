@@ -22,6 +22,8 @@ public class AppLoginUser {
     public static final String ROLE_DEPT_GM = "dept_gm";
     public static final String ROLE_VICE_PRESIDENT = "vice_president";
     public static final String ROLE_COMMITTEE_MEMBER = "committee_member";
+    /** 贷审会秘书岗(由计划财务部总经理兼任,主角色 dept_gm) */
+    public static final String ROLE_SECRETARY = "secretary";
     public static final String ROLE_CONTRACT_OPERATOR = "contract_operator";
     /** 行长/审计/管理员:全量 */
     public static final String ROLE_PRESIDENT = "president";

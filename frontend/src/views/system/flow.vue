@@ -271,7 +271,11 @@
               <option value="" disabled>请选择部门/机构</option>
               <option v-for="d in depts" :key="d.id" :value="d.orgCode">{{ d.deptName }}({{ d.orgCode }})</option>
             </select>
-            <input v-else class="form-input" v-model="assigneeDialog.form.assigneeCode" placeholder="人员组编码" />
+            <!-- §UI审查:「按人员组」由裸输入框改下拉,避免手填组编码出错 -->
+            <select v-else-if="assigneeDialog.form.assigneeType === 'GROUP'" class="form-select" v-model="assigneeDialog.form.assigneeCode">
+              <option value="" disabled>请选择人员组</option>
+              <option v-for="g in groups" :key="g.groupNo" :value="g.groupNo">{{ g.groupName }}({{ g.groupNo }})</option>
+            </select>
           </div>
           <div class="form-field">
             <label class="form-field__label">同层关系</label>
@@ -329,10 +333,11 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">代理有效期(空=长期,到期自动回退)</label>
+            <!-- §UI审查:代理有效期与配置有效期统一为 date 粒度 -->
             <div style="display:flex;gap:4px;align-items:center">
-              <input class="form-input" v-model="delegateDialog.form.delegateStart" type="datetime-local" />
+              <input class="form-input" v-model="delegateDialog.form.delegateStart" type="date" />
               <span>至</span>
-              <input class="form-input" v-model="delegateDialog.form.delegateEnd" type="datetime-local" />
+              <input class="form-input" v-model="delegateDialog.form.delegateEnd" type="date" />
             </div>
           </div>
           <div class="section-tip">有效期内新生成待办投递给代理人,主指派人保留可见;不影响已生成待办。操作写审计日志。</div>
@@ -392,7 +397,7 @@ import {
   listFlowNodes, listAssignees, createAssignee, updateAssignee, deleteAssignee,
   delegateAssignee, resolveAssignees,
   listDeptVp, createDeptVp, updateDeptVp, deleteDeptVp,
-  listRoles, listUsers, listDepts,
+  listRoles, listUsers, listDepts, listManualGroups,
   type FlowNode, type NodeAssignee, type DeptVp, type SysDept, type SysRole
 } from '@/api/system'
 import { nodeLabel, assigneeTypeText } from '@/utils/dict'
@@ -449,11 +454,15 @@ async function loadDefinitions() {
   }
 }
 async function publish(id: number) {
+  // §UI审查:流程发布加确认(影响新提交申请流转版本)
+  await ElMessageBox.confirm('确认发布该流程?发布后新提交申请将按此流程版本流转。', '发布确认', { type: 'warning' })
   await publishFlowDefinition(id)
   ElMessage.success('已发布')
   loadDefinitions()
 }
 async function unpublish(id: number) {
+  // §UI审查:流程停用加确认
+  await ElMessageBox.confirm('确认停用该流程?停用后新提交申请将不再使用此流程版本。', '停用确认', { type: 'warning' })
   await unpublishFlowDefinition(id)
   ElMessage.success('已停用')
   loadDefinitions()
@@ -466,6 +475,7 @@ const assignees = ref<NodeAssignee[]>([])
 const users = ref<any[]>([])
 const roles = ref<SysRole[]>([])
 const depts = ref<SysDept[]>([])
+const groups = ref<any[]>([]) // §UI审查:人员组下拉选项
 const deptVps = ref<DeptVp[]>([])
 const deptVpDialog = reactive({ show: false, isEdit: false, form: {} as any })
 // 分管行长下拉=启用用户中 vice_president 角色;部门下拉=机构表中部门(DEPT)机构(映射按部门归属码)
@@ -511,6 +521,12 @@ async function loadRefs() {
     depts.value = (await listDepts()).filter((d) => d.status === 'ENABLE')
   } catch {
     depts.value = []
+  }
+  try {
+    const g = await listManualGroups({ pageNum: 1, pageSize: 200 })
+    groups.value = (g as any)?.records || []
+  } catch {
+    groups.value = []
   }
 }
 
@@ -590,13 +606,8 @@ function typeText(t: string) {
   return assigneeTypeText(t)
 }
 function typeBadge(t: string) {
-  const map: Record<string, string> = {
-    PERSON: 'badge badge--success',
-    ROLE: 'badge badge--info',
-    DEPT: 'badge badge--warning',
-    GROUP: 'badge badge--neutral'
-  }
-  return map[t] || 'badge badge--neutral'
+  // §UI审查:指派方式为「类别」标签,统一中性色;语义色只留给状态
+  return 'badge badge--neutral'
 }
 function rangeText(from?: string, to?: string) {
   if (!from && !to) return '长期'
@@ -689,10 +700,11 @@ async function removeAssignee(a: NodeAssignee) {
 const delegateDialog = reactive({ show: false, row: null as NodeAssignee | null, form: {} as any })
 function openDelegate(a: NodeAssignee) {
   delegateDialog.row = a
+  // §UI审查:代理有效期统一为 date 粒度,截取到日
   delegateDialog.form = {
     delegateTo: a.delegateTo || '',
-    delegateStart: a.delegateStart ? String(a.delegateStart).slice(0, 16) : '',
-    delegateEnd: a.delegateEnd ? String(a.delegateEnd).slice(0, 16) : ''
+    delegateStart: a.delegateStart ? String(a.delegateStart).slice(0, 10) : '',
+    delegateEnd: a.delegateEnd ? String(a.delegateEnd).slice(0, 10) : ''
   }
   delegateDialog.show = true
 }

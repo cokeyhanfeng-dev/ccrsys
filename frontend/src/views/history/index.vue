@@ -8,15 +8,15 @@
     <div class="card">
       <!-- 筛选(§13.2 历史申请查询:申请号/状态/客户名称;工作台统计卡可带 query 跳转) -->
       <div class="filter-bar">
-        <input class="form-input" v-model="filters.applicationNo" placeholder="申请号" />
-        <el-select v-model="filters.status" placeholder="状态" clearable>
+        <input class="form-input" v-model="filters.applicationNo" placeholder="申请号" aria-label="申请号" />
+        <el-select v-model="filters.status" placeholder="状态" aria-label="状态">
           <el-option v-for="s in statusOptions" :key="s.value || '_all'" :label="s.label" :value="s.value" />
         </el-select>
-        <input class="form-input" v-model="filters.keyword" placeholder="客户名称" />
+        <input class="form-input" v-model="filters.keyword" placeholder="客户名称" aria-label="客户名称" />
         <button class="btn btn--primary" @click="onSearch">查询</button>
         <button class="btn btn--secondary" @click="onReset">重置</button>
       </div>
-      <table class="table table--full">
+      <table class="table table--full" v-loading="listLoading">
         <thead>
           <tr>
             <th>申请号</th><th>业务类型</th><th>客户/集团</th><th>提交时间</th>
@@ -29,18 +29,18 @@
             <td>{{ businessTypeText(row.businessType) }}</td>
             <td>{{ row.customerName || (row.groupNo ? `集团 ${row.groupNo}` : row.customerNo || '—') }}</td>
             <td>{{ fmtTime(row.submitTime || row.createTime) }}</td>
-            <td><span :class="badgeClass(row.status)">{{ statusText(row.status) }}</span></td>
+            <td><span :class="appStatusBadge(row.status)">{{ statusText(row.status) }}</span></td>
             <td>{{ fmtTime(row.finalTime) }}</td>
             <td>
               <button class="btn btn--text" @click="goArchive(row)">档案</button>
               <button class="btn btn--text" @click="openProgress(row)">进度</button>
               <button v-if="row.status === 'DRAFT'" class="btn btn--text" @click="goEdit(row)">继续编辑</button>
-              <button v-if="row.status === 'DRAFT'" class="btn btn--text btn--danger" @click="onDelete(row)">删除</button>
+              <button v-if="row.status === 'DRAFT'" class="btn btn--danger-text" @click="onDelete(row)">删除</button>
               <button v-if="canReapply(row)" class="btn btn--text" @click="goReapply(row)">重新发起</button>
               <button v-if="row.hasResolution" class="btn btn--text" @click="downloadResolution(row)">决议书</button>
             </td>
           </tr>
-          <tr v-if="!records.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
+          <tr v-if="!records.length"><td colspan="7" class="empty-cell">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</td></tr>
         </tbody>
       </table>
 
@@ -57,12 +57,14 @@
     </div>
 
     <!-- 审批进度(§链路可视化):各节点流转状态 + 表决 n/6 -->
-    <el-dialog v-model="progressVisible" title="审批进度" width="560px" append-to-body>
+    <el-dialog v-model="progressVisible" title="审批进度" width="min(560px, 92vw)" append-to-body>
       <div v-loading="progressLoading">
         <template v-if="progress">
+          <div v-if="progressError" class="empty-cell">加载失败，请刷新</div>
+          <template v-else>
           <div class="progress-head">
             <span class="progress-no">{{ progress.applicationNo }}</span>
-            <span :class="badgeClass(progress.currentStatus)">{{ statusText(progress.currentStatus) }}</span>
+            <span :class="appStatusBadge(progress.currentStatus)">{{ statusText(progress.currentStatus) }}</span>
           </div>
           <div v-if="progress.nodes && progress.nodes.length" class="progress-nodes">
             <div v-for="(n, i) in progress.nodes" :key="n.nodeCode" class="progress-node" :class="'node--' + n.status">
@@ -82,13 +84,14 @@
                   <span v-if="n.decision">决策 {{ n.decision }}</span>
                 </div>
                 <div v-else-if="n.submittedCount != null" class="node-meta vote">
-                  <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'#409EFF'" />
+                  <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'var(--color-primary)'" />
                   <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
                 </div>
               </div>
             </div>
           </div>
           <div v-else class="empty-cell">暂无进度数据</div>
+          </template>
         </template>
       </div>
     </el-dialog>
@@ -102,7 +105,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { pageHistory, getApprovalProgress, downloadResolutionDoc } from '@/api/history'
 import { del } from '@/api/request'
-import { appStatusText, businessTypeText } from '@/utils/dict'
+import { appStatusText, businessTypeText, appStatusBadge } from '@/utils/dict'
+import { fmtDateTime } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -117,6 +121,8 @@ const records = ref<any[]>([])
 const total = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
+const listLoading = ref(false)
+const listError = ref(false)
 
 // ---------- 筛选(§13.2:申请号/状态/客户名称;工作台统计卡可带 query 跳转) ----------
 const route = useRoute()
@@ -141,6 +147,8 @@ function initFromQuery() {
 }
 
 async function load() {
+  listLoading.value = true
+  listError.value = false
   try {
     const data = await pageHistory({
       pageNum: pageNum.value,
@@ -154,6 +162,9 @@ async function load() {
   } catch {
     records.value = []
     total.value = 0
+    listError.value = true
+  } finally {
+    listLoading.value = false
   }
 }
 function onPage(p: number) {
@@ -188,43 +199,26 @@ async function onDelete(row: any) {
 }
 
 function fmtTime(t: string) {
-  return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
+  return fmtDateTime(t, false)
 }
 function statusText(s: string) {
   return appStatusText(s)
-}
-function badgeClass(s: string) {
-  const map: Record<string, string> = {
-    APPROVED: 'badge badge--success',
-    PARTIAL_APPROVED: 'badge badge--success',
-    FINAL: 'badge badge--success',
-    COMMITTEE_PASS: 'badge badge--success',
-    REJECTED: 'badge badge--danger',
-    VETOED: 'badge badge--danger',
-    PROCESSING: 'badge badge--info',
-    SUBMITTING: 'badge badge--info',
-    ROUTING: 'badge badge--info',
-    SUBMITTED: 'badge badge--info',
-    APPROVED_LEVEL: 'badge badge--info',
-    VOTING: 'badge badge--info',
-    PRESIDENT_DECISION: 'badge badge--warning',
-    CLOSED: 'badge badge--neutral',
-    DRAFT: 'badge badge--neutral'
-  }
-  return map[s] || 'badge badge--neutral'
 }
 
 // 审批进度(§链路可视化):弹窗展示链路各节点流转状态 + 表决 n/6
 const progressVisible = ref(false)
 const progressLoading = ref(false)
+const progressError = ref(false)
 const progress = ref<any>(null)
 async function openProgress(row: any) {
   progress.value = null
+  progressError.value = false
   progressVisible.value = true
   progressLoading.value = true
   try {
     progress.value = await getApprovalProgress(row.id)
   } catch {
+    progressError.value = true
     progress.value = { applicationNo: row.applicationNo, nodes: [] }
   } finally {
     progressLoading.value = false
@@ -283,15 +277,15 @@ onMounted(() => {
 .node-rail { display: flex; flex-direction: column; align-items: center; width: 20px; margin-right: 12px; }
 .node-dot { width: 12px; height: 12px; border-radius: 50%; background: #d9d9d9; flex-shrink: 0; margin-top: 2px; }
 .node-line { width: 2px; flex: 1; min-height: 28px; background: #e8e8e8; }
-.node--DONE .node-dot { background: #52c41a; }
-.node--CURRENT .node-dot { background: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2); }
+.node--DONE .node-dot { background: var(--color-success); }
+.node--CURRENT .node-dot { background: var(--color-primary); box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.2); }
 .node-body { flex: 1; padding-bottom: 22px; }
 .node-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
 .node-state { font-size: 12px; font-weight: 400; padding: 1px 8px; border-radius: 10px; }
-.state--DONE { color: #52c41a; background: rgba(82, 196, 26, 0.12); }
-.state--CURRENT { color: #409eff; background: rgba(64, 158, 255, 0.12); }
-.state--PENDING, .state--SKIPPED { color: #909399; background: rgba(144, 147, 153, 0.12); }
-.node-meta { margin-top: 4px; font-size: 12px; color: #909399; display: flex; gap: 12px; }
+.state--DONE { color: var(--color-success); background: var(--color-success-light); }
+.state--CURRENT { color: var(--color-primary); background: var(--color-primary-light); }
+.state--PENDING, .state--SKIPPED { color: var(--color-text-sub); background: rgba(144, 147, 153, 0.12); }
+.node-meta { margin-top: 4px; font-size: 12px; color: var(--color-text-sub); display: flex; gap: 12px; }
 .node-meta.vote { display: block; margin-top: 8px; }
 .vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 </style>

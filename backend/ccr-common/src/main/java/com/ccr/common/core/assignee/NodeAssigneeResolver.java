@@ -195,9 +195,11 @@ public class NodeAssigneeResolver {
                             for (AssigneeUser user : findEnabledUsersByRoleAndDept(roleCode, cfgDeptCode)) {
                                 users.putIfAbsent(user.getUserId(), user);
                             }
-                        } else if (deptCode == null && SECRETARY_NODE.equals(nodeCode)) {
+                        } else if (SECRETARY_NODE.equals(nodeCode)) {
                             // 固定机构节点(秘书岗=计划财务部总经理兼任):与分项部门归属/申请人机构无关,
-                            // 按配置机构+角色直接解析;部门总经理/分管行长仍走 deptCode 分流,deptCode 为空不命中
+                            // 无论分项 dept_code 是否冻结一律按配置机构+角色直接解析(2026-08-27 修复:
+                            // 矩阵透出 dept_code 后 SECRETARY 解析恒空 → 秘书岗审批 1007 不具备节点角色);
+                            // 部门总经理/分管行长仍走 deptCode 分流,deptCode 为空不命中
                             for (AssigneeUser user : findEnabledUsersByRoleAndDept(roleCode, cfgDeptCode)) {
                                 users.putIfAbsent(user.getUserId(), user);
                             }

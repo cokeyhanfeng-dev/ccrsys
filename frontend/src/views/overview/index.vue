@@ -8,7 +8,7 @@
     <!-- 欢迎区:问候语(按时段) + 姓名/角色/机构 + 日期 -->
     <div class="welcome-card">
       <div class="welcome-card__main">
-        <div class="welcome-card__greet">{{ greeting }},{{ nickName }}</div>
+        <div class="welcome-card__greet">{{ greeting }}，{{ nickName }}</div>
         <div class="welcome-card__meta">
           {{ roleName }}<span v-if="orgId"> · 机构 {{ orgName || '#' + orgId }}</span>
         </div>
@@ -26,7 +26,11 @@
         :class="'stat-card--tone' + (i % 3)"
         v-for="(s, i) in stats"
         :key="s.label"
+        :tabindex="s.to ? 0 : undefined"
+        :role="s.to ? 'link' : undefined"
+        :aria-label="s.to ? ('前往' + s.label) : undefined"
         @click="s.to && router.push(s.to)"
+        @keydown.enter="s.to && router.push(s.to)"
       >
         <div class="stat-card__icon">
           <el-icon :size="20"><component :is="s.icon" /></el-icon>
@@ -75,7 +79,7 @@
               </tr>
             </tbody>
           </table>
-          <div class="empty" v-else>暂无进行中的申请,已完成申请请在"历史申请"中查看</div>
+          <div class="empty" v-else>暂无进行中的申请，已完成申请请在「历史申请」中查看</div>
         </div>
 
         <!-- 其他角色:待我处理(审批/表决/决策聚合) -->
@@ -91,7 +95,7 @@
                   {{ t.title }}
                   <span class="badge" :class="t.kindBadge">{{ t.kindText }}</span>
                 </div>
-                <div class="todo-card__sub">{{ t.sub ? t.sub : `分项 ${t.itemNo} · ${t.nodeText} · ${t.time}` }}</div>
+                <div class="todo-card__sub">{{ t.sub ? t.sub : `分项 ${t.itemNo} · ${t.nodeText}` + (t.time ? ` · ${t.time}` : '') }}</div>
                 <div class="todo-card__grid">
                   <div class="tc-item"><span class="dg-label">金额</span><b>{{ t.amount }}</b></div>
                   <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ t.rate }}</b></div>
@@ -127,7 +131,7 @@
 
           <template v-if="atRiskTop.length">
             <div class="risk-title">有风险计划(前 5)</div>
-            <div class="risk-item" v-for="(r, i) in atRiskTop" :key="i" @click="router.push('/commitment')">
+            <div class="risk-item" v-for="(r, i) in atRiskTop" :key="i" @click="router.push('/commitment')" tabindex="0" role="link" aria-label="前往贡献度跟踪" @keydown.enter="router.push('/commitment')">
               <div class="risk-item__main">
                 <b>{{ r.customer }}</b>
                 <span class="dg-label">{{ r.metric }}</span>
@@ -144,7 +148,7 @@
 
 <script setup lang="ts">
 import { listApprovalDone } from '@/api/approval2'
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { get } from '@/api/request'
@@ -183,10 +187,10 @@ const roleHint = computed(() => {
   return map[role.value] || '当前需要我处理的工作、已办与贡献度跟踪概况'
 })
 
-// ---------- 欢迎区:问候语 + 日期 ----------
-const now = new Date()
+// ---------- 欢迎区:问候语 + 日期(跨零点自动刷新,§UI审查) ----------
+const now = ref(new Date())
 const greeting = computed(() => {
-  const h = now.getHours()
+  const h = now.value.getHours()
   if (h < 6) return '凌晨好'
   if (h < 9) return '早上好'
   if (h < 12) return '上午好'
@@ -195,9 +199,9 @@ const greeting = computed(() => {
   return '晚上好'
 })
 const WEEK = ['日', '一', '二', '三', '四', '五', '六']
-const dateDay = `${now.getMonth() + 1}月${now.getDate()}日`
-const dateText = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]}`
-const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+const dateDay = computed(() => `${now.value.getMonth() + 1}月${now.value.getDate()}日`)
+const dateText = computed(() => `${now.value.getFullYear()}年${now.value.getMonth() + 1}月${now.value.getDate()}日 星期${WEEK[now.value.getDay()]}`)
+const todayStr = computed(() => `${now.value.getFullYear()}-${String(now.value.getMonth() + 1).padStart(2, '0')}-${String(now.value.getDate()).padStart(2, '0')}`)
 
 // ---------- 数据 ----------
 const tasks = ref<any[]>([])          // 审批待办(支行行长/部门总经理/分管行长)
@@ -398,7 +402,7 @@ const atRiskTop = computed(() => {
 
 // ---------- 已办 ----------
 const doneToday = computed(
-  () => doneRows.value.filter((r) => String(r.operationTime || '').slice(0, 10) === todayStr).length
+  () => doneRows.value.filter((r) => String(r.operationTime || '').slice(0, 10) === todayStr.value).length
 )
 
 // ---------- KPI 卡(按角色差异化) ----------
@@ -483,7 +487,13 @@ async function load() {
   await Promise.all(jobs)
 }
 
-onMounted(load)
+let dateTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  load()
+  // §UI审查:欢迎区日期跨零点自动刷新(每分钟校准一次)
+  dateTimer = setInterval(() => { now.value = new Date() }, 60 * 1000)
+})
+onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 </script>
 
 <style scoped>
@@ -505,8 +515,9 @@ onMounted(load)
 .welcome-card__day { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .welcome-card__date-text { margin-top: 4px; font-size: 12px; opacity: .8; }
 
-/* ---------- KPI 卡可点击 ---------- */
+/* ---------- KPI 卡可点击(键盘可达,§UI审查) ---------- */
 .stat-card--link { cursor: pointer; }
+.stat-card--link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .stat-card__arrow { color: var(--color-text-light); transition: color .15s, transform .15s; }
 .stat-card--link:hover .stat-card__arrow { color: var(--color-primary); transform: translateX(2px); }
 .stat-card__num--danger { color: var(--color-danger); }
@@ -558,6 +569,7 @@ onMounted(load)
 }
 .risk-item + .risk-item { margin-top: 4px; }
 .risk-item:hover { background: var(--color-primary-light, #eff4ff); }
+.risk-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .risk-item__main { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .risk-item__main b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .risk-item__main .dg-label { font-size: 12px; margin-right: 0; }

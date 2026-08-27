@@ -8,12 +8,13 @@
       </InfoTip>
     </div>
 
-    <div class="tabs">
+    <!-- §UI审查:页签统一为 .segmented 分段控件,与 flow/run-log 一致,解决小屏换行 -->
+    <div class="segmented">
       <button
         v-for="t in tabs"
         :key="t.key"
-        class="btn"
-        :class="activeTab === t.key ? 'btn--primary' : 'btn--ghost'"
+        class="segmented__item"
+        :class="{ 'segmented__item--active': activeTab === t.key }"
         @click="activeTab = t.key"
       >
         {{ t.label }}
@@ -21,7 +22,7 @@
     </div>
 
     <!-- ========== LPR 维护 ========== -->
-    <div v-if="activeTab === 'lpr'" class="card">
+    <div v-if="activeTab === 'lpr'" class="card" v-loading="loading.lpr">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center">
           <span>LPR 参数(计划财务部人工维护,PRD D12)</span>
@@ -52,9 +53,9 @@
             <td>{{ fmtTime(l.publishTime) }}</td>
             <td>
               <button v-if="canMaintain && l.status === 'DRAFT'" class="btn btn--text" @click="openLprConfig(l)">维护明细</button>
-              <button v-if="canMaintain && l.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('lpr', l.id)">送审</button>
-              <button v-if="canReview && l.status === 'REVIEW'" class="btn btn--text" @click="doPublish('lpr', l.id)">复核发布</button>
-              <button v-if="canMaintain && l.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('lpr', l.id)">停用</button>
+              <button v-if="canMaintain && l.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doSubmit('lpr', l.id)">{{ pendingText(`submit:lpr:${l.id}`, '送审') }}</button>
+              <button v-if="canReview && l.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPublish('lpr', l.id)">{{ pendingText(`publish:lpr:${l.id}`, '复核发布') }}</button>
+              <button v-if="canMaintain && l.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doDisable('lpr', l.id)">{{ pendingText(`disable:lpr:${l.id}`, '停用') }}</button>
             </td>
           </tr>
           <tr v-if="!lprList.length"><td colspan="10" class="empty-cell">暂无数据</td></tr>
@@ -63,18 +64,20 @@
     </div>
 
     <!-- ========== 权限矩阵 ========== -->
-    <div v-if="activeTab === 'matrix'" class="card">
+    <div v-if="activeTab === 'matrix'" class="card" v-loading="loading.matrix">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center">
           <span>权限矩阵(LPR±BP 路由阈值;生效行禁止原位修改,调整=新建行发布替换)</span>
+          <!-- §UI审查:默认 value="" 实为不过滤加载全部,文案改「全部状态」与行为一致 -->
           <select class="form-select" v-model="matrixStatus" style="width:140px" @change="loadMatrix">
-            <option value="">仅生效</option>
+            <option value="">全部状态</option>
             <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
           </select>
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
       </div>
-      <table class="table table--full">
+      <!-- §UI审查:13 列宽表横向滚动 + 关键列 nowrap/ellipsis -->
+      <table class="table table--wide">
         <thead>
           <tr>
             <th>行编码</th><th>业务大类</th><th>存量/新增</th><th>客户类型</th><th>产品</th>
@@ -88,18 +91,18 @@
             <td>{{ bizText(m.businessBigType) }}</td>
             <td>{{ m.newOrExisting === 'NEW' ? '新增' : '存量' }}</td>
             <td>{{ customerTypeText(m.customerType, '通配') }}</td>
-            <td>{{ productName(m.productCode, '通配') }}</td>
+            <td class="col-ellipsis" :title="productName(m.productCode, '通配')">{{ productName(m.productCode, '通配') }}</td>
             <td>{{ amountTierText(m.amountTier, '通配') }}</td>
             <td>{{ termTierText(m.termTier, '通配') }}</td>
-            <td>{{ guaranteeTypeText(m.guaranteeType, '通配') }}</td>
+            <td class="col-ellipsis" :title="guaranteeTypeText(m.guaranteeType, '通配')">{{ guaranteeTypeText(m.guaranteeType, '通配') }}</td>
             <td>{{ nodeLabel(m.startNodeCode) }}</td>
-            <td>{{ boundaryText(m) }}</td>
+            <td class="col-ellipsis" :title="boundaryText(m)">{{ boundaryText(m) }}</td>
             <td class="num">{{ m.priority }}</td>
             <td><span :class="statusBadge(m.status)">{{ statusText(m.status) }}</span></td>
             <td>
-              <button v-if="canMaintain && m.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('matrix', m.id)">送审</button>
-              <button v-if="canReview && m.status === 'REVIEW'" class="btn btn--text" @click="doPublish('matrix', m.id)">复核发布</button>
-              <button v-if="canMaintain && m.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('matrix', m.id)">停用</button>
+              <button v-if="canMaintain && m.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doSubmit('matrix', m.id)">{{ pendingText(`submit:matrix:${m.id}`, '送审') }}</button>
+              <button v-if="canReview && m.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPublish('matrix', m.id)">{{ pendingText(`publish:matrix:${m.id}`, '复核发布') }}</button>
+              <button v-if="canMaintain && m.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doDisable('matrix', m.id)">{{ pendingText(`disable:matrix:${m.id}`, '停用') }}</button>
             </td>
           </tr>
           <tr v-if="!matrixList.length"><td colspan="13" class="empty-cell">暂无数据</td></tr>
@@ -108,7 +111,7 @@
     </div>
 
     <!-- ========== 产品边界(§12.13 ③) ========== -->
-    <div v-if="activeTab === 'product'" class="card">
+    <div v-if="activeTab === 'product'" class="card" v-loading="loading.product">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center">
           <span>产品业务硬边界(全行业务硬边界,任何节点调价/矩阵边界不得突破)</span>
@@ -119,7 +122,8 @@
         </div>
         <button v-if="canMaintain" class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
       </div>
-      <table class="table table--full">
+      <!-- §UI审查:11 列宽表横向滚动 -->
+      <table class="table table--wide">
         <thead>
           <tr>
             <th>产品编码</th><th>产品名称</th><th>业务类型</th><th>硬边界利率</th><th>利率方向</th>
@@ -129,7 +133,7 @@
         <tbody>
           <tr v-for="p in productList" :key="p.id">
             <td>{{ p.productCode }}</td>
-            <td>{{ p.productName || '—' }}</td>
+            <td class="col-ellipsis" :title="p.productName || '—'">{{ p.productName || '—' }}</td>
             <td>{{ businessTypeText(p.businessType) }}</td>
             <td class="num">{{ p.hardBoundaryRate }}%</td>
             <td>{{ rateDirectionText(p.rateDirection) }}</td>
@@ -139,10 +143,10 @@
             <td>{{ p.publishBy ?? '—' }}</td>
             <td>{{ fmtTime(p.publishTime) }}</td>
             <td>
-              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('product', p.id)">送审</button>
-              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="doPublish('product', p.id)">复核发布</button>
-              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="openReject(p.id)">驳回</button>
-              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('product', p.id)">停用</button>
+              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doSubmit('product', p.id)">{{ pendingText(`submit:product:${p.id}`, '送审') }}</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPublish('product', p.id)">{{ pendingText(`publish:product:${p.id}`, '复核发布') }}</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="openReject(p.id)">驳回</button>
+              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doDisable('product', p.id)">{{ pendingText(`disable:product:${p.id}`, '停用') }}</button>
             </td>
           </tr>
           <tr v-if="!productList.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -151,10 +155,11 @@
     </div>
 
     <!-- ========== 产品配置中心(§8A.5:产品目录 + 产品审批链路) ========== -->
-    <div v-if="activeTab === 'productCenter'" class="card">
-      <div class="tabs" style="margin-bottom:16px">
-        <button class="btn" :class="pcTab === 'catalog' ? 'btn--primary' : 'btn--ghost'" @click="pcTab = 'catalog'">产品目录</button>
-        <button class="btn" :class="pcTab === 'route' ? 'btn--primary' : 'btn--ghost'" @click="pcTab = 'route'">产品审批链路</button>
+    <div v-if="activeTab === 'productCenter'" class="card" v-loading="loading.catalog || loading.route">
+      <!-- §UI审查:子页签同步统一为 .segmented -->
+      <div class="segmented" style="margin-bottom:16px">
+        <button class="segmented__item" :class="{ 'segmented__item--active': pcTab === 'catalog' }" @click="pcTab = 'catalog'">产品目录</button>
+        <button class="segmented__item" :class="{ 'segmented__item--active': pcTab === 'route' }" @click="pcTab = 'route'">产品审批链路</button>
       </div>
 
       <!-- 产品目录(§8A.5①:申请页产品下拉/LPR明细/权限矩阵/产品边界的权威来源) -->
@@ -196,9 +201,9 @@
               <td><span :class="productStatusBadge(p.status)">{{ productStatusText(p.status) }}</span></td>
               <td>
                 <button v-if="canMaintain" class="btn btn--text" @click="openProductEdit(p)">编辑</button>
-                <button v-if="canMaintain && p.status === 'ENABLED'" class="btn btn--text" @click="doProductStatus(p, 'DISABLED')">停用</button>
-                <button v-if="canMaintain && p.status !== 'ENABLED'" class="btn btn--text" @click="doProductStatus(p, 'ENABLED')">启用</button>
-                <button v-if="canMaintain && p.status === 'DISABLED'" class="btn btn--text" @click="doProductDelete(p)">删除</button>
+                <button v-if="canMaintain && p.status === 'ENABLED'" class="btn btn--text" :disabled="!!pending" @click="doProductStatus(p, 'DISABLED')">{{ pendingText(`prodstatus:${p.id}`, '停用') }}</button>
+                <button v-if="canMaintain && p.status !== 'ENABLED'" class="btn btn--text" :disabled="!!pending" @click="doProductStatus(p, 'ENABLED')">{{ pendingText(`prodstatus:${p.id}`, '启用') }}</button>
+                <button v-if="canMaintain && p.status === 'DISABLED'" class="btn btn--text" :disabled="!!pending" @click="doProductDelete(p)">{{ pendingText(`proddelete:${p.id}`, '删除') }}</button>
               </td>
             </tr>
             <tr v-if="!productCatalog.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -225,7 +230,8 @@
           </div>
           <button v-if="canMaintain" class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
         </div>
-        <table class="table table--full">
+        <!-- §UI审查:11 列宽表横向滚动 -->
+        <table class="table table--wide">
           <thead>
             <tr>
               <th>产品</th><th>业务大类</th><th>路由模式</th><th>起始节点</th><th>强制上会</th><th>行长决策</th>
@@ -243,17 +249,17 @@
               <td>{{ r.startNodeCode ? nodeLabel(r.startNodeCode) : '—' }}</td>
               <td>{{ r.mandatoryVote === 'Y' ? '是' : '否' }}</td>
               <td>{{ r.presidentDecision === 'Y' ? '是' : '否' }}</td>
-              <td>{{ voteConditionText(r.voteCondition) }}</td>
+              <td class="col-ellipsis" :title="voteConditionText(r.voteCondition)">{{ voteConditionText(r.voteCondition) }}</td>
               <td class="num">{{ r.priority ?? '—' }}</td>
               <td>{{ fmtTime(r.effectiveDate) }}</td>
               <td><span :class="routeStatusBadge(r.status)">{{ routeStatusText(r.status) }}</span></td>
               <td>
                 <button class="btn btn--text" @click="openRouteSimulate(r)">模拟路由</button>
-                <button v-if="canMaintain && r.status === 'DRAFT'" class="btn btn--text" @click="doRouteSubmit(r)">送审</button>
-                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="doRoutePublish(r)">复核发布</button>
-                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" @click="openRouteReject(r)">驳回</button>
-                <button v-if="canMaintain && r.status === 'PUBLISHED'" class="btn btn--text" @click="doRouteDisable(r)">停用</button>
-                <button v-if="canMaintain && r.status !== 'PUBLISHED'" class="btn btn--text" @click="doRouteDelete(r)">删除</button>
+                <button v-if="canMaintain && r.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doRouteSubmit(r)">{{ pendingText(`routesubmit:${r.id}`, '送审') }}</button>
+                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doRoutePublish(r)">{{ pendingText(`routepublish:${r.id}`, '复核发布') }}</button>
+                <button v-if="canReview && r.status === 'PENDING_REVIEW'" class="btn btn--text" :disabled="!!pending" @click="openRouteReject(r)">驳回</button>
+                <button v-if="canMaintain && r.status === 'PUBLISHED'" class="btn btn--text" :disabled="!!pending" @click="doRouteDisable(r)">{{ pendingText(`routedisable:${r.id}`, '停用') }}</button>
+                <button v-if="canMaintain && r.status !== 'PUBLISHED'" class="btn btn--text" :disabled="!!pending" @click="doRouteDelete(r)">{{ pendingText(`routedelete:${r.id}`, '删除') }}</button>
               </td>
             </tr>
             <tr v-if="!productRoutes.length"><td colspan="11" class="empty-cell">暂无数据</td></tr>
@@ -263,7 +269,7 @@
     </div>
 
     <!-- ========== 规则集 ========== -->
-    <div v-if="activeTab === 'ruleset'" class="card">
+    <div v-if="activeTab === 'ruleset'" class="card" v-loading="loading.ruleset">
       <div class="card__head">
         <span>利率规则集(发布前自动连续性校验:区间连续、无空档、无重叠)</span>
         <button v-if="canMaintain" class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
@@ -286,9 +292,9 @@
             <td>{{ fmtTime(s.publishTime) }}</td>
             <td>{{ s.remark || '—' }}</td>
             <td>
-              <button v-if="canMaintain && s.status === 'DRAFT'" class="btn btn--text" @click="doSubmit('ruleset', s.id)">送审</button>
-              <button v-if="canReview && s.status === 'REVIEW'" class="btn btn--text" @click="doPublish('ruleset', s.id)">复核发布</button>
-              <button v-if="canMaintain && s.status === 'EFFECTIVE'" class="btn btn--text" @click="doDisable('ruleset', s.id)">停用</button>
+              <button v-if="canMaintain && s.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doSubmit('ruleset', s.id)">{{ pendingText(`submit:ruleset:${s.id}`, '送审') }}</button>
+              <button v-if="canReview && s.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPublish('ruleset', s.id)">{{ pendingText(`publish:ruleset:${s.id}`, '复核发布') }}</button>
+              <button v-if="canMaintain && s.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doDisable('ruleset', s.id)">{{ pendingText(`disable:ruleset:${s.id}`, '停用') }}</button>
             </td>
           </tr>
           <tr v-if="!ruleSets.length"><td colspan="9" class="empty-cell">暂无数据</td></tr>
@@ -297,7 +303,7 @@
     </div>
 
     <!-- ========== 跟踪策略(§11.5/§11.7) ========== -->
-    <div v-if="activeTab === 'policy'" class="card">
+    <div v-if="activeTab === 'policy'" class="card" v-loading="loading.policy">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span>跟踪策略(版本化:草稿→送审→复核发布→停用;匹配优先级 指标+业务+机构 &gt; 指标+业务 &gt; 指标默认 &gt; 全行默认*)</span>
@@ -327,9 +333,9 @@
             <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
             <td>
               <button class="btn btn--text" @click="openVersionMgr(p)">版本管理</button>
-              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" @click="doPolicyStatus(p, 'REVIEW')">送审</button>
-              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" @click="doPolicyStatus(p, 'EFFECTIVE')">复核发布</button>
-              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" @click="doPolicyStatus(p, 'INVALID')">停用</button>
+              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'REVIEW')">{{ pendingText(`policystatus:${p.id}`, '送审') }}</button>
+              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'EFFECTIVE')">{{ pendingText(`policystatus:${p.id}`, '复核发布') }}</button>
+              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'INVALID')">{{ pendingText(`policystatus:${p.id}`, '停用') }}</button>
             </td>
           </tr>
           <tr v-if="!policyList.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
@@ -375,7 +381,7 @@
     </div>
 
     <!-- ========== 指标字典(§9;admin 配置化) ========== -->
-    <div v-if="activeTab === 'metricDict'" class="card">
+    <div v-if="activeTab === 'metricDict'" class="card" v-loading="loading.metric">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span>指标字典(数仓按字典推送指标数据,新增指标在此登记即可,前端承诺/跟踪下拉无需改代码;编码一经创建不可改)</span>
@@ -406,8 +412,8 @@
             <td><span :class="metricStatusBadge(m.status)">{{ metricStatusText(m.status) }}</span></td>
             <td>
               <button v-if="canMaintain" class="btn btn--text" @click="openMetricEdit(m)">编辑</button>
-              <button v-if="canMaintain && m.status === 'ACTIVE'" class="btn btn--text" @click="doMetricStatus(m, 'DISABLED')">停用</button>
-              <button v-if="canMaintain && m.status === 'DISABLED'" class="btn btn--text" @click="doMetricStatus(m, 'ACTIVE')">启用</button>
+              <button v-if="canMaintain && m.status === 'ACTIVE'" class="btn btn--text" :disabled="!!pending" @click="doMetricStatus(m, 'DISABLED')">{{ pendingText(`metricstatus:${m.id}`, '停用') }}</button>
+              <button v-if="canMaintain && m.status === 'DISABLED'" class="btn btn--text" :disabled="!!pending" @click="doMetricStatus(m, 'ACTIVE')">{{ pendingText(`metricstatus:${m.id}`, '启用') }}</button>
             </td>
           </tr>
           <tr v-if="!metricDefs.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
@@ -416,7 +422,7 @@
     </div>
 
     <!-- ========== 变更日志(§8A.2) ========== -->
-    <div v-if="activeTab === 'changelog'" class="card">
+    <div v-if="activeTab === 'changelog'" class="card" v-loading="loading.changelog">
       <div class="card__head">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span>配置变更日志(LPR/矩阵/规则集/产品边界全量留痕)</span>
@@ -458,8 +464,8 @@
       </div>
       <div class="trial-form">
         <div class="form-field">
-          <label class="form-field__label">业务大类 <span class="req">*</span></label>
-          <select class="form-select" v-model="trial.businessBigType">
+          <label class="form-field__label" for="trial-biztype">业务大类 <span class="req">*</span></label>
+          <select id="trial-biztype" class="form-select" v-model="trial.businessBigType">
             <option value="LOAN_PUBLIC">对公贷款</option>
             <option value="LOAN_PERSONAL">个人贷款</option>
             <option value="DEPOSIT">存款</option>
@@ -467,15 +473,15 @@
           </select>
         </div>
         <div class="form-field">
-          <label class="form-field__label">存量/新增 <span class="req">*</span></label>
-          <select class="form-select" v-model="trial.newOrExisting">
+          <label class="form-field__label" for="trial-new">存量/新增 <span class="req">*</span></label>
+          <select id="trial-new" class="form-select" v-model="trial.newOrExisting">
             <option value="NEW">新增授信</option>
             <option value="EXISTING">存量授信</option>
           </select>
         </div>
         <div class="form-field">
-          <label class="form-field__label">客户类型</label>
-          <select class="form-select" v-model="trial.customerType">
+          <label class="form-field__label" for="trial-custype">客户类型</label>
+          <select id="trial-custype" class="form-select" v-model="trial.customerType">
             <option value="">通配</option>
             <option value="SOE">国企</option>
             <option value="NON_SOE">非国企</option>
@@ -483,21 +489,21 @@
           </select>
         </div>
         <div class="form-field">
-          <label class="form-field__label">担保主类型</label>
-          <select class="form-select" v-model="trial.guaranteeType">
+          <label class="form-field__label" for="trial-guarantee">担保主类型</label>
+          <select id="trial-guarantee" class="form-select" v-model="trial.guaranteeType">
             <option value="">通配</option>
             <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
           </select>
         </div>
         <div class="form-field">
-          <label class="form-field__label">申请金额(万元) <span class="req">*</span></label>
-          <input class="form-input" v-model="trial.amount" type="number" />
+          <label class="form-field__label" for="trial-amount">申请金额(万元) <span class="req">*</span></label>
+          <input id="trial-amount" class="form-input" v-model="trial.amount" type="number" autocomplete="off" />
         </div>
         <div class="form-field">
-          <label class="form-field__label">期限</label>
+          <label class="form-field__label" for="trial-term">期限</label>
           <div style="display:flex;gap:4px">
-            <input class="form-input" v-model="trial.termValue" type="number" style="width:90px" />
-            <select class="form-select" v-model="trial.termUnit" style="width:90px">
+            <input id="trial-term" class="form-input" v-model="trial.termValue" type="number" style="width:90px" autocomplete="off" />
+            <select class="form-select" v-model="trial.termUnit" style="width:90px" aria-label="期限单位">
               <option value="YEAR">年</option>
               <option value="MONTH">月</option>
               <option value="DAY">日</option>
@@ -505,12 +511,12 @@
           </div>
         </div>
         <div class="form-field">
-          <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-          <input class="form-input" v-model="trial.requestedRate" type="number" step="0.01" />
+          <label class="form-field__label" for="trial-rate">申请利率(%) <span class="req">*</span></label>
+          <input id="trial-rate" class="form-input" v-model="trial.requestedRate" type="number" step="0.01" autocomplete="off" />
         </div>
         <div class="form-field" v-if="trial.newOrExisting === 'EXISTING'">
-          <label class="form-field__label">原执行利率(%)</label>
-          <input class="form-input" v-model="trial.originalRate" type="number" step="0.01" />
+          <label class="form-field__label" for="trial-origrate">原执行利率(%)</label>
+          <input id="trial-origrate" class="form-input" v-model="trial.originalRate" type="number" step="0.01" autocomplete="off" />
         </div>
         <div class="form-field" style="justify-content:flex-end">
           <button class="btn btn--primary" @click="runTrial">试算</button>
@@ -545,63 +551,63 @@
           <div class="sub-title">策略维度</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">策略编号 <span class="req">*</span></label>
-              <input class="form-input" v-model="policyDialog.form.policyNo" placeholder="如 P-2026-001" />
+              <label class="form-field__label" for="pd-policyNo">策略编号 <span class="req">*</span></label>
+              <input id="pd-policyNo" class="form-input" v-model="policyDialog.form.policyNo" placeholder="如 P-2026-001" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">策略名称 <span class="req">*</span></label>
-              <input class="form-input" v-model="policyDialog.form.policyName" />
+              <label class="form-field__label" for="pd-policyName">策略名称 <span class="req">*</span></label>
+              <input id="pd-policyName" class="form-input" v-model="policyDialog.form.policyName" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">指标编码 <span class="req">*</span></label>
-              <select class="form-select" v-model="policyDialog.form.metricCode">
+              <label class="form-field__label" for="pd-metricCode">指标编码 <span class="req">*</span></label>
+              <select id="pd-metricCode" class="form-select" v-model="policyDialog.form.metricCode">
                 <option value="*">全行默认</option>
                 <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">业务类型</label>
-              <select class="form-select" v-model="policyDialog.form.businessType">
+              <label class="form-field__label" for="pd-bizType">业务类型</label>
+              <select id="pd-bizType" class="form-select" v-model="policyDialog.form.businessType">
                 <option value="">不限</option>
                 <option value="LOAN">贷款</option>
                 <option value="DEPOSIT">存款</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">机构编码</label>
-              <input class="form-input" v-model="policyDialog.form.orgCode" placeholder="空=通用" />
+              <label class="form-field__label" for="pd-orgCode">机构编码</label>
+              <input id="pd-orgCode" class="form-input" v-model="policyDialog.form.orgCode" placeholder="空=通用" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">优先级</label>
-              <input class="form-input" v-model="policyDialog.form.priority" type="number" />
+              <label class="form-field__label" for="pd-priority">优先级</label>
+              <input id="pd-priority" class="form-input" v-model="policyDialog.form.priority" type="number" autocomplete="off" />
             </div>
           </div>
 
           <div class="sub-title" style="margin-top:14px">首个版本(草稿)</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">版本号 <span class="req">*</span></label>
-              <input class="form-input" v-model="policyDialog.version.versionCode" placeholder="如 V1" />
+              <label class="form-field__label" for="pd-verCode">版本号 <span class="req">*</span></label>
+              <input id="pd-verCode" class="form-input" v-model="policyDialog.version.versionCode" placeholder="如 V1" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">生效时间 <span class="req">*</span></label>
-              <input class="form-input" v-model="policyDialog.version.effectiveFrom" type="datetime-local" />
+              <label class="form-field__label" for="pd-effFrom">生效时间 <span class="req">*</span></label>
+              <input id="pd-effFrom" class="form-input" v-model="policyDialog.version.effectiveFrom" type="datetime-local" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">失效时间</label>
-              <input class="form-input" v-model="policyDialog.version.effectiveTo" type="datetime-local" />
+              <label class="form-field__label" for="pd-effTo">失效时间</label>
+              <input id="pd-effTo" class="form-input" v-model="policyDialog.version.effectiveTo" type="datetime-local" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">校验频率</label>
-              <select class="form-select" v-model="policyDialog.version.checkFrequency">
+              <label class="form-field__label" for="pd-checkFreq">校验频率</label>
+              <select id="pd-checkFreq" class="form-select" v-model="policyDialog.version.checkFrequency">
                 <option value="DAILY">每日</option>
                 <option value="WEEKLY">每周</option>
                 <option value="MONTHLY">每月</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">数据容忍天数</label>
-              <input class="form-input" v-model="policyDialog.version.dataToleranceDays" type="number" />
+              <label class="form-field__label" for="pd-tolerance">数据容忍天数</label>
+              <input id="pd-tolerance" class="form-input" v-model="policyDialog.version.dataToleranceDays" type="number" autocomplete="off" />
             </div>
           </div>
 
@@ -674,9 +680,9 @@
                 <td><span :class="statusBadge(v.status)">{{ statusText(v.status) }}</span></td>
                 <td>
                   <button class="btn btn--text" @click="openVersionThresholds(v)">阈值</button>
-                  <button v-if="canMaintain && v.status === 'DRAFT'" class="btn btn--text" @click="doVersionStatus(v, 'REVIEW')">送审</button>
-                  <button v-if="canReview && v.status === 'REVIEW'" class="btn btn--text" @click="doVersionStatus(v, 'EFFECTIVE')">复核发布</button>
-                  <button v-if="canMaintain && v.status === 'EFFECTIVE'" class="btn btn--text" @click="doVersionStatus(v, 'INVALID')">停用</button>
+                  <button v-if="canMaintain && v.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'REVIEW')">{{ pendingText(`versionstatus:${v.id}`, '送审') }}</button>
+                  <button v-if="canReview && v.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'EFFECTIVE')">{{ pendingText(`versionstatus:${v.id}`, '复核发布') }}</button>
+                  <button v-if="canMaintain && v.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'INVALID')">{{ pendingText(`versionstatus:${v.id}`, '停用') }}</button>
                 </td>
               </tr>
               <tr v-if="!versionMgr.versions.length"><td colspan="7" class="empty-cell">暂无版本</td></tr>
@@ -703,28 +709,28 @@
             <div class="sub-title">新增版本(草稿)</div>
             <div class="form-grid">
               <div class="form-field">
-                <label class="form-field__label">版本号 <span class="req">*</span></label>
-                <input class="form-input" v-model="versionMgr.form.versionCode" placeholder="如 V2" />
+                <label class="form-field__label" for="vm-verCode">版本号 <span class="req">*</span></label>
+                <input id="vm-verCode" class="form-input" v-model="versionMgr.form.versionCode" placeholder="如 V2" autocomplete="off" />
               </div>
               <div class="form-field">
-                <label class="form-field__label">生效时间 <span class="req">*</span></label>
-                <input class="form-input" v-model="versionMgr.form.effectiveFrom" type="datetime-local" />
+                <label class="form-field__label" for="vm-effFrom">生效时间 <span class="req">*</span></label>
+                <input id="vm-effFrom" class="form-input" v-model="versionMgr.form.effectiveFrom" type="datetime-local" />
               </div>
               <div class="form-field">
-                <label class="form-field__label">失效时间</label>
-                <input class="form-input" v-model="versionMgr.form.effectiveTo" type="datetime-local" />
+                <label class="form-field__label" for="vm-effTo">失效时间</label>
+                <input id="vm-effTo" class="form-input" v-model="versionMgr.form.effectiveTo" type="datetime-local" />
               </div>
               <div class="form-field">
-                <label class="form-field__label">校验频率</label>
-                <select class="form-select" v-model="versionMgr.form.checkFrequency">
+                <label class="form-field__label" for="vm-checkFreq">校验频率</label>
+                <select id="vm-checkFreq" class="form-select" v-model="versionMgr.form.checkFrequency">
                   <option value="DAILY">每日</option>
                   <option value="WEEKLY">每周</option>
                   <option value="MONTHLY">每月</option>
                 </select>
               </div>
               <div class="form-field">
-                <label class="form-field__label">数据容忍天数</label>
-                <input class="form-input" v-model="versionMgr.form.dataToleranceDays" type="number" />
+                <label class="form-field__label" for="vm-tolerance">数据容忍天数</label>
+                <input id="vm-tolerance" class="form-input" v-model="versionMgr.form.dataToleranceDays" type="number" autocomplete="off" />
               </div>
             </div>
             <div class="sub-title" style="margin-top:10px">阈值</div>
@@ -784,27 +790,27 @@
         <div class="modal__body">
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">产品编码 <span class="req">*</span></label>
-              <input class="form-input" v-model="productDialog.form.productCode" :disabled="!!productDialog.id" placeholder="如 LOAN_A" />
+              <label class="form-field__label" for="prod-code">产品编码 <span class="req">*</span></label>
+              <input id="prod-code" class="form-input" v-model="productDialog.form.productCode" :disabled="!!productDialog.id" placeholder="如 LOAN_A" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">产品名称 <span class="req">*</span></label>
-              <input class="form-input" v-model="productDialog.form.productName" />
+              <label class="form-field__label" for="prod-name">产品名称 <span class="req">*</span></label>
+              <input id="prod-name" class="form-input" v-model="productDialog.form.productName" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">业务大类 <span class="req">*</span></label>
-              <select class="form-select" v-model="productDialog.form.businessBigType" :disabled="!!productDialog.id">
+              <label class="form-field__label" for="prod-biztype">业务大类 <span class="req">*</span></label>
+              <select id="prod-biztype" class="form-select" v-model="productDialog.form.businessBigType" :disabled="!!productDialog.id">
                 <option value="LOAN">贷款</option>
                 <option value="DEPOSIT">存款</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">产品线</label>
-              <input class="form-input" v-model="productDialog.form.productCategory" placeholder="如 对公贷款/协定/银票保证金" />
+              <label class="form-field__label" for="prod-category">产品线</label>
+              <input id="prod-category" class="form-input" v-model="productDialog.form.productCategory" placeholder="如 对公贷款/协定/银票保证金" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">适用客户类型</label>
-              <select class="form-select" v-model="productDialog.form.customerType">
+              <label class="form-field__label" for="prod-custype">适用客户类型</label>
+              <select id="prod-custype" class="form-select" v-model="productDialog.form.customerType">
                 <option value="">不限</option>
                 <option value="INDIVIDUAL">个人</option>
                 <option value="CORPORATE_SINGLE">单一法人</option>
@@ -812,32 +818,32 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">币种</label>
-              <input class="form-input" v-model="productDialog.form.currency" placeholder="CNY" />
+              <label class="form-field__label" for="prod-currency">币种</label>
+              <input id="prod-currency" class="form-input" v-model="productDialog.form.currency" placeholder="CNY" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">默认利率下限(%)</label>
-              <input class="form-input" v-model="productDialog.form.defaultMinRate" type="number" step="0.01" />
+              <label class="form-field__label" for="prod-minRate">默认利率下限(%)</label>
+              <input id="prod-minRate" class="form-input" v-model="productDialog.form.defaultMinRate" type="number" step="0.01" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">默认利率上限(%)</label>
-              <input class="form-input" v-model="productDialog.form.defaultMaxRate" type="number" step="0.01" />
+              <label class="form-field__label" for="prod-maxRate">默认利率上限(%)</label>
+              <input id="prod-maxRate" class="form-input" v-model="productDialog.form.defaultMaxRate" type="number" step="0.01" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">默认最短期限(月)</label>
-              <input class="form-input" v-model="productDialog.form.defaultMinTermMonths" type="number" />
+              <label class="form-field__label" for="prod-minTerm">默认最短期限(月)</label>
+              <input id="prod-minTerm" class="form-input" v-model="productDialog.form.defaultMinTermMonths" type="number" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">默认最长期限(月)</label>
-              <input class="form-input" v-model="productDialog.form.defaultMaxTermMonths" type="number" />
+              <label class="form-field__label" for="prod-maxTerm">默认最长期限(月)</label>
+              <input id="prod-maxTerm" class="form-input" v-model="productDialog.form.defaultMaxTermMonths" type="number" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">生效日</label>
-              <input class="form-input" v-model="productDialog.form.effectiveDate" type="datetime-local" />
+              <label class="form-field__label" for="prod-effDate">生效日</label>
+              <input id="prod-effDate" class="form-input" v-model="productDialog.form.effectiveDate" type="datetime-local" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">备注</label>
-              <input class="form-input" v-model="productDialog.form.remark" />
+              <label class="form-field__label" for="prod-remark">备注</label>
+              <input id="prod-remark" class="form-input" v-model="productDialog.form.remark" autocomplete="off" />
             </div>
           </div>
           <div class="section-tip">校验:产品编码唯一且一经启用禁改;默认利率下限不得高于上限;客户类型/产品线可空。</div>
@@ -856,16 +862,16 @@
         <div class="modal__body">
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">指标编码 <span class="req">*</span></label>
-              <input class="form-input" v-model="metricDialog.form.metricCode" :disabled="!!metricDialog.id" placeholder="如 PUBLIC_DEPOSIT_AVG" />
+              <label class="form-field__label" for="mt-code">指标编码 <span class="req">*</span></label>
+              <input id="mt-code" class="form-input" v-model="metricDialog.form.metricCode" :disabled="!!metricDialog.id" placeholder="如 PUBLIC_DEPOSIT_AVG" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">指标名称 <span class="req">*</span></label>
-              <input class="form-input" v-model="metricDialog.form.metricName" />
+              <label class="form-field__label" for="mt-name">指标名称 <span class="req">*</span></label>
+              <input id="mt-name" class="form-input" v-model="metricDialog.form.metricName" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">值类型 <span class="req">*</span></label>
-              <select class="form-select" v-model="metricDialog.form.valueType">
+              <label class="form-field__label" for="mt-valueType">值类型 <span class="req">*</span></label>
+              <select id="mt-valueType" class="form-select" v-model="metricDialog.form.valueType">
                 <option value="CONTRIBUTION_AMOUNT">折算</option>
                 <option value="AVG_BALANCE">业务余额</option>
                 <option value="INCOME">收入</option>
@@ -873,8 +879,8 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">适用范围</label>
-              <select class="form-select" v-model="metricDialog.form.metricScope">
+              <label class="form-field__label" for="mt-scope">适用范围</label>
+              <select id="mt-scope" class="form-select" v-model="metricDialog.form.metricScope">
                 <option value="">不限</option>
                 <option value="PUBLIC">对公</option>
                 <option value="PRIVATE_SELF">本人对私</option>
@@ -884,12 +890,12 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">单位</label>
-              <input class="form-input" v-model="metricDialog.form.unit" placeholder="万元/户/%" />
+              <label class="form-field__label" for="mt-unit">单位</label>
+              <input id="mt-unit" class="form-input" v-model="metricDialog.form.unit" placeholder="万元/户/%" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">折算版本</label>
-              <input class="form-input" v-model="metricDialog.form.currentCalcVersion" placeholder="V1.0" />
+              <label class="form-field__label" for="mt-calcVer">折算版本</label>
+              <input id="mt-calcVer" class="form-input" v-model="metricDialog.form.currentCalcVersion" placeholder="V1.0" autocomplete="off" />
             </div>
           </div>
           <div class="section-tip">校验:指标编码全局唯一且一经创建不可改(防历史承诺跟踪错位);停用后新承诺/新策略不可选,历史跟踪不受影响。</div>
@@ -908,69 +914,69 @@
         <div class="modal__body">
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">产品 <span class="req">*</span></label>
-              <select class="form-select" v-model="routeDialog.form.productCode" @change="onRouteProductChange">
+              <label class="form-field__label" for="rt-product">产品 <span class="req">*</span></label>
+              <select id="rt-product" class="form-select" v-model="routeDialog.form.productCode" @change="onRouteProductChange">
                 <option value="" disabled>选择产品</option>
                 <option v-for="p in enabledProducts" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
               </select>
               <div class="form-field__tip">选择后自动带出业务大类，并按默认规则预填路由模式</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">业务大类</label>
-              <input class="form-input" v-model="routeDialog.form.businessBigTypeText" disabled />
+              <label class="form-field__label" for="rt-biztype">业务大类</label>
+              <input id="rt-biztype" class="form-input" v-model="routeDialog.form.businessBigTypeText" disabled />
             </div>
             <div class="form-field">
-              <label class="form-field__label">路由模式 <span class="req">*</span></label>
-              <select class="form-select" v-model="routeDialog.form.routeMode">
+              <label class="form-field__label" for="rt-routeMode">路由模式 <span class="req">*</span></label>
+              <select id="rt-routeMode" class="form-select" v-model="routeDialog.form.routeMode">
                 <option value="CHAINED">链式逐级（推荐·贷款）</option>
                 <option value="DIRECT_VOTE">直接上会（推荐·存款/保证金）</option>
               </select>
               <div class="form-field__tip">链式逐级=按金额/利率逐级上送，权限内岗位即可终审；直接上会=必经支行行长后直接进入六人小组表决</div>
             </div>
             <div class="form-field" v-if="routeDialog.form.routeMode === 'CHAINED'">
-              <label class="form-field__label">起始节点 <span class="req">*</span></label>
-              <select class="form-select" v-model="routeDialog.form.startNodeCode">
+              <label class="form-field__label" for="rt-startNode">起始节点 <span class="req">*</span></label>
+              <select id="rt-startNode" class="form-select" v-model="routeDialog.form.startNodeCode">
                 <option v-for="n in NODE_OPTIONS" :key="n" :value="n">{{ nodeLabel(n) }}</option>
               </select>
               <div class="form-field__tip">审批起点岗位，默认支行行长（所有申请必经支行行长）</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">强制上会（六人小组）</label>
-              <select class="form-select" v-model="routeDialog.form.mandatoryVote">
+              <label class="form-field__label" for="rt-mandatoryVote">强制上会（六人小组）</label>
+              <select id="rt-mandatoryVote" class="form-select" v-model="routeDialog.form.mandatoryVote">
                 <option value="N">否（按金额/利率匹配）</option>
                 <option value="Y">是（一律上会表决）</option>
               </select>
               <div class="form-field__tip">开启后无论金额/利率是否在权限内，一律必经六人小组表决（≥4票），适合大额/高风险业务</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">必经总行行长决策</label>
-              <select class="form-select" v-model="routeDialog.form.presidentDecision">
+              <label class="form-field__label" for="rt-president">必经总行行长决策</label>
+              <select id="rt-president" class="form-select" v-model="routeDialog.form.presidentDecision">
                 <option value="N">否</option>
                 <option value="Y">是</option>
               </select>
               <div class="form-field__tip">凡上会申请必经行长决策（全局强制）；此开关用于给权限内终审业务额外增加行长环节</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">优先级（低值优先）</label>
-              <input class="form-input" v-model="routeDialog.form.priority" type="number" />
+              <label class="form-field__label" for="rt-priority">优先级（低值优先）</label>
+              <input id="rt-priority" class="form-input" v-model="routeDialog.form.priority" type="number" autocomplete="off" />
               <div class="form-field__tip">多条生效链路并存时数值小者优先，一般填 0</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">生效日</label>
-              <input class="form-input" v-model="routeDialog.form.effectiveDate" type="datetime-local" />
+              <label class="form-field__label" for="rt-effDate">生效日</label>
+              <input id="rt-effDate" class="form-input" v-model="routeDialog.form.effectiveDate" type="datetime-local" />
               <div class="form-field__tip">链路生效时间，不填则保存后立即生效</div>
             </div>
             <div class="form-field" style="grid-column: span 2">
-              <label class="form-field__label">备注</label>
-              <input class="form-input" v-model="routeDialog.form.remark" />
+              <label class="form-field__label" for="rt-remark">备注</label>
+              <input id="rt-remark" class="form-input" v-model="routeDialog.form.remark" autocomplete="off" />
             </div>
           </div>
 
           <div class="sub-title" style="margin-top:14px">上会条件（选填）——满足条件时该申请必经六人小组表决</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">定档金额档</label>
-              <select class="form-select" v-model="routeDialog.form.voteAmountTier" @change="syncVoteCondition">
+              <label class="form-field__label" for="rt-amountTier">定档金额档</label>
+              <select id="rt-amountTier" class="form-select" v-model="routeDialog.form.voteAmountTier" @change="syncVoteCondition">
                 <option value="">不限</option>
                 <option value="LT_1000">&lt;1000万</option>
                 <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
@@ -979,8 +985,8 @@
               <div class="form-field__tip">申请定档金额所在档位（集团按集团总授信，其他按总授信额度）；大额业务一般需上会</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">企业类型</label>
-              <select class="form-select" v-model="routeDialog.form.voteEnterpriseType" @change="syncVoteCondition">
+              <label class="form-field__label" for="rt-enterpriseType">企业类型</label>
+              <select id="rt-enterpriseType" class="form-select" v-model="routeDialog.form.voteEnterpriseType" @change="syncVoteCondition">
                 <option value="">不限</option>
                 <option value="SOE">国企</option>
                 <option value="NON_SOE">非国企</option>
@@ -989,16 +995,20 @@
             </div>
           </div>
           <div class="form-field" style="margin-top:10px">
-            <label class="form-field__label">当前条件（中文预览）</label>
-            <div class="section-tip">{{ voteConditionText(routeDialog.form.voteCondition) }}</div>
+            <label class="form-field__label" for="rt-condPreview">当前条件（中文预览）</label>
+            <div class="section-tip" id="rt-condPreview">{{ voteConditionText(routeDialog.form.voteCondition) }}</div>
           </div>
-          <div class="form-field" style="margin-top:10px">
-            <label class="form-field__label">底层 JSON（无需手改，构建器自动生成）</label>
-            <textarea class="form-input" v-model="routeDialog.form.voteCondition" rows="2" placeholder='{"amount_tier":"GE_5000","enterprise_type":"SOE"}'></textarea>
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:6px">
-            <button class="btn btn--secondary" @click="parseVoteCondition">从 JSON 回填构建器</button>
-          </div>
+          <!-- §UI审查:底层 JSON 折叠为高级区域,默认收起,降低非技术管理员突兀感 -->
+          <details class="advanced-json">
+            <summary>高级:底层 JSON(无需手改,构建器自动生成)</summary>
+            <div class="form-field" style="margin-top:10px">
+              <label class="form-field__label" for="rt-json">底层 JSON</label>
+              <textarea id="rt-json" class="form-input" v-model="routeDialog.form.voteCondition" rows="2" placeholder='{"amount_tier":"GE_5000","enterprise_type":"SOE"}'></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:6px">
+              <button class="btn btn--secondary" @click="parseVoteCondition">从 JSON 回填构建器</button>
+            </div>
+          </details>
           <div class="section-tip" style="margin-top:8px">未配置链路时自动按默认链路运行：对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置。路由引擎读取 vote_condition：金额档按集团批复总额度/申请金额定档，企业类型取 SOE/NON_SOE；JSON 解析失败按不命中处理。</div>
         </div>
         <div class="modal__actions">
@@ -1015,13 +1025,13 @@
         <div class="modal__title">复核驳回(退回草稿)</div>
         <div class="modal__body">
           <div class="form-field">
-            <label class="form-field__label">驳回意见 <span class="req">*</span></label>
-            <textarea class="form-input" v-model="routeRejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
+            <label class="form-field__label" for="rt-reject">驳回意见 <span class="req">*</span></label>
+            <textarea id="rt-reject" class="form-input" v-model="routeRejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
           </div>
         </div>
         <div class="modal__actions">
-          <button class="btn btn--secondary" @click="routeRejectDialog.show = false">取消</button>
-          <button class="btn btn--primary" @click="doRouteReject">确认驳回</button>
+          <button class="btn btn--secondary" :disabled="!!pending" @click="routeRejectDialog.show = false">取消</button>
+          <button class="btn btn--primary" :disabled="!!pending" @click="doRouteReject">{{ pendingText(`routereject:${routeRejectDialog.id}`, '确认驳回') }}</button>
         </div>
       </div>
     </div>
@@ -1034,15 +1044,15 @@
           <div class="section-tip" style="margin-bottom:10px">预览基于当前已生效链路；产品未配置链路时按默认链路运行（对公贷款=链式逐级、存款/保证金=直接上会）。填好金额与利率后点「试算」查看实际审批走向。</div>
           <div class="trial-form">
             <div class="form-field">
-              <label class="form-field__label">存量/新增 <span class="req">*</span></label>
-              <select class="form-select" v-model="routeSimDialog.newOrExisting">
+              <label class="form-field__label" for="rsim-new">存量/新增 <span class="req">*</span></label>
+              <select id="rsim-new" class="form-select" v-model="routeSimDialog.newOrExisting">
                 <option value="NEW">新增授信</option>
                 <option value="EXISTING">存量授信</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">客户类型</label>
-              <select class="form-select" v-model="routeSimDialog.customerType">
+              <label class="form-field__label" for="rsim-custype">客户类型</label>
+              <select id="rsim-custype" class="form-select" v-model="routeSimDialog.customerType">
                 <option value="">通配</option>
                 <option value="SOE">国企</option>
                 <option value="NON_SOE">非国企</option>
@@ -1050,21 +1060,21 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">担保主类型</label>
-              <select class="form-select" v-model="routeSimDialog.guaranteeType">
+              <label class="form-field__label" for="rsim-guarantee">担保主类型</label>
+              <select id="rsim-guarantee" class="form-select" v-model="routeSimDialog.guaranteeType">
                 <option value="">通配</option>
                 <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">申请金额(万元) <span class="req">*</span></label>
-              <input class="form-input" v-model="routeSimDialog.amount" type="number" />
+              <label class="form-field__label" for="rsim-amount">申请金额(万元) <span class="req">*</span></label>
+              <input id="rsim-amount" class="form-input" v-model="routeSimDialog.amount" type="number" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">期限</label>
+              <label class="form-field__label" for="rsim-term">期限</label>
               <div style="display:flex;gap:4px">
-                <input class="form-input" v-model="routeSimDialog.termValue" type="number" style="width:90px" />
-                <select class="form-select" v-model="routeSimDialog.termUnit" style="width:90px">
+                <input id="rsim-term" class="form-input" v-model="routeSimDialog.termValue" type="number" style="width:90px" autocomplete="off" />
+                <select class="form-select" v-model="routeSimDialog.termUnit" style="width:90px" aria-label="期限单位">
                   <option value="YEAR">年</option>
                   <option value="MONTH">月</option>
                   <option value="DAY">日</option>
@@ -1072,12 +1082,12 @@
               </div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
-              <input class="form-input" v-model="routeSimDialog.requestedRate" type="number" step="0.01" />
+              <label class="form-field__label" for="rsim-rate">申请利率(%) <span class="req">*</span></label>
+              <input id="rsim-rate" class="form-input" v-model="routeSimDialog.requestedRate" type="number" step="0.01" autocomplete="off" />
             </div>
             <div class="form-field" v-if="routeSimDialog.newOrExisting === 'EXISTING'">
-              <label class="form-field__label">原执行利率(%)</label>
-              <input class="form-input" v-model="routeSimDialog.originalRate" type="number" step="0.01" />
+              <label class="form-field__label" for="rsim-origrate">原执行利率(%)</label>
+              <input id="rsim-origrate" class="form-input" v-model="routeSimDialog.originalRate" type="number" step="0.01" autocomplete="off" />
             </div>
             <div class="form-field" style="justify-content:flex-end">
               <button class="btn btn--primary" :disabled="routeSimDialog.loading" @click="runRouteSimulate">试算</button>
@@ -1114,20 +1124,20 @@
         <div class="modal__title">新增 LPR 草稿</div>
         <div class="modal__body">
           <div class="form-field">
-            <label class="form-field__label">版本号 <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.versionCode" placeholder="如 LPR-2026-08" />
+            <label class="form-field__label" for="lpr-verCode">版本号 <span class="req">*</span></label>
+            <input id="lpr-verCode" class="form-input" v-model="lprDialog.form.versionCode" placeholder="如 LPR-2026-08" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">一年期 LPR(%) <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.lpr1y" type="number" step="0.05" min="0.5" max="8" />
+            <label class="form-field__label" for="lpr-1y">一年期 LPR(%) <span class="req">*</span></label>
+            <input id="lpr-1y" class="form-input" v-model="lprDialog.form.lpr1y" type="number" step="0.05" min="0.5" max="8" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">五年期以上 LPR(%) <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.lpr5y" type="number" step="0.05" min="0.5" max="8" />
+            <label class="form-field__label" for="lpr-5y">五年期以上 LPR(%) <span class="req">*</span></label>
+            <input id="lpr-5y" class="form-input" v-model="lprDialog.form.lpr5y" type="number" step="0.05" min="0.5" max="8" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">生效时间 <span class="req">*</span></label>
-            <input class="form-input" v-model="lprDialog.form.effectiveFrom" type="datetime-local" />
+            <label class="form-field__label" for="lpr-effFrom">生效时间 <span class="req">*</span></label>
+            <input id="lpr-effFrom" class="form-input" v-model="lprDialog.form.effectiveFrom" type="datetime-local" />
           </div>
           <div class="section-tip">
             校验规则:LPR 取值 0.5%–8% 且为 0.05 的整数倍(报价规则);生效时间不得早于发布日;同一生效日仅允许一版(草稿/待复核/生效均占用)。
@@ -1186,12 +1196,12 @@
           <div class="sub-title">匹配维度</div>
           <div class="form-grid">
             <div class="form-field" style="grid-column: span 2">
-              <label class="form-field__label">行编码 <span class="req">*</span></label>
-              <input class="form-input" v-model="matrixDialog.form.matrixNo" placeholder="如 MX-LOAN-NEW-001" />
+              <label class="form-field__label" for="mx-no">行编码 <span class="req">*</span></label>
+              <input id="mx-no" class="form-input" v-model="matrixDialog.form.matrixNo" placeholder="如 MX-LOAN-NEW-001" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">业务大类 <span class="req">*</span></label>
-              <select class="form-select" v-model="matrixDialog.form.businessBigType">
+              <label class="form-field__label" for="mx-biztype">业务大类 <span class="req">*</span></label>
+              <select id="mx-biztype" class="form-select" v-model="matrixDialog.form.businessBigType">
                 <option value="LOAN_PUBLIC">对公贷款</option>
                 <option value="LOAN_PERSONAL">个人贷款</option>
                 <option value="DEPOSIT">存款</option>
@@ -1199,15 +1209,15 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">存量/新增 <span class="req">*</span></label>
-              <select class="form-select" v-model="matrixDialog.form.newOrExisting">
+              <label class="form-field__label" for="mx-new">存量/新增 <span class="req">*</span></label>
+              <select id="mx-new" class="form-select" v-model="matrixDialog.form.newOrExisting">
                 <option value="NEW">新增授信</option>
                 <option value="EXISTING">存量授信</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">客户类型</label>
-              <select class="form-select" v-model="matrixDialog.form.customerType">
+              <label class="form-field__label" for="mx-custype">客户类型</label>
+              <select id="mx-custype" class="form-select" v-model="matrixDialog.form.customerType">
                 <option value="">通配</option>
                 <option value="SOE">国企</option>
                 <option value="NON_SOE">非国企</option>
@@ -1215,8 +1225,8 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">金额档</label>
-              <select class="form-select" v-model="matrixDialog.form.amountTier">
+              <label class="form-field__label" for="mx-amountTier">金额档</label>
+              <select id="mx-amountTier" class="form-select" v-model="matrixDialog.form.amountTier">
                 <option value="">通配</option>
                 <option value="LT_1000">1000万以下</option>
                 <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
@@ -1224,8 +1234,8 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">期限档</label>
-              <select class="form-select" v-model="matrixDialog.form.termTier">
+              <label class="form-field__label" for="mx-termTier">期限档</label>
+              <select id="mx-termTier" class="form-select" v-model="matrixDialog.form.termTier">
                 <option value="">通配</option>
                 <option value="1Y">1年</option>
                 <option value="3Y">3年</option>
@@ -1233,8 +1243,8 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">担保主类型</label>
-              <select class="form-select" v-model="matrixDialog.form.guaranteeType">
+              <label class="form-field__label" for="mx-guarantee">担保主类型</label>
+              <select id="mx-guarantee" class="form-select" v-model="matrixDialog.form.guaranteeType">
                 <option value="">通配</option>
                 <option v-for="t in GUARANTEE_TYPES" :key="t.code" :value="t.code">{{ t.name }}</option>
               </select>
@@ -1244,8 +1254,8 @@
           <div class="sub-title" style="margin-top:14px">终审与边界</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">终审岗位 <span class="req">*</span></label>
-              <select class="form-select" v-model="matrixDialog.form.startNodeCode">
+              <label class="form-field__label" for="mx-finalNode">终审岗位 <span class="req">*</span></label>
+              <select id="mx-finalNode" class="form-select" v-model="matrixDialog.form.startNodeCode">
                 <option value="BRANCH_MANAGER">支行行长</option>
                 <option value="DEPT_GENERAL_MANAGER">部门总经理</option>
                 <option value="VICE_PRESIDENT">分管行长</option>
@@ -1253,29 +1263,29 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">优先级(低值优先)</label>
-              <input class="form-input" v-model="matrixDialog.form.priority" type="number" />
+              <label class="form-field__label" for="mx-priority">优先级(低值优先)</label>
+              <input id="mx-priority" class="form-input" v-model="matrixDialog.form.priority" type="number" autocomplete="off" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">边界类型</label>
-              <select class="form-select" v-model="matrixDialog.form.boundaryType">
+              <label class="form-field__label" for="mx-boundaryType">边界类型</label>
+              <select id="mx-boundaryType" class="form-select" v-model="matrixDialog.form.boundaryType">
                 <option value="RATE">直接利率</option>
                 <option value="SPREAD">存量降幅</option>
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">绝对利率下限(%)</label>
-              <input class="form-input" v-model="matrixDialog.form.boundaryMinRate" type="number" step="0.01" />
+              <label class="form-field__label" for="mx-minRate">绝对利率下限(%)</label>
+              <input id="mx-minRate" class="form-input" v-model="matrixDialog.form.boundaryMinRate" type="number" step="0.01" autocomplete="off" />
             </div>
             <div class="form-field" style="grid-column: span 2">
-              <label class="form-field__label">BP 边界(按 LPR 换算)</label>
+              <label class="form-field__label" for="mx-bp">BP 边界(按 LPR 换算)</label>
               <div style="display:flex;gap:6px">
-                <select class="form-select" v-model="matrixDialog.form.bpSign" style="width:70px">
+                <select class="form-select" v-model="matrixDialog.form.bpSign" style="width:70px" aria-label="BP 正负号">
                   <option value="+">+</option>
                   <option value="-">-</option>
                 </select>
-                <input class="form-input" v-model="matrixDialog.form.boundaryBp" type="number" placeholder="BP 值" />
-                <select class="form-select" v-model="matrixDialog.form.lprTerm" style="width:110px">
+                <input id="mx-bp" class="form-input" v-model="matrixDialog.form.boundaryBp" type="number" placeholder="BP 值" autocomplete="off" />
+                <select class="form-select" v-model="matrixDialog.form.lprTerm" style="width:110px" aria-label="LPR 期限">
                   <option value="1Y">1Y LPR</option>
                   <option value="5Y+">5Y+ LPR</option>
                 </select>
@@ -1286,12 +1296,12 @@
           <div class="sub-title" style="margin-top:14px">生效与备注</div>
           <div class="form-grid">
             <div class="form-field">
-              <label class="form-field__label">生效时间 <span class="req">*</span></label>
-              <input class="form-input" v-model="matrixDialog.form.effectiveFrom" type="datetime-local" />
+              <label class="form-field__label" for="mx-effFrom">生效时间 <span class="req">*</span></label>
+              <input id="mx-effFrom" class="form-input" v-model="matrixDialog.form.effectiveFrom" type="datetime-local" />
             </div>
             <div class="form-field">
-              <label class="form-field__label">备注</label>
-              <input class="form-input" v-model="matrixDialog.form.remark" />
+              <label class="form-field__label" for="mx-remark">备注</label>
+              <input id="mx-remark" class="form-input" v-model="matrixDialog.form.remark" autocomplete="off" />
             </div>
           </div>
         </div>
@@ -1308,20 +1318,20 @@
         <div class="modal__title">新增规则集草稿</div>
         <div class="modal__body">
           <div class="form-field">
-            <label class="form-field__label">规则集编码 <span class="req">*</span></label>
-            <input class="form-input" v-model="setDialog.form.setCode" placeholder="如 RS-2026-08" />
+            <label class="form-field__label" for="rs-code">规则集编码 <span class="req">*</span></label>
+            <input id="rs-code" class="form-input" v-model="setDialog.form.setCode" placeholder="如 RS-2026-08" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">规则集名称 <span class="req">*</span></label>
-            <input class="form-input" v-model="setDialog.form.setName" />
+            <label class="form-field__label" for="rs-name">规则集名称 <span class="req">*</span></label>
+            <input id="rs-name" class="form-input" v-model="setDialog.form.setName" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">生效时间</label>
-            <input class="form-input" v-model="setDialog.form.effectiveFrom" type="datetime-local" />
+            <label class="form-field__label" for="rs-effFrom">生效时间</label>
+            <input id="rs-effFrom" class="form-input" v-model="setDialog.form.effectiveFrom" type="datetime-local" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">备注</label>
-            <input class="form-input" v-model="setDialog.form.remark" />
+            <label class="form-field__label" for="rs-remark">备注</label>
+            <input id="rs-remark" class="form-input" v-model="setDialog.form.remark" autocomplete="off" />
           </div>
         </div>
         <div class="modal__actions">
@@ -1337,27 +1347,27 @@
         <div class="modal__title">新增产品硬边界草稿</div>
         <div class="modal__body">
           <div class="form-field">
-            <label class="form-field__label">产品编码 <span class="req">*</span></label>
-            <input class="form-input" v-model="limitDialog.form.productCode" placeholder="如 LOAN-FLOW-001" />
+            <label class="form-field__label" for="pl-code">产品编码 <span class="req">*</span></label>
+            <input id="pl-code" class="form-input" v-model="limitDialog.form.productCode" placeholder="如 LOAN-FLOW-001" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">产品名称</label>
-            <input class="form-input" v-model="limitDialog.form.productName" />
+            <label class="form-field__label" for="pl-name">产品名称</label>
+            <input id="pl-name" class="form-input" v-model="limitDialog.form.productName" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">业务类型 <span class="req">*</span></label>
-            <select class="form-select" v-model="limitDialog.form.businessType">
+            <label class="form-field__label" for="pl-bizType">业务类型 <span class="req">*</span></label>
+            <select id="pl-bizType" class="form-select" v-model="limitDialog.form.businessType">
               <option value="LOAN">贷款(全行不可低于硬边界)</option>
               <option value="DEPOSIT">存款(全行不可高于硬边界)</option>
             </select>
           </div>
           <div class="form-field">
-            <label class="form-field__label">硬边界利率(%) <span class="req">*</span></label>
-            <input class="form-input" v-model="limitDialog.form.hardBoundaryRate" type="number" step="0.01" />
+            <label class="form-field__label" for="pl-rate">硬边界利率(%) <span class="req">*</span></label>
+            <input id="pl-rate" class="form-input" v-model="limitDialog.form.hardBoundaryRate" type="number" step="0.01" autocomplete="off" />
           </div>
           <div class="form-field">
-            <label class="form-field__label">生效时间 <span class="req">*</span></label>
-            <input class="form-input" v-model="limitDialog.form.effectiveFrom" type="datetime-local" />
+            <label class="form-field__label" for="pl-effFrom">生效时间 <span class="req">*</span></label>
+            <input id="pl-effFrom" class="form-input" v-model="limitDialog.form.effectiveFrom" type="datetime-local" />
           </div>
         </div>
         <div class="modal__actions">
@@ -1373,13 +1383,13 @@
         <div class="modal__title">复核驳回(退回草稿)</div>
         <div class="modal__body">
           <div class="form-field">
-            <label class="form-field__label">驳回意见 <span class="req">*</span></label>
-            <textarea class="form-input" v-model="rejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
+            <label class="form-field__label" for="pl-reject">驳回意见 <span class="req">*</span></label>
+            <textarea id="pl-reject" class="form-input" v-model="rejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
           </div>
         </div>
         <div class="modal__actions">
-          <button class="btn btn--secondary" @click="rejectDialog.show = false">取消</button>
-          <button class="btn btn--primary" @click="doReject">确认驳回</button>
+          <button class="btn btn--secondary" :disabled="!!pending" @click="rejectDialog.show = false">取消</button>
+          <button class="btn btn--primary" :disabled="!!pending" @click="doReject">{{ pendingText(`reject:${rejectDialog.id}`, '确认驳回') }}</button>
         </div>
       </div>
     </div>
@@ -1479,6 +1489,22 @@ const changeLogs = ref<ConfigChangeLog[]>([])
 const lprStatus = ref('')
 const matrixStatus = ref('')
 const productStatus = ref('')
+// §UI审查:各 tab 表格加载态
+const loading = reactive({ lpr: false, matrix: false, product: false, ruleset: false, changelog: false, catalog: false, route: false, policy: false, metric: false })
+// §UI审查:行内操作按钮 pendingId 防连点
+const pending = ref('')
+function pendingText(key: string, normal: string) {
+  return pending.value === key ? '处理中…' : normal
+}
+async function withPending<T>(key: string, fn: () => Promise<T>): Promise<T | undefined> {
+  if (pending.value) return
+  pending.value = key
+  try {
+    return await fn()
+  } finally {
+    pending.value = ''
+  }
+}
 
 function statusText(s: string) {
   return configStatusText(s)
@@ -1534,39 +1560,54 @@ function prettyJson(json?: string) {
 }
 
 async function loadLpr() {
+  loading.lpr = true
   try {
     lprList.value = await listLpr(lprStatus.value || undefined)
   } catch {
     lprList.value = []
+  } finally {
+    loading.lpr = false
   }
 }
 async function loadMatrix() {
+  loading.matrix = true
   try {
     matrixList.value = await listMatrix(matrixStatus.value || undefined)
   } catch {
     matrixList.value = []
+  } finally {
+    loading.matrix = false
   }
 }
 async function loadRuleSets() {
+  loading.ruleset = true
   try {
     ruleSets.value = await listRuleSets()
   } catch {
     ruleSets.value = []
+  } finally {
+    loading.ruleset = false
   }
 }
 async function loadProductLimit() {
+  loading.product = true
   try {
     productList.value = await listProductLimit(productStatus.value || undefined)
   } catch {
     productList.value = []
+  } finally {
+    loading.product = false
   }
 }
 const logQuery = reactive({ configType: '', configId: '' as number | '' })
 async function loadChangeLogs() {
+  loading.changelog = true
   try {
     changeLogs.value = await listChangeLogs(logQuery.configType || undefined, logQuery.configId || undefined)
   } catch {
     changeLogs.value = []
+  } finally {
+    loading.changelog = false
   }
 }
 const logDetail = reactive({ show: false, row: null as ConfigChangeLog | null })
@@ -1585,25 +1626,31 @@ const apiOf = (kind: Kind) => ({
 }[kind])
 
 async function doSubmit(kind: Kind, id: number) {
-  await apiOf(kind).submit(id)
-  ElMessage.success('已送审,待复核发布')
-  apiOf(kind).reload()
+  await withPending(`submit:${kind}:${id}`, async () => {
+    await apiOf(kind).submit(id)
+    ElMessage.success('已送审,待复核发布')
+    apiOf(kind).reload()
+  })
 }
 async function doPublish(kind: Kind, id: number) {
-  await ElMessageBox.confirm(
-    '发布强制双人复核:发布人不得与创建人为同一人;发布后同维度旧生效版本自动停用。确认复核发布?',
-    '复核发布确认',
-    { type: 'warning' }
-  )
-  await apiOf(kind).publish(id)
-  ElMessage.success('已发布生效')
-  apiOf(kind).reload()
+  await withPending(`publish:${kind}:${id}`, async () => {
+    await ElMessageBox.confirm(
+      '发布强制双人复核:发布人不得与创建人为同一人;发布后同维度旧生效版本自动停用。确认复核发布?',
+      '复核发布确认',
+      { type: 'warning' }
+    )
+    await apiOf(kind).publish(id)
+    ElMessage.success('已发布生效')
+    apiOf(kind).reload()
+  })
 }
 async function doDisable(kind: Kind, id: number) {
-  await ElMessageBox.confirm('确认停用该生效版本?', '停用确认', { type: 'warning' })
-  await apiOf(kind).disable(id)
-  ElMessage.success('已停用')
-  apiOf(kind).reload()
+  await withPending(`disable:${kind}:${id}`, async () => {
+    await ElMessageBox.confirm('确认停用该生效版本?', '停用确认', { type: 'warning' })
+    await apiOf(kind).disable(id)
+    ElMessage.success('已停用')
+    apiOf(kind).reload()
+  })
 }
 
 // ---------- 产品边界复核驳回(意见必填,§8A.2) ----------
@@ -1618,10 +1665,12 @@ async function doReject() {
     ElMessage.warning('驳回意见必填')
     return
   }
-  await rejectProductLimit(rejectDialog.id, rejectDialog.opinion.trim())
-  rejectDialog.show = false
-  ElMessage.success('已驳回,退回草稿')
-  loadProductLimit()
+  await withPending(`reject:${rejectDialog.id}`, async () => {
+    await rejectProductLimit(rejectDialog.id, rejectDialog.opinion.trim())
+    rejectDialog.show = false
+    ElMessage.success('已驳回,退回草稿')
+    loadProductLimit()
+  })
 }
 
 // ---------- 新增草稿 ----------
@@ -1845,10 +1894,13 @@ function voteConditionText(json?: string) {
 const productQuery = reactive({ businessBigType: '', status: '' })
 const productCatalog = ref<any[]>([])
 async function loadProductCatalog() {
+  loading.catalog = true
   try {
     productCatalog.value = await listProductCatalog(productQuery.businessBigType || undefined, productQuery.status || undefined)
   } catch {
     productCatalog.value = []
+  } finally {
+    loading.catalog = false
   }
 }
 const productDialog = reactive({ show: false, id: 0, form: {} as any })
@@ -1898,32 +1950,39 @@ async function saveProduct() {
   loadEnabledProducts()
 }
 async function doProductStatus(p: any, status: string) {
-  await ElMessageBox.confirm(
-    status === 'DISABLED'
-      ? `停用后新申请不可选,在途审批不受影响(D11)。确认停用 ${p.productName}?`
-      : `确认启用 ${p.productName}?`,
-    status === 'DISABLED' ? '停用确认' : '启用确认', { type: 'warning' }
-  )
-  await changeProductStatus(p.id, status)
-  ElMessage.success(status === 'DISABLED' ? '已停用' : '已启用')
-  loadProductCatalog()
-  loadEnabledProducts()
+  await withPending(`prodstatus:${p.id}`, async () => {
+    await ElMessageBox.confirm(
+      status === 'DISABLED'
+        ? `停用后新申请不可选,在途审批不受影响(D11)。确认停用 ${p.productName}?`
+        : `确认启用 ${p.productName}?`,
+      status === 'DISABLED' ? '停用确认' : '启用确认', { type: 'warning' }
+    )
+    await changeProductStatus(p.id, status)
+    ElMessage.success(status === 'DISABLED' ? '已停用' : '已启用')
+    loadProductCatalog()
+    loadEnabledProducts()
+  })
 }
 async function doProductDelete(p: any) {
-  await ElMessageBox.confirm(`确认删除产品 ${p.productCode}?未被申请/矩阵/LPR/边界引用时允许删除,否则仅可停用。`, '删除确认', { type: 'warning' })
-  await deleteProduct(p.id)
-  ElMessage.success('已删除')
-  loadProductCatalog()
+  await withPending(`proddelete:${p.id}`, async () => {
+    await ElMessageBox.confirm(`确认删除产品 ${p.productCode}?未被申请/矩阵/LPR/边界引用时允许删除,否则仅可停用。`, '删除确认', { type: 'warning' })
+    await deleteProduct(p.id)
+    ElMessage.success('已删除')
+    loadProductCatalog()
+  })
 }
 
 // 指标字典管理(§9:数仓按 ccr_metric_definition 字典推送指标数据,admin 前台配置化)
 const metricQuery = reactive({ status: '', keyword: '' })
 const metricDefs = ref<any[]>([])
 async function loadMetricDefs() {
+  loading.metric = true
   try {
     metricDefs.value = await listMetricDefinitions(metricQuery.status || undefined, metricQuery.keyword?.trim() || undefined)
   } catch {
     metricDefs.value = []
+  } finally {
+    loading.metric = false
   }
 }
 function metricStatusText(s: string) {
@@ -1975,26 +2034,31 @@ async function saveMetric() {
   useMetricDict().reload()
 }
 async function doMetricStatus(m: any, status: string) {
-  await ElMessageBox.confirm(
-    status === 'DISABLED'
-      ? `停用后新承诺/新策略不可选,历史承诺跟踪不受影响。确认停用 ${m.metricName}?`
-      : `确认启用 ${m.metricName}?`,
-    status === 'DISABLED' ? '停用确认' : '启用确认', { type: 'warning' }
-  )
-  await changeMetricStatus(m.id, status)
-  ElMessage.success(status === 'DISABLED' ? '已停用' : '已启用')
-  loadMetricDefs()
-  useMetricDict().reload()
+  await withPending(`metricstatus:${m.id}`, async () => {
+    await ElMessageBox.confirm(
+      status === 'DISABLED'
+        ? `停用后新承诺/新策略不可选,历史承诺跟踪不受影响。确认停用 ${m.metricName}?`
+        : `确认启用 ${m.metricName}?`,
+      status === 'DISABLED' ? '停用确认' : '启用确认', { type: 'warning' }
+    )
+    await changeMetricStatus(m.id, status)
+    ElMessage.success(status === 'DISABLED' ? '已停用' : '已启用')
+    loadMetricDefs()
+    useMetricDict().reload()
+  })
 }
 
 // 产品审批链路
 const routeQuery = reactive({ productCode: '', status: '' })
 const productRoutes = ref<any[]>([])
 async function loadProductRoutes() {
+  loading.route = true
   try {
     productRoutes.value = await listProductRoutes(routeQuery.productCode || undefined, routeQuery.status || undefined)
   } catch {
     productRoutes.value = []
+  } finally {
+    loading.route = false
   }
 }
 const enabledProducts = ref<any[]>([])
@@ -2095,27 +2159,35 @@ async function saveRoute() {
   loadProductRoutes()
 }
 async function doRouteSubmit(r: any) {
-  await submitProductRoute(r.id)
-  ElMessage.success('已送审,待复核发布')
-  loadProductRoutes()
+  await withPending(`routesubmit:${r.id}`, async () => {
+    await submitProductRoute(r.id)
+    ElMessage.success('已送审,待复核发布')
+    loadProductRoutes()
+  })
 }
 async function doRoutePublish(r: any) {
-  await ElMessageBox.confirm('发布强制双人复核:发布人不得与创建人为同一人;同产品同生效日旧生效链路自动停用。确认复核发布?', '复核发布确认', { type: 'warning' })
-  await publishProductRoute(r.id)
-  ElMessage.success('已发布生效')
-  loadProductRoutes()
+  await withPending(`routepublish:${r.id}`, async () => {
+    await ElMessageBox.confirm('发布强制双人复核:发布人不得与创建人为同一人;同产品同生效日旧生效链路自动停用。确认复核发布?', '复核发布确认', { type: 'warning' })
+    await publishProductRoute(r.id)
+    ElMessage.success('已发布生效')
+    loadProductRoutes()
+  })
 }
 async function doRouteDisable(r: any) {
-  await ElMessageBox.confirm('确认停用该生效链路?', '停用确认', { type: 'warning' })
-  await disableProductRoute(r.id)
-  ElMessage.success('已停用')
-  loadProductRoutes()
+  await withPending(`routedisable:${r.id}`, async () => {
+    await ElMessageBox.confirm('确认停用该生效链路?', '停用确认', { type: 'warning' })
+    await disableProductRoute(r.id)
+    ElMessage.success('已停用')
+    loadProductRoutes()
+  })
 }
 async function doRouteDelete(r: any) {
-  await ElMessageBox.confirm(`确认删除链路 ${r.productCode} ${fmtTime(r.effectiveDate)}?`, '删除确认', { type: 'warning' })
-  await deleteProductRoute(r.id)
-  ElMessage.success('已删除')
-  loadProductRoutes()
+  await withPending(`routedelete:${r.id}`, async () => {
+    await ElMessageBox.confirm(`确认删除链路 ${r.productCode} ${fmtTime(r.effectiveDate)}?`, '删除确认', { type: 'warning' })
+    await deleteProductRoute(r.id)
+    ElMessage.success('已删除')
+    loadProductRoutes()
+  })
 }
 const routeRejectDialog = reactive({ show: false, id: 0, opinion: '' })
 function openRouteReject(r: any) {
@@ -2128,10 +2200,12 @@ async function doRouteReject() {
     ElMessage.warning('驳回意见必填')
     return
   }
-  await rejectProductRoute(routeRejectDialog.id, routeRejectDialog.opinion.trim())
-  routeRejectDialog.show = false
-  ElMessage.success('已驳回,退回草稿')
-  loadProductRoutes()
+  await withPending(`routereject:${routeRejectDialog.id}`, async () => {
+    await rejectProductRoute(routeRejectDialog.id, routeRejectDialog.opinion.trim())
+    routeRejectDialog.show = false
+    ElMessage.success('已驳回,退回草稿')
+    loadProductRoutes()
+  })
 }
 
 // 产品链路模拟路由(§7.2 矩阵路由,消耗产品链路配置)
@@ -2193,10 +2267,13 @@ const policyMetric = ref('')
 // 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态)
 const metricDict = computed(() => useMetricDict().list)
 async function loadPolicies() {
+  loading.policy = true
   try {
     policyList.value = await listTrackingPolicies(policyMetric.value || undefined)
   } catch {
     policyList.value = []
+  } finally {
+    loading.policy = false
   }
 }
 
@@ -2252,14 +2329,16 @@ async function savePolicy() {
 }
 
 async function doPolicyStatus(p: any, status: string) {
-  if (status === 'EFFECTIVE') {
-    await ElMessageBox.confirm('复核发布后该策略生效,同维度旧策略将被替换。确认?', '复核发布确认', { type: 'warning' })
-  } else if (status === 'INVALID') {
-    await ElMessageBox.confirm('确认停用该生效策略?', '停用确认', { type: 'warning' })
-  }
-  await changePolicyStatus(p.id, status)
-  ElMessage.success(status === 'EFFECTIVE' ? '已发布生效' : status === 'INVALID' ? '已停用' : '已送审,待复核发布')
-  loadPolicies()
+  await withPending(`policystatus:${p.id}`, async () => {
+    if (status === 'EFFECTIVE') {
+      await ElMessageBox.confirm('复核发布后该策略生效,同维度旧策略将被替换。确认?', '复核发布确认', { type: 'warning' })
+    } else if (status === 'INVALID') {
+      await ElMessageBox.confirm('确认停用该生效策略?', '停用确认', { type: 'warning' })
+    }
+    await changePolicyStatus(p.id, status)
+    ElMessage.success(status === 'EFFECTIVE' ? '已发布生效' : status === 'INVALID' ? '已停用' : '已送审,待复核发布')
+    loadPolicies()
+  })
 }
 
 // 版本管理(版本列表+新增版本+阈值明细)
@@ -2314,14 +2393,16 @@ async function savePolicyVersion() {
   ElMessage.success('版本已保存')
 }
 async function doVersionStatus(v: any, status: string) {
-  if (status === 'EFFECTIVE') {
-    await ElMessageBox.confirm('版本生效区间与其他生效版本不得重叠,后端将强校验。确认复核发布?', '复核发布确认', { type: 'warning' })
-  } else if (status === 'INVALID') {
-    await ElMessageBox.confirm('确认停用该版本?', '停用确认', { type: 'warning' })
-  }
-  await changeVersionStatus(v.id, status)
-  versionMgr.versions = await listPolicyVersions(versionMgr.policy.id)
-  ElMessage.success(status === 'EFFECTIVE' ? '版本已生效' : status === 'INVALID' ? '版本已停用' : '已送审,待复核发布')
+  await withPending(`versionstatus:${v.id}`, async () => {
+    if (status === 'EFFECTIVE') {
+      await ElMessageBox.confirm('版本生效区间与其他生效版本不得重叠,后端将强校验。确认复核发布?', '复核发布确认', { type: 'warning' })
+    } else if (status === 'INVALID') {
+      await ElMessageBox.confirm('确认停用该版本?', '停用确认', { type: 'warning' })
+    }
+    await changeVersionStatus(v.id, status)
+    versionMgr.versions = await listPolicyVersions(versionMgr.policy.id)
+    ElMessage.success(status === 'EFFECTIVE' ? '版本已生效' : status === 'INVALID' ? '版本已停用' : '已送审,待复核发布')
+  })
 }
 
 // 策略试算(§11.7):选历史承诺计划,输出命中策略与预警判定
@@ -2419,13 +2500,21 @@ onMounted(() => {
 .chain { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .chain__node { background: var(--color-primary-light, #eff6ff); color: var(--color-primary); border-radius: 4px; padding: 2px 8px; font-size: 13px; }
 .chain__arrow { color: var(--color-text-light); }
-.modal__card--wide { width: 860px; max-width: 94vw; }
+.modal__card--wide { width: 720px; max-width: 92vw; } /* §UI审查:弹窗宽度与 user.vue 统一为 720px */
 .json-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .json-compare__title { font-weight: 600; margin-bottom: 6px; }
 .json-view { background: var(--color-bg, #f8fafc); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px; font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 
 .matrix-dialog__body { max-height: 68vh; overflow-y: auto; padding-right: 6px; }
 .modal__card { max-width: 720px; width: 92vw; }
+/* §UI审查:宽表横向滚动 + 关键列不换行/省略 */
+.table--wide { min-width: 100%; }
+.table--wide th, .table--wide td { white-space: nowrap; }
+.table--wide td.col-ellipsis { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+/* §UI审查:高级 JSON 折叠区 */
+.advanced-json { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg, #f8fafc); }
+.advanced-json summary { cursor: pointer; font-size: 13px; color: var(--color-text-sub); user-select: none; }
+.advanced-json summary:hover { color: var(--color-primary); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .form-field__tip { font-size: 12px; color: var(--color-text-light, #909399); margin-top: 4px; line-height: 1.5; }

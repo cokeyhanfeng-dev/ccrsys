@@ -180,7 +180,7 @@ public class VoteServiceImpl implements VoteService {
         if (!"APPROVE".equals(choice) && !"REJECT".equals(choice)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "票型只能为 APPROVE/REJECT");
         }
-        CcrVoteRound round = voteRoundMapper.selectById(roundId);
+        CcrVoteRound round = voteRoundMapper.selectByIdForUpdate(roundId);
         if (round == null || !"VOTING".equals(round.getStatus())) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "批次不在表决中");
         }
@@ -235,8 +235,10 @@ public class VoteServiceImpl implements VoteService {
         warmFlowService.recordBusinessTrail(
                 ballotItem == null ? String.valueOf(pricingItemId) : ballotItem.getPricingItemNo(),
                 "SIX_PEOPLE_GROUP", choice, String.valueOf(voterUserId), comment);
-        // 分项粒度计票;批次内全部分项出结果后才关闭批次
-        countItemIfReady(round, pricingItemId);
+        // 统一计票:批次内全部分项均收齐全部委员票后一次性计票(全员投完才见结果)
+        if (isRoundAllVoted(round)) {
+            countAllItems(round);
+        }
     }
 
     @Override
@@ -421,7 +423,9 @@ public class VoteServiceImpl implements VoteService {
                 .eq(CcrVoteRound::getStatus, "VOTING")
                 .lt(CcrVoteRound::getRoundStartTime, deadline));
         int count = 0;
-        for (CcrVoteRound round : expired) {
+        for (CcrVoteRound expiredRound : expired) {
+            // 统一锁序(round→分项):先锁批次行,与 submitBallot 一致,避免并发死锁
+            CcrVoteRound round = voteRoundMapper.selectByIdForUpdate(expiredRound.getId());
             List<CcrVoteRoundItem> items = roundItemMapper.selectList(
                     new LambdaQueryWrapper<CcrVoteRoundItem>()
                             .eq(CcrVoteRoundItem::getRoundId, round.getId()));
@@ -559,9 +563,35 @@ public class VoteServiceImpl implements VoteService {
         return count != null && count > 0;
     }
 
-    /** 分项粒度计票:该项收齐全部委员票后一次性生成结果;通过→PRESIDENT_DECISION,未过→REJECTED */
-    private void countItemIfReady(CcrVoteRound round, Long pricingItemId) {
-        countItem(round, pricingItemId, false);
+    /**
+     * 批次内全部分项均已收齐全部委员票(§统一计票)。
+     * 按 ballot 计数判定,天然覆盖替补场景(原委员/替补只占同一席位一票);
+     * 单委员 assignment 状态不能作全员判据,故不依赖 markAssignmentSubmittedIfDone。
+     */
+    private boolean isRoundAllVoted(CcrVoteRound round) {
+        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
+                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
+        if (items.isEmpty()) {
+            return false;
+        }
+        for (CcrVoteRoundItem item : items) {
+            Long n = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
+                    .eq(CcrBallot::getRoundId, round.getId())
+                    .eq(CcrBallot::getPricingItemId, item.getPricingItemId()));
+            if (n == null || n < round.getVoterCount()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 统一计票:批次内全部分项一次性计票(同事务,结果同时落库,批次随后统一关闭) */
+    private void countAllItems(CcrVoteRound round) {
+        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
+                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
+        for (CcrVoteRoundItem item : items) {
+            countItem(round, item.getPricingItemId(), false);
+        }
     }
 
     /**
@@ -622,9 +652,8 @@ public class VoteServiceImpl implements VoteService {
                 item.setFinalReason("六人小组表决未通过(" + countNote + ")");
                 updateItemWithLock(item);
                 // 小组否决 → 生成否决决议(决议书,不建承诺计划)
+                // 分项独立(§用户拍板):仅否决该分项,不连坐同申请其余分项
                 itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_REJECT");
-                // 整单否决(§用户拍板):同申请其余未终态分项(含不经过小组、仍在其他节点审批的分项)一并否决
-                rejectSiblingItemsOnCommitteeFail(item, countNote);
             }
             // §14.7 流转留痕:计票动作(系统动作,operator_id 记 0)
             insertTrail(pricingItemId, pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
@@ -642,39 +671,6 @@ public class VoteServiceImpl implements VoteService {
                         + ",结果 " + result.getResult());
 
         closeRoundIfAllCounted(round);
-    }
-
-    /**
-     * 整单否决(§用户拍板):小组否决时同申请其余未终态分项一并置 REJECTED。
-     * 含"不需要小组审批、仍在其他节点审批"的分项——整单结论一致,不因分项分流而产生部分通过。
-     * 已出终态的分项(批准/否决/关闭/退回)不回退。
-     */
-    private void rejectSiblingItemsOnCommitteeFail(CcrPricingItem trigger, String countNote) {
-        List<CcrPricingItem> appItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
-                .eq(CcrPricingItem::getApplicationId, trigger.getApplicationId()));
-        for (CcrPricingItem sibling : appItems) {
-            if (sibling.getId().equals(trigger.getId()) || isTerminalItemStatus(sibling.getStatus())) {
-                continue; // 触发分项已在上方处理;已终态不回退
-            }
-            String fromStatus = sibling.getStatus();
-            sibling.setStatus(PricingItemStatus.REJECTED.getCode());
-            sibling.setFinalReason("整单否决:小组表决未通过,触发分项[" + trigger.getPricingItemNo() + "]");
-            updateItemWithLock(sibling);
-            insertTrail(sibling.getId(), "COUNT_REJECT", "SIX_PEOPLE_GROUP", 0L,
-                    countNote + ",结果 FAIL(整单否决)", fromStatus, PricingItemStatus.REJECTED.getCode());
-            // 小组否决 → 生成否决决议(决议书,不建承诺计划);幂等防重
-            itemFinalizationService.afterItemTerminal(sibling.getId(), "COMMITTEE_REJECT");
-            log.info("分项 {} 整单否决(小组否决触发),申请 {}", sibling.getId(), trigger.getApplicationId());
-        }
-    }
-
-    /** 终态判定:批准/否决/关闭/退回均视为已出终态,整单否决不回退 */
-    private boolean isTerminalItemStatus(String status) {
-        return List.of(PricingItemStatus.FINAL.getCode(),
-                PricingItemStatus.APPROVED_LEVEL.getCode(),
-                PricingItemStatus.VETOED.getCode(),
-                PricingItemStatus.REJECTED.getCode(),
-                PricingItemStatus.CLOSED.getCode()).contains(status);
     }
 
     /** ccr_approval_action 流转留痕(§14.7):仅插入,失败不阻断主流程 */

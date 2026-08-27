@@ -114,6 +114,11 @@ public class ApplicationAccessService {
                 || hasHistoricalParticipation(application.getId(), user.getId()))) {
             return;
         }
+        // 秘书岗(兼岗,§需求四:贷审会秘书由计划财务部总经理兼任,主角色 dept_gm):
+        // 分项当前在 SECRETARY 节点且本人在该节点指派内即可查看——兼岗节点不在主角色节点映射内,需单独放行
+        if (isSecretaryNodeAssignee(user, application, requestedItem)) {
+            return;
+        }
         // 委员(含兼岗:委员常由部门总经理/分管行长兼任,主角色非 committee_member,登录才推导兼岗角色):
         // 该申请有本人表决指派即可查看——指派为授权权威,不依赖主角色(§兼岗委员无权查看修复)
         if (hasVoteAssignment(application.getId(), user.getId())) {
@@ -152,6 +157,32 @@ public class ApplicationAccessService {
             }
             List<Long> assignees = nodeAssigneeResolver.resolveUserIds(
                     expectedNode, application.getApplicantOrgId(), item.getDeptCode());
+            if (assignees.isEmpty() || assignees.contains(user.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 秘书岗节点查看权限(§需求四):分项当前在 SECRETARY 节点,且本人在该节点指派范围内即可查看。
+     * 秘书岗为兼岗(计划财务部总经理兼任,指派 DEPT 3202233931:dept_gm),主角色 dept_gm 的
+     * {@link #isCurrentNodeAssignee} 只认 DEPT_GENERAL_MANAGER 节点,故需按 SECRETARY 单独解析。
+     */
+    private boolean isSecretaryNodeAssignee(SysUserRead user, CcrApplication application,
+                                            CcrPricingItem requestedItem) {
+        List<CcrPricingItem> items = requestedItem == null
+                ? pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getApplicationId, application.getId())
+                        .eq(CcrPricingItem::getDelFlag, "0")
+                        .eq(CcrPricingItem::getCurrentNodeCode, "SECRETARY"))
+                : List.of(requestedItem);
+        for (CcrPricingItem item : items) {
+            if (!"SECRETARY".equals(item.getCurrentNodeCode())) {
+                continue;
+            }
+            List<Long> assignees = nodeAssigneeResolver.resolveUserIds(
+                    "SECRETARY", application.getApplicantOrgId(), item.getDeptCode());
             if (assignees.isEmpty() || assignees.contains(user.getId())) {
                 return true;
             }

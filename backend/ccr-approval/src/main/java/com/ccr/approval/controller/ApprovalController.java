@@ -504,15 +504,15 @@ public class ApprovalController {
         if (appId != null) {
             // 申请页「他行融资概要」随单持久化的补录快照(ccr_application_credit_summary,del_flag=0 取最新;数仓无征信时也能展示申请录入概要)
             List<Map<String, Object>> snapshotSummary = jdbcTemplate.queryForList(
-                    "SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, npl_balance nplBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance"
+                    "SELECT lender_count lenderCount, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, npl_balance nplBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance, report_date reportDate"
                             + " FROM ccr_application_credit_summary WHERE application_id = ? AND del_flag = '0' ORDER BY id DESC LIMIT 1", appId);
             if (!snapshotSummary.isEmpty()) {
                 otherLoanSummaryRows.addAll(snapshotSummary);
             }
         }
-        // 数仓征信概要(同字段集;已有补录快照时作回退,不重复展示)
+        // 数仓征信概要(同字段集;已有补录快照时作回退,不重复展示;报告日期=数仓征信报告日期,§2026-08-26)
         List<Map<String, Object>> dwSummary = jdbcTemplate.queryForList(
-                "SELECT lender_count lenderCount, npl_balance nplBalance, credit_amount_total creditAmountTotal, used_amount_total usedAmountTotal, loan_account_count loanAccountCount, overdue_account_count overdueAccountCount, overdue_balance overdueBalance, special_mention_balance specialMentionBalance, external_guarantee_balance externalGuaranteeBalance FROM dw_credit_financing_summary WHERE cust_no = ? ORDER BY data_dt DESC LIMIT 1", custNo);
+                "SELECT f.lender_count lenderCount, f.npl_balance nplBalance, f.credit_amount_total creditAmountTotal, f.used_amount_total usedAmountTotal, f.loan_account_count loanAccountCount, f.overdue_account_count overdueAccountCount, f.overdue_balance overdueBalance, f.special_mention_balance specialMentionBalance, f.external_guarantee_balance externalGuaranteeBalance, (SELECT r.report_date FROM dw_credit_report_snapshot r WHERE r.cust_no = f.cust_no ORDER BY r.data_dt DESC, r.report_date DESC LIMIT 1) reportDate FROM dw_credit_financing_summary f WHERE f.cust_no = ? ORDER BY f.data_dt DESC LIMIT 1", custNo);
         if (otherLoanSummaryRows.isEmpty() && !dwSummary.isEmpty()) {
             otherLoanSummaryRows.addAll(dwSummary);
         }
@@ -631,8 +631,18 @@ public class ApprovalController {
                 + " WHERE round_id = ? AND pricing_item_id = ? AND vote_choice = 'REJECT'", roundId, pricingItemId);
         Map<String, Object> voteRound = new LinkedHashMap<>(round);
         voteRound.put("submittedCount", submittedCount);
-        voteRound.put("approveCount", approveCount);
-        voteRound.put("rejectCount", rejectCount);
+        // 匿名口径(§用户拍板):票数按"角色+批次状态"双条件可见——
+        // 行长/审计/超管 或 批次已关闭(PASSED/FAILED)返回完整票数(全员投完后的计票统计);
+        // 其余角色批次进行中(VOTING)仅返回进度,不泄露实时票数(委员互不知票)
+        boolean roundClosed = "PASSED".equals(round.get("roundStatus"))
+                || "FAILED".equals(round.get("roundStatus"));
+        if (roundClosed || isPrivilegedVoteViewer()) {
+            voteRound.put("approveCount", approveCount);
+            voteRound.put("rejectCount", rejectCount);
+        } else {
+            voteRound.put("approveCount", null);
+            voteRound.put("rejectCount", null);
+        }
         // 登录人本人票(匿名口径:仅本人可见,不泄露他人)
         try {
             Long loginUserId = appLoginUser.requireLoginId();
@@ -648,6 +658,19 @@ public class ApprovalController {
             // 未登录/登录异常:仅返回匿名汇总,不阻断详情
         }
         return voteRound;
+    }
+
+    /** 表决汇总特权角色(行长/审计/超管):投票进行中即见实时票数;其余角色待批次关闭后才见最终计票统计 */
+    private boolean isPrivilegedVoteViewer() {
+        try {
+            String roleCode = appLoginUser.requireCurrentUser().getRoleCode();
+            return AppLoginUser.ROLE_PRESIDENT.equals(roleCode)
+                    || AppLoginUser.ROLE_AUDITOR.equals(roleCode)
+                    || AppLoginUser.ROLE_ADMIN.equals(roleCode);
+        } catch (Exception e) {
+            // 未登录/角色解析异常:按非特权处理(不泄露票数)
+            return false;
+        }
     }
 
     /** 简单 COUNT 查询(返回 0 而非 null) */

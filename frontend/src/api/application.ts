@@ -108,6 +108,8 @@ export interface ApplicationPayload {
     nplBalance?: number | string
     specialMentionBalance?: number | string
     externalGuaranteeBalance?: number | string
+    /** 征信报告日期(数仓 dw_credit_report_snapshot 带出,只读展示,§2026-08-26) */
+    reportDate?: string
   }> | null
   applicantUserId?: number
   applicantOrgId?: number
@@ -289,6 +291,11 @@ export function nodeName(code?: string): string {
 /** 客户姓名模糊查询(对公+对私) */
 export function searchCustomers(name: string) {
   return get<any[]>('/ccr/customers', { name })
+}
+
+/** 按证件类型+证件号反查客户(关联人录入自动带出姓名/客户号,§2026-08-26) */
+export function searchCustomerByCert(certType: string, certNo: string) {
+  return get<any>(`/ccr/customers/by-cert`, { certType, certNo })
 }
 
 /** 客户详情:基本信息+本行融资+当前贡献度+他行融资 */

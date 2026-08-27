@@ -55,8 +55,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * 六人表决与行长决策单元测试
- * 覆盖:身份伪造拒绝(非委员/被替补)、分项批次校验、多分项批次不提前关闭、
- * 计票通过→PRESIDENT_DECISION、行长决策状态守卫与重复决策、替补流程、自动合批
+ * 覆盖:身份伪造拒绝(非委员/被替补)、分项批次校验、统一计票(全员投完才计票,分项独立不连坐)、
+ * 计票通过→PRESIDENT_DECISION、否决→COMMITTEE_REJECT、行长决策状态守卫与重复决策、
+ * 替补流程、自动合批、超时强制计票
  */
 @ExtendWith(MockitoExtension.class)
 class VoteServiceImplTest {
@@ -149,7 +150,7 @@ class VoteServiceImplTest {
 
     @Test
     void submitBallot_reject_whenNotMember() {
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(currentLoginUser.requireLoginId()).thenReturn(2999L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(null);
@@ -162,7 +163,7 @@ class VoteServiceImplTest {
 
     @Test
     void submitBallot_reject_whenItemNotInRound() {
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
         ServiceException e = assertThrows(ServiceException.class,
@@ -174,7 +175,7 @@ class VoteServiceImplTest {
     @Test
     void submitBallot_reject_whenReplaced() {
         assignment.setStatus("REPLACED");
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
@@ -187,7 +188,7 @@ class VoteServiceImplTest {
 
     @Test
     void submitBallot_reject_whenDuplicateVote() {
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
@@ -200,7 +201,7 @@ class VoteServiceImplTest {
 
     @Test
     void submitBallot_reject_whenIdempotencyKeyRepeated() {
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
@@ -212,10 +213,35 @@ class VoteServiceImplTest {
         verify(ballotMapper, never()).insert(any(CcrBallot.class));
     }
 
-    // ---------- 多分项批次:不提前关闭 ----------
+    // ---------- 统一计票(§全员投完才见结果;分项独立,去整单连坐) ----------
 
+    /** 单分项未全员投完:不触发统一计票,结果不落库、分项状态不变、批次不关闭 */
     @Test
-    void submitBallot_multiItemRound_notClosedEarly_andItemGoesPresidentDecision() {
+    void submitBallot_notAllVoted_noCounting() {
+        CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
+        ri1.setRoundId(100L);
+        ri1.setPricingItemId(10L);
+
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
+        when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
+        when(currentLoginUser.requireLoginId()).thenReturn(2001L);
+        when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
+        // 依次:本人已投(1) → 分项10仅收齐 5 票(<6 未全员投完)
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 5L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+
+        voteService.submitBallot(100L, 10L, "APPROVE", null, null);
+
+        // 未全员投完 → 不统一计票:结果不落库、分项状态不变、批次不关闭
+        verify(voteResultMapper, never()).insert(any(CcrVoteResult.class));
+        verify(pricingItemMapper, never()).updateById(any(CcrPricingItem.class));
+        verify(voteRoundMapper, never()).updateById(any(CcrVoteRound.class));
+    }
+
+    /** 多分项批次:分项10已收齐但分项11未收齐 → 分项10不提前计票(统一计票时机) */
+    @Test
+    void submitBallot_multiItemNotAllVoted_noUnifiedCounting() {
         CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
         ri1.setRoundId(100L);
         ri1.setPricingItemId(10L);
@@ -223,46 +249,40 @@ class VoteServiceImplTest {
         ri2.setRoundId(100L);
         ri2.setPricingItemId(11L);
 
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 2L);
         when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1, ri2));
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
         // 依次:本人对分项10已投(1) → 本人对分项11未投(0,assignment 不置 SUBMITTED)
-        //     → 分项10已收 6 票 → 其中赞成 5 票
-        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 0L, 6L, 5L);
-        when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        //     → 分项10已收 6 票 → 分项11仅 4 票(未全员投完)
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 0L, 6L, 4L);
         when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
-        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
-        // 批次共 2 个分项,仅 1 个出结果 → 不关闭
-        CcrVoteResult counted = new CcrVoteResult();
-        counted.setResult("PASS");
-        when(voteResultMapper.selectList(any(Wrapper.class))).thenReturn(List.of(counted));
 
         voteService.submitBallot(100L, 10L, "APPROVE", null, null);
 
-        // 计票通过 → PRESIDENT_DECISION(补齐该状态使用)
-        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
-                PricingItemStatus.PRESIDENT_DECISION.getCode().equals(i.getStatus())));
-        // 多分项批次:未全部出结果,批次不关闭
+        // 分项10虽已收齐,但批次未全员投完 → 不统一计票:分项10结果不提前落库
+        verify(voteResultMapper, never()).insert(any(CcrVoteResult.class));
+        verify(pricingItemMapper, never()).updateById(any(CcrPricingItem.class));
         verify(voteRoundMapper, never()).updateById(any(CcrVoteRound.class));
-        // 委员未投完全部分项,assignment 不置 SUBMITTED
+        // 本人未投完全部分项,assignment 不置 SUBMITTED
         verify(assignmentMapper, never()).updateById(any(CcrVoteAssignment.class));
     }
 
+    /** 单分项全员投完:统一计票通过 → 分项 PRESIDENT_DECISION + 批次 PASSED + assignment SUBMITTED */
     @Test
-    void submitBallot_lastItem_closesRound_andAssignmentSubmitted() {
+    void submitBallot_allVoted_singleItem_passesAndClosesRound() {
         CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
         ri1.setRoundId(100L);
         ri1.setPricingItemId(10L);
 
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
-        // 依次:本人对分项10已投(1,assignment 可置 SUBMITTED) → 分项10收齐 6 票 → 赞成 6 票
-        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 6L, 6L);
+        // 依次:本人已投(1,assignment 可置 SUBMITTED) → 分项10收齐 6 票 → countItem 提交数(6) → 赞成数(6)
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 6L, 6L, 6L);
         when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
@@ -272,25 +292,29 @@ class VoteServiceImplTest {
 
         voteService.submitBallot(100L, 10L, "APPROVE", null, null);
 
+        // 统一计票通过 → PRESIDENT_DECISION(上送行长)
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
+                PricingItemStatus.PRESIDENT_DECISION.getCode().equals(i.getStatus())));
         // 投完全部分项 → assignment SUBMITTED
         verify(assignmentMapper).updateById(argThat((CcrVoteAssignment a) -> "SUBMITTED".equals(a.getStatus())));
         // 全部分项出结果 → 批次关闭(任一通过 → PASSED)
         verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "PASSED".equals(r.getStatus())));
     }
 
+    /** 单分项全员投完:统一计票未通过 → 分项 REJECTED + 否决决议(COMMITTEE_REJECT) + 批次 FAILED */
     @Test
-    void submitBallot_itemFail_goesRejected_andAggregates() {
+    void submitBallot_allVoted_singleItem_rejectsAndClosesRound() {
         CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
         ri1.setRoundId(100L);
         ri1.setPricingItemId(10L);
 
-        when(voteRoundMapper.selectById(100L)).thenReturn(round);
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
         when(currentLoginUser.requireLoginId()).thenReturn(2001L);
         when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
-        // 收齐 6 票,赞成仅 2 票 < 4 → FAIL
-        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 6L, 2L);
+        // 依次:本人已投(1) → 分项10收齐 6 票 → countItem 提交数(6) → 赞成数(2 <4 否决)
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 6L, 6L, 2L);
         when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
@@ -300,11 +324,66 @@ class VoteServiceImplTest {
 
         voteService.submitBallot(100L, 10L, "REJECT", null, null);
 
+        // 否决终态 → REJECTED + 否决决议(COMMITTEE_REJECT)
         verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
                 PricingItemStatus.REJECTED.getCode().equals(i.getStatus())));
-        // 否决终态 → 主申请聚合
-        verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(itemFinalizationService).afterItemTerminal(10L, "COMMITTEE_REJECT");
         verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "FAILED".equals(r.getStatus())));
+    }
+
+    /**
+     * 多分项混合(§分项独立):一 PASS 一 FAIL 统一计票,
+     * 否决项不连坐同申请兄弟分项(仅 FAIL 项终态,通过项上送行长;批次一次性关闭)
+     */
+    @Test
+    void submitBallot_multiItemMixedPassFail_noSiblingCascade() {
+        CcrVoteRoundItem ri1 = new CcrVoteRoundItem();
+        ri1.setRoundId(100L);
+        ri1.setPricingItemId(10L);
+        CcrVoteRoundItem ri2 = new CcrVoteRoundItem();
+        ri2.setRoundId(100L);
+        ri2.setPricingItemId(11L);
+        CcrPricingItem item2 = new CcrPricingItem();
+        item2.setId(11L);
+        item2.setApplicationId(30L);
+        item2.setPricingItemNo("PI002");
+        item2.setStatus(PricingItemStatus.VOTING.getCode());
+        item2.setCurrentApprovalRate(new BigDecimal("3.700000"));
+        item2.setVersionNo(1);
+
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
+        when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 2L, 2L);
+        when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1, ri2));
+        when(currentLoginUser.requireLoginId()).thenReturn(2001L);
+        when(assignmentMapper.selectOne(any(Wrapper.class))).thenReturn(assignment);
+        // 依次:本人两分项均已投(1,1 → SUBMITTED) → 两分项均收齐(6,6)
+        //     → countItem(10)提交/赞成(6,4 通过) → countItem(11)提交/赞成(6,2 否决)
+        when(ballotMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 1L, 6L, 6L, 6L, 4L, 6L, 2L);
+        when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectById(11L)).thenReturn(item2);
+        when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
+        CcrVoteResult pass = new CcrVoteResult();
+        pass.setResult("PASS");
+        CcrVoteResult fail = new CcrVoteResult();
+        fail.setResult("FAIL");
+        // 计票过程动态:第 1 个分项计票后仅 1 条结果(未达批次 item 数不关闭),第 2 个后 2 条 → 关闭
+        when(voteResultMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pass), List.of(pass, fail));
+
+        voteService.submitBallot(100L, 11L, "REJECT", null, null);
+
+        // 分项独立:通过项上送行长(PRESIDENT_DECISION),否决项终态(REJECTED)
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
+                Long.valueOf(10L).equals(i.getId())
+                        && PricingItemStatus.PRESIDENT_DECISION.getCode().equals(i.getStatus())));
+        verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
+                Long.valueOf(11L).equals(i.getId())
+                        && PricingItemStatus.REJECTED.getCode().equals(i.getStatus())));
+        // 否决决议仅对 FAIL 项签发,不连坐同申请其余分项(§用户拍板)
+        verify(itemFinalizationService).afterItemTerminal(11L, "COMMITTEE_REJECT");
+        verify(itemFinalizationService, never()).afterItemTerminal(10L, "COMMITTEE_REJECT");
+        // 多分项全部出结果 → 批次一次性关闭(任一通过 → PASSED)
+        verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "PASSED".equals(r.getStatus())));
     }
 
     // ---------- 行长决策 ----------
@@ -324,7 +403,8 @@ class VoteServiceImplTest {
     void presidentDecision_reject_whenItemNotPass() {
         pricingItem.setStatus(PricingItemStatus.VOTING.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(1003L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        // 整单决策口径:非待行长决策状态分项不进入决策(selectList 查不到 → 无待决分项)
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
 
         ServiceException e = assertThrows(ServiceException.class,
                 () -> voteService.presidentDecision(10L, "APPROVE", null));
@@ -336,7 +416,7 @@ class VoteServiceImplTest {
     void presidentDecision_approve_goesFinal_andCreatesResolution() {
         pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(1003L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
 
         voteService.presidentDecision(10L, "APPROVE", null);
@@ -355,7 +435,7 @@ class VoteServiceImplTest {
     void presidentDecision_veto_goesVetoed() {
         pricingItem.setStatus(PricingItemStatus.COMMITTEE_PASS.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(1003L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
 
         voteService.presidentDecision(10L, "VETO", "风险不可控");
@@ -370,7 +450,7 @@ class VoteServiceImplTest {
     void presidentDecision_duplicate_translatedToTaskProcessed() {
         pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(1003L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
         when(presidentDecisionMapper.insert(any(CcrPresidentDecision.class)))
                 .thenThrow(new DuplicateKeyException("uk_president_pricing"));
 
@@ -523,7 +603,7 @@ class VoteServiceImplTest {
         // PRESIDENT 节点配置了指定决策人,当前登录人不在指派范围 → 拒绝
         pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(3001L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
         when(nodeAssigneeResolver.resolveUserIds(org.mockito.ArgumentMatchers.eq("PRESIDENT"), any()))
                 .thenReturn(List.of(3999L));
 
@@ -542,6 +622,7 @@ class VoteServiceImplTest {
         ri1.setRoundId(100L);
         ri1.setPricingItemId(10L);
         when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of(round));
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
@@ -579,6 +660,7 @@ class VoteServiceImplTest {
         ri1.setRoundId(100L);
         ri1.setPricingItemId(10L);
         when(voteRoundMapper.selectList(any(Wrapper.class))).thenReturn(List.of(round));
+        when(voteRoundMapper.selectByIdForUpdate(100L)).thenReturn(round);
         when(roundItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ri1));
         when(roundItemMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
         when(voteResultMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
@@ -594,7 +676,7 @@ class VoteServiceImplTest {
 
         verify(pricingItemMapper).updateById(argThat((CcrPricingItem i) ->
                 PricingItemStatus.REJECTED.getCode().equals(i.getStatus())));
-        verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(itemFinalizationService).afterItemTerminal(10L, "COMMITTEE_REJECT");
         verify(approvalActionTrailMapper).insert(argThat((CcrApprovalActionTrail t) ->
                 "COUNT_REJECT".equals(t.getActionType())
                         && PricingItemStatus.REJECTED.getCode().equals(t.getToStatus())));
@@ -655,7 +737,7 @@ class VoteServiceImplTest {
     void presidentDecision_approve_writesTrailFromToStatus() {
         pricingItem.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
         when(currentLoginUser.requireLoginId()).thenReturn(1003L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(pricingItem);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pricingItem));
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
 
         voteService.presidentDecision(10L, "APPROVE", "同意执行");

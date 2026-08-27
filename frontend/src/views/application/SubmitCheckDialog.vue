@@ -1,6 +1,7 @@
 <template>
-  <div v-if="modelValue" class="modal" @click.self="onCancel">
-    <div class="modal__card modal__card--wide">
+  <div v-if="modelValue" class="modal" role="dialog" aria-modal="true" aria-label="提交确认" @click.self="onCancel">
+    <!-- §UI审查:弹窗卡可聚焦(tabindex=-1),配合 ESC 关闭 -->
+    <div class="modal__card modal__card--wide" ref="dialogRef" tabindex="-1">
       <div class="modal__title">提交确认</div>
       <div class="modal__body">
         <!-- 客户信息(存款提交确认弹窗;§2026-08-26) -->
@@ -91,66 +92,18 @@
           </div>
         </template>
         <template v-if="check">
-          <!-- 数据批次差异清单(仅校验明细场景展示,贷款 showCheckDetails=false 隐藏;§2026-08-26) -->
-          <template v-if="showCheckDetails">
-            <div class="check-section">
-              <div class="check-section__title">
-                数据批次差异
-                <span class="badge badge--neutral">基线来源:{{ baselineSourceText }}</span>
-              </div>
-              <table class="table" v-if="check.diffs?.length">
-                <thead>
-                  <tr><th>数据集</th><th>基线数据日期</th><th>最新批次日期</th><th>是否有新批次</th></tr>
-                </thead>
-                <tbody>
-                  <tr v-for="d in check.diffs" :key="d.datasetCode">
-                    <td>{{ datasetName(d.datasetCode) }}</td>
-                    <td>{{ d.baselineDataDt || '暂无数据' }}</td>
-                    <td>{{ d.latestDataDt || '暂无数据' }}</td>
-                    <td>
-                      <span :class="d.changed ? 'badge badge--warning' : 'badge badge--success'">
-                        {{ d.changed ? '有新批次' : '无变化' }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div class="empty" v-else>无数据批次差异</div>
-            </div>
-            <!-- 硬边界 -->
-            <div class="check-section">
-              <div class="check-section__title">硬边界校验</div>
-              <table class="table" v-if="check.hardBoundaries?.length">
-                <thead>
-                  <tr><th>分项编号</th><th>产品</th><th>申请利率</th><th>硬边界</th><th>结果</th><th>说明</th></tr>
-                </thead>
-                <tbody>
-                  <tr v-for="h in check.hardBoundaries" :key="h.pricingItemId">
-                    <td>{{ h.pricingItemNo || h.pricingItemId }}</td>
-                    <td>{{ productName(h.productCode) }}</td>
-                    <td class="num">{{ h.requestedRate }}%</td>
-                    <td class="num">{{ h.boundaryRate != null ? h.boundaryRate + '%' : '暂无数据' }}</td>
-                    <td>
-                      <span :class="h.pass ? 'badge badge--success' : 'badge badge--danger'">
-                        {{ h.pass ? '通过' : '突破硬边界' }}
-                      </span>
-                    </td>
-                    <td>{{ h.message || '—' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div class="empty" v-else>暂无硬边界校验结果</div>
-            </div>
-          </template>
-
           <div v-if="check.blockSubmit" class="check-block-tip">
-            存在阻断项(质量 BLOCK 或突破硬边界),禁止提交。请返回修改申请内容后重新校验。
+            存在阻断项（质量 BLOCK 或突破硬边界），禁止提交。请返回修改申请内容后重新校验。
           </div>
-          <div v-else-if="showCheckDetails" class="check-pass-tip">
-            校验未发现阻断项,确认后正式提交,提交后首先流转至支行行长节点。
+          <div v-else class="check-pass-tip">
+            校验未发现阻断项，确认后正式提交，提交后首先流转至支行行长节点。
           </div>
         </template>
-        <div class="empty" v-else>校验中…</div>
+        <!-- §UI审查:校验加载态用 spinner 提示,不再用空态插画 -->
+        <div v-else class="check-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>校验中…</span>
+        </div>
       </div>
       <div class="modal__actions">
         <button class="btn btn--secondary" @click="onCancel">{{ check?.blockSubmit ? '返回修改' : '取消' }}</button>
@@ -166,9 +119,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import type { SubmitCheck, RoutePreview } from '@/api/application'
-import { nodeLabel, rateDirectionText, productName, datasetName } from '@/utils/dict'
+import { nodeLabel, rateDirectionText, productName } from '@/utils/dict'
 
 const props = defineProps<{
   modelValue: boolean
@@ -182,8 +135,6 @@ const props = defineProps<{
   detailRows?: Array<{ itemNo: string; member?: string; guaranteeType: string; term: string; amount: string; rate: string }>
   /** 审批路由预览结果(提交确认弹窗展示;§2026-08-26 贷款/存款均传 routeResult) */
   routePreview?: RoutePreview | null
-  /** 是否展示数据批次差异/硬边界等校验明细(贷款提交确认精简为 false,存款保持 true;§2026-08-26) */
-  showCheckDetails?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -196,18 +147,20 @@ const emit = defineEmits<{
 /** 额度明细是否含集团成员列(有任一行带 member 才展示,§2026-08-26) */
 const showMemberCol = computed(() => props.detailRows?.some(r => r.member) ?? false)
 
-const baselineSourceText = computed(() => {
-  const s = props.check?.baselineSource
-  if (s === 'DRAFT_CREATE') return '草稿创建'
-  if (s === 'ROUTE_PREVIEW') return '上次预览'
-  return '无基线'
-})
-
-function levelBadge(level?: string) {
-  if (level === 'BLOCK') return 'badge badge--danger'
-  if (level === 'WARN') return 'badge badge--warning'
-  return 'badge badge--success'
+// §UI审查:弹窗 ESC 关闭(焦点陷阱按审查提示可不做,ESC 必须补;打开时聚焦弹窗卡提升键盘可达)
+const dialogRef = ref<HTMLElement | null>(null)
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') onCancel()
 }
+watch(() => props.modelValue, (open) => {
+  if (open) {
+    document.addEventListener('keydown', onKeydown)
+    nextTick(() => dialogRef.value?.focus())
+  } else {
+    document.removeEventListener('keydown', onKeydown)
+  }
+})
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 function onCancel() {
   emit('update:modelValue', false)
@@ -216,6 +169,8 @@ function onCancel() {
 
 <style scoped>
 .modal__card--wide { max-width: 860px; max-height: 85vh; overflow-y: auto; }
+/* §UI审查:弹窗卡可聚焦(tabindex=-1)但不显示聚焦外框 */
+.modal__card--wide:focus { outline: none; }
 .check-section { margin-bottom: 20px; }
 .check-section__title {
   font-size: 14px; font-weight: 600; margin-bottom: 8px;
@@ -231,8 +186,17 @@ function onCancel() {
   background: var(--color-success-light); color: #047857;
 }
 .empty { padding: var(--space-4); }
+/* §UI审查:校验加载态 spinner 提示 */
+.check-loading {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 24px 0; color: var(--color-text-sub); font-size: 13px;
+}
 /* 提交确认弹窗申请概要(§2026-08-26 概要/明细移入弹窗) */
 .confirm-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
+/* §UI审查:窄屏降为 2 列,避免值被 ellipsis 截断 */
+@media (max-width: 600px) {
+  .confirm-summary { grid-template-columns: repeat(2, 1fr); }
+}
 .confirm-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .confirm-summary__item span { font-size: 12px; color: var(--color-text-sub); }
 .confirm-summary__item b {

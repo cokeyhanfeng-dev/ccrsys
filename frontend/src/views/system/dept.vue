@@ -10,13 +10,25 @@
       <div class="card dept-tree">
         <div class="card__head">
           <span>机构树</span>
-          <button class="btn btn--primary" @click="openCreate(null)">＋ 新增根机构</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <!-- §UI审查:机构树顶加关键字过滤搜索框 -->
+            <input
+              class="form-input"
+              v-model="treeKeyword"
+              placeholder="搜索机构名称/编码"
+              style="width:170px"
+              @input="onTreeSearch"
+            />
+            <button class="btn btn--primary" @click="openCreate(null)">＋ 新增根机构</button>
+          </div>
         </div>
         <el-tree
+          ref="treeRef"
           :data="tree"
           node-key="id"
           :props="{ label: 'deptName', children: 'children' }"
           :expand-on-click-node="false"
+          :filter-node-method="filterNode"
           default-expand-all
           highlight-current
           @node-click="onSelect"
@@ -69,13 +81,10 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">上级机构</label>
+              <!-- §UI审查:上级机构下拉排除自身及全部子级,避免选到后代成环 -->
               <select class="form-select" v-model="editForm.parentId">
                 <option :value="0">总行(根)</option>
-                <option
-                  v-for="d in flatDepts.filter((x) => x.id !== current?.id)"
-                  :key="d.id"
-                  :value="d.id"
-                >
+                <option v-for="d in parentOptions" :key="d.id" :value="d.id">
                   {{ d.deptName }}({{ d.orgCode }})
                 </option>
               </select>
@@ -149,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listDeptTree, listDepts, createDept, updateDept, deleteDept, updateDeptStatus,
@@ -168,6 +177,32 @@ const tree = ref<SysDept[]>([])
 const flatDepts = ref<SysDept[]>([])
 const current = ref<SysDept | null>(null)
 const editForm = reactive({ deptName: '', orgType: '', parentId: 0 as number, manager: '', sortNo: 1 as number })
+// §UI审查:机构树关键字过滤
+const treeRef = ref<any>(null)
+const treeKeyword = ref('')
+function filterNode(value: string, data: any) {
+  if (!value) return true
+  return (data.deptName || '').includes(value) || (data.orgCode || '').includes(value)
+}
+function onTreeSearch() {
+  treeRef.value?.filter(treeKeyword.value)
+}
+// §UI审查:上级机构下拉选项——排除当前机构及其全部子级
+const parentOptions = computed(() => {
+  if (!current.value) return flatDepts.value
+  const blocked = new Set<number>([current.value.id])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const d of flatDepts.value) {
+      if (d.parentId != null && blocked.has(Number(d.parentId)) && !blocked.has(d.id)) {
+        blocked.add(d.id)
+        changed = true
+      }
+    }
+  }
+  return flatDepts.value.filter((d) => !blocked.has(d.id))
+})
 
 async function load() {
   try {
@@ -283,12 +318,13 @@ onMounted(load)
 </script>
 
 <style scoped>
-.dept-layout { display: flex; gap: 16px; align-items: flex-start; }
-.dept-tree { flex: 0 0 480px; max-height: calc(100vh - 220px); overflow: auto; }
-.dept-detail { flex: 1; }
+/* §UI审查:树+详情窄屏换行兜底,避免挤压溢出 */
+.dept-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.dept-tree { flex: 0 0 480px; max-width: 100%; max-height: calc(100vh - 220px); overflow: auto; }
+.dept-detail { flex: 1 1 320px; min-width: 0; }
 .card__head { gap: 8px; flex-wrap: wrap; }
 .tree-node { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tree-node__code { color: var(--color-text-light); font-size: 12px; }
+.tree-node__code { color: var(--color-text-sub); font-size: 12px; } /* §UI审查:浅灰小字改 text-sub 提对比 */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .req { color: var(--color-danger); }
 </style>

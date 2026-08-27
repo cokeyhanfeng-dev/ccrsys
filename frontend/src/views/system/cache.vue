@@ -32,7 +32,8 @@
         <tbody>
           <tr v-for="c in items" :key="c.itemKey">
             <td>
-              <div>{{ itemName(c.itemKey) }}</div>
+              <!-- §UI审查:未知编码名称兜底不再重复显示两个相同编码,名称与 key 相同时只显一行 -->
+              <div v-if="itemName(c.itemKey) !== c.itemKey">{{ itemName(c.itemKey) }}</div>
               <div class="sub">{{ c.itemKey }}</div>
               <span :class="c.builtin ? 'badge badge--info' : 'badge badge--success'">
                 {{ c.builtin ? '内置' : '自定义' }}
@@ -40,7 +41,8 @@
             </td>
             <td><code class="key-code">{{ c.key || c.keyPattern }}</code></td>
             <td>
-              <div>{{ c.description || '-' }}</div>
+              <!-- §UI审查:描述缺省 ASCII `-` 统一为全角 `—` -->
+              <div>{{ c.description || '—' }}</div>
               <div class="sub">{{ c.dataLoader ? `${c.dataLoader}${loaderName(c.dataLoader) ? ' · ' + loaderName(c.dataLoader) : ''}` : '业务代码写入' }}</div>
             </td>
             <td>
@@ -52,6 +54,7 @@
               />
             </td>
             <td>
+              <!-- §UI审查:TTL 单元格去掉「秒」单位,与表头「TTL(秒)」不重复 -->
               <div class="ttl-cell">
                 <el-input-number
                   v-model="c.editingTtl"
@@ -61,7 +64,6 @@
                   :controls="false"
                   style="width: 100px"
                 />
-                <span class="unit">秒</span>
               </div>
             </td>
             <td>
@@ -102,52 +104,63 @@
       </table>
     </div>
 
-    <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="editingKey ? '编辑缓存项' : '新增缓存项'" width="560px">
-      <el-form label-width="120px">
-        <el-form-item label="缓存项编码" required>
-          <el-input v-model="form.itemKey" :disabled="!!editingKey" placeholder="如 dw-table:contribution" />
-        </el-form-item>
-        <el-form-item label="匹配方式" required>
-          <el-radio-group v-model="form.type" @change="onTypeChange" :disabled="!!editingKey">
-            <el-radio-button value="key">精确 key</el-radio-button>
-            <el-radio-button value="pattern">key 前缀</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="form.type === 'key'" label="精确 key" required>
-          <el-input v-model="form.cacheKey" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:contribution:latest" />
-        </el-form-item>
-        <el-form-item v-else label="key 前缀" required>
-          <el-input v-model="form.keyPattern" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:rate-limit:" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="form.description" placeholder="缓存内容说明" />
-        </el-form-item>
-        <el-form-item label="写入开关">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
-        <el-form-item label="TTL(秒)">
-          <el-input-number v-model="form.ttlSeconds" :min="1" :controls="false" style="width: 160px" />
-        </el-form-item>
-        <el-form-item label="数据加载器">
-          <el-select v-model="form.dataLoader" clearable placeholder="空=业务代码写缓存" style="width: 100%">
-            <el-option v-for="l in loaders" :key="l.code" :label="l.name" :value="l.code" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.dataLoader" label="加载器参数">
-          <el-input
-            v-model="form.loaderParam"
-            type="textarea"
-            :rows="3"
-            placeholder='如 {"table":"dw_contribution_metric","limit":5000}'
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <button class="btn btn--secondary" @click="dialogVisible = false">取消</button>
-        <button class="btn btn--primary" :disabled="saving" @click="save">保存</button>
-      </template>
-    </el-dialog>
+    <!-- 新增/编辑弹窗 (§UI审查:el-dialog/el-form 统一为自研 .modal/.form-field 体系,与页内按钮一致) -->
+    <div class="modal" v-if="dialogVisible">
+      <div class="modal__card">
+        <div class="modal__title">{{ editingKey ? '编辑缓存项' : '新增缓存项' }}</div>
+        <div class="modal__body">
+          <div class="form-field">
+            <label class="form-field__label" for="cc-itemKey">缓存项编码 <span class="req">*</span></label>
+            <input id="cc-itemKey" class="form-input" v-model="form.itemKey" :disabled="!!editingKey" placeholder="如 dw-table:contribution" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label" for="cc-type">匹配方式 <span class="req">*</span></label>
+            <select id="cc-type" class="form-select" v-model="form.type" :disabled="!!editingKey" @change="onTypeChange">
+              <option value="key">精确 key</option>
+              <option value="pattern">key 前缀</option>
+            </select>
+          </div>
+          <div class="form-field" v-if="form.type === 'key'">
+            <label class="form-field__label" for="cc-cacheKey">精确 key <span class="req">*</span></label>
+            <input id="cc-cacheKey" class="form-input" v-model="form.cacheKey" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:contribution:latest" />
+          </div>
+          <div class="form-field" v-else>
+            <label class="form-field__label" for="cc-keyPattern">key 前缀 <span class="req">*</span></label>
+            <input id="cc-keyPattern" class="form-input" v-model="form.keyPattern" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:rate-limit:" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label" for="cc-desc">描述</label>
+            <input id="cc-desc" class="form-input" v-model="form.description" placeholder="缓存内容说明" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label" for="cc-enabled">写入开关</label>
+            <select id="cc-enabled" class="form-select" v-model="form.enabled">
+              <option :value="true">启用</option>
+              <option :value="false">停用</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-field__label" for="cc-ttl">TTL(秒)</label>
+            <input id="cc-ttl" class="form-input" v-model.number="form.ttlSeconds" type="number" min="1" />
+          </div>
+          <div class="form-field">
+            <label class="form-field__label" for="cc-loader">数据加载器</label>
+            <select id="cc-loader" class="form-select" v-model="form.dataLoader">
+              <option value="">空=业务代码写缓存</option>
+              <option v-for="l in loaders" :key="l.code" :value="l.code">{{ l.name }}</option>
+            </select>
+          </div>
+          <div class="form-field" v-if="form.dataLoader">
+            <label class="form-field__label" for="cc-loaderParam">加载器参数</label>
+            <textarea id="cc-loaderParam" class="form-input" v-model="form.loaderParam" rows="3" placeholder='如 {"table":"dw_contribution_metric","limit":5000}'></textarea>
+          </div>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="dialogVisible = false">取消</button>
+          <button class="btn btn--primary" :disabled="!!saving" @click="save">保存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

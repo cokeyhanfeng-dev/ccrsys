@@ -28,7 +28,7 @@
                 <label class="vote-option"><input type="radio" :name="'vote-'+idx" value="APPROVE" v-model="row.choice" /> 赞成</label>
                 <label class="vote-option"><input type="radio" :name="'vote-'+idx" value="REJECT" v-model="row.choice" /> 反对</label>
               </template>
-              <span v-else class="badge" :class="row.myChoice === 'APPROVE' ? 'badge--success' : 'badge--danger'">
+              <span v-else :class="voteChoiceBadge(row.myChoice)">
                 {{ row.myChoice === 'APPROVE' ? '本人已投:赞成' : row.myChoice === 'REJECT' ? '本人已投:反对' : '已提交' }}
               </span>
             </td>
@@ -56,7 +56,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listVoteTodo, fetchMyBallot, submitBallot } from '@/api/vote'
 import { newIdempotencyKey } from '@/api/approval'
-import { productName, guaranteeTypeText } from '@/utils/dict'
+import { productName, guaranteeTypeText, voteChoiceBadge } from '@/utils/dict'
 
 const router = useRouter()
 const rows = ref<any[]>([])

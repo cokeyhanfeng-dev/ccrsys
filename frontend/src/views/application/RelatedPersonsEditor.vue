@@ -2,10 +2,10 @@
   <div class="relations-editor">
     <div class="sub-title">
       关联人员
-      <span class="badge badge--neutral">随申请备注结构附带提交</span>
+      <span class="badge badge--neutral">随申请一并提交</span>
       <InfoTip>
-        录入与本笔业务相关的配偶/直系亲属/担保人等;姓名行内自动匹配客户号,匹配不到可手工补录。
-        证件号(对公 USCC/对私身份证)必填,失焦全行判重并<strong>录入即绑定</strong>:已绑定其他客户/集团将标红阻断。
+        录入与本笔业务相关的配偶/直系亲属/担保人等；证件号（对公 USCC/对私身份证）必填，失焦自动带出姓名/客户号并全行判重。
+        「录入即绑定」：已绑定其他客户/集团的证件号将标红阻断，带不出姓名/客户号时可手工补录。
       </InfoTip>
     </div>
 
@@ -29,9 +29,9 @@
     <table class="table" v-if="rows.length">
       <thead>
         <tr>
-          <th>姓名 <span class="req">*</span></th>
           <th>证件类型</th>
           <th>证件号 <span class="req">*</span></th>
+          <th>姓名 <span class="req">*</span></th>
           <th>关系类型</th>
           <th>客户号(自动匹配)</th>
           <th>判重状态</th>
@@ -41,15 +41,15 @@
       <tbody>
         <tr v-for="(r, i) in rows" :key="i">
           <td>
-            <input class="form-input" v-model="r.name" placeholder="输入姓名后自动匹配" @blur="matchCustomer(r)" />
-          </td>
-          <td>
             <select class="form-select" v-model="r.certType" style="min-width:120px" @change="onCertChange(r)">
               <option value="USCC">统一社会信用代码(对公)</option>
               <option value="ID_CARD">居民身份证(对私)</option>
             </select>
           </td>
-          <td><input class="form-input" v-model="r.certNo" placeholder="必填,失焦判重" @input="onCertChange(r)" @blur="onCertBlur(r, i)" /></td>
+          <td><input class="form-input" v-model="r.certNo" placeholder="必填,失焦自动带出并判重" aria-label="证件号" @input="onCertChange(r)" @blur="onCertBlur(r, i)" /></td>
+          <td>
+            <input class="form-input" v-model="r.name" placeholder="证件号带出或手工录入" aria-label="关联人姓名" @blur="matchCustomer(r)" />
+          </td>
           <td>
             <select class="form-select" v-model="r.relationType">
               <option value="SPOUSE">配偶</option>
@@ -59,11 +59,11 @@
               <option value="OTHER">其他</option>
             </select>
           </td>
-          <td><input class="form-input" v-model="r.customerNo" placeholder="自动匹配/手工补录" /></td>
+          <td><input class="form-input" v-model="r.customerNo" placeholder="证件号带出/手工补录" aria-label="客户号" /></td>
           <td>
             <span v-if="r.checkStatus === 'bound'" class="rel-badge rel-badge--ok">已绑定</span>
             <span v-else-if="r.checkStatus === 'available'" class="rel-badge rel-badge--ok">可绑定</span>
-            <span v-else-if="r.checkStatus === 'occupied'" class="rel-badge rel-badge--bad" :title="r.occupiedBy || '已占用'">{{ r.occupiedBy || '已占用' }}</span>
+            <span v-else-if="r.checkStatus === 'occupied'" class="rel-badge rel-badge--bad rel-badge--occupied" :title="r.occupiedBy || '已占用'">{{ r.occupiedBy || '已占用' }}</span>
             <span v-else-if="r.checkStatus === 'checking'" class="rel-badge rel-badge--warn">校验中…</span>
             <span v-else-if="r.checkStatus === 'error'" class="rel-badge rel-badge--bad">校验失败</span>
             <span v-else class="rel-badge rel-badge--muted">未校验</span>
@@ -176,7 +176,7 @@ export function parseRelations(remark?: string): [RelatedPersonRow[], string] {
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { searchCustomers } from '@/api/application'
+import { searchCustomers, searchCustomerByCert } from '@/api/application'
 import { checkRelation, bindRelation, listApplicationRelations } from '@/api/relation'
 import { relationTypeText } from '@/utils/dict'
 
@@ -204,15 +204,35 @@ function mark(r: RelatedPersonRow, status: RelatedPersonRow['checkStatus'], by =
   r.occupiedBy = by
 }
 
-// 证件号/证件类型变更:重置判重态(旧判重结果失效)
+// 证件号/证件类型变更:重置判重态(旧判重结果失效)+ 清空证件号带出的姓名/客户号
+// §2026-08-26:证件号录错重新录入时,旧带出结果(姓名/客户号)随之失效,避免残留上一客户信息
 function onCertChange(r: RelatedPersonRow) {
   if (r.checkStatus && r.checkStatus !== 'checking') {
     r.checkStatus = undefined
     r.occupiedBy = ''
   }
+  if (r.name || r.customerNo) {
+    r.name = ''
+    r.customerNo = ''
+  }
 }
 
-// 证件号失焦:全行判重 + 录入即绑定(§6.2/§10.3.21,前后端双重拦截)
+// 按证件号反查数仓主档:自动带出姓名/客户号(§2026-08-26 用户要求,证件字段前移 + 按证件号带出)
+async function autoFillByCert(r: RelatedPersonRow) {
+  const cert = r.certNo?.trim()
+  if (!cert) return
+  try {
+    const hit = await searchCustomerByCert(r.certType, cert)
+    if (hit && hit.customerNo) {
+      if (!r.name) r.name = hit.customerName || ''
+      if (!r.customerNo) r.customerNo = hit.customerNo
+    }
+  } catch {
+    // 反查失败不阻断后续判重/绑定
+  }
+}
+
+// 证件号失焦:按证件号带出姓名/客户号 + 全行判重 + 录入即绑定(§6.2/§10.3.21,前后端双重拦截)
 async function onCertBlur(r: RelatedPersonRow, index: number) {
   const cert = r.certNo?.trim()
   if (!cert) { mark(r, 'idle'); return }
@@ -224,6 +244,7 @@ async function onCertBlur(r: RelatedPersonRow, index: number) {
     return
   }
   mark(r, 'checking')
+  await autoFillByCert(r)
   try {
     const res = await checkRelation(r.certType, cert)
     if (res.bound) {
@@ -303,6 +324,8 @@ onMounted(loadHistory)
 .rel-badge { display: inline-block; font-size: 12px; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
 .rel-badge--ok { background: var(--color-success-light, #f0fdf4); color: var(--color-success); }
 .rel-badge--bad { background: var(--color-danger-light, #fef2f2); color: var(--color-danger); }
+/* §UI审查:判重占用文案过长时省略号收窄,完整内容悬停 title 展示 */
+.rel-badge--occupied { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .rel-badge--warn { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); }
 .rel-badge--muted { background: var(--color-bg); color: var(--color-text-light); }
 </style>

@@ -1,0 +1,75 @@
+# 生产环境编排(独立 project ccr-prod;与 dev docker-compose.yml 无关联)
+# 使用:docker compose -f docker-compose.prod.yml up -d
+# 密码经 .env 注入(与本文件同目录,严禁入库);MySQL/Redis 不映射宿主端口(仅内网)
+# 详参 docs/25_生产全量部署手册.md §九
+name: ccr-prod
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ccr-prod-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ccr_rate
+      TZ: Asia/Shanghai
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    # 生产不映射宿主端口:仅 compose 内网访问
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 注意:生产禁止挂 ./db(initdb 会执行测试段 10/15/17/22);初始化手动执行手册 §十
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: ccr-prod-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    image: ccr-backend:20260826
+    container_name: ccr-prod-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: ccr-frontend:20260826
+    container_name: ccr-prod-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro            # HTTPS 证书(部署侧提供;纯 HTTP 可去掉)
+      - ./frontend/nginx-prod.conf:/etc/nginx/conf.d/default.conf:ro   # 生产 nginx 配置(手册 §十一)
+
+volumes:
+  mysql-data:

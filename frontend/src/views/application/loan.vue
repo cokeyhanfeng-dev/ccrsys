@@ -20,7 +20,7 @@
     <!-- 关联重提提示 -->
     <div v-if="draft.id" class="form-card draft-banner">
       <span class="badge badge--info">草稿</span>
-      申请号 {{ draft.applicationNo }}(版本 v{{ draft.versionNo }})
+      申请号 {{ draft.applicationNo }}（版本 v{{ draft.versionNo }}）
       <template v-if="inheritCount > 0">· {{ inheritCount }} 条已批准分项沿用原决议,不在本页重复编辑</template>
       <InfoTip content="草稿保存仅更新主单信息,分项/成员/承诺以创建时内容为准" />
     </div>
@@ -378,28 +378,49 @@
       <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
       <div class="sub-title" style="margin-top:20px">他行融资概要</div>
       <InfoTip content="概要来自数仓,可编辑;提交时与下方融资明细自动核对(授信机构数/总额/已用额/笔数)" />
-      <table class="table">
-        <thead>
-          <tr>
-            <th>授信机构数</th><th>他行授信总额(万元)</th><th>已用额度合计(万元)</th>
-            <th>未结清笔数</th><th>逾期账户数</th><th>逾期余额(万元)</th>
-            <th>不良贷款余额(万元)</th><th>关注类余额(万元)</th><th>对外担保余额(万元)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><input class="form-input form-input--amount" :value="otherSummary.lenderCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'lenderCount')" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-            <td><input class="form-input form-input--amount" :value="otherSummary.loanAccountCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'loanAccountCount')" /></td>
-            <td><input class="form-input form-input--amount" :value="otherSummary.overdueAccountCount" type="text" inputmode="numeric" placeholder="请输入整数" @input="onIntInput($event, otherSummary, 'overdueAccountCount')" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-            <td><input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="—" @keydown="onNumKeydown" /></td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- §UI审查:9 列单行表改字段卡片网格,避免横向拖拽跨列对照错位;输入形态统一 type=number 并给示例值 -->
+      <div class="other-summary-grid">
+        <div class="form-field">
+          <label class="form-field__label">授信机构数</label>
+          <input class="form-input form-input--amount" :value="otherSummary.lenderCount" type="number" min="0" step="1" inputmode="numeric" placeholder="如 5" @input="onIntInput($event, otherSummary, 'lenderCount')" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">他行授信总额(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.creditAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 1000" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">已用额度合计(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.usedAmountTotal" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 800" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">未结清笔数</label>
+          <input class="form-input form-input--amount" :value="otherSummary.loanAccountCount" type="number" min="0" step="1" inputmode="numeric" placeholder="如 3" @input="onIntInput($event, otherSummary, 'loanAccountCount')" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">逾期账户数</label>
+          <input class="form-input form-input--amount" :value="otherSummary.overdueAccountCount" type="number" min="0" step="1" inputmode="numeric" placeholder="如 0" @input="onIntInput($event, otherSummary, 'overdueAccountCount')" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">逾期余额(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.overdueBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 100" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">不良贷款余额(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.nplBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 0" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">关注类余额(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.specialMentionBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 0" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">对外担保余额(万元)</label>
+          <input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 0" @keydown="onNumKeydown" />
+        </div>
+        <div class="form-field">
+          <label class="form-field__label">报告日期(征信)</label>
+          <input class="form-input" :value="otherSummary.reportDate || ''" disabled placeholder="数仓带出,只读" />
+        </div>
+      </div>
 
       <div class="sub-title" style="margin-top:20px">他行融资明细</div>
       <table class="table" v-if="otherLoans.length">
@@ -467,7 +488,15 @@
 
       <!-- 存量授信协议(需求六:每份协议独立申请不可合并;折叠面板默认收起减少空白,点标题展开选/录;数仓有协议→下拉选+详情展示编号/总额/日期,无(含集团,集团查询不带协议)→手工补录三字段;§2026-08-26 集团协议块可见) -->
       <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
-        <div class="agreement-pick agreement-pick--head" @click="agreementExpanded = !agreementExpanded">
+        <!-- §UI审查:折叠标题补键盘可达 -->
+        <div
+          class="agreement-pick agreement-pick--head"
+          @click="agreementExpanded = !agreementExpanded"
+          tabindex="0"
+          role="button"
+          :aria-expanded="agreementExpanded"
+          @keydown.enter="agreementExpanded = !agreementExpanded"
+        >
           <span class="agreement-pick__label">授信协议 <span class="req">*</span></span>
           <span class="agreement-pick__state">{{ agreementPickState }}</span>
           <span class="agreement-pick__arrow">{{ agreementExpanded ? '▾' : '▸' }}</span>
@@ -569,6 +598,8 @@
             <!-- 贷款期限固定一年期/三年期/五年期下拉(取消自由输入月/天,§用户要求) -->
             <select class="form-select" :value="termChoiceOf(g)" @change="onTermChange(g, $event)">
               <option value="" disabled>选择期限</option>
+              <!-- §UI审查:存量非标期限追加自定义项,避免下拉空白误判未填 -->
+              <option v-if="termChoiceOf(g).startsWith('CUSTOM')" :value="termChoiceOf(g)">{{ termOptionLabel(g) }}</option>
               <option v-for="opt in loanTermOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
@@ -790,7 +821,7 @@
         <tbody>
           <tr v-for="(a, i) in attachments" :key="i">
             <td>{{ a.name }}</td>
-            <td class="num">{{ (a.size / 1024).toFixed(1) }} KB</td>
+            <td class="num">{{ fmtSize(a.size) }}</td>
             <td><span class="badge" :class="a.uploaded ? 'badge--success' : 'badge--warning'">{{ a.uploaded ? '已上传' : '待上传' }}</span></td>
             <td><button class="btn btn--text" @click="attachments.splice(i, 1)">移除</button></td>
           </tr>
@@ -830,7 +861,6 @@
       :summary="confirmSummary"
       :detail-rows="confirmDetailRows"
       :route-preview="routeResult"
-      :show-check-details="false"
       :submitting="submitting"
       @confirm="onConfirmSubmit"
     />
@@ -842,6 +872,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { fmtSize } from '@/utils/format' // §UI审查:附件大小自适应 B/KB/MB
 import { listEnabledProducts } from '@/api/system'
 import {
   searchCustomers as apiSearchCustomers,
@@ -899,7 +930,17 @@ function termChoiceOf(g: { termValue?: string | number; termUnit?: string }): st
   if (u === 'YEAR' && (v === '1' || v === '3' || v === '5')) return v + 'Y'
   // 12/36/60 个月等价 1/3/5 年(存量带出月份场景自动归一)
   if (u === 'MONTH' && (v === '12' || v === '36' || v === '60')) return String(Number(v) / 12) + 'Y'
+  // §UI审查:存量非标期限保留原值(下拉追加自定义项),避免显示空白误判未填
+  if (v && u) return `CUSTOM:${v}:${u}`
   return ''
+}
+/** §UI审查:存量非标期限的自定义项文案(如「自定义(2 年)」「自定义(18 个月)」) */
+function termOptionLabel(g: { termValue?: string | number; termUnit?: string }): string {
+  const v = String(g.termValue ?? '').trim()
+  const u = g.termUnit || ''
+  if (!v || !u) return ''
+  const unitText = u === 'MONTH' ? '个月' : u === 'YEAR' ? '年' : u
+  return `自定义(${v} ${unitText})`
 }
 function onTermChange(g: { termValue?: string; termUnit?: string }, e: Event) {
   const value = (e.target as HTMLSelectElement).value
@@ -2078,6 +2119,7 @@ function buildCreditSummary(): Record<string, unknown> | undefined {
   if (num(s.nplBalance) !== undefined) out.nplBalance = num(s.nplBalance)
   if (num(s.specialMentionBalance) !== undefined) out.specialMentionBalance = num(s.specialMentionBalance)
   if (num(s.externalGuaranteeBalance) !== undefined) out.externalGuaranteeBalance = num(s.externalGuaranteeBalance)
+  if (s.reportDate) out.reportDate = String(s.reportDate)
   return Object.keys(out).length ? out : undefined
 }
 
@@ -2584,6 +2626,7 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-detail-empty { margin-top: 10px; }
 /* 存量授信协议折叠面板:标题条可点(默认收起减少空白),展开区承载下拉选/手工补录(§2026-08-26) */
 .agreement-pick--head { cursor: pointer; user-select: none; }
+.agreement-pick--head:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .agreement-pick__state { font-size: 12px; color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
 .agreement-pick__arrow { margin-left: auto; color: var(--color-text-light); font-size: 12px; }
 .agreement-pick__body { margin-top: 10px; }
@@ -2622,6 +2665,11 @@ async function loadDraftIntoForm(id: number | string) {
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .wizard-stepper .stepper__step { cursor: pointer; }
+/* §UI审查:7 步步骤条窄屏下每步定宽,容器横向滚动避免文字挤压 */
+@media (max-width: 900px) {
+  .wizard-stepper { overflow-x: auto; }
+  .wizard-stepper .stepper__step { flex: none; min-width: 96px; }
+}
 .wizard-actions {
   display: flex; justify-content: space-between; align-items: center;
   margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-border);
@@ -2665,6 +2713,22 @@ async function loadDraftIntoForm(id: number | string) {
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+/* §UI审查:担保分项卡内 label 方向统一——明细子项与基础字段一致,label 置上 */
+.mortgage-item__grid .form-field { display: block; }
+.mortgage-item__grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+.mortgage-item__grid .form-field > .form-input,
+.mortgage-item__grid .form-field > .form-select { width: 100%; min-width: 0; }
+/* §UI审查:他行融资概要字段网格(5 列,窄屏降 2 列) */
+.other-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-top: 8px;
+}
+.other-summary-grid .form-field { display: block; margin-bottom: 0; }
+.other-summary-grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+.other-summary-grid .form-input { width: 100%; min-width: 0; }
+@media (max-width: 1100px) { .other-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* 贷款分项基础字段(§2026-08-26 整体优化):label 置上+输入框全宽——避免 108px 定宽 label 挤窄输入框致期限文字截断;
    auto-fit 等宽列 + 统一 10px 间距保证栏位平衡;字段尽量排一行,窄屏自动降列 */
 .loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; gap: 10px !important; }
