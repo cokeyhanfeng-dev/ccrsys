@@ -38,9 +38,13 @@ public interface ApprovalService {
                  Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments);
 
     /**
-     * 普通节点否决(§7.3 否决原因必填)
+     * 普通节点否决(§7.3 否决原因必填;2026-08-27 逐项否决:记本节点已否决停留,全齐套后
+     * 部分否决整单上送/全部否决整单退回)
+     *
+     * @return 流转去向结果(terminal 整单否决退回或部分否决全部就地终审 / nextNodeCode 下一节点,
+     *         未齐套停留为本节点),供前端停留继续或返回列表
      */
-    void reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey);
+    ApprovalResult reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey);
 
     /**
      * 已办列表(§11.4):当前登录人办理过的任务(审批动作轨迹,含计票/行长决策留痕)

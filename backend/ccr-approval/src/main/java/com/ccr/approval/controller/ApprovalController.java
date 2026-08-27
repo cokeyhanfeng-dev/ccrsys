@@ -299,6 +299,7 @@ public class ApprovalController {
             overwriteCustomer(row, manual, "fiveLevelClass", "fiveLevelClass", true);
             overwriteCustomer(row, manual, "creditLevel", "creditLevel", true);
             overwriteCustomer(row, manual, "industry", "industry", true);
+            overwriteCustomer(row, manual, "entpCharic", "entpCharic", true);
             overwriteCustomer(row, manual, "registeredCapital", "registeredCapital", true);
             overwriteCustomer(row, manual, "occupation", "occupation", true);
             overwriteCustomer(row, manual, "annualIncome", "annualIncome", true);
@@ -395,7 +396,7 @@ public class ApprovalController {
             List<Map<String, Object>> siblings = jdbcTemplate.queryForList(
                     "SELECT pi.id, pi.pricing_item_no pricingItemNo, pi.pricing_carrier_type carrierType, pi.pricing_amount pricingAmount,"
                             + " pi.requested_rate requestedRate, pi.current_approval_rate currentApprovalRate, pi.current_node_code currentNodeCode,"
-                            + " pi.status, pi.version_no versionNo, pi.original_rate originalRate,"
+                            + " pi.status, pi.version_no versionNo, pi.original_rate originalRate, pi.calculated_rate calculatedRate,"
                             + " pi.term_value termValue, pi.term_unit termUnit, pi.product_code productCode, pi.dept_code deptCode,"
                             + " pi.member_customer_no memberCustomerNo,"
                             + " rel.loan_contract_no contractNo"
@@ -412,6 +413,7 @@ public class ApprovalController {
                 }
                 String nodeCode = item.get("current_node_code") == null ? "" : item.get("current_node_code").toString();
                 Set<Object> agreed = new LinkedHashSet<>();
+                Set<Object> rejected = new LinkedHashSet<>();
                 Set<Object> passed = new LinkedHashSet<>();
                 if (StrUtil.isNotBlank(nodeCode)) {
                     // 本节点已同意待齐套:ccr_approval_action 当前节点 APPROVE 记录覆盖的分项
@@ -421,6 +423,15 @@ public class ApprovalController {
                             nodeCode);
                     for (Map<String, Object> a : nodeApproves) {
                         agreed.add(a.get("pricingItemId"));
+                    }
+                    // 本节点已否决待齐套(逐项否决模型 2026-08-27):ccr_approval_action 当前节点 REJECT 记录覆盖的分项;
+                    // 已置 REJECTED 终态的分项由 status 判断(上级仅查看),不在本集合
+                    List<Map<String, Object>> nodeRejects = jdbcTemplate.queryForList(
+                            "SELECT DISTINCT pricing_item_id pricingItemId FROM ccr_approval_action"
+                                    + " WHERE node_code = ? AND action_type = 'REJECT' AND pricing_item_id IN (" + inSb + ") AND del_flag = '0'",
+                            nodeCode);
+                    for (Map<String, Object> a : nodeRejects) {
+                        rejected.add(a.get("pricingItemId"));
                     }
                 }
                 // 已通过集合:任意节点「权限内 APPROVE」(超权限转送为 ESCALATE 不在其中)→ 上级已通过的分项后续节点只展示、不重复审批
@@ -448,6 +459,7 @@ public class ApprovalController {
                 }
                 for (Map<String, Object> s : siblings) {
                     s.put("agreed", agreed.contains(s.get("id")));
+                    s.put("rejected", rejected.contains(s.get("id")));
                     s.put("passed", passed.contains(s.get("id")));
                     s.put("guarantees", guaranteeByItem.getOrDefault(s.get("id"), Collections.emptyList()));
                     // 六人小组节点:分项挂轮次时附加委员本人票状态(审批页内联同意/否决,一人一票)
@@ -1289,17 +1301,17 @@ public class ApprovalController {
         return result.isEmpty() ? null : result;
     }
 
-    /** 普通节点否决;versionNo 必传,Idempotency-Key 头可选 */
+    /** 普通节点否决(逐项否决,返回流转去向与 approve 同构);versionNo 必传,Idempotency-Key 头可选 */
     @PostMapping("/tasks/reject")
-    public R<Void> reject(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-                          @RequestBody Map<String, Object> body) {
-        approvalService.reject(
+    public R<ApprovalResult> reject(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                    @RequestBody Map<String, Object> body) {
+        ApprovalResult result = approvalService.reject(
                 Long.valueOf(body.get("pricingItemId").toString()),
                 body.get("nodeCode").toString(),
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 body.get("versionNo") == null ? null : Integer.valueOf(body.get("versionNo").toString()),
                 idempotencyKey);
-        return R.ok();
+        return R.ok(result);
     }
 
     /**

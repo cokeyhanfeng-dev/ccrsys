@@ -271,11 +271,15 @@
               <option value="" disabled>请选择部门/机构</option>
               <option v-for="d in depts" :key="d.id" :value="d.orgCode">{{ d.deptName }}({{ d.orgCode }})</option>
             </select>
-            <!-- §UI审查:「按人员组」由裸输入框改下拉,避免手填组编码出错 -->
-            <select v-else-if="assigneeDialog.form.assigneeType === 'GROUP'" class="form-select" v-model="assigneeDialog.form.assigneeCode">
-              <option value="" disabled>请选择人员组</option>
-              <option v-for="g in groups" :key="g.groupNo" :value="g.groupNo">{{ g.groupName }}({{ g.groupNo }})</option>
-            </select>
+            <!-- 「按人员组」=角色集合(逗号分隔角色码,后端 GROUP 层按角色展开启用用户;
+                 §2026-08-27 修复:原加载手工群组接口不存在致 404,且语义与后端不符) -->
+            <div v-else-if="assigneeDialog.form.assigneeType === 'GROUP'" class="assignee-group-pick">
+              <label v-for="r in roles" :key="r.roleCode" class="assignee-group-pick__item">
+                <input type="checkbox" :value="r.roleCode" :checked="groupRoles.includes(r.roleCode)" @change="toggleGroupRole(r.roleCode)" />
+                <span>{{ r.roleName }}({{ r.roleCode }})</span>
+              </label>
+              <div v-if="!groupRoles.length" class="form-field__hint">请至少勾选一个角色;人员组解析为该组角色的全部启用用户</div>
+            </div>
           </div>
           <div class="form-field">
             <label class="form-field__label">同层关系</label>
@@ -475,7 +479,6 @@ const assignees = ref<NodeAssignee[]>([])
 const users = ref<any[]>([])
 const roles = ref<SysRole[]>([])
 const depts = ref<SysDept[]>([])
-const groups = ref<any[]>([]) // §UI审查:人员组下拉选项
 const deptVps = ref<DeptVp[]>([])
 const deptVpDialog = reactive({ show: false, isEdit: false, form: {} as any })
 // 分管行长下拉=启用用户中 vice_president 角色;部门下拉=机构表中部门(DEPT)机构(映射按部门归属码)
@@ -521,12 +524,6 @@ async function loadRefs() {
     depts.value = (await listDepts()).filter((d) => d.status === 'ENABLE')
   } catch {
     depts.value = []
-  }
-  try {
-    const g = await listManualGroups({ pageNum: 1, pageSize: 200 })
-    groups.value = (g as any)?.records || []
-  } catch {
-    groups.value = []
   }
 }
 
@@ -639,6 +636,16 @@ function openAssigneeCreate() {
   assigneeDialog.isEdit = false
   assigneeDialog.form = blankAssigneeForm()
   assigneeDialog.show = true
+}
+/** 人员组=角色集合:assigneeCode 逗号分隔角色码(与后端 GROUP 层解析一致,§2026-08-27) */
+const groupRoles = computed(() =>
+  (assigneeDialog.form.assigneeCode || '').split(',').map((s: string) => s.trim()).filter(Boolean))
+function toggleGroupRole(roleCode: string) {
+  const cur = groupRoles.value.slice()
+  const i = cur.indexOf(roleCode)
+  if (i >= 0) cur.splice(i, 1)
+  else cur.push(roleCode)
+  assigneeDialog.form.assigneeCode = cur.join(',')
 }
 function openAssigneeEdit(a: NodeAssignee) {
   assigneeDialog.isEdit = true

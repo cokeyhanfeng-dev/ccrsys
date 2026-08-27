@@ -93,7 +93,10 @@
         </template>
         <template v-if="check">
           <div v-if="check.blockSubmit" class="check-block-tip">
-            存在阻断项（质量 BLOCK 或突破硬边界），禁止提交。请返回修改申请内容后重新校验。
+            <div>存在阻断项（质量 BLOCK 或突破硬边界），禁止提交。请返回修改申请内容后重新校验。</div>
+            <ul v-if="blockReasons.length" class="check-block-reasons">
+              <li v-for="(r, i) in blockReasons" :key="i">{{ r }}</li>
+            </ul>
           </div>
           <div v-else class="check-pass-tip">
             校验未发现阻断项，确认后正式提交，提交后首先流转至支行行长节点。
@@ -147,6 +150,19 @@ const emit = defineEmits<{
 /** 额度明细是否含集团成员列(有任一行带 member 才展示,§2026-08-26) */
 const showMemberCol = computed(() => props.detailRows?.some(r => r.member) ?? false)
 
+/** 阻断原因明细(质量 BLOCK + 硬边界未通过的具体 message,弹窗内直接告知为何不能提交) */
+const blockReasons = computed(() => {
+  if (!props.check) return []
+  const reasons: string[] = []
+  for (const h of props.check.hardBoundaries ?? []) {
+    if (h.pass === false && h.message) reasons.push(h.message)
+  }
+  for (const p of props.check.qualityPrecheck ?? []) {
+    if (p.level === 'BLOCK' && p.message) reasons.push(p.message)
+  }
+  return reasons
+})
+
 // §UI审查:弹窗 ESC 关闭(焦点陷阱按审查提示可不做,ESC 必须补;打开时聚焦弹窗卡提升键盘可达)
 const dialogRef = ref<HTMLElement | null>(null)
 function onKeydown(e: KeyboardEvent) {
@@ -180,6 +196,10 @@ function onCancel() {
 .check-block-tip {
   padding: 10px 14px; border-radius: var(--radius-sm);
   background: var(--color-danger-light); color: #b91c1c; font-weight: 600;
+}
+.check-block-reasons {
+  margin: 8px 0 0; padding-left: 18px; font-weight: 400; font-size: 13px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 .check-pass-tip {
   padding: 10px 14px; border-radius: var(--radius-sm);

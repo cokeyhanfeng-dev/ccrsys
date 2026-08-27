@@ -258,6 +258,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         response.setQualityPrecheck(precheck);
 
         // 3. 硬边界校验(逐分项)
+        BigDecimal groupCreditTotal = loadGroupCreditTotal(app);
         List<SubmitCheckResponse.HardBoundaryItem> boundaries = new ArrayList<>();
         for (CcrPricingItem item : items) {
             SubmitCheckResponse.HardBoundaryItem hb = new SubmitCheckResponse.HardBoundaryItem();
@@ -274,6 +275,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             } catch (ServiceException e) {
                 hb.setPass(Boolean.FALSE);
                 hb.setMessage(e.getMessage());
+            }
+            // 存款起点利率硬边界(2026-08-27 用户拍板):预检阶段即阻断,避免走到正式提交才报错
+            if (!Boolean.FALSE.equals(hb.getPass())) {
+                try {
+                    checkDepositStartRate(app, List.of(item), groupCreditTotal);
+                } catch (ServiceException e) {
+                    hb.setPass(Boolean.FALSE);
+                    hb.setMessage(e.getMessage());
+                }
             }
             boundaries.add(hb);
         }
@@ -392,6 +402,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         for (CcrPricingItem item : items) {
             ruleEngine.checkHardBoundary(businessBigType(app), item.getProductCode(), item.getRequestedRate());
         }
+        // e2) 存款起点利率硬边界(2026-08-27 用户拍板):申请利率必须严格高于矩阵起点利率(挂牌价)才能提交
+        checkDepositStartRate(app, items, groupCreditTotal);
         // 主申请先置 SUBMITTED(§7.2 步骤6 中间态:校验通过、快照采集/路由前),路由完成后置 ROUTING
         applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
                 .eq(CcrApplication::getId, id)
@@ -1362,6 +1374,30 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 .orderByAsc(CcrPricingItem::getId));
     }
 
+    /**
+     * 存款起点利率硬边界(2026-08-27 用户拍板):存款申请利率必须严格高于矩阵起点利率(挂牌价)
+     * 才能提交——等于起点利率无需提交利率申请(柜面按挂牌价直接办理),低于起点不合理。
+     * 起点利率 = 矩阵该产品/期限档命中的边界值(PRD 表 7.2.4:对公定期 3M>0.85%/1Y>1.25% 等);
+     * 未配置矩阵边界(起点为空)不拦截。校验时机在状态变更/快照采集前,失败整单回滚。
+     */
+    private void checkDepositStartRate(CcrApplication app, List<CcrPricingItem> items, BigDecimal groupCreditTotal) {
+        if (!"DEPOSIT".equals(businessBigType(app))) {
+            return;
+        }
+        Map<String, Map<String, Object>> corpCache = new HashMap<>();
+        for (CcrPricingItem item : items) {
+            RouteResult route = rateMatrixRouter.calcRoute(buildRouteInput(app, item, groupCreditTotal, corpCache));
+            BigDecimal start = route.getBoundaryRate();
+            BigDecimal rate = item.getRequestedRate();
+            if (start != null && (rate == null || rate.compareTo(start) <= 0)) {
+                throw new ServiceException(ErrorCode.HARD_BOUNDARY.getCode(),
+                        "存款分项[" + item.getPricingItemNo() + "]申请利率必须高于起点利率 "
+                                + start.stripTrailingZeros().toPlainString()
+                                + "%,等于起点利率无需提交利率申请");
+            }
+        }
+    }
+
     /** 业务大类:LOAN_PUBLIC/LOAN_PERSONAL/DEPOSIT(硬边界与矩阵路由入参) */
     private String businessBigType(CcrApplication app) {
         if ("DEPOSIT".equals(app.getBusinessType())) {
@@ -1438,11 +1474,23 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return item.getOriginalRate() != null ? "EXISTING" : "NEW";
     }
 
-    /** 客户类型:PERSONAL/SOE/NON_SOE(对公取数仓企业性质,缺省 NON_SOE) */
+    /** 客户类型:PERSONAL/SOE/NON_SOE(申请提交的企业性质优先,数仓带出兜底,缺省 NON_SOE) */
     private String resolveCustomerType(CcrApplication app, CcrPricingItem item,
                                        Map<String, Map<String, Object>> corpCache) {
         if ("INDIVIDUAL".equals(app.getCustomerScope())) {
             return "PERSONAL";
+        }
+        // 1. 申请提交的企业性质优先(§2026-08-27 用户拍板:新增客户申请页人工选国企/非国企,数仓仅带出默认;
+        //    老申请快照无 entpCharic 键 → 回退数仓,兼容存量)
+        if (StrUtil.isNotBlank(app.getCustomerInfoJson())) {
+            try {
+                String submitted = JSONUtil.parseObj(app.getCustomerInfoJson()).getStr("entpCharic");
+                if ("SOE".equals(submitted) || "NON_SOE".equals(submitted)) {
+                    return submitted;
+                }
+            } catch (Exception ignore) {
+                // 快照解析失败回退数仓
+            }
         }
         String customerNo = "GROUP".equals(app.getCustomerScope()) ? item.getMemberCustomerNo() : app.getCustomerNo();
         if (StrUtil.isBlank(customerNo)) {

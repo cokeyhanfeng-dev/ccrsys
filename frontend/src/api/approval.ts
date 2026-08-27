@@ -40,9 +40,9 @@ export function approveTask(body: ApprovalActionBody, idempotencyKey?: string): 
   })
 }
 
-/** 普通节点否决;Idempotency-Key 头可选 */
-export function rejectTask(body: ApprovalActionBody, idempotencyKey?: string): Promise<void> {
-  return request<void>({
+/** 普通节点否决(2026-08-27 逐项否决,返回流转去向与 approve 同构);Idempotency-Key 头可选 */
+export function rejectTask(body: ApprovalActionBody, idempotencyKey?: string): Promise<ApprovalResult> {
+  return request<ApprovalResult>({
     url: '/ccr/approval/tasks/reject',
     method: 'post',
     data: body,

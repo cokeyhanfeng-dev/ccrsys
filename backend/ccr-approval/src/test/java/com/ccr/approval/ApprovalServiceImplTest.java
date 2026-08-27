@@ -10,6 +10,7 @@ import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
+import com.ccr.approval.dto.ApprovalResult;
 import com.ccr.approval.mapper.CcrApprovalActionMapper;
 import com.ccr.approval.mapper.CcrRateAdjustmentMapper;
 import com.ccr.approval.service.impl.ApprovalServiceImpl;
@@ -37,6 +38,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -273,6 +275,8 @@ class ApprovalServiceImplTest {
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // 分管行长节点需部门归属配置:指派命中操作人(1001)放行,否则 guardNodeAssignee 空归属直接拒绝
+        when(nodeAssigneeResolver.resolveUserIds("VICE_PRESIDENT", null, null)).thenReturn(List.of(1001L));
 
         approvalService.approve(10L, "VICE_PRESIDENT", null, null, 3, null, null);
 
@@ -310,7 +314,10 @@ class ApprovalServiceImplTest {
         // 分项 10 已有本节点 APPROVE 动作(本节点已同意)
         CcrApprovalAction prior = new CcrApprovalAction();
         prior.setPricingItemId(10L);
-        when(approvalActionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(prior));
+        // APPROVE 查询命中 prior(10L 已本节点同意),REJECT 查询无 → 顺序打桩防单值被 nodeRejectedIds 复用
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(prior))
+                .thenReturn(List.of());
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
         approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 1, null, null);
@@ -327,29 +334,44 @@ class ApprovalServiceImplTest {
 
     @Test
     void approve_loan_oneBeyondPermission_wholeOrderEscalates() {
-        // 两项申请:一项超权限保留利率通过 → 整单上送,两项一起推进下一节点
+        // 两项申请:一项超权限保留利率通过 → 逐项模型下第一次 approve 未齐套停留,
+        // 齐套后整单上送部门总经理,两项一起推进
         stubBranchManagerLoan();
         item.setCurrentApprovalRate(new BigDecimal("2.800000")); // 低于支行下限 3.0
         CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
         // 随行分项终审岗位在小组(非本节点),支行无权就地终审 → 随整单上送留痕
         item2.setRouteCode("SIX_PEOPLE_GROUP");
+        when(pricingItemMapper.selectById(11L)).thenReturn(item2);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // 10L 在第一次 approve 后已本节点同意:第二次 approve 的 APPROVE 查询命中,REJECT 查询空
+        CcrApprovalAction prior = new CcrApprovalAction();
+        prior.setPricingItemId(10L);
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())          // 第一次 approve:APPROVE 空
+                .thenReturn(List.of())          // 第一次 approve:REJECT 空
+                .thenReturn(List.of(prior))     // 第二次 approve:APPROVE 命中 10L
+                .thenReturn(List.of());         // 第二次 approve:REJECT 空
 
         approvalService.approve(10L, "BRANCH_MANAGER", null, "超权限保留利率通过", 3, null, null);
+        // 第一项未齐套:记本节点已同意,停留不推进、不合批
+        verify(pricingItemMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(voteService, never()).createGroupRound(any());
 
-        // 两项一起更新(推进部门总经理),不终审、不合批;随行分项留痕注明整单上送
-        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 3, null, null);
+        // 齐套:超权限整单上送,两项一起更新推进,不终审、不合批;随行分项留痕注明整单上送
+        verify(pricingItemMapper, times(3)).update(isNull(), any(Wrapper.class));
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
         verify(voteService, never()).createGroupRound(any());
         verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) ->
-                Long.valueOf(11L).equals(a.getPricingItemId())
+                Long.valueOf(10L).equals(a.getPricingItemId())
                         && a.getActionComment() != null && a.getActionComment().contains("整单上送")));
     }
 
     @Test
     void approve_deposit_oneOverLimit_wholeOrderToGroup() {
-        // 存款两项:一项超期限上限 → 整单上会,两项一起推进小组并合批
+        // 存款两项:一项超期限上限 → 逐项模型下第一次 approve 未齐套停留,
+        // 齐套后整单上会,两项一起推进小组并合批
         application.setBusinessType("DEPOSIT");
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(pricingItemMapper.selectById(10L)).thenReturn(item);
@@ -359,12 +381,26 @@ class ApprovalServiceImplTest {
         item.setCurrentApprovalRate(new BigDecimal("1.500000")); // 超期限上限
         CcrPricingItem item2 = siblingItem(11L, "PI002", "0.900000");
         item2.setBoundaryRate(new BigDecimal("1.000000"));
+        when(pricingItemMapper.selectById(11L)).thenReturn(item2);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // 10L 在第一次 approve 后已本节点同意:第二次 approve 的 APPROVE 查询命中,REJECT 查询空
+        CcrApprovalAction prior = new CcrApprovalAction();
+        prior.setPricingItemId(10L);
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())          // 第一次 approve:APPROVE 空
+                .thenReturn(List.of())          // 第一次 approve:REJECT 空
+                .thenReturn(List.of(prior))     // 第二次 approve:APPROVE 命中 10L
+                .thenReturn(List.of());         // 第二次 approve:REJECT 空
 
         approvalService.approve(10L, "BRANCH_MANAGER", null, "同意", 3, null, null);
+        // 第一项未齐套:记本节点已同意,停留不合批
+        verify(pricingItemMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(voteService, never()).createGroupRound(any());
 
-        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        approvalService.approve(11L, "BRANCH_MANAGER", null, "同意", 3, null, null);
+        // 齐套:超上限整单上会,两项一起更新,合批
+        verify(pricingItemMapper, times(3)).update(isNull(), any(Wrapper.class));
         verify(voteService).createGroupRound(30L);
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
@@ -463,18 +499,20 @@ class ApprovalServiceImplTest {
         assertEquals(ErrorCode.BAD_REQUEST.getCode(), e.getCode());
     }
 
-    // ---------- 否决(整单否决) ----------
+    // ---------- 否决(逐项否决模型 2026-08-27:否决与同意同样逐项审批,全齐套后整单分派) ----------
 
     @Test
     void reject_success_terminalAndAggregates() {
-        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
-        when(applicationMapper.selectById(30L)).thenReturn(application);
+        // 单项申请:否决即整单否决(流程直接结束,主申请聚合否决态),返回 terminal
+        stubBranchManagerLoan();
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
+        ApprovalResult r = approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
 
+        assertTrue(r.isTerminal());
+        // 记本节点已否决(ROUTING 停留) + 触发分项置 REJECTED 终态
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
         verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
                 && PricingItemStatus.ROUTING.getCode().equals(a.getFromStatus())
                 && PricingItemStatus.REJECTED.getCode().equals(a.getToStatus())));
@@ -483,23 +521,82 @@ class ApprovalServiceImplTest {
     }
 
     @Test
-    void reject_oneItem_wholeOrderRejected() {
-        // 两项申请:否决任一分项 → 整单否决,两项一起置 REJECTED 并聚合主申请
-        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
-        when(applicationMapper.selectById(30L)).thenReturn(application);
+    void reject_oneItem_unProcessed_stays() {
+        // 两项申请:否决任一分项且其余分项未处理 → 未齐套,记「本节点已否决」停留,不整单否决
+        stubBranchManagerLoan();
         CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
         when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
+        ApprovalResult r = approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
 
-        // 触发分项 + 随行分项均置 REJECTED;随行分项留痕注明触发分项
-        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        assertEquals("BRANCH_MANAGER", r.getNextNodeCode());
+        assertFalse(r.isTerminal());
+        // 只记本节点已否决(ROUTING→ROUTING),分项仍停留,不置终态、不聚合
+        verify(pricingItemMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
+                && PricingItemStatus.ROUTING.getCode().equals(a.getToStatus())));
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+        verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
+    void reject_allItems_wholeOrderRejected() {
+        // 两项申请均已本节点否决(触发项本次否决 + 另一项此前已否决) → 齐套全部否决 → 整单否决,流程直接结束
+        stubBranchManagerLoan();
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        CcrApprovalAction item2Rejected = new CcrApprovalAction();
+        item2Rejected.setPricingItemId(11L);
+        // APPROVE 查询无记录,REJECT 查询命中 item2(此前已否决)
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())
+                .thenReturn(List.of(item2Rejected));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        ApprovalResult r = approvalService.reject(10L, "BRANCH_MANAGER", "资料不全", 3, null);
+
+        assertTrue(r.isTerminal());
+        // 触发分项置 REJECTED + 已否决 sibling 置 REJECTED 并留痕
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
+                && Long.valueOf(10L).equals(a.getPricingItemId())
+                && PricingItemStatus.REJECTED.getCode().equals(a.getToStatus())));
         verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
                 && Long.valueOf(11L).equals(a.getPricingItemId())
                 && a.getActionComment() != null && a.getActionComment().contains("PI001")));
         verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(voteService, never()).createGroupRound(any());
+    }
+
+    @Test
+    void reject_partial_wholeOrderEscalates() {
+        // 两项申请:触发分项否决 + 另一项本节点已同意 → 齐套部分否决 → 整单上送,
+        // 否决分项置 REJECTED、同意分项(本节点即终审岗位且权限内)就地终审 APPROVED_LEVEL
+        stubBranchManagerLoan();
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        CcrApprovalAction item2Approved = new CcrApprovalAction();
+        item2Approved.setPricingItemId(11L);
+        // APPROVE 查询命中 item2(此前已同意),REJECT 查询无
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(item2Approved))
+                .thenReturn(List.of());
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        ApprovalResult r = approvalService.reject(10L, "BRANCH_MANAGER", "部分否决", 3, null);
+
+        // 同意分项就地终审(route_code 为空=本节点终审岗位,3.5≥支行下限 3.0) → 无推进节点 → terminal
+        assertTrue(r.isTerminal());
+        // 否决分项(触发)置 REJECTED
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "REJECT".equals(a.getActionType())
+                && Long.valueOf(10L).equals(a.getPricingItemId())
+                && PricingItemStatus.REJECTED.getCode().equals(a.getToStatus())));
+        // 同意分项就地终审
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "APPROVE".equals(a.getActionType())
+                && Long.valueOf(11L).equals(a.getPricingItemId())
+                && PricingItemStatus.APPROVED_LEVEL.getCode().equals(a.getToStatus())));
+        verify(itemFinalizationService).afterItemTerminal(10L, null);
+        verify(itemFinalizationService).afterItemTerminal(11L, "LEVEL_APPROVED");
         verify(voteService, never()).createGroupRound(any());
     }
 

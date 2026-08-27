@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -275,13 +277,10 @@ public class SysDeptController {
      * 未完结申请/在途审批任务/未关闭承诺时禁止,提示存量业务数
      */
     private void checkNoOpenBiz(Long id) {
-        CcrSysDept dept = deptMapper.selectById(id);
-        List<Long> orgIds = jdbcTemplate.queryForList(
-                "SELECT id FROM ccr_sys_dept WHERE del_flag = '0' AND org_code LIKE CONCAT(?, '%')",
-                Long.class, dept.getOrgCode());
-        if (orgIds.isEmpty()) {
-            orgIds = List.of(id);
-        }
+        // 本机构及全部下级(2026-08-27 修复 #381:原 org_code 前缀匹配在编码前缀重叠时误伤他机构业务,
+        // 如手填 '320223001' 前缀会命中官林支行 3202230019(其下有在途业务致新机构删除被误拦);
+        // 生产旧短编码(1026/1006/1040…)更易重叠。改按 parent_id 组织树递归收集)
+        List<Long> orgIds = collectOrgIds(id);
         StringBuilder in = new StringBuilder();
         for (Long orgId : orgIds) {
             in.append(in.length() == 0 ? "" : ",").append(orgId);
@@ -309,5 +308,28 @@ public class SysDeptController {
             throw new ServiceException(400, "机构存在存量业务,禁止停用/删除:未完结申请" + apps
                     + "笔、在途审批任务" + tasks + "笔、未关闭承诺" + commitments + "笔");
         }
+    }
+
+    /** 按 parent_id 组织树递归收集本机构及全部下级机构 id(§2026-08-27 修复 #381:替代 org_code 前缀匹配) */
+    private List<Long> collectOrgIds(Long rootId) {
+        List<Long> orgIds = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        List<CcrSysDept> all = deptMapper.selectList(new LambdaQueryWrapper<CcrSysDept>()
+                .eq(CcrSysDept::getDelFlag, "0"));
+        Deque<Long> stack = new ArrayDeque<>();
+        stack.push(rootId);
+        while (!stack.isEmpty()) {
+            Long cur = stack.pop();
+            if (!visited.add(cur)) {
+                continue;
+            }
+            orgIds.add(cur);
+            for (CcrSysDept d : all) {
+                if (d.getParentId() != null && d.getParentId().equals(cur) && visited.add(d.getId())) {
+                    stack.push(d.getId());
+                }
+            }
+        }
+        return orgIds;
     }
 }

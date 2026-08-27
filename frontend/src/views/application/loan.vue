@@ -565,7 +565,7 @@
       <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
-            额度{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
+            授信方案{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
             <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
@@ -1175,7 +1175,7 @@ const confirmSummary = computed(() => [
   { label: '客户号', value: form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') },
   { label: '申请号', value: draft.applicationNo || '—' },
   { label: '业务类型', value: form.businessType === 'EXISTING' ? '存量调息' : '新增授信' },
-  { label: '授信总额(万元)', value: guaranteesTotalText.value },
+  { label: '授信总额(万元)', value: applyTotalCreditText.value },
   { label: '申请利率', value: confirmRateText.value },
   { label: '额度笔数', value: `${form.guarantees.length} 笔` },
 ])
@@ -1187,7 +1187,7 @@ const confirmRateText = computed(() => {
 /** 提交确认弹窗额度明细行(§2026-08-26;集团成员带 member 才展示成员列) */
 const confirmDetailRows = computed(() =>
   form.guarantees.map((g, i) => ({
-    itemNo: `额度${cnOrdinal(i + 1)}`,
+    itemNo: `授信方案${cnOrdinal(i + 1)}`,
     member: g.memberCustomerNo ? memberNameOf(g.memberCustomerNo) : undefined,
     guaranteeType: guaranteeTypeText(g.guaranteeType),
     term: termTextOf(g),
@@ -1445,6 +1445,13 @@ const agreementPickState = computed(() => {
 const creditTotalText = computed(() => {
   const src = selectedAgreement.value?.creditAmount ?? form.creditInfo.creditAmount
   const n = Number(src)
+  return n > 0 ? String(n) : '—'
+})
+/** 授信总额(万元):存量=所选协议/手工补录额度;新增=申请页手工录入的总授信额度(form.totalCredit)。
+ *  §2026-08-27 修复:提交确认弹窗原取分项金额合计,集团/多分项时与「申请页填的总授信额度」不一致 */
+const applyTotalCreditText = computed(() => {
+  if (form.businessType === 'EXISTING') return creditTotalText.value
+  const n = Number(form.totalCredit)
   return n > 0 ? String(n) : '—'
 })
 /** 下拉选择授信协议(需求六:选到哪份就展示哪份的内容) */
@@ -2083,6 +2090,8 @@ function buildPayload(): ApplicationPayload {
       customerNo: form.customerNo,
       customerName: form.customerName,
       custType: form.customerScope === 'INDIVIDUAL' ? 'INDV' : 'CORP',
+      // 企业性质随申请提交(数仓带出可改;后端路由判定优先用此值,数仓兜底;§2026-08-27 用户拍板)
+      entpCharic: form.customerScope === 'CORPORATE' ? form.customerType : undefined,
       ucrCode: form.ucrCode,
       fiveLevelClass: form.fiveLevelClass,
       creditLevel: form.creditLevel,
@@ -2364,6 +2373,8 @@ async function loadDraftIntoForm(id: number | string) {
   form.openOrg = custInfo?.openOrg || ''
   form.openDate = custInfo?.openDate || ''
   form.basicAccount = custInfo?.basicAccount || ''
+  // 企业性质回显(提交快照 entpCharic;数仓带出可改,§2026-08-27 用户拍板:以申请提交为准)
+  if (custInfo?.entpCharic) form.customerType = custInfo.entpCharic === 'SOE' ? 'SOE' : 'NON_SOE'
   // 备注中的【关联人员】块还原到关联人员录入表,避免重复附带
   const [rels, cleanedRemark] = parseRelations(app.applicationRemark || '')
   relations.value = rels
