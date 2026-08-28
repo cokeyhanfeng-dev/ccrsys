@@ -42,6 +42,7 @@
       <div class="detail-grid">
         <div><span class="dg-label">申请号</span>{{ application.applicationNo || '—' }}</div>
         <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
+        <div><span class="dg-label">申请类型</span>{{ applyBizTypeText }}</div>
         <div><span class="dg-label">客户号</span>{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}
           <button v-if="isPlaceholderCustomerNo(application.customerNo || pi.pricing_customer_no) && canBackfill"
                   class="btn btn--primary" @click="openBackfillDlg">回填客户号</button>
@@ -638,8 +639,11 @@
               <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
             </strong>
           </div>
-          <!-- 申请内容(要审批的金额/期限/产品;贷款合同号与合同下借据展示已取消) -->
-          <div class="op-item__subhead">{{ isLoan ? '申请内容' : '存款信息' }}</div>
+          <!-- 申请内容(要审批的金额/期限/产品;贷款合同号与合同下借据展示已取消;2026-08-27 补申请类型/授信总额徽标) -->
+          <div class="op-item__subhead">{{ isLoan ? '申请内容' : '存款信息' }}
+            <span v-if="applyBizTypeText !== '—'" class="badge badge--info" style="margin-left:8px">{{ applyBizTypeText }}</span>
+            <span v-if="applyTotalCredit != null" class="badge badge--neutral" style="margin-left:8px">授信总额 {{ fmtAmount(applyTotalCredit) }} 万元</span>
+          </div>
           <table class="table">
             <thead><tr>
               <th>金额(万元)</th><th>期限</th><th>产品</th>
@@ -967,6 +971,16 @@ const applyTotalCredit = computed(() => {
     return null
   }
 })
+// 申请类型(新增授信/存量调息)=申请页选填的 form.businessType(NEW/EXISTING,credit_info_json.businessType;2026-08-27 补充展示)
+const applyBizTypeText = computed(() => {
+  try {
+    const raw = application.value.creditInfoJson
+    const ci = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+    return ci?.businessType === 'EXISTING' ? '存量调息' : ci?.businessType === 'NEW' ? '新增授信' : '—'
+  } catch {
+    return '—'
+  }
+})
 const hasCustomer = computed(() => !!customer.value.customerName)
 const customerName = computed(() => customer.value.customerName || pi.value.pricing_customer_no || '—')
 // 客户主体类型(对公 CORP/对私 INDIV),决定客户基本信息卡片的字段分组
@@ -1042,7 +1056,9 @@ function canOperate(it: any): boolean {
   // 秘书岗兼岗(§需求四,计划财务部总经理兼任,主角色 dept_gm + 附加 secretary):
   // SECRETARY 节点按 roles 含 secretary 判定(与 actionable 一致,不只看主角色),否则按钮恒禁用
   if (it.currentNodeCode === 'SECRETARY' && (userStore.userInfo?.roles || []).includes('secretary')) {
-    return it.status === 'ROUTING'
+    // 秘书岗仅对命中秘书岗条件的分项有权操作(route_chain 含 SECRETARY);
+    // 未命中分项仅过手,不显示审批动作(2026-08-28 用户拍板)
+    return it.status === 'ROUTING' && String(it.routeChain || '').includes('SECRETARY')
   }
   return it.status === 'ROUTING' && !!it.currentNodeCode && currentRoleNode.value === it.currentNodeCode
 }

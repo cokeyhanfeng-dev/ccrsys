@@ -1,5 +1,6 @@
 package com.ccr.admin.system.controller;
 
+import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
@@ -185,7 +186,7 @@ public class AssigneeController {
                 validFrom, str(body.get("validTo")),
                 StrUtil.blankToDefault(str(body.get("status")), "ACTIVE"),
                 str(body.get("remark")), operator.getId(), LocalDateTime.now(),
-                id, ((Number) versionNo).intValue());
+                id, Convert.toInt(versionNo));
         if (rows == 0) {
             throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(),
                     "指派数据版本冲突或已删除,请刷新后重试");
@@ -259,8 +260,8 @@ public class AssigneeController {
         }
         Object orgId = body.get("orgId");
         String flowKey = str(body.get("flowKey"));
-        return R.ok(nodeAssigneeResolver.resolve(nodeCode,
-                orgId == null ? null : ((Number) orgId).longValue(), flowKey));
+        // orgId 兼容数字/字符串:机构下拉 option value 为雪花 id,DOM 序列化为字符串(2026-08-28 生产 ClassCastException)
+        return R.ok(nodeAssigneeResolver.resolve(nodeCode, Convert.toLong(orgId), flowKey));
     }
 
     // ---------- 部门-分管行领导映射(§D16a;一人可分管多部门,纯配置,2026-08-14 配置界面化) ----------

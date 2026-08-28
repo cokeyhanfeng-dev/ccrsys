@@ -2177,10 +2177,17 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
   if (!isNewGroup.value && form.fiveLevelClass) out.fiveLevelClass = form.fiveLevelClass
   // 集团属性(存量集团数仓带出可下拉修改,§2026-08-25)
   if (!isNewGroup.value && form.stateOwnedFlag) out.stateOwnedFlag = form.stateOwnedFlag
-  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;数仓未收录的新集团无批复额度,回退成员贷款分项金额合计
+  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;
+  // 数仓未收录的新集团无批复额度,回退申请页手工录入的总授信额度(form.totalCredit,§2026-08-28 修复:原直接回退担保金额合计,担保瞎填的数会顶掉真实额度,与后端 credit_info_json.totalCredit 定档口径错位),
+  // 再回退担保金额合计兜底;保证与后端 totalCreditOf/routeTotalCredit 的 credit_info_json.totalCredit 口径一致
   const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
   const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
-  const applyAmount = Number.isFinite(groupCreditTotal) && groupCreditTotal > 0 ? groupCreditTotal : guaranteeSum
+  const totalCredit = Number(form.totalCredit)
+  const applyAmount = groupCreditTotal > 0
+    ? groupCreditTotal
+    : totalCredit > 0
+      ? totalCredit
+      : guaranteeSum
   if (applyAmount > 0) out.applyAmount = applyAmount
   // 手工补录成员(对公客户申请要素 + 成员要素,不含授信;数仓已有成员不在此列)
   const manualMembers = groupMembers.value.filter((m) => m.source === 'MANUAL')

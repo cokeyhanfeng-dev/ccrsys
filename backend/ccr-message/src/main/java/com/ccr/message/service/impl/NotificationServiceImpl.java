@@ -141,8 +141,7 @@ public class NotificationServiceImpl implements NotificationService {
                 NotificationMessage copy = copyOf(message);
                 copy.setRecipientType("USER");
                 copy.setRecipientId(id);
-                copy.setMessageKey(message.getMessageKey() == null || message.getMessageKey().isBlank()
-                        ? null : message.getMessageKey() + ":" + id);
+                copy.setMessageKey(scopedMessageKey(message.getMessageKey(), id));
                 last = sendNotification(copy);
             }
             return last;
@@ -371,6 +370,26 @@ public class NotificationServiceImpl implements NotificationService {
                     entry.getValue() == null ? "-" : entry.getValue());
         }
         return content.length() > 2000 ? content.substring(0, 2000) : content;
+    }
+
+    /**
+     * 接收人维度消息键:基础键 + ":" + 接收人 id。
+     * message_key 列 varchar(64) UNI(幂等防重),雪花 id 接收人(19位)拼接后
+     * 可达 70+ 字符超列宽触发 Data truncation(2026-08-27 生产 Outbox 事件消费终态失败根因)。
+     * 拼接超 64 时截断为「基础键前 32 + md5 前 32」定长,幂等唯一性不受影响;
+     * 未超限保持原样(历史短 id 记录幂等键不变)。
+     */
+    private String scopedMessageKey(String baseKey, String recipientId) {
+        if (baseKey == null || baseKey.isBlank() || recipientId == null || recipientId.isBlank()) {
+            return baseKey;
+        }
+        String scoped = baseKey + ":" + recipientId;
+        if (scoped.length() <= 64) {
+            return scoped;
+        }
+        // 前缀最多 32 位(保留可读性) + md5 全量 32 位 = 恒 ≤64,md5 保幂等唯一
+        String prefix = baseKey.length() > 32 ? baseKey.substring(0, 32) : baseKey;
+        return prefix + DigestUtil.md5Hex(scoped);
     }
 
     private NotificationMessage copyOf(NotificationMessage source) {

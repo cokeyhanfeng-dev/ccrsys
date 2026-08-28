@@ -92,6 +92,9 @@ import java.util.Set;
 @Service
 public class ApprovalServiceImpl implements ApprovalService {
 
+    /** 贷审会秘书岗节点(需求四:整单必经的中间审核节点,批完整单上送小组) */
+    private static final String SECRETARY_NODE = "SECRETARY";
+
     @Resource
     private CcrPricingItemMapper pricingItemMapper;
     @Resource
@@ -291,7 +294,11 @@ public class ApprovalServiceImpl implements ApprovalService {
                         && nodeCode.equals(i.getCurrentNodeCode()))
                     || (i.getId().equals(item.getId())
                         || nodeApprovedIds.contains(i.getId())
-                        || nodeRejectedIds.contains(i.getId())));
+                        || nodeRejectedIds.contains(i.getId())
+                        // 秘书岗过手放行(2026-08-28 用户拍板):SECRETARY 节点上未命中秘书岗条件的分项
+                        // (route_chain 不含 SECRETARY)仅过手,不要求秘书岗审批动作,不阻塞齐套——
+                        // 整单都过秘书岗,但秘书岗只审命中分项,批完即齐套再整单上送小组
+                        || secretaryPassThrough(i, nodeCode)));
         // 防重复守卫:触发分项已在本节点同意或否决过(齐套判定前,覆盖未齐套/齐套两条路径),重复提交直接拒绝,
         // 避免重复 update/重复留痕
         if (nodeApprovedIds.contains(item.getId()) || nodeRejectedIds.contains(item.getId())) {
@@ -409,23 +416,46 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 整单上送:任一分项超权限通过,或权限内但当前节点非终审岗位(链路中间节点过手)
         // → 该申请全部本节点 ROUTING 分项一起推进下一节点
-        if (next == null) {
-            // 兜底:齐套但冻结链已尽且存在超权限分项(前文 next==null 权限内已归终审兜底,仅超权限场景到此处)——
-            // 不能把 currentNodeCode 置空(前端 go(null) 会误判终审),显式报错提示链路配置异常
+        // 触发分项冻结链已尽(route_code==当前节点,当前节点即其终审岗位)且利率权限内:
+        //   触发分项就地终审,不随上送(同申请异链 sibling 由下方分流各自推进/就地终审);
+        //   仅当触发分项确超权限且链路已尽(配置异常)才显式报错,不置空 currentNodeCode 误判终审
+        if (next == null && !(isFinalNode && withinPermission)) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
                     "节点[" + nodeCode + "]冻结链路已尽且存在超权限分项,无法整单上送,请检查链路配置");
         }
-        boolean toGroup = RouteChains.SIX_PEOPLE_GROUP.equals(next);
-        updateItemWithStateAndVersion(item, next, PricingItemStatus.ROUTING.getCode(),
-                adjusted ? effectiveRate : null, null, versionNo);
-        if (adjusted) {
-            saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+        // 秘书岗整单门槛(2026-08-28 用户拍板):任一上送分项命中秘书岗(SECRETARY),整单统一先到秘书岗,
+        // 秘书岗批完再整单上送小组——严禁未过秘书岗直接到小组。就地终审 sibling 已终态不参与上送。
+        boolean anySecretaryGate = SECRETARY_NODE.equals(next)
+                || nodeItems.stream().anyMatch(i ->
+                        !nodeRejectedIds.contains(i.getId())
+                                && SECRETARY_NODE.equals(nextAfterReroute(nodeCode, parseRouteChain(i.getRouteChain()))));
+        boolean toGroup = !anySecretaryGate && next != null && RouteChains.SIX_PEOPLE_GROUP.equals(next);
+        if (anySecretaryGate) {
+            next = SECRETARY_NODE;
         }
-        // §14.7 流转留痕:动作前 ROUTING,动作后 上送→ROUTING / 上送小组→VOTING
-        insertAction(buildAction(item.getId(), "ESCALATE", nodeCode, operator.getId(),
-                comment, beforeRate, effectiveRate, idempotencyKey,
-                PricingItemStatus.ROUTING.getCode(),
-                toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
+        if (next != null) {
+            updateItemWithStateAndVersion(item, next, PricingItemStatus.ROUTING.getCode(),
+                    adjusted ? effectiveRate : null, null, versionNo);
+            if (adjusted) {
+                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+            }
+            // §14.7 流转留痕:动作前 ROUTING,动作后 上送→ROUTING / 上送小组→VOTING
+            insertAction(buildAction(item.getId(), "ESCALATE", nodeCode, operator.getId(),
+                    comment, beforeRate, effectiveRate, idempotencyKey,
+                    PricingItemStatus.ROUTING.getCode(),
+                    toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
+        } else {
+            // 触发分项就地终审(route_code==当前节点且利率权限内):与 sibling 就地终审 L491-505 同口径
+            updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
+                    adjusted ? effectiveRate : null, effectiveRate, versionNo);
+            if (adjusted) {
+                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
+            }
+            insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
+                    comment, beforeRate, effectiveRate, idempotencyKey,
+                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
+            itemFinalizationService.afterItemTerminal(item.getId(), "LEVEL_APPROVED");
+        }
         // 逐项否决模型:本节点已否决分项不随整单上送推进,置 REJECTED 终态(带否决原因),上级审批该申请
         // 时展示否决结果;也排除在 sibling 上送分流之外
         for (CcrPricingItem rejected : nodeItems) {
@@ -509,6 +539,16 @@ public class ApprovalServiceImpl implements ApprovalService {
                 String siblingNext = siblingReroute != null
                         ? nextAfterReroute(nodeCode, siblingChain)
                         : RouteChains.nextNode(nodeCode, siblingChain);
+                // 整单统一过秘书岗(2026-08-28 用户拍板):任一上送分项命中秘书岗,所有上送 sibling
+                // 都先到秘书岗、不各自分流——保证整单必经秘书岗,严禁未过秘书岗直接到小组
+                if (anySecretaryGate) {
+                    siblingNext = SECRETARY_NODE;
+                }
+                // 秘书岗节点整单上送:秘书岗批完整单统一上送小组,未命中分项(链无 SECRETARY)
+                // 沿触发分项目标推进、不就地终审——整单一起到小组
+                if (siblingNext == null && SECRETARY_NODE.equals(nodeCode)) {
+                    siblingNext = next;
+                }
                 if (siblingNext == null) {
                     // 链路已尽且当前节点非终审岗位的异常口径:按权限内就地终审兜底,避免分项悬挂
                     updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
@@ -525,6 +565,14 @@ public class ApprovalServiceImpl implements ApprovalService {
                     itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
                 } else {
                     boolean siblingToGroup = RouteChains.SIX_PEOPLE_GROUP.equals(siblingNext);
+                    // 触发分项就地终审场景(混合 route_code:触发分项链尽就地终审):sibling 推进去向
+                    // 反映到返回结果——next 取 sibling 实际推进节点、进小组则建批,前端按此提示去向
+                    if (next == null) {
+                        next = siblingNext;
+                    }
+                    if (siblingToGroup) {
+                        toGroup = true;
+                    }
                     updateSiblingWholeOrder(sibling, siblingNext, PricingItemStatus.ROUTING.getCode(),
                             siblingAdjusted ? siblingAdjust : null, null, null);
                     insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
@@ -1996,6 +2044,15 @@ public class ApprovalServiceImpl implements ApprovalService {
             log.warn("分项 route_chain 解析失败,回退贷款固定链: {}", routeChainJson);
             return List.of();
         }
+    }
+
+    /** 秘书岗过手放行(2026-08-28 用户拍板):SECRETARY 节点上未命中秘书岗条件的分项
+     *  (route_chain 不含 SECRETARY)仅过手,不要求秘书岗审批动作,不阻塞齐套 */
+    private boolean secretaryPassThrough(CcrPricingItem i, String nodeCode) {
+        if (!SECRETARY_NODE.equals(nodeCode)) {
+            return false;
+        }
+        return !parseRouteChain(i.getRouteChain()).contains(SECRETARY_NODE);
     }
 
     /** 节点审批人配置校验(§5.5.1):配置了有效指派时,仅解析出的处理人可通过/否决 */

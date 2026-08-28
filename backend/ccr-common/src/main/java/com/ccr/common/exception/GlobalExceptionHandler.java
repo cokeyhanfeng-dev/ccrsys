@@ -7,6 +7,7 @@ import cn.dev33.satoken.exception.NotPermissionException;
 import cn.dev33.satoken.exception.NotRoleException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 /**
@@ -91,6 +93,22 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoHandlerFoundException.class)
     public R<Void> handleNoHandler(NoHandlerFoundException e) {
         return R.fail(404, "接口不存在");
+    }
+
+    /**
+     * 客户端提前断开连接(AsyncRequestNotUsable):用户刷新/跳转/关闭页面,响应已无法写出。
+     * 非业务错误——若落兜底 Exception 会打 ERROR 污染生产运行监控(2026-08-27 生产反馈 Broken pipe)。
+     * 返回 void 不再尝试写响应,仅降级 DEBUG 一句话。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException e) {
+        log.debug("客户端中断响应(AsyncRequestNotUsable),忽略: {}", e.getMessage());
+    }
+
+    /** Tomcat 层客户端中断(同步响应写流 Broken pipe),同上 */
+    @ExceptionHandler(ClientAbortException.class)
+    public void handleClientAbort(ClientAbortException e) {
+        log.debug("客户端中断响应(ClientAbort),忽略: {}", e.getMessage());
     }
 
     /** 兜底异常 */

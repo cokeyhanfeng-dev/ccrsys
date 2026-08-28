@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -405,6 +406,89 @@ class ApprovalServiceImplTest {
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
 
+    @Test
+    void approve_loan_mixedRouteCode_triggerChainEnded_finalizeLocallyAndEscalateSibling() {
+        // 混合 route_code 齐套:触发分项 route_code=GM(冻结链[BM,GM]已尽,next=null)利率 3.5 在 GM 权限内(≥3.4),
+        // sibling route_code=VP(链[BM,GM,VP])利率 3.6 也权限内但终审岗位≠当前节点 → 整单终审条件
+        // (allItemsFinalAtThisNode)不成立,落入上送分支;修复前 next==null 直接抛「冻结链路已尽」,
+        // 修复后触发分项就地终审 APPROVED_LEVEL、sibling 沿自身链推进 VICE_PRESIDENT
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_DEPT_GM));
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        CcrNodePermission gmPerm = new CcrNodePermission();
+        gmPerm.setNodeCode("DEPT_GENERAL_MANAGER");
+        gmPerm.setBusinessType("LOAN");
+        gmPerm.setBoundaryMinRate(new BigDecimal("3.400000"));
+        when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(gmPerm);
+        // 部门归属配置:GM 节点解析命中操作人(1001),否则 guardNodeAssignee 空归属直接拒绝
+        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", null, null)).thenReturn(List.of(1001L));
+
+        item.setCurrentNodeCode("DEPT_GENERAL_MANAGER");
+        item.setRouteCode("DEPT_GENERAL_MANAGER");
+        item.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\"]");
+        item.setCurrentApprovalRate(new BigDecimal("3.500000"));
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.600000");
+        item2.setCurrentNodeCode("DEPT_GENERAL_MANAGER");
+        item2.setRouteCode("VICE_PRESIDENT");
+        item2.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\",\"VICE_PRESIDENT\"]");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // sibling 11L 已本节点同意(APPROVE 查询命中),触发分项本次动作即视为已处理;REJECT 查询空
+        CcrApprovalAction prior = new CcrApprovalAction();
+        prior.setPricingItemId(11L);
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(prior))     // APPROVE:命中 11L(sibling 已同意)
+                .thenReturn(List.of());         // REJECT:空
+
+        ApprovalResult result = approvalService.approve(10L, "DEPT_GENERAL_MANAGER", null, "同意", 3, null, null);
+
+        // 触发分项 10L 就地终审 APPROVED_LEVEL + sibling 11L 推进 VICE_PRESIDENT,各更新一次
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(itemFinalizationService).afterItemTerminal(10L, "LEVEL_APPROVED");
+        verify(itemFinalizationService, never()).afterItemTerminal(eq(11L), any());
+        verify(voteService, never()).createGroupRound(any());
+        // 触发分项终审留痕(APPROVED_LEVEL)+ sibling 上送留痕(ESCALATE)
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) ->
+                Long.valueOf(10L).equals(a.getPricingItemId())
+                        && PricingItemStatus.APPROVED_LEVEL.getCode().equals(a.getToStatus())));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) ->
+                Long.valueOf(11L).equals(a.getPricingItemId())
+                        && "ESCALATE".equals(a.getActionType())));
+        // 返回值:非终审(申请仍有 VP sibling 待审),推进目标为 sibling 的 VICE_PRESIDENT
+        assertFalse(result.isTerminal());
+        assertEquals("VICE_PRESIDENT", result.getNextNodeCode());
+    }
+
+    @Test
+    void approve_loan_triggerChainEnded_andOutOfPermission_rejected() {
+        // 触发分项冻结链已尽(route_code=GM)但利率 3.2 低于 GM 下限 3.4(超权限)且无下一节点 → 配置异常,
+        // 保持原兜底报错(不置空 currentNodeCode 误判终审)
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_DEPT_GM));
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        CcrNodePermission gmPerm = new CcrNodePermission();
+        gmPerm.setNodeCode("DEPT_GENERAL_MANAGER");
+        gmPerm.setBusinessType("LOAN");
+        gmPerm.setBoundaryMinRate(new BigDecimal("3.400000"));
+        when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(gmPerm);
+        when(nodeAssigneeResolver.resolveUserIds("DEPT_GENERAL_MANAGER", null, null)).thenReturn(List.of(1001L));
+
+        item.setCurrentNodeCode("DEPT_GENERAL_MANAGER");
+        item.setRouteCode("DEPT_GENERAL_MANAGER");
+        item.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\"]");
+        item.setCurrentApprovalRate(new BigDecimal("3.200000")); // 超权限(低于下限)
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())          // APPROVE:空
+                .thenReturn(List.of());         // REJECT:空
+
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> approvalService.approve(10L, "DEPT_GENERAL_MANAGER", null, "同意", 3, null, null));
+        assertEquals(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), e.getCode());
+        verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
+    }
+
     // ---------- 调价边界(B07) ----------
 
     @Test
@@ -677,5 +761,95 @@ class ApprovalServiceImplTest {
         when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
 
         assertTrue(approvalService.listTodo().isEmpty());
+    }
+
+    // ---------- 秘书岗整单门槛(2026-08-28 用户拍板:整单都过秘书岗,秘书岗只审命中分项) ----------
+
+    @Test
+    void approve_loan_anySecretaryGate_wholeOrderToSecretaryNotGroup() {
+        // VP 节点齐套整单上送:触发分项未命中秘书岗、sibling 命中 → 整单统一先到秘书岗,
+        // 严禁未过秘书岗直接到小组;不合批
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_VICE_PRESIDENT));
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        CcrNodePermission perm = new CcrNodePermission();
+        perm.setNodeCode("VICE_PRESIDENT");
+        perm.setBusinessType("LOAN");
+        perm.setBoundaryMinRate(new BigDecimal("3.000000"));
+        when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
+        // VP 为部门类节点:节点指派解析出当前登录人(部门归属通过),否则拒绝
+        when(nodeAssigneeResolver.resolveUserIds("VICE_PRESIDENT", null, null)).thenReturn(List.of(1001L));
+        // sibling 10L 命中秘书岗(链含 SECRETARY,利率 2.5 超 VP 下界 3.0)
+        item.setCurrentNodeCode("VICE_PRESIDENT");
+        item.setRouteCode("SIX_PEOPLE_GROUP");
+        item.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\",\"VICE_PRESIDENT\",\"SECRETARY\",\"SIX_PEOPLE_GROUP\"]");
+        item.setCurrentApprovalRate(new BigDecimal("2.500000"));
+        // 触发分项 11L 未命中秘书岗(链无 SECRETARY,利率 3.5 权限内)
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        item2.setCurrentNodeCode("VICE_PRESIDENT");
+        item2.setRouteCode("SIX_PEOPLE_GROUP");
+        item2.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\",\"VICE_PRESIDENT\",\"SIX_PEOPLE_GROUP\"]");
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(pricingItemMapper.selectById(11L)).thenReturn(item2);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // 10L 第一次 approve 后已本节点同意:第二次 approve 的 APPROVE 查询命中
+        CcrApprovalAction prior = new CcrApprovalAction();
+        prior.setPricingItemId(10L);
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())          // 第一次 approve:APPROVE 空
+                .thenReturn(List.of())          // 第一次 approve:REJECT 空
+                .thenReturn(List.of(prior))     // 第二次 approve:APPROVE 命中 10L
+                .thenReturn(List.of());         // 第二次 approve:REJECT 空
+
+        // 第一项未齐套:记本节点已同意,停留不推进、不合批
+        ApprovalResult first = approvalService.approve(10L, "VICE_PRESIDENT", null, "同意", 3, null, null);
+        assertEquals("VICE_PRESIDENT", first.getNextNodeCode());
+        verify(pricingItemMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(voteService, never()).createGroupRound(any());
+
+        // 齐套整单上送:触发分项(11L 未命中)与 sibling(10L 命中)统一到 SECRETARY,不直接到小组、不合批
+        ApprovalResult second = approvalService.approve(11L, "VICE_PRESIDENT", null, "同意", 3, null, null);
+        assertEquals("SECRETARY", second.getNextNodeCode());
+        verify(pricingItemMapper, times(3)).update(isNull(), any(Wrapper.class));
+        verify(voteService, never()).createGroupRound(any());
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+    }
+
+    @Test
+    void approve_secretary_untouchedSiblingPasses_wholeOrderToGroup() {
+        // 秘书岗节点:批命中分项(10L)后,未命中分项(11L,链无 SECRETARY)过手放行不阻塞齐套,
+        // 整单上送小组并合批——秘书岗只审命中分项,未命中分项整单随行
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_SECRETARY));
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        CcrNodePermission perm = new CcrNodePermission();
+        perm.setNodeCode("SECRETARY");
+        perm.setBusinessType("LOAN");
+        perm.setBoundaryMinRate(new BigDecimal("3.000000"));
+        when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
+        item.setCurrentNodeCode("SECRETARY");
+        item.setRouteCode("SIX_PEOPLE_GROUP");
+        item.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\",\"VICE_PRESIDENT\",\"SECRETARY\",\"SIX_PEOPLE_GROUP\"]");
+        item.setCurrentApprovalRate(new BigDecimal("2.500000")); // 命中秘书岗(秘书岗只审此项)
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        item2.setCurrentNodeCode("SECRETARY");
+        item2.setRouteCode("SIX_PEOPLE_GROUP");
+        item2.setRouteChain("[\"BRANCH_MANAGER\",\"DEPT_GENERAL_MANAGER\",\"VICE_PRESIDENT\",\"SIX_PEOPLE_GROUP\"]"); // 未命中,仅过手
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+        when(pricingItemMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        // 唯一一次 approve:APPROVE 空、REJECT 空 → 10L 触发即齐套(11L 秘书岗过手放行不阻塞)
+        when(approvalActionMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of())
+                .thenReturn(List.of());
+
+        ApprovalResult res = approvalService.approve(10L, "SECRETARY", null, "同意", 3, null, null);
+        // 齐套:10L 整单上送小组;11L 链无 SECRETARY,秘书岗节点按触发分项目标推进到 GROUP,整单一起到小组并合批
+        assertEquals("SIX_PEOPLE_GROUP", res.getNextNodeCode());
+        verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
+        verify(voteService).createGroupRound(any());
+        verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+        // 两条上送留痕都推进至 VOTING(小组轮次)
+        verify(approvalActionMapper, times(2)).insert(argThat((CcrApprovalAction a) ->
+                PricingItemStatus.VOTING.getCode().equals(a.getToStatus())));
     }
 }

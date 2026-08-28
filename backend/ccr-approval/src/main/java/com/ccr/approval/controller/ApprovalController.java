@@ -399,6 +399,7 @@ public class ApprovalController {
                             + " pi.status, pi.version_no versionNo, pi.original_rate originalRate, pi.calculated_rate calculatedRate,"
                             + " pi.term_value termValue, pi.term_unit termUnit, pi.product_code productCode, pi.dept_code deptCode,"
                             + " pi.member_customer_no memberCustomerNo,"
+                            + " pi.route_chain routeChain,"
                             + " rel.loan_contract_no contractNo"
                             + " FROM ccr_pricing_item pi"
                             + " LEFT JOIN ccr_pricing_item_contract_rel rel ON rel.pricing_item_id = pi.id AND rel.del_flag = '0'"
@@ -434,11 +435,14 @@ public class ApprovalController {
                         rejected.add(a.get("pricingItemId"));
                     }
                 }
-                // 已通过集合:任意节点「权限内 APPROVE」(超权限转送为 ESCALATE 不在其中)→ 上级已通过的分项后续节点只展示、不重复审批
-                List<Map<String, Object>> allApproves = jdbcTemplate.queryForList(
-                        "SELECT DISTINCT pricing_item_id pricingItemId FROM ccr_approval_action"
-                                + " WHERE action_type = 'APPROVE' AND pricing_item_id IN (" + inSb + ") AND del_flag = '0'");
-                for (Map<String, Object> a : allApproves) {
+                // 已通过集合:仅「流程已终态通过」的分项(逐项审批模型 2026-08-27 下,中间节点 APPROVE
+                // 只是「本节点已同意待齐套」,不等于流程通过;若按任意节点 APPROVE 动作判定,支行行长逐项同意的
+                // VOTING 分项会被误判 passed,小组委员的逐项同意/否决按钮被「仅展示」隐藏只剩一键审批)。
+                // 上级仅查看的终态通过分项按 status 判定,REJECTED 终态分项由前端 status 单独展示。
+                List<Map<String, Object>> terminalApproved = jdbcTemplate.queryForList(
+                        "SELECT DISTINCT id pricingItemId FROM ccr_pricing_item"
+                                + " WHERE application_id = ? AND status IN ('APPROVED_LEVEL','APPROVED_FINAL','APPROVED') AND del_flag = '0'", appId);
+                for (Map<String, Object> a : terminalApproved) {
                     passed.add(a.get("pricingItemId"));
                 }
                 // 按分项挂担保(同申请全部分项批量查,审批决定区每分项行内嵌自己的担保明细)
