@@ -6,8 +6,9 @@
     </div>
 
     <div class="card">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <!-- 查询/工具区统一 card-toolbar:筛选在左,新建归右侧 actions -->
+      <div class="card-toolbar">
+        <div class="filter-group">
           <input class="form-input" v-model="query.keyword" placeholder="关键字(登录名/姓名)" style="width:180px" @keyup.enter="load" />
           <select class="form-select" v-model="query.orgId" style="width:180px" @change="load">
             <option value="">全部机构</option>
@@ -24,9 +25,13 @@
           </select>
           <button class="btn btn--secondary" @click="load">查询</button>
         </div>
-        <button class="btn btn--primary" @click="openCreate">＋ 新建用户</button>
+        <div class="card-toolbar__actions">
+          <button class="btn btn--primary" @click="openCreate">＋ 新建用户</button>
+        </div>
       </div>
 
+      <!-- 表格横滚容器:窄屏横向滚动,避免列被挤压 -->
+      <div class="table-scroll">
       <table class="table table--full">
         <thead>
           <tr><th>登录名</th><th>姓名</th><th>角色</th><th>机构</th><th>手机</th><th>状态</th><th>操作</th></tr>
@@ -52,6 +57,7 @@
           <tr v-if="!users.length"><td colspan="7" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
+      </div>
       <div class="pager" v-if="total > 0">
         <el-pagination
           background
@@ -69,6 +75,8 @@
       <div class="modal__card modal__card--wide">
         <div class="modal__title">{{ dialog.isEdit ? '编辑用户' : '新建用户' }}</div>
         <div class="modal__body">
+          <!-- 长表单分组:基本信息 / 机构-岗位绑定 -->
+          <div class="form-group-title">基本信息</div>
           <div class="form-grid">
             <!-- §UI审查:表单 label 补 for/id 关联 -->
             <div class="form-field">
@@ -108,10 +116,15 @@
 
           <!-- 机构-岗位绑定(§12.18 ②) -->
           <div class="binding-block">
-            <div class="binding-block__head">
-              <span>机构-岗位绑定 <span class="req">*</span>(必须且仅能有一条默认)</span>
-              <button class="btn btn--secondary" @click="addBinding">＋ 添加绑定</button>
+            <!-- 分组头部复用 card-toolbar:标题+说明在左,添加按钮归右侧 -->
+            <div class="card-toolbar">
+              <span class="card-toolbar__title">机构-岗位绑定 <span class="req">*</span></span>
+              <span class="card-toolbar__sub">必须且仅能有一条默认</span>
+              <div class="card-toolbar__actions">
+                <button class="btn btn--secondary" @click="addBinding">＋ 添加绑定</button>
+              </div>
             </div>
+            <div class="table-scroll">
             <table class="table table--full">
               <thead>
                 <tr><th style="width:60px">默认</th><th>机构</th><th>岗位/角色</th><th style="width:70px">操作</th></tr>
@@ -142,6 +155,7 @@
                 <tr v-if="!dialog.bindings.length"><td colspan="4" class="empty-cell">至少保留一条绑定</td></tr>
               </tbody>
             </table>
+            </div>
             <div class="section-tip">绑定校验:停用机构不可绑定;同一机构+岗位不可重复;默认机构/岗位唯一。</div>
           </div>
         </div>
@@ -345,10 +359,20 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
+/* req 在 card-toolbar__title 内使用,全局规则只覆盖 form-field__label 场景,此处保留 */
 .req { color: var(--color-danger); }
 .modal__card--wide { width: 720px; max-width: 92vw; }
+.filter-group { display: flex; gap: 8px; flex-wrap: wrap; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+/* 表格横滚:列多时窄屏横向滚动 */
+.table-scroll { overflow-x: auto; }
+.table-scroll .table--full { min-width: 720px; }
+.binding-block .table-scroll .table--full { min-width: 520px; }
+.pager { margin-top: 10px; }
+/* 768px 断点:双列表单转单列 */
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
 /* §UI审查:密码显隐切换按钮 */
 .pwd-field { position: relative; }
 .pwd-field .form-input { padding-right: 52px; }
@@ -368,5 +392,4 @@ onMounted(() => {
 .pwd-hint { font-size: 12px; line-height: 1.6; color: var(--color-warning); }
 .pwd-hint--ok { color: var(--color-success); }
 .binding-block { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
-.binding-block__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 600; }
 </style>

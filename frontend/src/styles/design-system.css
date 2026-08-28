@@ -636,3 +636,98 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 @media (max-width: 1200px) {
   .mortgage-item__grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ============================================================
+   UI 优化沉淀（2026-08-25,docs/29 方案 P1）
+   描述列表 / 卡片工具条 / 表单分组与说明 / 只读值 / 吸底操作条
+   成员 Tab / 额度勾稽条 / 轻量空态 / 审批页摘要条与锚点 / 利率对比条 / 流程节点链
+   ============================================================ */
+
+/* 描述列表(统一 detail-grid / confirm-summary / credit-overview 三套私造键值网格) */
+.desc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3) var(--space-5); }
+.desc-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.desc-grid--2 { grid-template-columns: repeat(2, 1fr); }
+.desc-item__label { font-size: var(--fs-caption); color: var(--color-text-light); margin-bottom: 2px; }
+.desc-item__value { font-size: var(--fs-body); color: var(--color-text-main); font-weight: 500; }
+.desc-item__value--num { font-family: var(--font-num, monospace); }
+@media (max-width: 1100px) { .desc-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 767px) { .desc-grid, .desc-grid--3 { grid-template-columns: 1fr; } }
+
+/* 卡片工具条(标题 + 说明 + 右侧操作) */
+.card-toolbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); flex-wrap: wrap; }
+.card-toolbar__title { font-size: var(--fs-body); font-weight: 600; }
+.card-toolbar__sub { font-size: var(--fs-caption); color: var(--color-text-sub); }
+.card-toolbar__actions { margin-left: auto; display: flex; gap: var(--space-2); }
+
+/* 表单分组标题(长表单分组:基本信息/开户信息/集团关系…) */
+.form-group-title { font-size: var(--fs-body); font-weight: 600; color: var(--color-text-main); margin: var(--space-4) 0 var(--space-3); padding-left: 8px; border-left: 3px solid var(--color-primary); }
+.form-group-title:first-child { margin-top: 0; }
+
+/* 字段说明(替代 placeholder 当文档用) */
+.form-hint { font-size: var(--fs-caption); color: var(--color-text-light); margin-top: 2px; }
+
+/* 只读值(替代灰 input 展示不可编辑数据) */
+.form-static { padding: 8px 0; font-weight: 500; color: var(--color-text-main); }
+
+/* 吸底操作条(表单页存草稿/上下步;审批页意见+一键操作);桌面端避开 208px 侧栏,移动端侧栏隐藏时回 0 */
+.page-action-bar { position: fixed; left: 208px; right: 0; bottom: 0; background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: 0 -2px 12px rgba(0,0,0,.06); padding: var(--space-3) var(--space-5); display: flex; justify-content: center; gap: var(--space-3); z-index: 20; }
+
+/* 成员 Tab(集团场景按成员组织分项) */
+.mtab-bar { display: flex; gap: 4px; border-bottom: 2px solid var(--color-border-light); margin-bottom: var(--space-4); overflow-x: auto; }
+.mtab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-size: var(--fs-body); color: var(--color-text-sub); border: 1px solid transparent; border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; cursor: pointer; white-space: nowrap; background: none; }
+.mtab:hover { color: var(--color-primary); background: var(--color-primary-softer); }
+.mtab--active { color: var(--color-primary); font-weight: 600; background: var(--color-surface); border-color: var(--color-border-light); box-shadow: inset 0 -2px 0 var(--color-surface), 0 -2px 0 var(--color-primary); }
+.mtab__count { font-size: var(--fs-caption); min-width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 999px; background: var(--color-primary); color: #fff; padding: 0 6px; }
+.mtab__count--empty { background: var(--color-warning); }
+
+/* 额度勾稽条(成员金额合计 vs 本次申请额度) */
+.quota-bar { display: flex; align-items: center; gap: var(--space-3); background: var(--color-bg); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); font-size: var(--fs-caption); color: var(--color-text-sub); flex-wrap: wrap; }
+.quota-bar strong { font-family: var(--font-num, monospace); font-size: var(--fs-body); }
+.quota-bar--over { background: var(--color-danger-light); color: var(--color-danger); }
+
+/* 轻量空态行(替代整卡空态) */
+.empty-line { font-size: var(--fs-caption); color: var(--color-text-light); padding: var(--space-2) 0; }
+
+/* 审批详情页:吸顶摘要条 + 锚点 */
+.summary-bar { position: sticky; top: 0; z-index: 30; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.summary-bar__item { font-size: var(--fs-caption); color: var(--color-text-light); }
+.summary-bar__item strong { display: block; font-size: var(--fs-body); color: var(--color-text-main); }
+.summary-bar__nav { margin-left: auto; display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.anchor-link { font-size: var(--fs-caption); color: var(--color-primary); text-decoration: none; padding: 4px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.anchor-link:hover { background: var(--color-primary-softer); }
+.anchor-section { scroll-margin-top: 84px; margin-bottom: var(--space-4); }
+
+/* 利率对比条(原执行 → 申请 → 审批后) */
+.rate-compare { display: flex; align-items: center; gap: var(--space-4); background: var(--color-bg); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); margin: var(--space-3) 0; flex-wrap: wrap; }
+.rate-compare__item { font-size: var(--fs-caption); color: var(--color-text-light); }
+.rate-compare__item strong { display: block; font-size: var(--fs-number); font-family: var(--font-num, monospace); }
+.rate-compare__arrow { color: var(--color-text-light); }
+
+/* 审批吸底操作条(同 page-action-bar 避开侧栏) */
+.approve-bar { position: fixed; left: 208px; right: 0; bottom: 0; z-index: 20; background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: 0 -2px 12px rgba(0,0,0,.06); padding: var(--space-3) var(--space-5); }
+.approve-bar__inner { max-width: 1080px; margin: 0 auto; display: flex; gap: var(--space-3); align-items: center; }
+.approve-bar__inner textarea { flex: 1; height: 40px; resize: none; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: var(--fs-body); font-family: inherit; }
+
+/* 流程节点链(通用化 detail 私有 .flow-step) */
+.flow-steps { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.flow-node { font-size: var(--fs-caption); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--color-border); color: var(--color-text-sub); }
+.flow-node--done { background: var(--color-success-light); border-color: var(--color-success); color: var(--color-success); }
+.flow-node--current { background: var(--color-warning-light); border-color: var(--color-warning); color: var(--color-warning); font-weight: 600; }
+
+/* 分项卡(申请页担保分项/审批页分项操作卡通用) */
+.item-card { background: var(--color-bg); box-shadow: none; border: 1px solid var(--color-border-light); margin-bottom: 12px; }
+.item-card--fresh { animation: item-flash 1.2s ease; border-color: var(--color-primary); }
+@keyframes item-flash { 0% { background: var(--color-primary-softer); } 100% { background: var(--color-bg); } }
+
+/* 移动端(侧栏隐藏)吸底条回全宽 */
+@media (max-width: 767px) {
+  .page-action-bar, .approve-bar { left: 0; }
+}
+
+/* 紧凑表单密度(申请录入类页面:输入框 36→32px,label 与间距收紧;加在页面根节点即可) */
+.form-compact .form-input, .form-compact .form-select { height: 32px; padding: 4px 10px; font-size: 13px; }
+.form-compact .form-field__label { font-size: 12px; margin-bottom: 2px; }
+.form-compact .form-grid { gap: 6px 12px; }
+.form-compact .el-input__wrapper { min-height: 32px; padding: 0 10px; }
+.form-compact .el-input__inner { height: 30px; font-size: 13px; }
+.form-compact .el-select__wrapper { min-height: 32px; }

@@ -10,14 +10,19 @@
     </div>
 
     <div class="card">
-      <div class="card__head" style="justify-content:flex-start;gap:8px">
+      <!-- 工具区统一 card-toolbar:操作在左,说明提示归右侧 actions -->
+      <div class="card-toolbar">
         <button class="btn btn--primary" @click="openCreate">新增缓存项</button>
         <button class="btn btn--secondary" @click="load">刷新</button>
-        <InfoTip style="margin-left:auto">
-          TTL 修改后自下一次缓存写入生效;Redis 不可用时自动降级直查库,不影响业务。
-          "刷新数据"调用所选数据加载器把最新数据写入该缓存项(带 loader 的项须为精确 key 类型)。
-        </InfoTip>
+        <div class="card-toolbar__actions">
+          <InfoTip>
+            TTL 修改后自下一次缓存写入生效;Redis 不可用时自动降级直查库,不影响业务。
+            "刷新数据"调用所选数据加载器把最新数据写入该缓存项(带 loader 的项须为精确 key 类型)。
+          </InfoTip>
+        </div>
       </div>
+      <!-- 表格横滚容器:窄屏横向滚动,避免列被挤压 -->
+      <div class="table-scroll">
       <table class="table table--full">
         <thead>
           <tr>
@@ -102,6 +107,7 @@
           <tr v-if="!items.length"><td colspan="6" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- 新增/编辑弹窗 (§UI审查:el-dialog/el-form 统一为自研 .modal/.form-field 体系,与页内按钮一致) -->
@@ -109,29 +115,43 @@
       <div class="modal__card">
         <div class="modal__title">{{ editingKey ? '编辑缓存项' : '新增缓存项' }}</div>
         <div class="modal__body">
+          <!-- 长表单分组:基本信息 / 写入策略 / 数据加载 -->
+          <div class="form-group-title">基本信息</div>
           <div class="form-field">
             <label class="form-field__label" for="cc-itemKey">缓存项编码 <span class="req">*</span></label>
-            <input id="cc-itemKey" class="form-input" v-model="form.itemKey" :disabled="!!editingKey" placeholder="如 dw-table:contribution" />
+            <!-- 编辑态编码禁改,用只读值展示;新增态保留输入框 -->
+            <div v-if="editingKey" class="form-static">{{ form.itemKey }}</div>
+            <input v-else id="cc-itemKey" class="form-input" v-model="form.itemKey" />
+            <div v-if="!editingKey" class="form-hint">如 dw-table:contribution</div>
           </div>
           <div class="form-field">
             <label class="form-field__label" for="cc-type">匹配方式 <span class="req">*</span></label>
-            <select id="cc-type" class="form-select" v-model="form.type" :disabled="!!editingKey" @change="onTypeChange">
+            <div v-if="editingKey" class="form-static">{{ form.type === 'key' ? '精确 key' : 'key 前缀' }}</div>
+            <select v-else id="cc-type" class="form-select" v-model="form.type" @change="onTypeChange">
               <option value="key">精确 key</option>
               <option value="pattern">key 前缀</option>
             </select>
           </div>
           <div class="form-field" v-if="form.type === 'key'">
             <label class="form-field__label" for="cc-cacheKey">精确 key <span class="req">*</span></label>
-            <input id="cc-cacheKey" class="form-input" v-model="form.cacheKey" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:contribution:latest" />
+            <!-- 内置项 key 由业务代码写入,编辑时只读展示 -->
+            <div v-if="editingKey && isBuiltin" class="form-static">{{ form.cacheKey }}</div>
+            <input v-else id="cc-cacheKey" class="form-input" v-model="form.cacheKey" />
+            <div v-if="!editingKey || !isBuiltin" class="form-hint">如 ccr:cfg:contribution:latest</div>
           </div>
           <div class="form-field" v-else>
             <label class="form-field__label" for="cc-keyPattern">key 前缀 <span class="req">*</span></label>
-            <input id="cc-keyPattern" class="form-input" v-model="form.keyPattern" :disabled="editingKey ? isBuiltin : false" placeholder="如 ccr:cfg:rate-limit:" />
+            <div v-if="editingKey && isBuiltin" class="form-static">{{ form.keyPattern }}</div>
+            <input v-else id="cc-keyPattern" class="form-input" v-model="form.keyPattern" />
+            <div v-if="!editingKey || !isBuiltin" class="form-hint">如 ccr:cfg:rate-limit:</div>
           </div>
           <div class="form-field">
             <label class="form-field__label" for="cc-desc">描述</label>
-            <input id="cc-desc" class="form-input" v-model="form.description" placeholder="缓存内容说明" />
+            <input id="cc-desc" class="form-input" v-model="form.description" />
+            <div class="form-hint">缓存内容说明</div>
           </div>
+
+          <div class="form-group-title">写入策略</div>
           <div class="form-field">
             <label class="form-field__label" for="cc-enabled">写入开关</label>
             <select id="cc-enabled" class="form-select" v-model="form.enabled">
@@ -143,6 +163,8 @@
             <label class="form-field__label" for="cc-ttl">TTL(秒)</label>
             <input id="cc-ttl" class="form-input" v-model.number="form.ttlSeconds" type="number" min="1" />
           </div>
+
+          <div class="form-group-title">数据加载</div>
           <div class="form-field">
             <label class="form-field__label" for="cc-loader">数据加载器</label>
             <select id="cc-loader" class="form-select" v-model="form.dataLoader">
@@ -152,7 +174,8 @@
           </div>
           <div class="form-field" v-if="form.dataLoader">
             <label class="form-field__label" for="cc-loaderParam">加载器参数</label>
-            <textarea id="cc-loaderParam" class="form-input" v-model="form.loaderParam" rows="3" placeholder='如 {"table":"dw_contribution_metric","limit":5000}'></textarea>
+            <textarea id="cc-loaderParam" class="form-input" v-model="form.loaderParam" rows="3"></textarea>
+            <div class="form-hint">如 {"table":"dw_contribution_metric","limit":5000}</div>
           </div>
         </div>
         <div class="modal__actions">
@@ -411,7 +434,9 @@ onMounted(() => {
   font-size: 12px;
 }
 .ttl-cell { display: flex; gap: 6px; align-items: center; }
-.unit { color: var(--color-text-sub); font-size: 13px; }
 .btn--sm { padding: 4px 10px; font-size: 13px; margin-right: 4px; }
 .btn--danger { padding: 4px 10px; font-size: 13px; }
+/* 表格横滚:列多时窄屏横向滚动 */
+.table-scroll { overflow-x: auto; }
+.table-scroll .table--full { min-width: 760px; }
 </style>

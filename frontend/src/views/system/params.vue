@@ -23,15 +23,16 @@
 
     <!-- ========== LPR 维护 ========== -->
     <div v-if="activeTab === 'lpr'" class="card" v-loading="loading.lpr">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center">
-          <span>LPR 参数(计划财务部人工维护,PRD D12)</span>
-          <select class="form-select" v-model="lprStatus" style="width:140px" @change="loadLpr">
-            <option value="">全部状态</option>
-            <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </select>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">LPR 参数</span>
+        <span class="card-toolbar__sub">计划财务部人工维护,PRD D12</span>
+        <select class="form-select" v-model="lprStatus" style="width:140px" @change="loadLpr" aria-label="状态筛选">
+          <option value="">全部状态</option>
+          <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+        </select>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openLprCreate">＋ 新增 LPR 草稿</button>
         </div>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openLprCreate">＋ 新增 LPR 草稿</button>
       </div>
       <table class="table table--full">
         <thead>
@@ -65,16 +66,17 @@
 
     <!-- ========== 权限矩阵 ========== -->
     <div v-if="activeTab === 'matrix'" class="card" v-loading="loading.matrix">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center">
-          <span>权限矩阵(LPR±BP 路由阈值;生效行禁止原位修改,调整=新建行发布替换)</span>
-          <!-- §UI审查:默认 value="" 实为不过滤加载全部,文案改「全部状态」与行为一致 -->
-          <select class="form-select" v-model="matrixStatus" style="width:140px" @change="loadMatrix">
-            <option value="">全部状态</option>
-            <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </select>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">权限矩阵</span>
+        <!-- §UI审查:默认 value="" 实为不过滤加载全部,文案改「全部状态」与行为一致 -->
+        <span class="card-toolbar__sub">LPR±BP 路由阈值;生效行禁止原位修改,调整=新建行发布替换</span>
+        <select class="form-select" v-model="matrixStatus" style="width:140px" @change="loadMatrix" aria-label="状态筛选">
+          <option value="">全部状态</option>
+          <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+        </select>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
         </div>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openMatrixCreate">＋ 新增矩阵行</button>
       </div>
       <!-- §UI审查:13 列宽表横向滚动 + 关键列 nowrap/ellipsis -->
       <table class="table table--wide">
@@ -112,15 +114,16 @@
 
     <!-- ========== 产品边界(§12.13 ③) ========== -->
     <div v-if="activeTab === 'product'" class="card" v-loading="loading.product">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center">
-          <span>产品业务硬边界(全行业务硬边界,任何节点调价/矩阵边界不得突破)</span>
-          <select class="form-select" v-model="productStatus" style="width:140px" @change="loadProductLimit">
-            <option value="">全部状态</option>
-            <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </select>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">产品业务硬边界</span>
+        <span class="card-toolbar__sub">全行业务硬边界,任何节点调价/矩阵边界不得突破</span>
+        <select class="form-select" v-model="productStatus" style="width:140px" @change="loadProductLimit" aria-label="状态筛选">
+          <option value="">全部状态</option>
+          <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+        </select>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
         </div>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openLimitCreate">＋ 新增产品边界草稿</button>
       </div>
       <!-- §UI审查:11 列宽表横向滚动 -->
       <table class="table table--wide">
@@ -164,21 +167,22 @@
 
       <!-- 产品目录(§8A.5①:申请页产品下拉/LPR明细/权限矩阵/产品边界的权威来源) -->
       <div v-if="pcTab === 'catalog'">
-        <div class="card__head">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span>产品目录(产品编码一经启用禁改;停用后新申请不可选,在途审批不受影响 D11)</span>
-            <select class="form-select" v-model="productQuery.businessBigType" style="width:130px" @change="loadProductCatalog">
-              <option value="">全部业务</option>
-              <option value="LOAN">贷款</option>
-              <option value="DEPOSIT">存款</option>
-            </select>
-            <select class="form-select" v-model="productQuery.status" style="width:120px" @change="loadProductCatalog">
-              <option value="">全部状态</option>
-              <option value="ENABLED">启用</option>
-              <option value="DISABLED">停用</option>
-            </select>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">产品目录</span>
+          <span class="card-toolbar__sub">产品编码一经启用禁改;停用后新申请不可选,在途审批不受影响 D11</span>
+          <select class="form-select" v-model="productQuery.businessBigType" style="width:130px" @change="loadProductCatalog" aria-label="业务大类筛选">
+            <option value="">全部业务</option>
+            <option value="LOAN">贷款</option>
+            <option value="DEPOSIT">存款</option>
+          </select>
+          <select class="form-select" v-model="productQuery.status" style="width:120px" @change="loadProductCatalog" aria-label="状态筛选">
+            <option value="">全部状态</option>
+            <option value="ENABLED">启用</option>
+            <option value="DISABLED">停用</option>
+          </select>
+          <div class="card-toolbar__actions">
+            <button v-if="canMaintain" class="btn btn--primary" @click="openProductCreate">＋ 新增产品</button>
           </div>
-          <button v-if="canMaintain" class="btn btn--primary" @click="openProductCreate">＋ 新增产品</button>
         </div>
         <table class="table table--full">
           <thead>
@@ -213,22 +217,23 @@
 
       <!-- 产品审批链路(§8A.5②:路由引擎读取替代硬编码;支行行长节点恒必经,B13) -->
       <div v-if="pcTab === 'route'">
-        <div class="card__head">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span>产品审批链路：配置特殊审批要求（上会/行长决策）。未配置链路时自动按默认链路运行——对公贷款=链式逐级、存款/保证金=直接上会，无需强制配置（草稿→送审→复核发布→停用；同产品同生效日仅一版生效）</span>
-            <select class="form-select" v-model="routeQuery.productCode" style="width:200px" @change="loadProductRoutes">
-              <option value="">全部产品</option>
-              <option v-for="p in productCatalog" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
-            </select>
-            <select class="form-select" v-model="routeQuery.status" style="width:120px" @change="loadProductRoutes">
-              <option value="">全部状态</option>
-              <option value="DRAFT">草稿</option>
-              <option value="PENDING_REVIEW">待复核</option>
-              <option value="PUBLISHED">已生效</option>
-              <option value="OBSOLETE">已停用</option>
-            </select>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">产品审批链路</span>
+          <span class="card-toolbar__sub">配置特殊审批要求(上会/行长决策);未配置时按默认链路运行——对公贷款=链式逐级、存款/保证金=直接上会(草稿→送审→复核发布→停用;同产品同生效日仅一版生效)</span>
+          <select class="form-select" v-model="routeQuery.productCode" style="width:200px" @change="loadProductRoutes" aria-label="产品筛选">
+            <option value="">全部产品</option>
+            <option v-for="p in productCatalog" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
+          </select>
+          <select class="form-select" v-model="routeQuery.status" style="width:120px" @change="loadProductRoutes" aria-label="状态筛选">
+            <option value="">全部状态</option>
+            <option value="DRAFT">草稿</option>
+            <option value="PENDING_REVIEW">待复核</option>
+            <option value="PUBLISHED">已生效</option>
+            <option value="OBSOLETE">已停用</option>
+          </select>
+          <div class="card-toolbar__actions">
+            <button v-if="canMaintain" class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
           </div>
-          <button v-if="canMaintain" class="btn btn--primary" @click="openRouteCreate">＋ 新增链路</button>
         </div>
         <!-- §UI审查:11 列宽表横向滚动 -->
         <table class="table table--wide">
@@ -270,9 +275,12 @@
 
     <!-- ========== 规则集 ========== -->
     <div v-if="activeTab === 'ruleset'" class="card" v-loading="loading.ruleset">
-      <div class="card__head">
-        <span>利率规则集(发布前自动连续性校验:区间连续、无空档、无重叠)</span>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">利率规则集</span>
+        <span class="card-toolbar__sub">发布前自动连续性校验:区间连续、无空档、无重叠</span>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openSetCreate">＋ 新增规则集草稿</button>
+        </div>
       </div>
       <table class="table table--full">
         <thead>
@@ -304,16 +312,17 @@
 
     <!-- ========== 跟踪策略(§11.5/§11.7) ========== -->
     <div v-if="activeTab === 'policy'" class="card" v-loading="loading.policy">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span>跟踪策略(版本化:草稿→送审→复核发布→停用;匹配优先级 指标+业务+机构 &gt; 指标+业务 &gt; 指标默认 &gt; 全行默认*)</span>
-          <select class="form-select" v-model="policyMetric" style="width:170px" @change="loadPolicies">
-            <option value="">全部指标</option>
-            <option value="*">全行默认</option>
-            <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
-          </select>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">跟踪策略</span>
+        <span class="card-toolbar__sub">版本化:草稿→送审→复核发布→停用;匹配优先级 指标+业务+机构 &gt; 指标+业务 &gt; 指标默认 &gt; 全行默认*</span>
+        <select class="form-select" v-model="policyMetric" style="width:170px" @change="loadPolicies" aria-label="指标筛选">
+          <option value="">全部指标</option>
+          <option value="*">全行默认</option>
+          <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
+        </select>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
         </div>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
       </div>
       <table class="table table--full">
         <thead>
@@ -343,18 +352,23 @@
       </table>
 
       <!-- 策略试算(§11.7):选历史承诺计划,输出命中策略与预警判定 -->
-      <div style="margin-top:20px;border-top:1px dashed var(--color-border);padding-top:16px">
-        <div class="sub-title">策略试算</div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-          <select class="form-select" v-model="simulatePlanId" style="width:260px">
+      <div class="trial-result">
+        <div class="form-group-title">策略试算</div>
+        <div class="simulate-bar">
+          <select class="form-select" v-model="simulatePlanId" style="width:260px" aria-label="历史承诺计划">
             <option value="">选择历史承诺计划</option>
             <option v-for="pl in planOptions" :key="pl.id" :value="pl.id">{{ pl.planNo }} · {{ pl.customerNo || '—' }}</option>
           </select>
           <button class="btn btn--primary" :disabled="!simulatePlanId" @click="runPolicySimulate">试算</button>
-          <span class="section-tip">输入计划编号,按计划冻结的指标逐项匹配当前生效策略并判定预警等级</span>
+          <span class="form-hint">按计划冻结的指标逐项匹配当前生效策略并判定预警等级</span>
         </div>
-        <div v-if="simulateResult" class="trial-result">
-          <div class="result-row"><span class="dg-label">计划</span>{{ simulateResult.planNo }} · 冻结策略版本 {{ simulateResult.frozenPolicyVersionId || '—' }}</div>
+        <div v-if="simulateResult" style="margin-top:12px">
+          <div class="desc-grid desc-grid--3">
+            <div>
+              <div class="desc-item__label">计划</div>
+              <div class="desc-item__value">{{ simulateResult.planNo }} · 冻结策略版本 {{ simulateResult.frozenPolicyVersionId || '—' }}</div>
+            </div>
+          </div>
           <table class="table table--full" style="margin-top:8px" v-if="simulateResult.metrics?.length">
             <thead>
               <tr>
@@ -375,25 +389,26 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="empty" style="margin-top:8px">该计划无承诺指标数据</div>
+          <div v-else class="empty-line" style="margin-top:8px">该计划无承诺指标数据</div>
         </div>
       </div>
     </div>
 
     <!-- ========== 指标字典(§9;admin 配置化) ========== -->
     <div v-if="activeTab === 'metricDict'" class="card" v-loading="loading.metric">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span>指标字典(数仓按字典推送指标数据,新增指标在此登记即可,前端承诺/跟踪下拉无需改代码;编码一经创建不可改)</span>
-          <select class="form-select" v-model="metricQuery.status" style="width:120px" @change="loadMetricDefs">
-            <option value="">全部状态</option>
-            <option value="ACTIVE">启用</option>
-            <option value="DISABLED">停用</option>
-          </select>
-          <input class="form-input" v-model="metricQuery.keyword" placeholder="编码/名称" style="width:180px" @keyup.enter="loadMetricDefs" />
-          <button class="btn btn--secondary" @click="loadMetricDefs">查询</button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">指标字典</span>
+        <span class="card-toolbar__sub">数仓按字典推送指标数据,新增指标在此登记即可,前端承诺/跟踪下拉无需改代码;编码一经创建不可改</span>
+        <select class="form-select" v-model="metricQuery.status" style="width:120px" @change="loadMetricDefs" aria-label="状态筛选">
+          <option value="">全部状态</option>
+          <option value="ACTIVE">启用</option>
+          <option value="DISABLED">停用</option>
+        </select>
+        <input class="form-input" v-model="metricQuery.keyword" placeholder="编码/名称" style="width:180px" @keyup.enter="loadMetricDefs" />
+        <button class="btn btn--secondary" @click="loadMetricDefs">查询</button>
+        <div class="card-toolbar__actions">
+          <button v-if="canMaintain" class="btn btn--primary" @click="openMetricCreate">＋ 新增指标</button>
         </div>
-        <button v-if="canMaintain" class="btn btn--primary" @click="openMetricCreate">＋ 新增指标</button>
       </div>
       <table class="table table--full">
         <thead>
@@ -423,16 +438,15 @@
 
     <!-- ========== 变更日志(§8A.2) ========== -->
     <div v-if="activeTab === 'changelog'" class="card" v-loading="loading.changelog">
-      <div class="card__head">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span>配置变更日志(LPR/矩阵/规则集/产品边界全量留痕)</span>
-          <select class="form-select" v-model="logQuery.configType" style="width:150px" @change="loadChangeLogs">
-            <option value="">全部配置域</option>
-            <option v-for="t in configTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
-          <input class="form-input" v-model="logQuery.configId" type="number" placeholder="配置记录ID" style="width:130px" @keyup.enter="loadChangeLogs" />
-          <button class="btn btn--secondary" @click="loadChangeLogs">查询</button>
-        </div>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">配置变更日志</span>
+        <span class="card-toolbar__sub">LPR/矩阵/规则集/产品边界全量留痕</span>
+        <select class="form-select" v-model="logQuery.configType" style="width:150px" @change="loadChangeLogs" aria-label="配置域筛选">
+          <option value="">全部配置域</option>
+          <option v-for="t in configTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+        </select>
+        <input class="form-input" v-model="logQuery.configId" type="number" placeholder="配置记录ID" style="width:130px" @keyup.enter="loadChangeLogs" />
+        <button class="btn btn--secondary" @click="loadChangeLogs">查询</button>
       </div>
       <table class="table table--full">
         <thead>
@@ -459,8 +473,9 @@
 
     <!-- ========== 路由试算 ========== -->
     <div v-if="activeTab === 'trial'" class="card">
-      <div class="card__head">
-        <span>矩阵路由试算(输入业务维度,输出终审岗位与完整链路)</span>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">矩阵路由试算</span>
+        <span class="card-toolbar__sub">输入业务维度,输出终审岗位与完整链路</span>
       </div>
       <div class="trial-form">
         <div class="form-field">
@@ -524,23 +539,44 @@
       </div>
 
       <div v-if="trialResult" class="trial-result">
-        <div class="result-row"><span class="dg-label">审批链首节点</span><b>{{ nodeLabel(trialResult.startNodeCode) }}</b><span class="badge badge--info">必经</span></div>
-        <div class="result-row"><span class="dg-label">终审岗位</span><b>{{ nodeLabel(trialResult.finalNodeCode) }}</b></div>
-        <div class="result-row">
-          <span class="dg-label">审批链路</span>
-          <span class="chain">
-            <template v-for="(n, i) in trialResult.routeChain || []" :key="n">
-              <span class="chain__node">{{ nodeLabel(n) }}</span>
-              <span v-if="i < (trialResult.routeChain || []).length - 1" class="chain__arrow">→</span>
-            </template>
-          </span>
+        <!-- 试算结果:键值统一 desc-grid,审批链路用 design-system 流程节点链 -->
+        <div class="desc-grid desc-grid--3">
+          <div>
+            <div class="desc-item__label">审批链首节点</div>
+            <div class="desc-item__value">{{ nodeLabel(trialResult.startNodeCode) }} <span class="badge badge--info">必经</span></div>
+          </div>
+          <div>
+            <div class="desc-item__label">终审岗位</div>
+            <div class="desc-item__value">{{ nodeLabel(trialResult.finalNodeCode) }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">利率方向</div>
+            <div class="desc-item__value">{{ rateDirectionText(trialResult.rateDirection) }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">命中规则</div>
+            <div class="desc-item__value">{{ trialResult.matchedRuleName || trialResult.matchedRuleCode || '—' }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">采用 LPR 版本</div>
+            <div class="desc-item__value">{{ trialResult.lprVersionCode || '—' }}</div>
+          </div>
+          <div class="desc-item--full">
+            <div class="desc-item__label">审批链路</div>
+            <div class="flow-steps">
+              <template v-for="(n, i) in trialResult.routeChain || []" :key="n">
+                <span class="flow-node">{{ nodeLabel(n) }}</span>
+                <span v-if="i < (trialResult.routeChain || []).length - 1" class="chain__arrow">→</span>
+              </template>
+            </div>
+          </div>
+          <div class="desc-item--full">
+            <div class="desc-item__label">计算说明</div>
+            <div class="desc-item__value" style="font-weight:400">{{ trialResult.message || '—' }}</div>
+          </div>
         </div>
-        <div class="result-row"><span class="dg-label">利率方向</span>{{ rateDirectionText(trialResult.rateDirection) }}</div>
-        <div class="result-row"><span class="dg-label">命中规则</span>{{ trialResult.matchedRuleName || trialResult.matchedRuleCode || '—' }}</div>
-        <div class="result-row"><span class="dg-label">采用 LPR 版本</span>{{ trialResult.lprVersionCode || '—' }}</div>
-        <div class="result-row"><span class="dg-label">计算说明</span>{{ trialResult.message || '—' }}</div>
       </div>
-      <div v-else class="section-tip" style="margin-top:12px">填写左侧维度后点击"试算",输出终审岗位与审批链路。</div>
+      <div v-else class="section-tip" style="margin-top:12px">填写上方维度后点击"试算",输出终审岗位与审批链路。</div>
     </div>
 
     <!-- 新增跟踪策略弹窗(策略+首个版本+阈值一并提交,§11.5) -->
@@ -548,7 +584,7 @@
       <div class="modal__card modal__card--wide">
         <div class="modal__title">新增跟踪策略</div>
         <div class="modal__body">
-          <div class="sub-title">策略维度</div>
+          <div class="form-group-title">策略维度</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label" for="pd-policyNo">策略编号 <span class="req">*</span></label>
@@ -583,7 +619,7 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">首个版本(草稿)</div>
+          <div class="form-group-title">首个版本(草稿)</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label" for="pd-verCode">版本号 <span class="req">*</span></label>
@@ -611,7 +647,7 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">阈值配置</div>
+          <div class="form-group-title">阈值配置</div>
           <table class="table table--full">
             <thead>
               <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
@@ -690,7 +726,7 @@
           </table>
 
           <div v-if="versionMgr.thrPanel.show" style="margin-top:16px;border-top:1px dashed var(--color-border);padding-top:12px">
-            <div class="sub-title">阈值明细:版本 {{ versionMgr.thrPanel.versionCode }}</div>
+            <div class="form-group-title">阈值明细:版本 {{ versionMgr.thrPanel.versionCode }}</div>
             <table class="table table--full" v-if="versionMgr.thrPanel.rows.length">
               <thead><tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th></tr></thead>
               <tbody>
@@ -702,11 +738,11 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else class="empty">该版本未配置阈值,将使用系统默认阈值</div>
+            <div v-else class="empty-line">该版本未配置阈值,将使用系统默认阈值</div>
           </div>
 
           <div v-if="versionMgr.addShow" style="margin-top:16px;border-top:1px dashed var(--color-border);padding-top:12px">
-            <div class="sub-title">新增版本(草稿)</div>
+            <div class="form-group-title">新增版本(草稿)</div>
             <div class="form-grid">
               <div class="form-field">
                 <label class="form-field__label" for="vm-verCode">版本号 <span class="req">*</span></label>
@@ -733,7 +769,7 @@
                 <input id="vm-tolerance" class="form-input" v-model="versionMgr.form.dataToleranceDays" type="number" autocomplete="off" />
               </div>
             </div>
-            <div class="sub-title" style="margin-top:10px">阈值</div>
+            <div class="form-group-title">阈值</div>
             <table class="table table--full">
               <thead>
                 <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
@@ -919,11 +955,12 @@
                 <option value="" disabled>选择产品</option>
                 <option v-for="p in enabledProducts" :key="p.productCode" :value="p.productCode">{{ p.productCode }} · {{ p.productName }}</option>
               </select>
-              <div class="form-field__tip">选择后自动带出业务大类，并按默认规则预填路由模式</div>
+              <div class="form-hint">选择后自动带出业务大类，并按默认规则预填路由模式</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-biztype">业务大类</label>
-              <input id="rt-biztype" class="form-input" v-model="routeDialog.form.businessBigTypeText" disabled />
+              <!-- 只读展示:随产品选择自动带出,改用 form-static 替代灰 input -->
+              <div class="form-static" id="rt-biztype">{{ routeDialog.form.businessBigTypeText || '—' }}</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-routeMode">路由模式 <span class="req">*</span></label>
@@ -931,14 +968,14 @@
                 <option value="CHAINED">链式逐级（推荐·贷款）</option>
                 <option value="DIRECT_VOTE">直接上会（推荐·存款/保证金）</option>
               </select>
-              <div class="form-field__tip">链式逐级=按金额/利率逐级上送，权限内岗位即可终审；直接上会=必经支行行长后直接进入六人小组表决</div>
+              <div class="form-hint">链式逐级=按金额/利率逐级上送，权限内岗位即可终审；直接上会=必经支行行长后直接进入六人小组表决</div>
             </div>
             <div class="form-field" v-if="routeDialog.form.routeMode === 'CHAINED'">
               <label class="form-field__label" for="rt-startNode">起始节点 <span class="req">*</span></label>
               <select id="rt-startNode" class="form-select" v-model="routeDialog.form.startNodeCode">
                 <option v-for="n in NODE_OPTIONS" :key="n" :value="n">{{ nodeLabel(n) }}</option>
               </select>
-              <div class="form-field__tip">审批起点岗位，默认支行行长（所有申请必经支行行长）</div>
+              <div class="form-hint">审批起点岗位，默认支行行长（所有申请必经支行行长）</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-mandatoryVote">强制上会（六人小组）</label>
@@ -946,7 +983,7 @@
                 <option value="N">否（按金额/利率匹配）</option>
                 <option value="Y">是（一律上会表决）</option>
               </select>
-              <div class="form-field__tip">开启后无论金额/利率是否在权限内，一律必经六人小组表决（≥4票），适合大额/高风险业务</div>
+              <div class="form-hint">开启后无论金额/利率是否在权限内，一律必经六人小组表决（≥4票），适合大额/高风险业务</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-president">必经总行行长决策</label>
@@ -954,17 +991,17 @@
                 <option value="N">否</option>
                 <option value="Y">是</option>
               </select>
-              <div class="form-field__tip">凡上会申请必经行长决策（全局强制）；此开关用于给权限内终审业务额外增加行长环节</div>
+              <div class="form-hint">凡上会申请必经行长决策（全局强制）；此开关用于给权限内终审业务额外增加行长环节</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-priority">优先级（低值优先）</label>
               <input id="rt-priority" class="form-input" v-model="routeDialog.form.priority" type="number" autocomplete="off" />
-              <div class="form-field__tip">多条生效链路并存时数值小者优先，一般填 0</div>
+              <div class="form-hint">多条生效链路并存时数值小者优先，一般填 0</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-effDate">生效日</label>
               <input id="rt-effDate" class="form-input" v-model="routeDialog.form.effectiveDate" type="datetime-local" />
-              <div class="form-field__tip">链路生效时间，不填则保存后立即生效</div>
+              <div class="form-hint">链路生效时间，不填则保存后立即生效</div>
             </div>
             <div class="form-field" style="grid-column: span 2">
               <label class="form-field__label" for="rt-remark">备注</label>
@@ -972,7 +1009,8 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">上会条件（选填）——满足条件时该申请必经六人小组表决</div>
+          <div class="form-group-title">上会条件(选填)</div>
+          <div class="form-hint" style="margin:-6px 0 10px">满足条件时该申请必经六人小组表决</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label" for="rt-amountTier">定档金额档</label>
@@ -982,7 +1020,7 @@
                 <option value="GE_1000_LT_5000">1000万(含)-5000万</option>
                 <option value="GE_5000">≥5000万</option>
               </select>
-              <div class="form-field__tip">申请定档金额所在档位（集团按集团总授信，其他按总授信额度）；大额业务一般需上会</div>
+              <div class="form-hint">申请定档金额所在档位（集团按集团总授信，其他按总授信额度）；大额业务一般需上会</div>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="rt-enterpriseType">企业类型</label>
@@ -991,7 +1029,7 @@
                 <option value="SOE">国企</option>
                 <option value="NON_SOE">非国企</option>
               </select>
-              <div class="form-field__tip">仅该企业类型触发上会，其余按权限内终审</div>
+              <div class="form-hint">仅该企业类型触发上会，其余按权限内终审</div>
             </div>
           </div>
           <div class="form-field" style="margin-top:10px">
@@ -1026,7 +1064,8 @@
         <div class="modal__body">
           <div class="form-field">
             <label class="form-field__label" for="rt-reject">驳回意见 <span class="req">*</span></label>
-            <textarea id="rt-reject" class="form-input" v-model="routeRejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
+            <textarea id="rt-reject" class="form-input" v-model="routeRejectDialog.opinion" rows="4" placeholder="请填写驳回原因"></textarea>
+            <div class="form-hint">驳回原因将写入配置变更日志</div>
           </div>
         </div>
         <div class="modal__actions">
@@ -1095,21 +1134,41 @@
           </div>
 
           <div v-if="routeSimResult" class="trial-result">
-            <div class="result-row"><span class="dg-label">审批链首节点</span><b>{{ nodeLabel(routeSimResult.startNodeCode) }}</b><span class="badge badge--info">必经</span></div>
-            <div class="result-row"><span class="dg-label">终审岗位</span><b>{{ nodeLabel(routeSimResult.finalNodeCode) }}</b></div>
-            <div class="result-row">
-              <span class="dg-label">审批链路</span>
-              <span class="chain">
-                <template v-for="(n, i) in routeSimResult.routeChain || []" :key="n">
-                  <span class="chain__node">{{ nodeLabel(n) }}</span>
-                  <span v-if="i < (routeSimResult.routeChain || []).length - 1" class="chain__arrow">→</span>
-                </template>
-              </span>
+            <div class="desc-grid desc-grid--3">
+              <div>
+                <div class="desc-item__label">审批链首节点</div>
+                <div class="desc-item__value">{{ nodeLabel(routeSimResult.startNodeCode) }} <span class="badge badge--info">必经</span></div>
+              </div>
+              <div>
+                <div class="desc-item__label">终审岗位</div>
+                <div class="desc-item__value">{{ nodeLabel(routeSimResult.finalNodeCode) }}</div>
+              </div>
+              <div>
+                <div class="desc-item__label">利率方向</div>
+                <div class="desc-item__value">{{ rateDirectionText(routeSimResult.rateDirection) }}</div>
+              </div>
+              <div>
+                <div class="desc-item__label">终审边界</div>
+                <div class="desc-item__value desc-item__value--num">{{ routeSimResult.boundaryRate != null ? routeSimResult.boundaryRate + '%' : '—' }}</div>
+              </div>
+              <div>
+                <div class="desc-item__label">命中规则</div>
+                <div class="desc-item__value">{{ routeSimResult.matchedRuleName || routeSimResult.matchedRuleCode || '—' }}</div>
+              </div>
+              <div class="desc-item--full">
+                <div class="desc-item__label">审批链路</div>
+                <div class="flow-steps">
+                  <template v-for="(n, i) in routeSimResult.routeChain || []" :key="n">
+                    <span class="flow-node">{{ nodeLabel(n) }}</span>
+                    <span v-if="i < (routeSimResult.routeChain || []).length - 1" class="chain__arrow">→</span>
+                  </template>
+                </div>
+              </div>
+              <div class="desc-item--full">
+                <div class="desc-item__label">计算说明</div>
+                <div class="desc-item__value" style="font-weight:400">{{ routeSimResult.message || '—' }}</div>
+              </div>
             </div>
-            <div class="result-row"><span class="dg-label">利率方向</span>{{ rateDirectionText(routeSimResult.rateDirection) }}</div>
-            <div class="result-row"><span class="dg-label">终审边界</span>{{ routeSimResult.boundaryRate != null ? routeSimResult.boundaryRate + '%' : '—' }}</div>
-            <div class="result-row"><span class="dg-label">命中规则</span>{{ routeSimResult.matchedRuleName || routeSimResult.matchedRuleCode || '—' }}</div>
-            <div class="result-row"><span class="dg-label">计算说明</span>{{ routeSimResult.message || '—' }}</div>
           </div>
         </div>
         <div class="modal__actions">
@@ -1193,7 +1252,7 @@
       <div class="modal__card">
         <div class="modal__title">新增权限矩阵行(草稿)</div>
         <div class="modal__body matrix-dialog__body">
-          <div class="sub-title">匹配维度</div>
+          <div class="form-group-title">匹配维度</div>
           <div class="form-grid">
             <div class="form-field" style="grid-column: span 2">
               <label class="form-field__label" for="mx-no">行编码 <span class="req">*</span></label>
@@ -1251,7 +1310,7 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">终审与边界</div>
+          <div class="form-group-title">终审与边界</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label" for="mx-finalNode">终审岗位 <span class="req">*</span></label>
@@ -1293,7 +1352,7 @@
             </div>
           </div>
 
-          <div class="sub-title" style="margin-top:14px">生效与备注</div>
+          <div class="form-group-title">生效与备注</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label" for="mx-effFrom">生效时间 <span class="req">*</span></label>
@@ -1384,7 +1443,8 @@
         <div class="modal__body">
           <div class="form-field">
             <label class="form-field__label" for="pl-reject">驳回意见 <span class="req">*</span></label>
-            <textarea id="pl-reject" class="form-input" v-model="rejectDialog.opinion" rows="4" placeholder="请填写驳回原因,将写入配置变更日志"></textarea>
+            <textarea id="pl-reject" class="form-input" v-model="rejectDialog.opinion" rows="4" placeholder="请填写驳回原因"></textarea>
+            <div class="form-hint">驳回原因将写入配置变更日志</div>
           </div>
         </div>
         <div class="modal__actions">
@@ -2488,18 +2548,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.card__head { gap: 8px; flex-wrap: wrap; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
-.req { color: var(--color-danger); }
 .trial-form { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
 .trial-form .form-field { min-width: 160px; }
 .trial-result { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
-.result-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
-.dg-label { color: var(--color-text-sub); min-width: 96px; }
-.chain { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.chain__node { background: var(--color-primary-light, #eff6ff); color: var(--color-primary); border-radius: 4px; padding: 2px 8px; font-size: 13px; }
-.chain__arrow { color: var(--color-text-light); }
+/* 试算查询行:条件 + 按钮 + 说明 */
+.simulate-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* 描述列表中占满整行的项(审批链路/计算说明) */
+.desc-item--full { grid-column: 1 / -1; }
+.chain__arrow { color: var(--color-text-light); align-self: center; }
 .modal__card--wide { width: 720px; max-width: 92vw; } /* §UI审查:弹窗宽度与 user.vue 统一为 720px */
 .json-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .json-compare__title { font-weight: 600; margin-bottom: 6px; }
@@ -2515,7 +2571,12 @@ onMounted(() => {
 .advanced-json { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg, #f8fafc); }
 .advanced-json summary { cursor: pointer; font-size: 13px; color: var(--color-text-sub); user-select: none; }
 .advanced-json summary:hover { color: var(--color-primary); }
-.sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
-.form-field__tip { font-size: 12px; color: var(--color-text-light, #909399); margin-top: 4px; line-height: 1.5; }
+/* 768px 断点:双列表单/新旧值对比/试算表收为单列 */
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .form-field { grid-column: auto !important; }
+  .json-compare { grid-template-columns: 1fr; }
+  .trial-form .form-field { min-width: 0; flex: 1 1 100%; }
+}
 </style>

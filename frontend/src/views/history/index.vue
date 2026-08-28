@@ -40,7 +40,7 @@
               <button v-if="row.hasResolution" class="btn btn--text" @click="downloadResolution(row)">决议书</button>
             </td>
           </tr>
-          <tr v-if="!records.length"><td colspan="7" class="empty-cell">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</td></tr>
+          <tr v-if="!records.length"><td colspan="7"><div class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div></td></tr>
         </tbody>
       </table>
 
@@ -60,7 +60,7 @@
     <el-dialog v-model="progressVisible" title="审批进度" width="min(560px, 92vw)" append-to-body>
       <div v-loading="progressLoading">
         <template v-if="progress">
-          <div v-if="progressError" class="empty-cell">加载失败，请刷新</div>
+          <div v-if="progressError" class="empty-line">加载失败，请刷新</div>
           <template v-else>
           <div class="progress-head">
             <span class="progress-no">{{ progress.applicationNo }}</span>
@@ -90,7 +90,7 @@
               </div>
             </div>
           </div>
-          <div v-else class="empty-cell">暂无进度数据</div>
+          <div v-else class="empty-line">暂无进度数据</div>
           </template>
         </template>
       </div>
@@ -268,7 +268,10 @@ onMounted(() => {
 .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .filter-bar .form-input { width: 180px; }
 .filter-bar .el-select { width: 160px; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
+/* 768px 断点:查询条件单列占满整行 */
+@media (max-width: 767px) {
+  .filter-bar .form-input, .filter-bar .el-select { width: 100%; }
+}
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .progress-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .progress-no { font-weight: 600; }

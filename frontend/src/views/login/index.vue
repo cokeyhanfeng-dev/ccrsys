@@ -43,17 +43,18 @@
       <el-card class="login-card" shadow="never">
         <h2 class="login-title">欢迎登录</h2>
         <p class="login-sub">客户贡献度与利率决策系统</p>
-        <el-form :model="form" @submit.prevent="onSubmit">
-          <el-form-item>
-            <el-input v-model="form.username" placeholder="用户名" size="large" autocomplete="username" aria-label="用户名">
+        <!-- label 统一置上,placeholder 只承担输入引导 -->
+        <el-form :model="form" label-position="top" @submit.prevent="onSubmit">
+          <el-form-item label="用户名">
+            <el-input v-model="form.username" placeholder="请输入用户名" size="large" autocomplete="username" aria-label="用户名">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </el-form-item>
-          <el-form-item>
+          <el-form-item label="密码">
             <el-input
               v-model="form.password"
               type="password"
-              placeholder="密码"
+              placeholder="请输入密码"
               size="large"
               show-password
               autocomplete="current-password"
@@ -68,7 +69,7 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <p class="login-tip">首期本地账号演示;SSO 统一认证预留适配</p>
+        <p class="login-tip form-hint">首期本地账号演示;SSO 统一认证预留适配</p>
       </el-card>
       <p class="login-panel__foot">客户贡献度与利率决策系统 · CCR</p>
     </section>
@@ -312,6 +313,13 @@ async function onSubmit() {
     margin-bottom: 22px;
   }
 
+  /* 顶部 label 样式收敛:弱化字重与颜色,贴近字段说明层级 */
+  :deep(.el-form-item__label) {
+    font-weight: 500;
+    color: var(--color-text-sub);
+    padding-bottom: 6px;
+  }
+
   .login-btn {
     width: 100%;
     height: 44px;
@@ -327,10 +335,9 @@ async function onSubmit() {
     }
   }
 
+  /* 字号与颜色由 design-system .form-hint 提供,这里只保留居中与间距 */
   .login-tip {
     text-align: center;
-    color: #6b7280;
-    font-size: 12px;
     margin-top: 4px;
   }
 }
@@ -368,6 +375,30 @@ async function onSubmit() {
   .login-panel {
     flex: 1;
     padding: 40px 24px;
+  }
+}
+
+/* ── 768px 移动端断点:进一步收紧留白与卡片内边距 ── */
+@media (max-width: 768px) {
+  .login-brand {
+    padding: 32px 24px 48px;
+
+    &__slogan {
+      font-size: 24px;
+      letter-spacing: 1px;
+    }
+  }
+
+  .login-panel {
+    padding: 32px 16px;
+  }
+
+  .login-card {
+    padding: 4px 4px 12px;
+
+    :deep(.el-card__body) {
+      padding: 12px 8px;
+    }
   }
 }
 </style>

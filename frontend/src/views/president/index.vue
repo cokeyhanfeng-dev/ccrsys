@@ -5,12 +5,14 @@
       <InfoTip content="六人小组表决通过后整单送总行行长决策;行长统一执行「同意利率」或「一票否决」。六人匿名审批意见与完整审批内容在决策详情中查看,匿名码每批随机分配。" />
     </div>
 
-    <!-- 统计卡片(真实数据) -->
-    <div class="stat-row">
+    <!-- 统计卡片(真实数据,全局 KPI 卡结构) -->
+    <div class="stat-grid">
       <div class="stat-card">
-        <span class="stat-card__label">待我决策</span>
-        <b class="stat-card__num stat-card__num--primary">{{ cards.length }} 笔</b>
-        <div class="stat-card__sub">六人小组表决通过待决策申请(按申请聚合)</div>
+        <div class="stat-card__body">
+          <span class="stat-card__label">待我决策</span>
+          <b class="stat-card__num stat-card__num--primary">{{ cards.length }} 笔</b>
+          <div class="stat-card__sub">六人小组表决通过待决策申请(按申请聚合)</div>
+        </div>
       </div>
     </div>
 
@@ -91,10 +93,15 @@ onMounted(load)
 </script>
 
 <style scoped>
-.stat-row { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px; }
+.stat-grid { margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
 .todo-card__customer { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
 .todo-card__summary { font-size: 14px; color: var(--color-text-sub); margin-bottom: 8px; }
 .todo-card__meta { display: flex; gap: 8px; }
 .todo-card__action { display: flex; align-items: center; gap: 8px; }
+/* 768px 断点:操作区换到卡片下方 */
+@media (max-width: 767px) {
+  .todo-card { flex-direction: column; align-items: stretch; gap: 10px; }
+  .todo-card__action { justify-content: flex-end; }
+}
 </style>

@@ -8,9 +8,10 @@
     <div class="dept-layout">
       <!-- 左侧机构树 -->
       <div class="card dept-tree">
-        <div class="card__head">
-          <span>机构树</span>
-          <div style="display:flex;gap:8px;align-items:center">
+        <!-- 工具区统一 card-toolbar:标题在左,搜索与新增归右侧 actions -->
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">机构树</span>
+          <div class="card-toolbar__actions">
             <!-- §UI审查:机构树顶加关键字过滤搜索框 -->
             <input
               class="form-input"
@@ -43,14 +44,14 @@
             </span>
           </template>
         </el-tree>
-        <div v-if="!tree.length" class="empty-cell">暂无机构</div>
+        <div v-if="!tree.length" class="empty-line">暂无机构</div>
       </div>
 
       <!-- 右侧机构详情/编辑 -->
       <div class="card dept-detail">
-        <div class="card__head">
-          <span>机构详情</span>
-          <div v-if="current" style="display:flex;gap:8px">
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">机构详情</span>
+          <div v-if="current" class="card-toolbar__actions">
             <button class="btn btn--primary" @click="openCreate(current)">＋ 新增子机构</button>
             <button
               class="btn"
@@ -71,7 +72,8 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">机构编码(org_code)</label>
-              <input class="form-input" :value="current.orgCode" disabled />
+              <!-- 编码唯一禁改,用只读值展示 -->
+              <div class="form-static">{{ current.orgCode }}</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">机构类型</label>
@@ -111,7 +113,7 @@
             <span class="section-tip" style="margin-left:8px">机构编码唯一、禁改;改上级将校验成环与编码前缀一致性。</span>
           </div>
         </template>
-        <div v-else class="empty-cell">请在左侧选择机构</div>
+        <div v-else class="empty-line">请在左侧选择机构</div>
       </div>
     </div>
 
@@ -122,11 +124,13 @@
         <div class="modal__body">
           <div class="form-field" v-if="createDialog.parent">
             <label class="form-field__label">上级机构</label>
-            <input class="form-input" :value="`${createDialog.parent.deptName}(${createDialog.parent.orgCode})`" disabled />
+            <!-- 上级机构由入口决定,用只读值展示 -->
+            <div class="form-static">{{ createDialog.parent.deptName }}({{ createDialog.parent.orgCode }})</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">机构名称 <span class="req">*</span></label>
-            <input class="form-input" v-model="createDialog.form.deptName" placeholder="如 XX支行" />
+            <input class="form-input" v-model="createDialog.form.deptName" />
+            <div class="form-hint">如 XX支行</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">机构类型 <span class="req">*</span></label>
@@ -136,7 +140,8 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">机构编码(org_code)</label>
-            <input class="form-input" v-model="createDialog.form.orgCode" placeholder="留空按上级编码前缀自动生成" />
+            <input class="form-input" v-model="createDialog.form.orgCode" />
+            <div class="form-hint">留空按上级编码前缀自动生成</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">负责人</label>
@@ -322,9 +327,12 @@ onMounted(load)
 .dept-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .dept-tree { flex: 0 0 480px; max-width: 100%; max-height: calc(100vh - 220px); overflow: auto; }
 .dept-detail { flex: 1 1 320px; min-width: 0; }
-.card__head { gap: 8px; flex-wrap: wrap; }
 .tree-node { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tree-node__code { color: var(--color-text-sub); font-size: 12px; } /* §UI审查:浅灰小字改 text-sub 提对比 */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
-.req { color: var(--color-danger); }
+/* 768px 断点:树与详情纵向堆叠,双列表单转单列 */
+@media (max-width: 768px) {
+  .dept-tree { flex: 1 1 100%; max-height: none; }
+  .form-grid { grid-template-columns: 1fr; }
+}
 </style>

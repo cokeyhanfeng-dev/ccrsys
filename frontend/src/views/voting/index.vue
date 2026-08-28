@@ -33,16 +33,16 @@
               </span>
             </td>
             <td>
-              <el-input v-if="!row.submitted" v-model="row.comment" size="small" placeholder="意见(可选)" style="width:180px" />
+              <el-input v-if="!row.submitted" v-model="row.comment" size="small" placeholder="意见(可选)" class="vote-comment" />
               <span v-else class="stat-card__sub">{{ row.myComment || '—' }}</span>
             </td>
             <td><span :class="row.submitted ? 'badge badge--success' : 'badge badge--neutral'">{{ row.submitted ? '已提交' : '未提交' }}</span></td>
             <td><button class="btn btn--text" @click="goDetail(row)">查看详情</button></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="8" class="empty">暂无待表决分项</td></tr>
+          <tr v-if="!rows.length"><td colspan="8"><div class="empty">暂无待表决分项</div></td></tr>
         </tbody>
       </table>
-      <div style="margin-top:16px;display:flex;align-items:center;gap:12px" v-if="pendingCount > 0">
+      <div class="vote-bar" v-if="pendingCount > 0">
         <button class="btn btn--primary" :disabled="submitting" @click="submitAll">提交全部已选票</button>
         <span class="section-tip">提交后不可修改;表决全程匿名,不展示他人票型</span>
       </div>
@@ -143,5 +143,10 @@ onMounted(load)
 
 <style scoped>
 .vote-option { margin-right: 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
+.vote-comment { width: 180px; }
+.vote-bar { margin-top: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* 768px 断点:意见输入框占满整行 */
+@media (max-width: 767px) {
+  .vote-comment { width: 100%; }
+}
 </style>

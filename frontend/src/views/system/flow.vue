@@ -28,8 +28,9 @@
         实际审批流转(哪些节点、谁能终审)由「参数管理 → 权限矩阵」决定,不由本页签控制。
         需要调整审批人时,请使用「节点指派」页签。</span>
       </div>
-      <div class="card__head">
-        <span>流程定义(Warm-Flow flow_definition)</span>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">流程定义</span>
+        <span class="card-toolbar__sub">Warm-Flow flow_definition</span>
       </div>
       <table class="table table--full">
         <thead>
@@ -68,9 +69,11 @@
         <span>部门-分管行领导映射:按分项部门归属编码(如 3202233912 公司金融部/3202233943 授信评审部/3202233991 零售金融部)
         解析对应分管行领导;一人可分管多部门,未配置时走角色兜底。变更仅影响新提交流程。</span>
       </div>
-      <div class="card__head">
-        <span>部门-分管行领导映射</span>
-        <button class="btn btn--primary" @click="openDeptVpCreate">＋ 新增映射</button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">部门-分管行领导映射</span>
+        <div class="card-toolbar__actions">
+          <button class="btn btn--primary" @click="openDeptVpCreate">＋ 新增映射</button>
+        </div>
       </div>
       <table class="table table--full">
         <thead>
@@ -145,11 +148,12 @@
       <div class="modal__card flow-viewer__card">
         <div class="modal__title">流程预览 · {{ flowView.name }}</div>
         <div class="modal__body">
+          <!-- 流程图为纵向方块链,类名改用 flow-box 避免与 design-system 流程节点链 .flow-node 样式串扰 -->
           <div class="flow-diagram" v-if="flowView.nodes.length">
             <template v-for="(n, i) in flowView.nodes" :key="n.nodeCode">
-              <div class="flow-node" :class="nodeClassOf(n)">
-                <div class="flow-node__name">{{ nodeTextOf(n) }}</div>
-                <div class="flow-node__code">{{ n.nodeCode }}</div>
+              <div class="flow-box" :class="nodeClassOf(n)">
+                <div class="flow-box__name">{{ nodeTextOf(n) }}</div>
+                <div class="flow-box__code">{{ n.nodeCode }}</div>
               </div>
               <div v-if="i < flowView.nodes.length - 1" class="flow-edge">
                 <div class="flow-edge__line"></div>
@@ -157,7 +161,7 @@
               </div>
             </template>
           </div>
-          <div v-else class="empty">该流程暂无节点定义</div>
+          <div v-else class="empty-line">该流程暂无节点定义</div>
         </div>
         <div class="modal__actions">
           <button class="btn btn--primary" @click="flowView.show = false">关闭</button>
@@ -168,7 +172,7 @@
     <div v-if="activeTab === 'assignee'" class="assignee-layout">
       <!-- 节点列表 -->
       <div class="card node-list">
-        <div class="card__head"><span>审批节点</span></div>
+        <div class="card-toolbar"><span class="card-toolbar__title">审批节点</span></div>
         <table class="table table--full">
           <thead>
             <tr><th>节点</th><th>当前指派数</th></tr>
@@ -194,11 +198,11 @@
 
       <!-- 指派明细 -->
       <div class="card assignee-detail">
-        <div class="card__head">
-          <span>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">
             指派明细{{ selectedNode ? `:${selectedNode.nodeName || nodeText(selectedNode.nodeCode)}` : '(请先选择节点)' }}
           </span>
-          <div style="display:flex;gap:8px">
+          <div class="card-toolbar__actions">
             <button class="btn btn--secondary" :disabled="!selectedNode" @click="openResolve">解析预览</button>
             <button class="btn btn--primary" :disabled="!selectedNode" @click="openAssigneeCreate">＋ 新增指派</button>
           </div>
@@ -278,7 +282,7 @@
                 <input type="checkbox" :value="r.roleCode" :checked="groupRoles.includes(r.roleCode)" @change="toggleGroupRole(r.roleCode)" />
                 <span>{{ r.roleName }}({{ r.roleCode }})</span>
               </label>
-              <div v-if="!groupRoles.length" class="form-field__hint">请至少勾选一个角色;人员组解析为该组角色的全部启用用户</div>
+              <div v-if="!groupRoles.length" class="form-hint">请至少勾选一个角色;人员组解析为该组角色的全部启用用户</div>
             </div>
           </div>
           <div class="form-field">
@@ -326,7 +330,8 @@
         <div class="modal__body">
           <div class="form-field">
             <label class="form-field__label">主指派人</label>
-            <input class="form-input" :value="delegateDialog.row?.assigneeCode" disabled />
+            <!-- 只读展示:改用 form-static 替代灰 input -->
+            <div class="form-static">{{ delegateDialog.row?.assigneeCode || '—' }}</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">代理人 <span class="req">*</span></label>
@@ -424,9 +429,9 @@ async function viewFlow(f: any) {
   }
 }
 function nodeClassOf(n: any): string {
-  if (n.nodeType === 0 || n.nodeCode === 'start') return 'flow-node--start'
-  if (n.nodeType === 2 || n.nodeCode === 'end') return 'flow-node--end'
-  return 'flow-node--mid'
+  if (n.nodeType === 0 || n.nodeCode === 'start') return 'flow-box--start'
+  if (n.nodeType === 2 || n.nodeCode === 'end') return 'flow-box--end'
+  return 'flow-box--mid'
 }
 const FLOW_NODE_NAMES: Record<string, string> = {
   start: '开始', end: '结束',
@@ -767,10 +772,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.card__head { gap: 8px; flex-wrap: wrap; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
-.req { color: var(--color-danger); }
 .assignee-layout { display: flex; gap: 16px; align-items: flex-start; }
 .node-list { flex: 0 0 300px; }
 .assignee-detail { flex: 1; overflow-x: auto; }
@@ -781,17 +782,17 @@ onMounted(() => {
 .resolve-chip { display: inline-block; background: var(--color-primary-light, #eff6ff); color: var(--color-primary); border-radius: 4px; padding: 2px 10px; margin: 0 6px 6px 0; font-size: 13px; }
 .resolve-empty { color: var(--color-danger); font-weight: 600; }
 
-/* 流程图查看器 */
+/* 流程图查看器(纵向方块链,类名 flow-box 与 design-system .flow-node 流程节点链区分) */
 .flow-viewer__card { max-width: 520px; }
 .flow-diagram { display: flex; flex-direction: column; align-items: center; padding: 8px 0; }
-.flow-node {
+.flow-box {
   min-width: 200px; text-align: center; padding: 10px 20px; border-radius: 10px;
   border: 1.5px solid var(--color-primary); background: var(--color-primary-light);
 }
-.flow-node--start, .flow-node--end { border-color: var(--color-success); background: #ecfdf5; }
-.flow-node--mid { box-shadow: var(--shadow-sm); }
-.flow-node__name { font-weight: 600; }
-.flow-node__code { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
+.flow-box--start, .flow-box--end { border-color: var(--color-success); background: #ecfdf5; }
+.flow-box--mid { box-shadow: var(--shadow-sm); }
+.flow-box__name { font-weight: 600; }
+.flow-box__code { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
 .flow-edge { display: flex; flex-direction: column; align-items: center; }
 .flow-edge__line { width: 2px; height: 22px; background: var(--color-primary); position: relative; }
 .flow-edge__line::after {
@@ -799,4 +800,11 @@ onMounted(() => {
   border: 5px solid transparent; border-top-color: var(--color-primary);
 }
 .flow-edge__label { font-size: 12px; color: var(--color-text-sub); background: #fff; padding: 0 6px; margin-top: -14px; position: relative; z-index: 1; }
+
+/* 768px 断点:左右分栏收为上下单列 */
+@media (max-width: 768px) {
+  .assignee-layout { flex-direction: column; }
+  .node-list { flex: none; width: 100%; }
+  .assignee-detail { width: 100%; }
+}
 </style>

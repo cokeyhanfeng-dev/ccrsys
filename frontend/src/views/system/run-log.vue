@@ -61,6 +61,8 @@
         <button class="btn btn--text" @click="reset">重置</button>
       </div>
 
+      <!-- 表格横滚容器:窄屏横向滚动,避免列被挤压 -->
+      <div class="table-scroll">
       <table class="table table--full">
         <thead>
           <tr>
@@ -84,6 +86,7 @@
           <tr v-if="!records.length"><td colspan="7" class="empty-cell">暂无报错记录</td></tr>
         </tbody>
       </table>
+      </div>
 
       <div v-if="total > 0" class="pagination-wrap">
         <el-pagination
@@ -101,10 +104,14 @@
 
     <!-- ② 日志文件 -->
     <div v-if="activeTab === 'files'" class="card">
-      <div class="tab-toolbar">
-        <span class="tab-toolbar__hint">后台日志目录(容器内 /app/logs,宿主机 logs/)</span>
-        <button class="btn btn--primary" @click="loadFiles">刷新</button>
+      <!-- 工具区统一 card-toolbar:说明在左,操作归右侧 actions -->
+      <div class="card-toolbar">
+        <span class="card-toolbar__sub">后台日志目录(容器内 /app/logs,宿主机 logs/)</span>
+        <div class="card-toolbar__actions">
+          <button class="btn btn--primary" @click="loadFiles">刷新</button>
+        </div>
       </div>
+      <div class="table-scroll">
       <table class="table table--full">
         <thead>
           <tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
@@ -122,6 +129,7 @@
           <tr v-if="!files.length"><td colspan="4" class="empty-cell">logs/ 目录暂无日志文件</td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- ③ 流程监控 -->
@@ -188,7 +196,7 @@
                   </div>
                 </div>
               </div>
-              <div v-else class="empty-cell">暂无节点数据</div>
+              <div v-else class="empty-line">暂无节点数据</div>
             </div>
           </template>
         </el-table-column>
@@ -246,10 +254,22 @@
             <span class="detail-time">{{ fmtTime(detail.errorTime) }}</span>
             <span class="detail-logger">{{ detail.loggerName }}</span>
           </div>
-          <div class="detail-row"><span class="detail-label">请求路径</span>{{ detail.requestUri || '—' }}</div>
-          <div class="detail-row"><span class="detail-label">线程</span>{{ detail.threadName || '—' }}</div>
-          <div class="detail-row"><span class="detail-label">消息</span>{{ detail.message || '—' }}</div>
-          <div class="detail-label">堆栈</div>
+          <!-- 键值展示统一 desc-grid 描述列表 -->
+          <div class="desc-grid desc-grid--2 detail-grid">
+            <div>
+              <div class="desc-item__label">请求路径</div>
+              <div class="desc-item__value">{{ detail.requestUri || '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">线程</div>
+              <div class="desc-item__value">{{ detail.threadName || '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">消息</div>
+              <div class="desc-item__value">{{ detail.message || '—' }}</div>
+            </div>
+          </div>
+          <div class="desc-item__label">堆栈</div>
           <pre class="stack">{{ detail.stackTrace || '无堆栈信息' }}</pre>
         </template>
       </div>
@@ -552,8 +572,9 @@ onBeforeUnmount(() => {
 .detail-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .detail-time { color: var(--color-text-sub); font-size: 13px; }
 .detail-logger { color: var(--color-text-sub); font-size: 12px; }
-.detail-row { font-size: 13px; color: var(--color-text-main); margin-bottom: 8px; }
-.detail-label { display: inline-block; width: 72px; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
+/* 详情键值网格:长路径/消息允许换行 */
+.detail-grid { margin-bottom: 12px; }
+.detail-grid .desc-item__value { font-weight: 400; word-break: break-all; }
 .stack {
   margin: 6px 0 0;
   padding: 12px;
@@ -568,9 +589,16 @@ onBeforeUnmount(() => {
   max-height: 420px;
   overflow: auto;
 }
-.tab-toolbar__hint { font-size: 12px; color: var(--color-text-sub); margin-right: auto; }
 .preview-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .preview-hint { font-size: 12px; color: var(--color-text-sub); }
+/* 表格横滚:列多时窄屏横向滚动 */
+.table-scroll { overflow-x: auto; }
+.table-scroll .table--full { min-width: 720px; }
+/* 768px 断点:查询条件单列铺开 */
+@media (max-width: 768px) {
+  .query-field { flex: 1 1 100%; }
+  .query-field .query-input { width: 100% !important; }
+}
 
 /* 流程监控:展开行链路形态/当前原因 + 节点时间线(与 history 进度弹窗同款配色) */
 .flow-detail { padding: 6px 8px 2px; }

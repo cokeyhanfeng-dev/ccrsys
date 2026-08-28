@@ -60,8 +60,7 @@
           </tr>
         </tbody>
       </table>
-      <!-- §UI审查:空态统一全局 .empty 插画 -->
-      <div v-else class="empty">{{ ballotQueried ? '无匹配投票记录' : '输入批次/分项后查询' }}</div>
+      <div v-else class="empty-line">{{ ballotQueried ? '无匹配投票记录' : '输入批次/分项后查询' }}</div>
       <div v-if="ballotQueried && ballotTotal > 0" class="pagination-wrap">
         <el-pagination
           background
@@ -78,10 +77,12 @@
 
     <!-- ② 导出记录 -->
     <div v-if="activeAuditTab === 'export'" class="card">
-      <div class="tab-toolbar">
-        <button class="btn btn--primary" :disabled="!exportRecords.length" @click="exportCsv(exportRecords, exportCsvCols, '导出记录')">
-          导出
-        </button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__actions">
+          <button class="btn btn--primary" :disabled="!exportRecords.length" @click="exportCsv(exportRecords, exportCsvCols, '导出记录')">
+            导出
+          </button>
+        </span>
       </div>
       <!-- §UI审查:导出记录加载态 v-loading;失败/真空态区分,空态统一全局 .empty 插画 -->
       <table class="table table--full" v-loading="exportLoading">
@@ -119,11 +120,13 @@
 
     <!-- ③ 配置版本查询 -->
     <div v-if="activeAuditTab === 'config'" class="card">
-      <div class="tab-toolbar">
-        <router-link to="/system/params" class="btn btn--text">前往参数管理</router-link>
-        <button class="btn btn--primary" :disabled="!changeLogs.length" @click="exportCsv(changeLogs, changeLogCsvCols, '配置变更日志')">
-          导出
-        </button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__actions">
+          <router-link to="/system/params" class="btn btn--text">前往参数管理</router-link>
+          <button class="btn btn--primary" :disabled="!changeLogs.length" @click="exportCsv(changeLogs, changeLogCsvCols, '配置变更日志')">
+            导出
+          </button>
+        </span>
       </div>
       <div class="query-bar">
         <div class="query-field">
@@ -176,10 +179,12 @@
 
     <!-- ④ 操作日志 -->
     <div v-if="activeAuditTab === 'log'" class="card">
-      <div class="tab-toolbar">
-        <button class="btn btn--primary" :disabled="!auditLogs.length" @click="exportCsv(auditLogs, auditLogCsvCols, '操作日志')">
-          导出
-        </button>
+      <div class="card-toolbar">
+        <span class="card-toolbar__actions">
+          <button class="btn btn--primary" :disabled="!auditLogs.length" @click="exportCsv(auditLogs, auditLogCsvCols, '操作日志')">
+            导出
+          </button>
+        </span>
       </div>
       <div class="query-bar">
         <div class="query-field">
@@ -557,14 +562,15 @@ onMounted(() => {
 <style scoped>
 .sensitive-alert { margin-bottom: 12px; }
 .segmented { margin-bottom: 14px; }
-/* 页签内工具行(导出/跳转等)右对齐 */
-.tab-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px; align-items: center; }
 .query-bar { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .query-field { display: flex; flex-direction: column; gap: 4px; }
 .query-label { font-size: 12px; color: var(--color-text-sub); }
 .query-input { width: 220px; }
-/* 审计属管理/配置列表页:表格撑满容器宽度,右侧不留白(恢复 table 布局,列随宽度分布) */
-.card .table--full { display: table; width: 100%; }
+/* 窄屏查询区:字段独占一行,输入框撑满 */
+@media (max-width: 768px) {
+  .query-field { flex: 1 1 100%; }
+  .query-input { width: 100%; }
+}
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
 .log-content {

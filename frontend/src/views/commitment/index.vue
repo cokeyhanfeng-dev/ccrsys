@@ -34,8 +34,8 @@
       </div>
 
       <div class="card">
-        <div class="card__head">
-          <span>客户承诺概览</span>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">客户承诺概览</span>
         </div>
         <div v-loading="listLoading">
         <table class="table customer-overview" v-if="customerRows.length">
@@ -66,7 +66,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-else class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div>
+        <div v-else class="empty-line">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div>
         </div>
       </div>
     </template>
@@ -74,7 +74,10 @@
     <!-- ============ 二级:该客户每一次申请(客户 → 申请 → 指标),卡片网格(替代 12 列表格,消除列拥挤与数据少时空白) ============ -->
     <template v-else-if="level === 2">
       <div class="card">
-        <div class="card__head"><span>申请承诺</span><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></div>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">申请承诺</span>
+          <span class="card-toolbar__actions"><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></span>
+        </div>
         <div class="plan-grid" v-if="applicationRows.length">
           <div v-for="app in applicationRows" :key="app.applicationNo || app.plan_no || app.id" class="plan-card" role="button" tabindex="0" @click="enterApplication(app)" @keydown.enter.prevent="enterApplication(app)" @keydown.space.prevent="enterApplication(app)">
             <div class="plan-card__head">
@@ -106,7 +109,7 @@
             </div>
           </div>
         </div>
-        <div v-else class="empty">该客户暂无申请承诺</div>
+        <div v-else class="empty-line">该客户暂无申请承诺</div>
       </div>
     </template>
 
@@ -114,35 +117,58 @@
     <template v-else>
       <div v-loading="planLoading">
       <div class="card">
-        <div class="card__head">
-          <span>计划 {{ currentPlan?.plan_no }}</span>
-          <span :class="statusBadge(currentPlan?.status)">{{ statusText(currentPlan?.status) }}</span>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">计划 {{ currentPlan?.plan_no }}</span>
+          <span class="card-toolbar__actions"><span :class="statusBadge(currentPlan?.status)">{{ statusText(currentPlan?.status) }}</span></span>
         </div>
-        <div class="detail-grid">
-          <div><span class="dg-label">客户名称</span>{{ currentPlan?.customer_name || currentPlan?.customer_no || '—' }}</div>
-          <div><span class="dg-label">客户号</span>{{ currentPlan?.customer_no || '—' }}</div>
-          <div><span class="dg-label">所属申请</span>{{ currentPlan?.application_no || '—' }}</div>
-          <div><span class="dg-label">业务类型</span>{{ businessTypeText(currentPlan?.business_type) }}</div>
-          <div><span class="dg-label">申请状态</span><span class="badge" :class="appStatusBadge(currentPlan?.application_status)">{{ appStatusText(currentPlan?.application_status) }}</span></div>
-          <div><span class="dg-label">范围</span>{{ scopeText(currentPlan?.scope_type) }}</div>
-          <div><span class="dg-label">指标数</span>{{ planMetrics.length }} 项</div>
+        <div class="desc-grid desc-grid--3">
           <div>
-            <span class="dg-label">承诺截止</span>
-            <span v-if="planEndDate">{{ planEndDate }}</span>
-            <span v-else>—</span>
+            <div class="desc-item__label">客户名称</div>
+            <div class="desc-item__value">{{ currentPlan?.customer_name || currentPlan?.customer_no || '—' }}</div>
           </div>
           <div>
-            <span class="dg-label">剩余时间</span>
-            <span v-if="deadlineTip" :class="deadlineTip.cls">{{ deadlineTip.text }}</span>
-            <span v-else>—</span>
+            <div class="desc-item__label">客户号</div>
+            <div class="desc-item__value">{{ currentPlan?.customer_no || '—' }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">所属申请</div>
+            <div class="desc-item__value">{{ currentPlan?.application_no || '—' }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">业务类型</div>
+            <div class="desc-item__value">{{ businessTypeText(currentPlan?.business_type) }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">申请状态</div>
+            <div class="desc-item__value"><span class="badge" :class="appStatusBadge(currentPlan?.application_status)">{{ appStatusText(currentPlan?.application_status) }}</span></div>
+          </div>
+          <div>
+            <div class="desc-item__label">范围</div>
+            <div class="desc-item__value">{{ scopeText(currentPlan?.scope_type) }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">指标数</div>
+            <div class="desc-item__value desc-item__value--num">{{ planMetrics.length }} 项</div>
+          </div>
+          <div>
+            <div class="desc-item__label">承诺截止</div>
+            <div class="desc-item__value">{{ planEndDate || '—' }}</div>
+          </div>
+          <div>
+            <div class="desc-item__label">剩余时间</div>
+            <div class="desc-item__value">
+              <span v-if="deadlineTip" :class="deadlineTip.cls">{{ deadlineTip.text }}</span>
+              <span v-else>—</span>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 总体跟踪进度(Σ实际 / Σ目标,按各项指标加总计算) -->
       <div class="card">
-        <div class="card__head">
-          <span>总体跟踪进度 <InfoTip content="按各项指标达成率的平均值计算（不含&quot;其它&quot;手工承诺）；累计实际值/目标值为各指标数值直接加总，可能跨越不同单位" style="margin-left:6px" /></span>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">总体跟踪进度</span>
+          <InfoTip content="按各项指标达成率的平均值计算（不含&quot;其它&quot;手工承诺）；累计实际值/目标值为各指标数值直接加总，可能跨越不同单位" />
         </div>
         <div v-if="overall" class="overall">
           <div class="overall__sum">
@@ -166,12 +192,12 @@
             :stroke-width="14"
           />
         </div>
-        <div v-else class="empty">暂无数值指标,无法计算总体进度</div>
+        <div v-else class="empty-line">暂无数值指标,无法计算总体进度</div>
       </div>
 
       <!-- 指标完成进度(每指标:当前完成值 / 目标值 / 离达成值 / 达成率;绿≥100%/黄≥80%/红<80%) -->
       <div class="card">
-        <div class="card__head"><span>指标完成进度</span></div>
+        <div class="card-toolbar"><span class="card-toolbar__title">指标完成进度</span></div>
         <div v-for="(m, i) in planMetrics" :key="i" class="metric-row">
           <div class="metric-row__head">
             <b>{{ metricName(m.metricCode) }}</b>
@@ -264,7 +290,7 @@
             </div>
           </template>
         </div>
-        <div v-if="!planMetrics.length" class="empty">暂无指标数据</div>
+        <div v-if="!planMetrics.length" class="empty-line">暂无指标数据</div>
       </div>
       </div>
 
@@ -668,15 +694,12 @@ onMounted(load)
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
 @media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 800px) { .stat-row { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .stat-row { grid-template-columns: 1fr; } }
 .table { border-radius: var(--radius-sm); overflow-x: auto; }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
-.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
-@media (max-width: 1200px) { .detail-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 800px) { .detail-grid { grid-template-columns: 1fr; } }
 .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (max-width: 1200px) { .plan-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 800px) { .plan-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .plan-grid { grid-template-columns: 1fr; } }
 .plan-card { border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 14px; cursor: pointer; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: border-color .18s, box-shadow .18s, transform .18s; }
 .plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow); transform: translateY(-2px); }
 .plan-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }

@@ -13,7 +13,9 @@
       <!-- ① 批次落地监控:各表最新批次的数据日期/行数/落地时间 -->
       <!-- §UI审查:加载中 v-loading;失败置 errorFlag,与「真无数据」区分 -->
       <div class="card" v-loading="batchLoading">
-        <div class="card-title">批次落地监控</div>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">批次落地监控</span>
+        </div>
         <table class="table">
           <thead>
             <tr>
@@ -42,7 +44,9 @@
       <!-- ② 数据源时效看板:OK/STALE 状态灯,STALE 红色醒目 -->
       <!-- §UI审查:加载中 v-loading;失败/真空态区分,空态统一全局 .empty 插画 -->
       <div class="card" v-loading="sourceLoading">
-        <div class="card-title">数据源时效看板</div>
+        <div class="card-toolbar">
+          <span class="card-toolbar__title">数据源时效看板</span>
+        </div>
         <div v-if="sources.length" class="source-list">
           <div
             v-for="(row, i) in sources"
@@ -129,7 +133,6 @@ onMounted(load)
 @media (max-width: 1200px) { .dc-grid { grid-template-columns: 1fr; } }
 /* §UI审查:刷新按钮右对齐 */
 .head-refresh { margin-left: auto; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
 
 /* 时效看板状态灯:OK 绿 / STALE 红 */
 .source-list { display: flex; flex-direction: column; gap: 10px; }

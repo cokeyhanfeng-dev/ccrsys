@@ -1,5 +1,5 @@
 <template>
-  <div class="wizard-page">
+  <div class="wizard-page form-compact">
     <div class="section-head">
       <div class="section-title">贷款利率申请</div>
     </div>
@@ -26,7 +26,7 @@
     </div>
 
     <!-- 第一步:客户信息(个人/企业单户/集团三选) -->
-    <div v-show="step === 0" class="form-card">
+    <div v-if="step === 0" class="form-card">
       <div class="form-card__title">
         客户信息
       </div>
@@ -40,7 +40,7 @@
           </select>
         </div>
 
-        <!-- 集团:查询与集团信息字段化紧凑展示(§2026-08-25 仿对公/个人字段行;授信总额已删(§2026-08-26),全部字段 span1 等宽 4 列不补字段,联想面板跟随输入框不拉宽) -->
+        <!-- 集团档案(§docs/29 §2.2):查询行在上;数仓命中后只读档案用描述列表展示,未收录则同卡切换补录模式(原三层嵌套卡已拆平) -->
         <template v-if="form.customerScope === 'GROUP'">
           <div class="form-field">
             <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
@@ -49,15 +49,16 @@
               :fetch-suggestions="queryGroupSuggestions"
               :trigger-on-focus="false"
               clearable
-              placeholder="输入集团名称联想选择;未收录回车补录"
+              placeholder="输入集团名称联想选择"
               style="width:100%"
               @select="selectGroup"
               @keyup.enter="queryGroup"
             />
+            <div class="form-hint">数仓未收录时输入集团编号回车,进入补录模式</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">集团客户编号</label>
-            <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" />
+            <div class="form-static">{{ form.groupNo || '查询后带出' }}</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">集团属性</label>
@@ -69,7 +70,8 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">统一社会信用代码</label>
-            <input class="form-input" v-model="form.ucrCode" placeholder="查询后带出,可修改" />
+            <input class="form-input" v-model="form.ucrCode" />
+            <div class="form-hint">数仓带出,可修改</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">五级分类</label>
@@ -78,11 +80,38 @@
               <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
             </select>
           </div>
-          <div class="form-field">
-            <label class="form-field__label">信用评级</label>
-            <input class="form-input" :value="groupInfo?.creditLevel || ''" readonly placeholder="查询后带出" />
-          </div>
         </template>
+
+        <!-- 数仓命中:只读集团档案(描述列表 + 数仓徽标 + 数据日期,§docs/29 §2.2;可修改要素留在上方查询行) -->
+        <div v-if="form.customerScope === 'GROUP' && groupInfo && !isNewGroup" class="group-archive">
+          <div class="card-toolbar" style="margin-bottom:8px">
+            <span class="card-toolbar__title">集团档案</span>
+            <span class="badge badge--info">数仓</span>
+            <span class="card-toolbar__sub">数据日期 {{ groupInfo?.dataDt || groupCredit?.dataDt || '—' }}</span>
+          </div>
+          <div class="desc-grid">
+            <div>
+              <div class="desc-item__label">集团编号</div>
+              <div class="desc-item__value">{{ form.groupNo || '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">信用评级</div>
+              <div class="desc-item__value">{{ groupInfo?.creditLevel || '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">批复授信额度(万元)</div>
+              <div class="desc-item__value desc-item__value--num">{{ groupCredit?.approvedTotalAmount ?? '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">可用额度(万元)</div>
+              <div class="desc-item__value desc-item__value--num">{{ groupCredit?.availableAmount ?? '—' }}</div>
+            </div>
+            <div>
+              <div class="desc-item__label">已分配合计(万元)</div>
+              <div class="desc-item__value desc-item__value--num">{{ groupAllocatedTotal ?? '—' }}</div>
+            </div>
+          </div>
+        </div>
 
         <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
         <template v-else>
@@ -100,7 +129,8 @@
           </div>
           <div class="form-field">
             <label class="form-field__label">客户号</label>
-            <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
+            <input class="form-input" v-model="form.customerNo" />
+            <div class="form-hint">数仓带出,可修改;新增客户可手工填写</div>
           </div>
 
           <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人/企业全部字段 span1 等宽 4 列;开户机构/开户日期/基本户账户申请页不展示,由审批页数仓同步展示(§2026-08-26)) -->
@@ -114,7 +144,8 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">统一社会信用代码</label>
-              <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.ucrCode" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">五级分类</label>
@@ -125,29 +156,35 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">内部信用等级</label>
-              <input class="form-input" v-model="form.creditLevel" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.creditLevel" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">所属行业</label>
-              <input class="form-input" v-model="form.industry" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.industry" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">注册资本(万元)</label>
-              <input class="form-input form-input--amount" v-model="form.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
+              <input class="form-input form-input--amount" v-model="form.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
           </template>
           <template v-else>
             <div class="form-field">
               <label class="form-field__label">证件号码</label>
-              <input class="form-input" v-model="form.idNo" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.idNo" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">职业</label>
-              <input class="form-input" v-model="form.occupation" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.occupation" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">年收入(万元)</label>
-              <input class="form-input form-input--amount" v-model="form.annualIncome" type="number" min="0" max="999999999.99" step="0.0001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
+              <input class="form-input form-input--amount" v-model="form.annualIncome" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">婚姻状况</label>
@@ -161,7 +198,8 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">联系电话</label>
-              <input class="form-input" v-model="form.phone" placeholder="数仓带出,可修改" />
+              <input class="form-input" v-model="form.phone" />
+              <div class="form-hint">数仓带出,可修改</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">五级分类</label>
@@ -176,15 +214,18 @@
 
       <!-- 集团客户区块(§docs/19 集团补录集成申请页):集团号查询 → 新增集团就地补录/存量带出 + 有效成员列表(数仓带出/手工补录);集团查询已上移与客户主体并排一行(§2026-08-25) -->
       <template v-if="form.customerScope === 'GROUP'">
-        <!-- 新增集团(数仓未收录):就地补录集团基本信息,与对公客户信息要求一致(数据以数仓为准,数仓无即按新集团) -->
-        <div v-if="isNewGroup" class="form-card group-supplement" style="margin-top:12px">
-          <div class="form-card__title">
-            新增集团补录 <span class="badge badge--warning">数仓未收录</span>
+        <!-- 新增集团(数仓未收录):同卡切换补录模式,字段分「基本信息/开户信息」两组(§docs/29 §2.2;原嵌套补录卡已拆平,数据以数仓为准,数仓无即按新集团) -->
+        <div v-if="isNewGroup" class="group-supplement-block">
+          <div class="card-toolbar" style="margin-bottom:4px">
+            <span class="card-toolbar__title">新增集团补录</span>
+            <span class="badge badge--warning">数仓未收录</span>
+            <span class="card-toolbar__sub">按新集团就地补录,与对公客户信息要求一致</span>
           </div>
+          <div class="form-group-title">基本信息</div>
           <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label">集团编号 <span class="req">*</span></label>
-              <input class="form-input" :value="form.groupNo" disabled />
+              <div class="form-static">{{ form.groupNo }}</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">集团名称 <span class="req">*</span></label>
@@ -221,6 +262,9 @@
               <label class="form-field__label">注册资本(万元)</label>
               <input class="form-input form-input--amount" v-model="groupSupplement.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="可空" @keydown="onNumKeydown" />
             </div>
+          </div>
+          <div class="form-group-title">开户信息</div>
+          <div class="form-grid">
             <div class="form-field">
               <label class="form-field__label">开户机构</label>
               <el-select class="open-org-select" v-model="groupSupplement.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
@@ -237,18 +281,20 @@
             </div>
           </div>
         </div>
-        <!-- 集团成员:第一步勾选本次申请涉及成员(勾选集合供第三步分项「涉及成员」下拉选择);标题文字不展示(§2026-08-25),表格拉满整宽 -->
+        <!-- 集团成员(§docs/29 §2.2):工具条 = 标题 + 已选徽标 + 勾选语义说明 + 手工补录入口;表格补「来源」「操作」列,手工成员可删除 -->
         <div v-if="groupMembers.length" class="member-block" style="margin-top:12px">
-          <div class="member-head member-head--bare">
-            <span class="badge badge--neutral">{{ selectedMembers.length }}/{{ groupMembers.length }} 已选</span>
-            <button class="btn btn--text" @click="showSupplementMember = !showSupplementMember">
-              {{ showSupplementMember ? '收起' : '添加成员' }}
-            </button>
+          <div class="card-toolbar">
+            <span class="card-toolbar__title">集团成员</span>
+            <span class="badge badge--neutral">已选 {{ selectedMembers.length }}/{{ groupMembers.length }}</span>
+            <span class="card-toolbar__sub">勾选结果作为「利率申请」步分项的成员选项</span>
+            <div class="card-toolbar__actions">
+              <button class="btn btn--secondary" @click="openSupplementModal">＋ 手工补录成员</button>
+            </div>
           </div>
           <table class="table member-table">
             <thead>
               <tr>
-                <th style="width:40px"></th><th>成员客户号</th><th>成员名称</th><th>证件号码</th><th>行业类型</th><th>五级分类</th>
+                <th style="width:40px"></th><th>成员客户号</th><th>成员名称</th><th>证件号码</th><th>行业类型</th><th>五级分类</th><th>来源</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -256,123 +302,106 @@
                 <td>
                   <input type="checkbox" class="member-check" :checked="isMemberChecked(m.memberCustomerNo)" @change="toggleMember(m.memberCustomerNo)" />
                 </td>
-                <td>
-                  {{ customerNoText(m.memberCustomerNo) }}
-                  <span v-if="m.source === 'MANUAL'" class="badge badge--warning" style="margin-left:4px">手工</span>
-                </td>
+                <td>{{ customerNoText(m.memberCustomerNo) }}</td>
                 <td>{{ m.memberName || '暂无数据' }}</td>
                 <td>{{ m.idNo || m.ucrCode || '—' }}</td>
                 <td>{{ m.industry || '—' }}</td>
                 <td>{{ fiveLevelClassText(normalizeFiveLevelClass(m.fiveLevelClass)) }}</td>
+                <td>
+                  <span class="badge" :class="m.source === 'MANUAL' ? 'badge--warning' : 'badge--info'">{{ m.source === 'MANUAL' ? '手工' : '数仓' }}</span>
+                </td>
+                <td>
+                  <button v-if="m.source === 'MANUAL'" class="btn btn--danger-text" @click="removeManualMember(m)">删除</button>
+                  <span v-else>—</span>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-else-if="groupQueried" class="empty">
-          该集团暂无有效成员数据
-          <button class="btn btn--text" @click="showSupplementMember = true">添加成员</button>
+        <div v-else-if="groupQueried" class="empty-line">
+          该集团暂无有效成员数据,可 <button class="btn btn--text" @click="openSupplementModal">手工补录成员</button>
         </div>
 
-        <!-- 手工成员补录(数仓未收录成员,补录信息与对公客户申请要求一致:企业要素 + 成员要素,不含授信) -->
-        <div v-if="showSupplementMember" class="form-card" style="margin-top:12px">
-          <div class="form-card__title">
-            手工成员补录 <span class="badge badge--warning">数仓未收录</span>
-          </div>
-          <div v-for="(m, i) in supplementMembers" :key="i" class="form-grid" style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:var(--radius);padding:10px 14px">
-            <div class="form-field">
-              <label class="form-field__label">成员客户号</label>
-              <input class="form-input" v-model="m.memberCustomerNo" placeholder="可空(非我行客户可留空)" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">成员名称 <span class="req">*</span></label>
-              <input class="form-input" v-model="m.memberName" placeholder="必填" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">统一社会信用代码</label>
-              <input class="form-input" v-model="m.ucrCode" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">五级分类</label>
-              <select class="form-select" v-model="m.fiveLevelClass">
-                <option value="">可空</option>
-                <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">信用等级</label>
-              <input class="form-input" v-model="m.creditLevel" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">行业</label>
-              <input class="form-input" v-model="m.industry" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">注册资本(万元)</label>
-              <input class="form-input form-input--amount" v-model="m.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="可空" @keydown="onNumKeydown" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">开户机构</label>
-              <el-select class="open-org-select" v-model="m.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
-                <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
-              </el-select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">开户日期</label>
-              <input class="form-input" type="date" v-model="m.openDate" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">基本账户</label>
-              <input class="form-input" v-model="m.basicAccount" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">成员角色</label>
-              <select class="form-select" v-model="m.memberRole">
-                <option value="CORE">核心</option>
-                <option value="GENERAL">一般</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">控制关系</label>
-              <input class="form-input" v-model="m.controlRelation" placeholder="可空" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label">关系起止(空=在团)</label>
-              <div class="credit-overview__range">
-                <input class="form-input" type="date" v-model="m.relationStart" />
-                <span class="credit-overview__range-sep">至</span>
-                <input class="form-input" type="date" v-model="m.relationEnd" />
+        <!-- 手工成员补录弹窗(§docs/29 §2.2:页面嵌套卡改模态弹窗;补录要素=对公客户申请要素 + 成员要素,不含授信,字段分「基本信息/集团关系」两组) -->
+        <div v-if="showSupplementMember" class="modal" role="dialog" aria-modal="true" aria-label="手工成员补录" @click.self="showSupplementMember = false">
+          <div class="modal__card member-modal__card">
+            <div class="modal__title">手工成员补录 <span class="badge badge--warning">数仓未收录</span></div>
+            <div class="modal__body">
+              <div class="form-hint" style="margin-bottom:10px">非我行客户无客户号可留空:有证件号生成 NEW 占位号(提交时反查回填),无证件号生成内部合成号;补录后加入成员列表并勾选</div>
+              <div v-for="(m, i) in supplementMembers" :key="i" class="member-modal__row">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label class="form-field__label">成员客户号</label>
+                    <input class="form-input" v-model="m.memberCustomerNo" />
+                    <div class="form-hint">可空(非我行客户可留空)</div>
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">成员名称 <span class="req">*</span></label>
+                    <input class="form-input" v-model="m.memberName" placeholder="必填" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">统一社会信用代码</label>
+                    <input class="form-input" v-model="m.ucrCode" placeholder="可空" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">五级分类</label>
+                    <select class="form-select" v-model="m.fiveLevelClass">
+                      <option value="">可空</option>
+                      <option v-for="f in fiveLevelOptions" :key="f.code" :value="f.code">{{ f.name }}</option>
+                    </select>
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">信用等级</label>
+                    <input class="form-input" v-model="m.creditLevel" placeholder="可空" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">行业</label>
+                    <input class="form-input" v-model="m.industry" placeholder="可空" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">注册资本(万元)</label>
+                    <input class="form-input form-input--amount" v-model="m.registeredCapital" type="number" min="0" max="999999999.99" step="0.0001" placeholder="可空" @keydown="onNumKeydown" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">开户机构</label>
+                    <el-select class="open-org-select" v-model="m.openOrg" filterable allow-create default-first-option clearable placeholder="可空">
+                      <el-option v-for="d in openOrgOptions" :key="d.id" :label="d.deptName" :value="d.deptName" />
+                    </el-select>
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">开户日期</label>
+                    <input class="form-input" type="date" v-model="m.openDate" placeholder="可空" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-field__label">基本账户</label>
+                    <input class="form-input" v-model="m.basicAccount" placeholder="可空" />
+                  </div>
+                </div>
+                <!-- 行操作统一右对齐;「删除本行」仅多行时出现(单行删除无意义) -->
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+                  <button v-if="supplementMembers.length > 1" class="btn btn--danger-text" @click="supplementMembers.splice(i, 1)">删除本行</button>
+                  <button class="btn btn--primary" @click="confirmSupplementMember(i)">加入成员列表</button>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:flex-end;margin-top:4px">
+                <button class="btn btn--secondary" @click="addSupplementMember">＋ 添加成员行</button>
               </div>
             </div>
-            <div class="form-field" style="display:flex;align-items:flex-end;gap:8px">
-              <button class="btn btn--primary" @click="confirmSupplementMember(i)">加入成员列表</button>
-              <button class="btn btn--text" @click="supplementMembers.splice(i, 1)">删除</button>
+            <div class="modal__actions">
+              <button class="btn btn--secondary" @click="showSupplementMember = false">关闭</button>
             </div>
           </div>
-          <button class="btn btn--secondary" @click="addSupplementMember">＋ 添加成员行</button>
         </div>
       </template>
-
-
-      <div class="wizard-actions">
-        <span></span>
-        <button class="btn btn--primary" @click="goNext(1)">下一步:关联人员</button>
-      </div>
     </div>
 
-    <!-- 第二步:关联人员(§12.4④;独立步骤展示更简洁,§2026-08-26 用户要求;证件号失焦全行判重+录入即绑定,§6.2/§10.3.21) -->
-    <div v-show="step === 1" class="form-card">
-      <div class="form-card__title">关联人员</div>
-      <InfoTip content="关联人员随申请一并提交;证件号填写后系统自动判重并绑定,已绑定其他客户的证件号无法重复录入" />
-      <RelatedPersonsEditor v-model="relations" :customer-no="form.customerNo" :group-no="isGroup ? form.groupNo : ''" :application-id="draft.id || undefined" style="margin-top:16px" />
-
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 0">上一步</button>
-        <button class="btn btn--primary" @click="goNext(2)">下一步:融资情况</button>
-      </div>
+    <!-- 第二步:关联人员(§12.4④;独立步骤展示更简洁,§2026-08-26 用户要求;证件号失焦全行判重+录入即绑定,§6.2/§10.3.21;标题/说明由组件内工具条统一承载,卡片不再重复) -->
+    <div v-if="step === 1" class="form-card">
+      <RelatedPersonsEditor v-model="relations" :customer-no="form.customerNo" :group-no="isGroup ? form.groupNo : ''" :application-id="draft.id || undefined" />
     </div>
 
     <!-- 第三步:业务/合同(融资情况:本行融资+他行融资) -->
-    <div v-show="step === 2" class="form-card">
+    <div v-if="step === 2" class="form-card">
       <div class="form-card__title">融资情况</div>
 
       <!-- 他行融资概要/明细(数仓+人工补录,Excel 导入在材料附件步骤) -->
@@ -418,7 +447,8 @@
         </div>
         <div class="form-field">
           <label class="form-field__label">报告日期(征信)</label>
-          <input class="form-input" :value="otherSummary.reportDate || ''" disabled placeholder="数仓带出,只读" />
+          <input class="form-input" type="date" v-model="otherSummary.reportDate" />
+          <div class="form-hint">数仓带出,可修改</div>
         </div>
       </div>
 
@@ -439,7 +469,7 @@
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无他行融资明细(可人工补录或 Excel 导入)</div>
+      <div class="empty-line" v-else>暂无他行融资明细(可人工补录或 Excel 导入)</div>
       <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
         <button class="btn btn--secondary" @click="addOtherLoan">＋ 添加他行融资</button>
         <button class="btn btn--secondary" @click="triggerImport"><el-icon><Upload /></el-icon>Excel 导入</button>
@@ -447,17 +477,16 @@
         <InfoTip content="导入列顺序:融资机构 | 授信额(万元) | 已用额(万元) | 余额(万元) | 年化利率%" />
       </div>
       <input ref="fileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="onImportFile" />
-
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 1">上一步</button>
-        <button class="btn btn--primary" @click="goNext(3)">下一步:利率申请</button>
-      </div>
     </div>
 
     <!-- 第三步:利率申请(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
-    <div v-show="step === 3" class="form-card">
-      <div class="form-card__title">
-        利率申请
+    <div v-if="step === 3" class="form-card">
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">利率申请</span>
+        <span class="card-toolbar__sub">按担保方式拆分分项,逐分项独立路由、独立表决</span>
+        <div class="card-toolbar__actions" v-if="isGroup">
+          <button class="btn btn--secondary" @click="generateMemberGuarantees">为每个成员生成一个分项</button>
+        </div>
       </div>
 
       <!-- 授信概览:业务类型 + 授信额度/拆分合计(存量/新增/GROUP 项按列对齐);GROUP 追加集团批复/可用 -->
@@ -559,13 +588,39 @@
         分项金额合计已超过所选授信协议额度({{ selectedAgreement?.agreementNo || '—' }})，请按协议额度向下拆分；是否超授以服务端提交校验为准。
       </div>
 
+      <!-- 额度勾稽条(§docs/29 §2.2:成员金额合计 vs 本次申请额度,实时合计,超额标红) -->
+      <div v-if="isGroup" class="quota-bar" :class="{ 'quota-bar--over': overGroupQuota }">
+        <span>成员金额合计 <strong>{{ guaranteesTotalText }}</strong> 万元</span>
+        <span>/</span>
+        <span>本次申请额度 <strong>{{ groupApplyAmountText }}</strong> 万元</span>
+        <span v-if="overGroupQuota" style="margin-left:auto">⚠ 超出申请额度,请调整分项金额</span>
+        <span v-else class="badge badge--success" style="margin-left:auto">勾稽通过</span>
+      </div>
+
+      <!-- 成员 Tab(§docs/29 §2.2:每个已选成员一个页签,角标=该成员分项数,0 项黄标;数据模型不变,仅按 memberCustomerNo 展示分组) -->
+      <template v-if="isGroup">
+        <div v-if="memberTabs.length" class="mtab-bar">
+          <button
+            v-for="t in memberTabs" :key="t.no" type="button"
+            class="mtab" :class="{ 'mtab--active': t.no === activeMemberTab }"
+            :title="t.name"
+            @click="activeMemberTab = t.no"
+          >
+            {{ t.name }} <span class="mtab__count" :class="{ 'mtab__count--empty': !t.count }">{{ t.count }}</span>
+          </button>
+        </div>
+        <div v-else class="empty-line">请先在「客户信息」步勾选本次申请涉及的集团成员,再按成员录入分项</div>
+      </template>
+
       <!-- 需求:存量不再自动拉入拆分项,分项由业务人员按担保方式手工录入 -->
       <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
 
-      <div v-for="(g, idx) in form.guarantees" :key="idx" class="mortgage-item guarantee-item">
+      <div v-for="({ g, idx }) in visibleGuarantees" :key="idx" class="mortgage-item guarantee-item item-card">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
-            授信方案{{ cnOrdinal(idx + 1) }}（{{ guaranteeTypeText(g.guaranteeType) }}）
+            授信方案{{ cnOrdinal(idx + 1) }}
+            <span v-if="isGroup && g.memberCustomerNo" class="guarantee-item__member">{{ memberNameOf(g.memberCustomerNo) }}</span>
+            <span class="badge badge--info">{{ guaranteeTypeText(g.guaranteeType) }}</span>
             <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
@@ -576,17 +631,8 @@
           </span>
           <button class="btn btn--text" @click="removeGuarantee(idx)" v-if="form.guarantees.length > 1">删除</button>
         </div>
-        <!-- 基础字段(§2026-08-26):担保方式/期限/授信金额 + 申请利率/测算利率;产品(贷款类型)已隐藏,后台按客户类型自动同步;币种默认 CNY;GROUP 涉及成员与存量原利率随条件追加 -->
+        <!-- 基础字段(§2026-08-26):担保方式/期限/授信金额 + 申请利率/测算利率;产品(贷款类型)已隐藏,后台按客户类型自动同步;币种默认 CNY;存量原利率随条件追加;GROUP 成员由页签预设,卡内不再重复选择 -->
         <div class="mortgage-item__grid loan-basic-grid">
-          <div class="form-field" v-if="form.customerScope === 'GROUP'">
-            <label class="form-field__label">涉及成员 <span class="req">*</span></label>
-            <select class="form-select" v-model="g.memberCustomerNo">
-              <option value="" disabled>选择成员</option>
-              <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
-                {{ m.memberName || m.memberCustomerNo }}
-              </option>
-            </select>
-          </div>
           <div class="form-field">
             <label class="form-field__label">担保方式 <span class="req">*</span></label>
             <select class="form-select" v-model="g.guaranteeType">
@@ -609,7 +655,8 @@
           </div>
           <div class="form-field" v-if="form.businessType === 'EXISTING'">
             <label class="form-field__label">原利率(%)</label>
-            <input class="form-input form-input--amount" v-model="g.originalRate" type="number" min="0" max="100" step="0.000001" placeholder="数仓带出,可修改" @keydown="onNumKeydown" />
+            <input class="form-input form-input--amount" v-model="g.originalRate" type="number" min="0" max="100" step="0.000001" @keydown="onNumKeydown" />
+            <div class="form-hint">数仓带出,可修改</div>
           </div>
           <div class="form-field">
             <label class="form-field__label">申请利率(%) <span class="req">*</span></label>
@@ -721,23 +768,26 @@
                 </table>
         </div>
       </div>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
-
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 2">上一步</button>
-        <button class="btn btn--primary" @click="goNext(4)">下一步:贡献承诺</button>
-      </div>
+      <!-- GROUP:页签内添加分项,成员预设为当前页签成员;空页签轻提示 -->
+      <template v-if="isGroup">
+        <div v-if="memberTabs.length && !visibleGuarantees.length" class="empty-line">该成员暂无分项,点击下方「＋ 添加分项」</div>
+        <div v-if="memberTabs.length" style="text-align:center;margin-top:4px">
+          <button class="btn btn--primary" @click="addGuaranteeForActiveTab">＋ 添加分项(当前成员)</button>
+          <div class="form-hint" style="margin-top:6px">成员由当前页签决定,无需再选;同成员可挂多个不同担保方式的分项</div>
+        </div>
+      </template>
+      <button v-else class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
     </div>
 
-    <!-- 第四步:贡献承诺(拟达成贡献度,随申请提交 commitments) -->
-    <div v-show="step === 4" class="form-card">
+    <!-- 第四步:承诺与材料(§docs/29 §2.2:材料附件并入本步,7 步合并为 6 步;贡献承诺随申请提交 commitments) -->
+    <div v-if="step === 4" class="form-card">
       <div class="form-card__title">
-        贡献承诺
+        承诺与材料
         <span class="badge badge--warning">拟达成贡献度 · 承诺基线</span>
       </div>
 
       <!-- 当前贡献度仅审批页对照展示,申请页不展示给客户经理;选指标时基线值自动带出当前贡献度(§2026-08-26) -->
-      <div class="sub-title">拟达成承诺</div>
+      <div class="form-group-title">贡献承诺</div>
       <div v-if="commitments.length" class="commitment-list">
         <div v-for="(c, i) in commitments" :key="i" class="commitment-card">
           <div class="commitment-card__head">
@@ -797,21 +847,12 @@
           </div>
         </div>
       </div>
-      <div class="empty" v-else>暂未录入承诺,可点击下方按钮添加</div>
+      <div class="empty-line" v-else>暂未录入承诺,可点击下方按钮添加</div>
       <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
 
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 3">上一步</button>
-        <button class="btn btn--primary" @click="goNext(5)">下一步:材料附件</button>
-      </div>
-    </div>
-
-    <!-- 第五步:材料附件(他行融资 Excel 导入 + 其他附件前端暂存) -->
-    <div v-show="step === 5" class="form-card">
-      <div class="form-card__title">材料附件</div>
-
-      <div class="sub-title">
-        其他申请附件
+      <!-- 材料附件(他行融资 Excel 导入在融资情况步;其他附件前端暂存,随草稿/提交上传) -->
+      <div class="form-group-title">
+        材料附件
         <InfoTip content="附件随草稿保存/提交上传至申请单,审批各环节可查看;已上传附件在审批详情展示。" />
       </div>
       <button class="btn btn--secondary" @click="attachmentInput?.click()">＋ 添加附件</button>
@@ -827,31 +868,54 @@
           </tr>
         </tbody>
       </table>
-      <div class="empty" v-else>暂无附件</div>
-
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 4">上一步</button>
-        <button class="btn btn--primary" @click="goNext(6)">下一步:提交预览</button>
-      </div>
+      <div class="empty-line" v-else>暂无附件</div>
     </div>
 
-    <!-- 第六步:提交预览(申请备注 + 提交确认;§2026-08-26 申请概要/额度明细/审批路由预览全部移入提交确认弹窗展示核对) -->
-    <div v-show="step === 6" class="form-card">
+    <!-- 第五步:提交预览(§docs/29 §2.2:内联概要 = 申请级描述列表 + 分项简表;提交确认弹窗保留展示路由与校验结果) -->
+    <div v-if="step === 5" class="form-card">
       <div class="form-card__title">
         提交预览
       </div>
-      <div class="form-field form-field--stack">
+
+      <div class="form-group-title">申请概要</div>
+      <div class="desc-grid">
+        <div v-for="it in confirmSummary" :key="it.label">
+          <div class="desc-item__label">{{ it.label }}</div>
+          <div class="desc-item__value">{{ it.value }}</div>
+        </div>
+      </div>
+
+      <div class="form-group-title">分项明细</div>
+      <table class="table" v-if="confirmDetailRows.length">
+        <thead>
+          <tr><th>分项</th><th v-if="isGroup">成员</th><th>担保方式</th><th>期限</th><th>金额(万元)</th><th>申请利率</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in confirmDetailRows" :key="r.itemNo">
+            <td>{{ r.itemNo }}</td>
+            <td v-if="isGroup">{{ r.member || '—' }}</td>
+            <td>{{ r.guaranteeType }}</td>
+            <td>{{ r.term }}</td>
+            <td class="num">{{ r.amount }}</td>
+            <td>{{ r.rate }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="empty-line" v-else>暂无分项</div>
+
+      <div class="form-group-title">申请备注</div>
+      <div class="form-field">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
+    </div>
 
-      <div class="wizard-actions">
-        <button class="btn btn--secondary" @click="step = 5">上一步</button>
-        <div style="display:flex;gap:12px">
-          <button class="btn btn--secondary" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
-          <button class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
-        </div>
-      </div>
+    <!-- 吸底操作条(§docs/29 §2.1:存草稿/上一步/下一步随手可及,handler 沿用原分步按钮) -->
+    <div class="page-action-bar">
+      <button class="btn btn--ghost" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
+      <button class="btn btn--secondary" :disabled="step === 0" @click="step = step - 1">上一步</button>
+      <button v-if="step < steps.length - 1" class="btn btn--primary" @click="goNext(step + 1)">下一步:{{ steps[step + 1] }}</button>
+      <button v-else class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
     </div>
 
     <!-- 提交前校验确认弹窗 -->
@@ -868,7 +932,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -911,8 +975,8 @@ const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
 
-// ---------- 步骤条(§14.1) ----------
-const steps = ['客户信息', '关联人员', '融资情况', '利率申请', '贡献承诺', '材料附件', '提交预览']
+// ---------- 步骤条(§14.1;§docs/29 §2.2 材料附件并入「承诺与材料」,7 步合并为 6 步) ----------
+const steps = ['客户信息', '关联人员', '融资情况', '利率申请', '承诺与材料', '提交预览']
 const step = ref(0)
 
 // ---------- 字典 ----------
@@ -1110,7 +1174,9 @@ function toggleMember(no: string) {
   const idx = selectedMembers.value.findIndex((s) => s.memberCustomerNo === no)
   if (idx >= 0) {
     selectedMembers.value.splice(idx, 1)
-    for (const g of form.guarantees) if (g.memberCustomerNo === no) g.memberCustomerNo = ''
+    // 取消勾选:该成员分项自动归到第一个已选成员(无剩余成员则清空),不出现悬空分项
+    const fallback = selectedMembers.value[0]?.memberCustomerNo || ''
+    for (const g of form.guarantees) if (g.memberCustomerNo === no) g.memberCustomerNo = fallback
   } else {
     const m = groupMembers.value.find((x) => x.memberCustomerNo === no)
     selectedMembers.value.push({
@@ -1121,6 +1187,14 @@ function toggleMember(no: string) {
       memberRole: m?.memberRole || ''
     })
   }
+}
+/** 删除手工补录成员(§docs/29 §2.2 成员表操作列):复用 toggleMember 的清理逻辑,同步移除勾选态与各分项中该成员引用 */
+function removeManualMember(m: any) {
+  if (!m || m.source !== 'MANUAL') return
+  if (isMemberChecked(m.memberCustomerNo)) toggleMember(m.memberCustomerNo)
+  const idx = groupMembers.value.findIndex((x) => x.memberCustomerNo === m.memberCustomerNo)
+  if (idx >= 0) groupMembers.value.splice(idx, 1)
+  ElMessage.success(`成员[${m.memberName || m.memberCustomerNo}]已删除`)
 }
 // 集团补录(§docs/19 集团补录集成申请页):新增集团就地补录 + 手工补录成员
 /** 数仓未收录该集团(按新增集团对待,就地补录集团基本信息,与对公客户一致) */
@@ -1141,8 +1215,13 @@ const groupSupplement = reactive({
   /** 国企集团属性Y/N(集团本身属性,非旗下企业;§用户要求 2026-08-25,新增集团补录/存量集团回显) */
   stateOwnedFlag: '',
 })
-/** 成员补录区展开开关 */
+/** 成员补录弹窗开关(§docs/29 §2.2:页面嵌套卡改模态弹窗) */
 const showSupplementMember = ref(false)
+/** 打开补录弹窗:无草稿行时预置一行空表单,减少一次点击 */
+function openSupplementModal() {
+  showSupplementMember.value = true
+  if (!supplementMembers.value.length) addSupplementMember()
+}
 /** 手工补录成员行(对公客户申请要素全套 + 成员要素;不含授信) */
 const supplementMembers = ref<Array<Record<string, any>>>([])
 
@@ -1168,6 +1247,8 @@ const userPickedBusinessType = ref(false)
 const scopeLabel = computed(() =>
   form.customerScope === 'GROUP' ? '集团客户' : form.customerScope === 'INDIVIDUAL' ? '个人' : '企业单户'
 )
+/** 客户主体=集团客户(模板展示分支统一入口,§docs/29 §2.2 成员 Tab/勾稽条复用) */
+const isGroup = computed(() => form.customerScope === 'GROUP')
 /** 提交确认弹窗申请概要(键值对;§2026-08-26 概要/明细/路由移入弹窗核对) */
 const confirmSummary = computed(() => [
   { label: '客户主体', value: scopeLabel.value },
@@ -1500,6 +1581,88 @@ const overGroupAvailable = computed(() => {
   const n = Number(avail)
   return Number.isFinite(n) && guaranteesTotalAmount.value > n
 })
+
+// ---------- 集团成员 Tab 与额度勾稽(§docs/29 §2.2,仅展示层分组,数据模型不变) ----------
+/** 成员 Tab 页签:每个已勾选成员一个页签,角标=该成员分项数;悬空分项由 repairOrphanGuarantees 自动归并,不设「待分配成员」页签 */
+const memberTabs = computed(() =>
+  selectedMembers.value.map((m) => ({
+    no: m.memberCustomerNo as string,
+    name: (m.memberName || m.memberCustomerNo) as string,
+    count: form.guarantees.filter((g) => g.memberCustomerNo === m.memberCustomerNo).length
+  }))
+)
+/** 悬空分项(成员为空或不在已选列表)自动归到第一个已选成员:取消勾选/旧草稿产生,保证页签下始终可见可编辑 */
+function repairOrphanGuarantees() {
+  if (form.customerScope !== 'GROUP') return
+  const first = selectedMembers.value[0]?.memberCustomerNo
+  if (!first) return
+  for (const g of form.guarantees) {
+    if (!g.memberCustomerNo || !selectedMembers.value.some((s) => s.memberCustomerNo === g.memberCustomerNo)) {
+      g.memberCustomerNo = first
+    }
+  }
+}
+// 进入「利率申请」步时归并一次悬空分项(覆盖旧草稿回显场景)
+watch(step, (s) => { if (s === 3) repairOrphanGuarantees() })
+const activeMemberTabRaw = ref('')
+/** 当前页签:原值失效(成员取消勾选/待分配清空)时回落到第一个页签 */
+const activeMemberTab = computed<string>({
+  get: () => {
+    const tabs = memberTabs.value
+    if (tabs.some((t) => t.no === activeMemberTabRaw.value)) return activeMemberTabRaw.value
+    return tabs[0]?.no || ''
+  },
+  set: (v) => { activeMemberTabRaw.value = v }
+})
+/** 利率申请可见分项(带原索引,供删除/编辑定位):非 GROUP 平铺全量;GROUP 按当前页签过滤,无页签时平铺兜底 */
+const visibleGuarantees = computed(() => {
+  const list = form.guarantees.map((g, idx) => ({ g, idx }))
+  if (form.customerScope !== 'GROUP') return list
+  if (!memberTabs.value.length) return list
+  return list.filter(({ g }) => g.memberCustomerNo === activeMemberTab.value)
+})
+/** 本次申请额度(万元,勾稽条分母):集团批复授信额度优先,回退手工录入总授信/分项合计(与 serializeGroupInfo 同口径) */
+const groupApplyAmount = computed(() => {
+  const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
+  const totalCredit = Number(form.totalCredit)
+  if (groupCreditTotal > 0) return groupCreditTotal
+  if (totalCredit > 0) return totalCredit
+  return form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
+})
+const groupApplyAmountText = computed(() => (groupApplyAmount.value > 0 ? String(Math.round(groupApplyAmount.value * 100) / 100) : '—'))
+/** 勾稽条超额状态:集团可用额度超限(与既有预警同口径)或合计超本次申请额度 */
+const overGroupQuota = computed(() => {
+  if (form.customerScope !== 'GROUP') return false
+  if (overGroupAvailable.value) return true
+  return groupApplyAmount.value > 0 && guaranteesTotalAmount.value > groupApplyAmount.value
+})
+/** 页签内添加分项:沿用 addGuarantee,新分项成员预设为当前页签成员 */
+function addGuaranteeForActiveTab() {
+  addGuarantee()
+  const g = form.guarantees[form.guarantees.length - 1]
+  if (g && activeMemberTab.value) {
+    g.memberCustomerNo = activeMemberTab.value
+  }
+}
+/** 为每个成员生成一个分项:空成员各补一项,担保方式/期限复制首个已有分项(§docs/29 §2.2 D3) */
+function generateMemberGuarantees() {
+  const tpl = form.guarantees.find((g) => g.memberCustomerNo) || form.guarantees[0]
+  let added = 0
+  for (const m of selectedMembers.value) {
+    if (form.guarantees.some((g) => g.memberCustomerNo === m.memberCustomerNo)) continue
+    const g = newGuarantee()
+    g.memberCustomerNo = m.memberCustomerNo
+    if (tpl) {
+      g.guaranteeType = tpl.guaranteeType
+      g.termValue = tpl.termValue
+      g.termUnit = tpl.termUnit
+    }
+    form.guarantees.push(g)
+    added++
+  }
+  if (added) ElMessage.success(`已为 ${added} 个成员各生成一个分项,请补充金额与利率`)
+  else ElMessage.info('各成员均已有分项,无需批量生成')
+}
 
 /** 需求②(2026-08-24):存量按担保项拆分,不再按协议/合同自动生成分项(原 autoItemsFromContracts 已移除) */
 function onBusinessTypeChange() {
@@ -1899,7 +2062,7 @@ async function goNext(target: number) {
   await autoSaveDraft()
   step.value = target
   // 提交预览:进入即自动加载路由,供确认弹窗展示审批路由预览(§2026-08-26 精简提交页,不再手动点路由预览)
-  if (target === 6) onRoutePreview()
+  if (target === 5) onRoutePreview()
 }
 async function goStep(i: number) {
   if (i <= step.value) {
@@ -1916,7 +2079,7 @@ async function goStep(i: number) {
   await autoSaveDraft()
   step.value = i
   // 提交预览:进入即自动加载路由(同上,§2026-08-26)
-  if (i === 6) onRoutePreview()
+  if (i === 5) onRoutePreview()
 }
 
 function validateForDraft(): string | null {
@@ -2532,32 +2695,17 @@ async function loadDraftIntoForm(id: number | string) {
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
 .section-head { margin-bottom: 10px; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
-/* 表单字段横向布局:label 定宽右对齐 + 输入框同行,输入框左缘整齐对齐 */
-.form-field {
-  display: grid;
-  grid-template-columns: 108px 1fr;
-  align-items: center;
-  column-gap: 6px;
-}
-.form-field__label { margin-bottom: 0; font-size: 13px; text-align: right; padding-right: 2px; }
+/* 表单字段纵向布局:label 全页统一置上(§docs/29 §2.2),输入框全宽 */
+.form-field { display: block; }
+.form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
 .form-field > .form-input,
 .form-field > .form-select,
 .form-field > .el-select,
 .form-field > .el-autocomplete,
-.form-field > div:not(.section-tip):not(.limit-hint) {
+.form-field > div:not(.section-tip) {
   width: 100%;
   min-width: 0;
-  grid-column: 2;
 }
-/* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
-.form-field > .section-tip,
-.form-field > .limit-hint { grid-column: 2; }
-/* 涉及成员整块(标题行+成员表格)跨满两列,避免被 2 列 form-field 网格挤入 108px 窄列导致显示不全(§2026-08-25) */
-.form-field > .member-head,
-.form-field > table.table { grid-column: 1 / -1; }
-/* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
-.form-field--stack { display: block; }
-.form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
 /* 文本框内字体优化:字号与页面正文一致(14px)+字体族统一+数字等宽对齐+占位提示可读(原生控件与 Element 控件一致) */
 .form-field .form-input,
 .form-field .form-select,
@@ -2608,7 +2756,6 @@ async function loadDraftIntoForm(id: number | string) {
 .credit-overview__item b { font-variant-numeric: tabular-nums; }
 .credit-overview__item--static b { font-weight: 600; min-height: 36px; display: flex; align-items: center; }
 .credit-overview__item .form-input, .credit-overview__item .form-select { width: 100%; }
-.credit-overview__item--date { flex-direction: column; }
 .credit-overview__range { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .credit-overview__range .form-input { min-width: 0; }
 .credit-overview__range-sep { color: var(--color-text-sub); flex-shrink: 0; }
@@ -2637,7 +2784,6 @@ async function loadDraftIntoForm(id: number | string) {
   border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px;
 }
 .agreement-detail__item { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
-.agreement-detail__item--grow { flex: 1 1 auto; min-width: 200px; }
 .agreement-detail__label { font-size: 12px; color: var(--color-text-sub); }
 .agreement-detail__item b { font-size: 14px; font-weight: 600; color: var(--color-text-main); font-variant-numeric: tabular-nums; }
 .agreement-detail__item--amount b { font-size: 18px; color: var(--color-primary); }
@@ -2650,12 +2796,6 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-pick__body { margin-top: 10px; }
 .agreement-manual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px; margin-top: 10px; }
 .agreement-manual .form-field { margin-bottom: 0; }
-/* 拆分细项合计超过所选协议额度 → 数字标红(与 warning 条呼应) */
-.over-limit { color: var(--color-danger); }
-.customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
-.customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
-.customer-cand:last-child { border-bottom: none; }
-.customer-cand:hover { background: var(--color-primary-light); }
 .detail-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); display: flex; align-items: center; justify-content: space-between; }
 .req { color: var(--color-danger); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
@@ -2688,54 +2828,35 @@ async function loadDraftIntoForm(id: number | string) {
   .wizard-stepper { overflow-x: auto; }
   .wizard-stepper .stepper__step { flex: none; min-width: 96px; }
 }
-.wizard-actions {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-border);
-}
+/* 吸底操作条占位:页面底部留白,避免固定 .page-action-bar 遮挡末步内容 */
+.wizard-page { padding-bottom: 64px; }
 
 /* 草稿横幅 */
 .draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
 
-/* 规则来源提示(§12.4⑦) */
-.rule-notice {
-  background: var(--color-primary-light); color: var(--color-primary);
-  border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm);
-  padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
-}
-
-/* 集团概要 */
-/* 涉及成员标题行:label + 小号「添加成员」按钮同行(§2026-08-25,不单独占行) */
-.member-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 /* 集团成员整块跨满整行(外层 form-grid 4 列,grid-column 跨全部列铺满页面,§2026-08-25 用户要求表格拉满) */
 .member-block { width: 100%; grid-column: 1 / -1; }
 /* 集团成员表格整宽拉满(§2026-08-25 用户要求列表尽量拉满;须 display:table 覆盖 .table 的 display:block,否则列不伸展、多余空间全留右侧) */
 .member-table { display: table; width: 100%; }
 /* 成员勾选复选框 */
 .member-check { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
-/* 裸标题行(不展示「涉及成员」文字):已选计数 + 添加成员按钮右对齐 */
-.member-head--bare { justify-content: flex-end; }
-/* 涉及成员行内切换按钮:紧凑小号 */
-.member-btn { padding: 3px 10px; font-size: 12px; border-radius: var(--radius-sm); }
 /* 已涉及成员行高亮 */
 .member-row--checked td { background: var(--color-primary-light); }
-.group-summary {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-  background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: 8px 12px; margin-bottom: 4px;
-}
-.group-summary__item { font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
-.group-summary__item span { color: var(--color-text-sub); font-size: 12px; }
-.group-summary__item b { font-variant-numeric: tabular-nums; }
+/* 集团档案/补录区块:在 form-grid 内跨满整行(§docs/29 §2.2) */
+.group-archive, .group-supplement-block { grid-column: 1 / -1; margin-top: 4px; }
+.group-archive { background: var(--color-bg); border-radius: var(--radius-sm); padding: 10px 14px; }
+.group-supplement-block { border-top: 1px dashed var(--color-border); padding-top: 10px; }
+/* 分项卡头成员名(§docs/29 §2.2:成员名 + 担保方式徽标) */
+.guarantee-item__member { color: var(--color-primary); }
+/* 手工成员补录弹窗:表单字段多,弹窗加宽并内部滚动 */
+.member-modal__card { max-width: 960px; }
+.member-modal__row + .member-modal__row { border-top: 1px dashed var(--color-border); margin-top: 12px; padding-top: 4px; }
+.member-modal__row .btn { margin-bottom: 10px; }
 
 /* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
 .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
 @media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* §UI审查:担保分项卡内 label 方向统一——明细子项与基础字段一致,label 置上 */
-.mortgage-item__grid .form-field { display: block; }
-.mortgage-item__grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
-.mortgage-item__grid .form-field > .form-input,
-.mortgage-item__grid .form-field > .form-select { width: 100%; min-width: 0; }
 /* §UI审查:他行融资概要字段网格(5 列,窄屏降 2 列) */
 .other-summary-grid {
   display: grid;
@@ -2743,17 +2864,11 @@ async function loadDraftIntoForm(id: number | string) {
   gap: 10px 12px;
   margin-top: 8px;
 }
-.other-summary-grid .form-field { display: block; margin-bottom: 0; }
-.other-summary-grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
-.other-summary-grid .form-input { width: 100%; min-width: 0; }
+.other-summary-grid .form-field { margin-bottom: 0; }
 @media (max-width: 1100px) { .other-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* 贷款分项基础字段(§2026-08-26 整体优化):label 置上+输入框全宽——避免 108px 定宽 label 挤窄输入框致期限文字截断;
    auto-fit 等宽列 + 统一 10px 间距保证栏位平衡;字段尽量排一行,窄屏自动降列 */
 .loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; gap: 10px !important; }
-.loan-basic-grid .form-field { display: block; }
-.loan-basic-grid .form-field__label { display: block; margin-bottom: 4px; text-align: left; padding-right: 0; }
-.loan-basic-grid .form-field > .form-input,
-.loan-basic-grid .form-field > .form-select { width: 100%; }
 /* 防止 select 选中长文本(如集团成员名)撑宽单列,保证各栏位列宽均等 */
 .loan-basic-grid > .form-field { min-width: 0; }
 @media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
@@ -2764,11 +2879,15 @@ async function loadDraftIntoForm(id: number | string) {
 .table .form-input { font-size: 13px; }
 /* 授信概览条窄屏降 2 列 */
 @media (max-width: 1100px) { .credit-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.credit-overview__item--full { grid-column: 1 / -1; }
 /* 向导内容铺满主区(2026-08-21:移除 1360px 限宽,宽屏下页面整体占满不留右侧留白) */
 
-/* 中间断点:中等宽度下 3 列网格降为 2 列(页面自适应增强) */
+/* 中间断点:中等宽度下 4 列网格降为 2 列(页面自适应增强) */
 @media (max-width: 1100px) {
-  .form-grid, .credit-overview, .group-summary { grid-template-columns: repeat(2, 1fr); }
+  .form-grid, .credit-overview { grid-template-columns: repeat(2, 1fr); }
+}
+/* 768px 单列断点(§docs/29 §2.2:窄屏可用,移动端单列需求另行立项) */
+@media (max-width: 768px) {
+  .form-grid, .credit-overview, .other-summary-grid, .agreement-manual { grid-template-columns: 1fr; }
+  .mortgage-item__grid, .loan-basic-grid { grid-template-columns: 1fr !important; }
 }
 </style>

@@ -4,13 +4,14 @@
     <div class="modal__card modal__card--wide" ref="dialogRef" tabindex="-1">
       <div class="modal__title">提交确认</div>
       <div class="modal__body">
-        <!-- 客户信息(存款提交确认弹窗;§2026-08-26) -->
+        <!-- 客户信息(存款提交确认弹窗;§2026-08-26;键值区统一 .desc-grid,§2026-08-28) -->
         <template v-if="customerSummary?.length">
           <div class="check-section">
             <div class="check-section__title">客户信息</div>
-            <div class="confirm-summary">
-              <div class="confirm-summary__item" v-for="(s, i) in customerSummary" :key="i">
-                <span>{{ s.label }}</span><b>{{ s.value }}</b>
+            <div class="desc-grid">
+              <div v-for="(s, i) in customerSummary" :key="i">
+                <div class="desc-item__label">{{ s.label }}</div>
+                <div class="desc-item__value">{{ s.value }}</div>
               </div>
             </div>
           </div>
@@ -19,9 +20,10 @@
         <template v-if="summary?.length">
           <div class="check-section">
             <div class="check-section__title">申请概要</div>
-            <div class="confirm-summary">
-              <div class="confirm-summary__item" v-for="(s, i) in summary" :key="i">
-                <span>{{ s.label }}</span><b>{{ s.value }}</b>
+            <div class="desc-grid">
+              <div v-for="(s, i) in summary" :key="i">
+                <div class="desc-item__label">{{ s.label }}</div>
+                <div class="desc-item__value">{{ s.value }}</div>
               </div>
             </div>
           </div>
@@ -205,23 +207,10 @@ function onCancel() {
   padding: 10px 14px; border-radius: var(--radius-sm);
   background: var(--color-success-light); color: #047857;
 }
-.empty { padding: var(--space-4); }
 /* §UI审查:校验加载态 spinner 提示 */
 .check-loading {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 24px 0; color: var(--color-text-sub); font-size: 13px;
-}
-/* 提交确认弹窗申请概要(§2026-08-26 概要/明细移入弹窗) */
-.confirm-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
-/* §UI审查:窄屏降为 2 列,避免值被 ellipsis 截断 */
-@media (max-width: 600px) {
-  .confirm-summary { grid-template-columns: repeat(2, 1fr); }
-}
-.confirm-summary__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.confirm-summary__item span { font-size: 12px; color: var(--color-text-sub); }
-.confirm-summary__item b {
-  font-size: 14px; color: var(--color-text-main); font-weight: 600;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 审批路由预览节点徽标(§2026-08-26 提交确认弹窗展示路由链路) */
 .route-node {

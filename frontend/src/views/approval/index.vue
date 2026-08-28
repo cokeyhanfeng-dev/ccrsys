@@ -27,12 +27,13 @@
           </div>
           <div class="todo-card__sub" v-if="c.single">申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }}</div>
           <div class="todo-card__sub" v-else>申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }} · 需完成 {{ c.itemCount }} 个担保分项</div>
-          <div class="todo-card__grid">
-            <div class="tc-item"><span class="dg-label">申请利率</span><b>{{ c.rate }}{{ c.single ? '%' : '' }}</b></div>
-            <div class="tc-item"><span class="dg-label">原执行利率</span><b>{{ c.originalRate }}</b></div>
-            <div class="tc-item"><span class="dg-label">分项金额</span><b>{{ fmtAmount(c.amount) }} 万元</b></div>
-            <div class="tc-item"><span class="dg-label">产品编码</span><b>{{ c.productCode }}</b></div>
-            <div class="tc-item"><span class="dg-label">提交时间</span><b>{{ c.createTime }}</b></div>
+          <!-- 卡片摘要键值:统一 design-system 描述列表 -->
+          <div class="desc-grid desc-grid--3">
+            <div class="desc-item"><div class="desc-item__label">申请利率</div><div class="desc-item__value">{{ c.rate }}{{ c.single ? '%' : '' }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">原执行利率</div><div class="desc-item__value">{{ c.originalRate }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">分项金额</div><div class="desc-item__value">{{ fmtAmount(c.amount) }} 万元</div></div>
+            <div class="desc-item"><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ c.productCode }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">提交时间</div><div class="desc-item__value">{{ c.createTime }}</div></div>
           </div>
           <div class="todo-card__items" v-if="!c.single">
             <div class="tc-item-row" v-for="it in c.items" :key="it.id">
@@ -40,7 +41,7 @@
               <span>{{ fmtAmount(it.amount) }} 万元</span>
               <span>申请 {{ it.rate }}%</span>
               <span>原执行 {{ it.originalRate }}%</span>
-              <span class="dg-label">{{ nodeLabel(it.nodeCode) }}</span>
+              <span class="section-tip">{{ nodeLabel(it.nodeCode) }}</span>
             </div>
           </div>
         </div>
@@ -59,12 +60,12 @@
       <div class="modal__card">
         <div class="modal__title">核验资料 · {{ check.customer }}</div>
         <div class="modal__body" v-if="check.loaded">
-          <div class="check-grid">
-            <div class="check-item"><span class="dg-label">客户</span><b>{{ check.customer }}</b></div>
-            <div class="check-item"><span class="dg-label">金额</span><b>{{ check.amount }}</b></div>
-            <div class="check-item"><span class="dg-label">申请利率</span><b>{{ check.rate }}</b></div>
-            <div class="check-item"><span class="dg-label">原利率</span><b>{{ check.originalRate }}</b></div>
-            <div class="check-item"><span class="dg-label">快照数据日期</span><b>{{ check.dataDt }}</b></div>
+          <div class="desc-grid desc-grid--2">
+            <div class="desc-item"><div class="desc-item__label">客户</div><div class="desc-item__value">{{ check.customer }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">金额</div><div class="desc-item__value">{{ check.amount }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">申请利率</div><div class="desc-item__value">{{ check.rate }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">原利率</div><div class="desc-item__value">{{ check.originalRate }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">快照数据日期</div><div class="desc-item__value">{{ check.dataDt }}</div></div>
           </div>
         </div>
         <div class="modal__body" v-else-if="check.error">
@@ -223,22 +224,20 @@ onMounted(load)
 </script>
 
 <style scoped>
-.stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
 .todo-card { cursor: pointer; }
 .todo-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .todo-card__customer { font-weight: 600; font-size: 16px; }
 .tc-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; color: #b45309; background: #fef3c7; vertical-align: middle; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
-.todo-card__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px; font-size: 14px; }
-.tc-item .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .todo-card__items { margin-top: 10px; padding: 8px 12px; border: 1px dashed var(--color-border, #ddd); border-radius: var(--radius-sm, 6px); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .tc-item-row { display: flex; gap: 18px; align-items: center; }
 .tc-item-row__no { font-weight: 600; min-width: 140px; }
 .todo-card__action { display: flex; align-items: center; gap: 8px; }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
-.check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; font-size: 14px; }
-.check-item .dg-label { display: block; color: var(--color-text-sub); font-size: 12px; margin-bottom: 4px; }
-.dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .check-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 80px; color: var(--color-text-sub); }
+/* 768px 断点:操作区换到卡片下方,避免挤压摘要内容 */
+@media (max-width: 767px) {
+  .todo-card { flex-direction: column; align-items: stretch; gap: 10px; }
+  .todo-card__action { justify-content: flex-end; }
+}
 </style>

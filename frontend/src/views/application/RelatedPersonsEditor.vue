@@ -1,17 +1,20 @@
 <template>
   <div class="relations-editor">
-    <div class="sub-title">
-      关联人员
+    <div class="card-toolbar">
+      <span class="card-toolbar__title">关联人员</span>
       <span class="badge badge--neutral">随申请一并提交</span>
       <InfoTip>
         录入与本笔业务相关的配偶/直系亲属/担保人等；证件号（对公 USCC/对私身份证）必填，失焦自动带出姓名/客户号并全行判重。
         「录入即绑定」：已绑定其他客户/集团的证件号将标红阻断，带不出姓名/客户号时可手工补录。
       </InfoTip>
+      <div class="card-toolbar__actions">
+        <button class="btn btn--secondary" @click="addRow">＋ 添加关联人员</button>
+      </div>
     </div>
 
     <!-- 已绑定关联人历史(申请已建档时展示,§11.2 application/{id}/relations) -->
     <div class="history-block" v-if="history.length">
-      <div class="sub-title" style="font-size:13px">已绑定关联人(历史,同一证件号复用幂等)</div>
+      <div class="form-group-title" style="font-size:13px">已绑定关联人(历史,同一证件号复用幂等)</div>
       <table class="table table--sm">
         <thead><tr><th>姓名</th><th>证件号</th><th>关系</th><th>绑定对象</th><th>绑定时间</th></tr></thead>
         <tbody>
@@ -72,8 +75,7 @@
         </tr>
       </tbody>
     </table>
-    <div class="empty" v-else style="padding:8px">暂未录入关联人员</div>
-    <button class="btn btn--secondary" style="margin-top:8px" @click="addRow">＋ 添加关联人员</button>
+    <div class="empty-line" v-else>暂未录入关联人员</div>
   </div>
 </template>
 
@@ -315,10 +317,8 @@ onMounted(loadHistory)
 </script>
 
 <style scoped>
-.sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .req { color: var(--color-danger); }
-.empty { text-align: center; color: var(--color-text-light); }
 .history-block { background: var(--color-bg); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .table--sm th, .table--sm td { font-size: 12px; padding: 6px 8px; }
 .rel-badge { display: inline-block; font-size: 12px; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
@@ -328,4 +328,8 @@ onMounted(loadHistory)
 .rel-badge--occupied { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .rel-badge--warn { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); }
 .rel-badge--muted { background: var(--color-bg); color: var(--color-text-light); }
+/* 768px 断点:可编辑表格横向滚动,避免字段被挤压 */
+@media (max-width: 768px) {
+  .relations-editor .table { display: block; overflow-x: auto; }
+}
 </style>

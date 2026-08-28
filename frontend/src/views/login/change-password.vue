@@ -26,12 +26,14 @@
             <el-input
               v-model="form.newPassword"
               type="password"
-              placeholder="不少于8位,含大写/小写/特殊字符"
+              placeholder="请输入新密码"
               size="large"
               autocomplete="new-password"
               show-password
               @input="newHint = pwdHint(form.newPassword)"
             />
+            <!-- 强度规则说明移到字段下方,placeholder 只承担输入引导 -->
+            <p class="form-hint">不少于8位,含大写/小写/特殊字符</p>
             <span v-if="newHint" class="pwd-hint" :class="{ 'pwd-hint--ok': newHint.startsWith('✓') }">
               {{ newHint }}
             </span>
@@ -146,4 +148,10 @@ async function onSubmit() {
 .pwd-hint--ok { color: #047857; } /* §UI审查:成功态加深提升白底对比 */
 .change-btn { width: 100%; height: 44px; font-size: 15px; letter-spacing: 4px; border-radius: 8px; }
 .change-page__foot { margin-top: 20px; font-size: 12px; color: rgba(255,255,255,.6); letter-spacing: 1px; }
+
+/* 768px 移动端断点:收紧卡片内边距,表单占满小屏宽度 */
+@media (max-width: 768px) {
+  .change-page { padding: 24px 12px; }
+  .change-card :deep(.el-card__body) { padding: 20px 16px; }
+}
 </style>

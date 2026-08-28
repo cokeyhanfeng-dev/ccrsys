@@ -3,7 +3,7 @@
     加载失败,请刷新
     <div style="margin-top:12px"><button class="btn btn--secondary" @click="load">重新加载</button></div>
   </div>
-  <div v-else class="detail-wrap" v-loading="loading">
+  <div v-else class="detail-wrap" :class="{ 'detail-wrap--action': actionable }" v-loading="loading">
   <div v-if="loaded">
     <div class="section-head">
       <div class="section-title">
@@ -13,6 +13,24 @@
       <InfoTip :content="isPresidentDecision ? '六人小组表决已通过,请审阅完整申请内容与六人匿名审批意见后整单决策:同意利率或一票否决。' : isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
     </div>
 
+    <!-- 吸顶摘要条(docs/29 §2.3):申请号/客户/金额/业务类型/当前节点 + 五段锚点导航,任何位置一键跳到操作区 -->
+    <div class="summary-bar">
+      <div class="summary-bar__item">申请号<strong>{{ application.applicationNo || '—' }}</strong></div>
+      <div class="summary-bar__item">客户<strong>{{ customerName }}</strong></div>
+      <div class="summary-bar__item">申请金额<strong>{{ fmtAmount(applyAmountTotal) }} 万元</strong></div>
+      <div class="summary-bar__item">业务类型<strong><span class="badge badge--info">{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span></strong></div>
+      <div class="summary-bar__item">当前节点<strong><span class="badge badge--processing">{{ nodeLabel(pi.current_node_code) }}</span></strong></div>
+      <nav class="summary-bar__nav">
+        <a class="anchor-link" @click="scrollToSection('s-apply')">申请内容</a>
+        <a class="anchor-link" @click="scrollToSection('s-customer')">客户与集团</a>
+        <a class="anchor-link" @click="scrollToSection('s-contrib')">承诺与履约</a>
+        <a class="anchor-link" @click="scrollToSection('s-flow')">流程轨迹</a>
+        <a class="anchor-link" style="font-weight:700" @click="scrollToSection('s-decide')">审批决定 ⬇</a>
+      </nav>
+    </div>
+
+    <!-- 第一段:申请内容(数据来源 + 申请级字段 + 分项明细表) -->
+    <div class="anchor-section" id="s-apply">
     <!-- 0. 数据来源与快照信息(§12.16-7) -->
     <div class="card">
       <div class="card__head">
@@ -21,10 +39,10 @@
           {{ source === 'SNAPSHOT' ? '冻结快照' : source === 'MANUAL' ? '人工录入' : source === 'MANUAL_OVERRIDE' ? '人工修正' : '实时取数' }}
         </span>
       </div>
-      <div class="detail-grid" v-if="source === 'SNAPSHOT'">
-        <div><span class="dg-label">数据日期</span>{{ snapshotInfo.dataDt || '—' }}</div>
-        <div><span class="dg-label">冻结时间</span>{{ snapshotInfo.freezeTime || '—' }}</div>
-        <div><span class="dg-label">快照批次号</span>{{ snapshotInfo.bundleNo || '—' }}</div>
+      <div class="desc-grid desc-grid--3" v-if="source === 'SNAPSHOT'">
+        <div><div class="desc-item__label">数据日期</div><div class="desc-item__value">{{ snapshotInfo.dataDt || '—' }}</div></div>
+        <div><div class="desc-item__label">冻结时间</div><div class="desc-item__value">{{ snapshotInfo.freezeTime || '—' }}</div></div>
+        <div><div class="desc-item__label">快照批次号</div><div class="desc-item__value">{{ snapshotInfo.bundleNo || '—' }}</div></div>
       </div>
       <div class="source-note" v-if="source === 'MANUAL'">未找到数仓/快照客户数据,客户信息由客户经理手工录入,以人工填写为准。</div>
       <div class="source-note" v-else-if="source === 'MANUAL_OVERRIDE'">数仓/快照客户信息已由客户经理人工修正,以人工填写为准。</div>
@@ -39,39 +57,53 @@
         <span class="badge badge--info">共 {{ siblingItems.length }} 个分项</span>
         <span v-if="pi.inherit_flag === 'Y' || pi.inheritFlag === 'Y'" class="badge badge--info">沿用原决议</span>
       </div>
-      <div class="detail-grid">
-        <div><span class="dg-label">申请号</span>{{ application.applicationNo || '—' }}</div>
-        <div><span class="dg-label">业务类型</span>{{ businessTypeText }}</div>
-        <div><span class="dg-label">申请类型</span>{{ applyBizTypeText }}</div>
-        <div><span class="dg-label">客户号</span>{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}
+      <div class="desc-grid desc-grid--3">
+        <div><div class="desc-item__label">申请号</div><div class="desc-item__value">{{ application.applicationNo || '—' }}</div></div>
+        <div><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText }}</div></div>
+        <div><div class="desc-item__label">申请类型</div><div class="desc-item__value">{{ applyBizTypeText }}</div></div>
+        <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}
           <button v-if="isPlaceholderCustomerNo(application.customerNo || pi.pricing_customer_no) && canBackfill"
                   class="btn btn--primary" @click="openBackfillDlg">回填客户号</button>
-        </div>
-        <div><span class="dg-label">产品编码</span>{{ productName(pi.product_code) }}</div>
-        <div v-if="applyTotalCredit != null"><span class="dg-label">授信总额(万元)</span>{{ fmtAmount(applyTotalCredit) }}</div>
+        </div></div>
+        <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
+        <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
+      <!-- 分项表(docs/29 §2.3):12 列收敛为 7 主列,产品/原执行/测算/期限/部门归属收进「明细▸」展开行 -->
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th>产品</th><th>原执行利率</th><th>申请利率</th><th>测算利率</th><th>金额(万元)</th><th>期限</th><th v-if="isLoan">担保方式</th><th>部门归属</th><th>当前节点</th><th>状态</th></tr></thead>
+        <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th><th>申请利率</th><th>当前节点</th><th>状态</th><th></th></tr></thead>
         <tbody>
-          <tr v-for="it in siblingItems" :key="it.id">
-            <td>{{ it.pricingItemNo || '—' }}</td>
-            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
-            <td>{{ productName(it.productCode) }}</td>
-            <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
-            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-            <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
-            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-            <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
-            <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
-            <td>{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</td>
-            <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
-            <td>{{ itemStatusText(it.status) }}</td>
-          </tr>
+          <template v-for="it in siblingItems" :key="it.id">
+            <tr>
+              <td>{{ it.pricingItemNo || '—' }}</td>
+              <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+              <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
+              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+              <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
+              <td>{{ itemStatusText(it.status) }}</td>
+              <td><button class="btn btn--text" @click="toggleItemDetail(it.id)">{{ itemDetailOpen(it.id) ? '收起 ▲' : '明细 ▸' }}</button></td>
+            </tr>
+            <!-- 明细展开行:主列之外的字段以描述列表呈现 -->
+            <tr v-if="itemDetailOpen(it.id)">
+              <td :colspan="itemTableCols" style="padding: 4px 12px 10px; background: var(--color-fill, #f8f9fa)">
+                <div class="desc-grid desc-grid--3">
+                  <div><div class="desc-item__label">产品</div><div class="desc-item__value">{{ productName(it.productCode) }}</div></div>
+                  <div><div class="desc-item__label">原执行利率</div><div class="desc-item__value">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</div></div>
+                  <div><div class="desc-item__label">测算利率</div><div class="desc-item__value desc-item__value--num">{{ fmtRate(it.calculatedRate) }}</div></div>
+                  <div><div class="desc-item__label">期限</div><div class="desc-item__value">{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</div></div>
+                  <div><div class="desc-item__label">部门归属</div><div class="desc-item__value">{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</div></div>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
       <div class="remark-text" style="margin-top:12px" v-if="application.applicationRemark">{{ application.applicationRemark }}</div>
     </div>
+    </div>
 
+    <!-- 第二段:客户与集团(客户基本信息/集团成员/授信/附件/他行融资/关联人,低频只读资料默认折叠) -->
+    <div class="anchor-section" id="s-customer">
     <!-- 5. 客户基本信息 -->
     <div class="card">
       <div class="card__head"><span>客户基本信息</span>
@@ -79,95 +111,95 @@
           {{ source === 'MANUAL' ? '人工录入' : source === 'MANUAL_OVERRIDE' ? '含人工修正' : '数仓' }}
         </span>
       </div>
-      <div v-if="application.applicantOrgName" class="detail-grid" style="margin-top:12px">
-        <div><span class="dg-label">申请机构</span>{{ application.applicantOrgName }}</div>
+      <div v-if="application.applicantOrgName" class="desc-grid desc-grid--3" style="margin-top:12px">
+        <div><div class="desc-item__label">申请机构</div><div class="desc-item__value">{{ application.applicantOrgName }}</div></div>
       </div>
-      <div class="detail-grid" v-if="hasCustomer">
+      <div class="desc-grid desc-grid--3" v-if="hasCustomer">
         <!-- 对公客户(§20 ①:名称/客户号/统一社会信用代码/企业性质/行业/信用等级/五级分类等) -->
         <template v-if="isCorpCustomer">
-          <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
-          <div><span class="dg-label">{{ isGroup ? '集团编号' : '行内客户号' }}</span>{{ customer.customerNo || '—' }}</div>
-          <div><span class="dg-label">客户类型</span>{{ isGroup ? '集团' : '对公' }}</div>
-          <div v-if="isGroup && customer.groupType"><span class="dg-label">集团类型</span>{{ groupTypeText(customer.groupType) }}</div>
-          <div v-if="isGroup && customer.currency"><span class="dg-label">币种</span>{{ currencyText(customer.currency) }}</div>
-          <div v-if="isGroup && customer.applyAmount != null"><span class="dg-label">本次申请额度(万元)</span>{{ fmtAmount(customer.applyAmount) }}</div>
-          <div v-if="customer.certNo"><span class="dg-label">统一社会信用代码</span>{{ customer.certNo }}</div>
-          <div><span class="dg-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
-          <div v-if="customer.entpScale"><span class="dg-label">企业规模</span>{{ entpScaleText(customer.entpScale) }}</div>
-          <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
-          <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
-          <div v-if="customer.empeNum != null"><span class="dg-label">员工人数</span>{{ customer.empeNum }}</div>
-          <div v-if="customer.totalAssets != null"><span class="dg-label">总资产(万元)</span>{{ fmtAmount(customer.totalAssets) }}</div>
-          <div v-if="customer.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ fmtAmount(customer.registeredCapital) }}</div>
-          <div v-if="customer.estbDate"><span class="dg-label">成立日期</span>{{ customer.estbDate }}</div>
-          <div v-if="customer.restAddr"><span class="dg-label">注册地址</span>{{ customer.restAddr }}</div>
-          <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
-          <div v-if="customer.openDate"><span class="dg-label">开户日期</span>{{ customer.openDate }}</div>
-          <div v-if="customer.basicAccount"><span class="dg-label">基本户账户</span>{{ customer.basicAccount }}</div>
-          <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
+          <div><div class="desc-item__label">客户名称</div><div class="desc-item__value">{{ customerName }}</div></div>
+          <div><div class="desc-item__label">{{ isGroup ? '集团编号' : '行内客户号' }}</div><div class="desc-item__value">{{ customer.customerNo || '—' }}</div></div>
+          <div><div class="desc-item__label">客户类型</div><div class="desc-item__value">{{ isGroup ? '集团' : '对公' }}</div></div>
+          <div v-if="isGroup && customer.groupType"><div class="desc-item__label">集团类型</div><div class="desc-item__value">{{ groupTypeText(customer.groupType) }}</div></div>
+          <div v-if="isGroup && customer.currency"><div class="desc-item__label">币种</div><div class="desc-item__value">{{ currencyText(customer.currency) }}</div></div>
+          <div v-if="isGroup && customer.applyAmount != null"><div class="desc-item__label">本次申请额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(customer.applyAmount) }}</div></div>
+          <div v-if="customer.certNo"><div class="desc-item__label">统一社会信用代码</div><div class="desc-item__value">{{ customer.certNo }}</div></div>
+          <div><div class="desc-item__label">企业性质</div><div class="desc-item__value">{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div></div>
+          <div v-if="customer.entpScale"><div class="desc-item__label">企业规模</div><div class="desc-item__value">{{ entpScaleText(customer.entpScale) }}</div></div>
+          <div v-if="customer.industry"><div class="desc-item__label">所属行业</div><div class="desc-item__value">{{ customer.industry }}</div></div>
+          <div v-if="customer.creditLevel"><div class="desc-item__label">内部信用等级</div><div class="desc-item__value">{{ customer.creditLevel }}</div></div>
+          <div v-if="customer.fiveLevelClass"><div class="desc-item__label">五级分类</div><div class="desc-item__value">{{ fiveLevelClassText(customer.fiveLevelClass) }}</div></div>
+          <div v-if="customer.empeNum != null"><div class="desc-item__label">员工人数</div><div class="desc-item__value">{{ customer.empeNum }}</div></div>
+          <div v-if="customer.totalAssets != null"><div class="desc-item__label">总资产(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(customer.totalAssets) }}</div></div>
+          <div v-if="customer.registeredCapital != null"><div class="desc-item__label">注册资本(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(customer.registeredCapital) }}</div></div>
+          <div v-if="customer.estbDate"><div class="desc-item__label">成立日期</div><div class="desc-item__value">{{ customer.estbDate }}</div></div>
+          <div v-if="customer.restAddr"><div class="desc-item__label">注册地址</div><div class="desc-item__value">{{ customer.restAddr }}</div></div>
+          <div v-if="customer.openOrgName"><div class="desc-item__label">开户机构</div><div class="desc-item__value">{{ customer.openOrgName }}</div></div>
+          <div v-if="customer.openDate"><div class="desc-item__label">开户日期</div><div class="desc-item__value">{{ customer.openDate }}</div></div>
+          <div v-if="customer.basicAccount"><div class="desc-item__label">基本户账户</div><div class="desc-item__value">{{ customer.basicAccount }}</div></div>
+          <div v-if="customer.customerClass"><div class="desc-item__label">客户分类</div><div class="desc-item__value">{{ customerClassText(customer.customerClass) }}</div></div>
         </template>
         <!-- 对私客户(§20 ①:姓名/证件类型/证件号码/职业/年收入/婚姻状况/居住地址等) -->
         <template v-else-if="isIndivCustomer">
-          <div><span class="dg-label">姓名</span>{{ customerName }}</div>
-          <div><span class="dg-label">客户号</span>{{ customer.customerNo || '—' }}</div>
-          <div><span class="dg-label">客户类型</span>个人</div>
-          <div v-if="customer.certType || customer.certNo"><span class="dg-label">证件类型</span>{{ certTypeText(customer.certType) }}</div>
-          <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.gender"><span class="dg-label">性别</span>{{ genderText(customer.gender) }}</div>
-          <div v-if="customer.occupation"><span class="dg-label">职业</span>{{ customer.occupation }}</div>
-          <div v-if="customer.annualIncome != null"><span class="dg-label">年收入(万元)</span>{{ fmtAmount(customer.annualIncome) }}</div>
-          <div v-if="customer.maritalStatus"><span class="dg-label">婚姻状况</span>{{ maritalStatusText(customer.maritalStatus) }}</div>
-          <div v-if="customer.address"><span class="dg-label">居住地址</span>{{ customer.address }}</div>
-          <div v-if="customer.phone"><span class="dg-label">联系电话</span>{{ customer.phone }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
-          <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
-          <div v-if="customer.openDate"><span class="dg-label">开户日期</span>{{ customer.openDate }}</div>
-          <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
+          <div><div class="desc-item__label">姓名</div><div class="desc-item__value">{{ customerName }}</div></div>
+          <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customer.customerNo || '—' }}</div></div>
+          <div><div class="desc-item__label">客户类型</div><div class="desc-item__value">个人</div></div>
+          <div v-if="customer.certType || customer.certNo"><div class="desc-item__label">证件类型</div><div class="desc-item__value">{{ certTypeText(customer.certType) }}</div></div>
+          <div v-if="customer.certNo"><div class="desc-item__label">证件号码</div><div class="desc-item__value">{{ customer.certNo }}</div></div>
+          <div v-if="customer.gender"><div class="desc-item__label">性别</div><div class="desc-item__value">{{ genderText(customer.gender) }}</div></div>
+          <div v-if="customer.occupation"><div class="desc-item__label">职业</div><div class="desc-item__value">{{ customer.occupation }}</div></div>
+          <div v-if="customer.annualIncome != null"><div class="desc-item__label">年收入(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(customer.annualIncome) }}</div></div>
+          <div v-if="customer.maritalStatus"><div class="desc-item__label">婚姻状况</div><div class="desc-item__value">{{ maritalStatusText(customer.maritalStatus) }}</div></div>
+          <div v-if="customer.address"><div class="desc-item__label">居住地址</div><div class="desc-item__value">{{ customer.address }}</div></div>
+          <div v-if="customer.phone"><div class="desc-item__label">联系电话</div><div class="desc-item__value">{{ customer.phone }}</div></div>
+          <div v-if="customer.fiveLevelClass"><div class="desc-item__label">五级分类</div><div class="desc-item__value">{{ fiveLevelClassText(customer.fiveLevelClass) }}</div></div>
+          <div v-if="customer.openOrgName"><div class="desc-item__label">开户机构</div><div class="desc-item__value">{{ customer.openOrgName }}</div></div>
+          <div v-if="customer.openDate"><div class="desc-item__label">开户日期</div><div class="desc-item__value">{{ customer.openDate }}</div></div>
+          <div v-if="customer.customerClass"><div class="desc-item__label">客户分类</div><div class="desc-item__value">{{ customerClassText(customer.customerClass) }}</div></div>
         </template>
         <!-- 存量数据无 custType:按字段存在性兜底 -->
         <template v-else>
-          <div><span class="dg-label">客户名称</span>{{ customerName }}</div>
-          <div v-if="customer.certNo"><span class="dg-label">证件号码</span>{{ customer.certNo }}</div>
-          <div v-if="customer.entpCharic"><span class="dg-label">企业性质</span>{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div>
-          <div v-if="customer.industry"><span class="dg-label">所属行业</span>{{ customer.industry }}</div>
-          <div v-if="customer.creditLevel"><span class="dg-label">内部信用等级</span>{{ customer.creditLevel }}</div>
-          <div v-if="customer.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(customer.fiveLevelClass) }}</div>
-          <div v-if="customer.openOrgName"><span class="dg-label">开户机构</span>{{ customer.openOrgName }}</div>
-          <div v-if="customer.customerClass"><span class="dg-label">客户分类</span>{{ customerClassText(customer.customerClass) }}</div>
+          <div><div class="desc-item__label">客户名称</div><div class="desc-item__value">{{ customerName }}</div></div>
+          <div v-if="customer.certNo"><div class="desc-item__label">证件号码</div><div class="desc-item__value">{{ customer.certNo }}</div></div>
+          <div v-if="customer.entpCharic"><div class="desc-item__label">企业性质</div><div class="desc-item__value">{{ customer.entpCharic === 'SOE' ? '国企' : '非国企' }}</div></div>
+          <div v-if="customer.industry"><div class="desc-item__label">所属行业</div><div class="desc-item__value">{{ customer.industry }}</div></div>
+          <div v-if="customer.creditLevel"><div class="desc-item__label">内部信用等级</div><div class="desc-item__value">{{ customer.creditLevel }}</div></div>
+          <div v-if="customer.fiveLevelClass"><div class="desc-item__label">五级分类</div><div class="desc-item__value">{{ fiveLevelClassText(customer.fiveLevelClass) }}</div></div>
+          <div v-if="customer.openOrgName"><div class="desc-item__label">开户机构</div><div class="desc-item__value">{{ customer.openOrgName }}</div></div>
+          <div v-if="customer.customerClass"><div class="desc-item__label">客户分类</div><div class="desc-item__value">{{ customerClassText(customer.customerClass) }}</div></div>
         </template>
       </div>
-      <div v-else class="empty">暂无数据</div>
+      <div v-else class="empty-line">暂无数据</div>
     </div>
 
     <!-- 6. 集团信息(仅集团场景) -->
     <div class="card" v-if="isGroup">
       <div class="card__head"><span>集团信息</span><span class="badge badge--info">集团客户</span></div>
-      <div class="detail-grid">
-        <div><span class="dg-label">集团号</span>{{ application.groupNo }}</div>
-        <div><span class="dg-label">成员数</span>{{ groupMembers.length }} 户</div>
-        <div><span class="dg-label">合计申请金额</span>{{ fmtAmount(groupTotalAmount) }} 万元</div>
+      <div class="desc-grid desc-grid--3">
+        <div><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ application.groupNo }}</div></div>
+        <div><div class="desc-item__label">成员数</div><div class="desc-item__value">{{ groupMembers.length }} 户</div></div>
+        <div><div class="desc-item__label">合计申请金额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupTotalAmount) }} 万元</div></div>
         <!-- P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额) -->
-        <div><span class="dg-label">集团贡献度</span>{{ groupContributionText }}</div>
+        <div><div class="desc-item__label">集团贡献度</div><div class="desc-item__value">{{ groupContributionText }}</div></div>
       </div>
       <el-collapse v-if="groupMembers.length" style="margin-top:12px">
         <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
-          <div class="detail-grid">
-            <div v-if="m.memberName"><span class="dg-label">成员名称</span>{{ m.memberName }}</div>
-            <div><span class="dg-label">成员客户号</span>{{ customerNoText(m.memberCustomerNo) }}
+          <div class="desc-grid desc-grid--3">
+            <div v-if="m.memberName"><div class="desc-item__label">成员名称</div><div class="desc-item__value">{{ m.memberName }}</div></div>
+            <div><div class="desc-item__label">成员客户号</div><div class="desc-item__value">{{ customerNoText(m.memberCustomerNo) }}
               <button v-if="isPlaceholderCustomerNo(m.memberCustomerNo) && canBackfill"
                       class="btn btn--primary" @click="openMemberBackfillDlg(m.memberCustomerNo)">回填客户号</button>
-            </div>
-            <div><span class="dg-label">成员角色</span>{{ memberRoleText(m.memberRole) }}</div>
-            <div><span class="dg-label">申请金额(万元)</span>{{ fmtAmount(m.requestAmount) }}</div>
-            <div v-if="m.certNo"><span class="dg-label">统一社会信用代码</span>{{ m.certNo }}</div>
-            <div v-if="m.fiveLevelClass"><span class="dg-label">五级分类</span>{{ fiveLevelClassText(m.fiveLevelClass) }}</div>
-            <div v-if="m.creditLevel"><span class="dg-label">内部信用等级</span>{{ m.creditLevel }}</div>
-            <div v-if="m.industry"><span class="dg-label">所属行业</span>{{ m.industry }}</div>
-            <div v-if="m.registeredCapital != null"><span class="dg-label">注册资本(万元)</span>{{ fmtAmount(m.registeredCapital) }}</div>
-            <div v-if="m.openOrgName"><span class="dg-label">开户机构</span>{{ m.openOrgName }}</div>
-            <div v-if="m.openDate"><span class="dg-label">开户日期</span>{{ m.openDate }}</div>
-            <div v-if="m.basicAccount"><span class="dg-label">基本户账户</span>{{ m.basicAccount }}</div>
+            </div></div>
+            <div><div class="desc-item__label">成员角色</div><div class="desc-item__value">{{ memberRoleText(m.memberRole) }}</div></div>
+            <div><div class="desc-item__label">申请金额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(m.requestAmount) }}</div></div>
+            <div v-if="m.certNo"><div class="desc-item__label">统一社会信用代码</div><div class="desc-item__value">{{ m.certNo }}</div></div>
+            <div v-if="m.fiveLevelClass"><div class="desc-item__label">五级分类</div><div class="desc-item__value">{{ fiveLevelClassText(m.fiveLevelClass) }}</div></div>
+            <div v-if="m.creditLevel"><div class="desc-item__label">内部信用等级</div><div class="desc-item__value">{{ m.creditLevel }}</div></div>
+            <div v-if="m.industry"><div class="desc-item__label">所属行业</div><div class="desc-item__value">{{ m.industry }}</div></div>
+            <div v-if="m.registeredCapital != null"><div class="desc-item__label">注册资本(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(m.registeredCapital) }}</div></div>
+            <div v-if="m.openOrgName"><div class="desc-item__label">开户机构</div><div class="desc-item__value">{{ m.openOrgName }}</div></div>
+            <div v-if="m.openDate"><div class="desc-item__label">开户日期</div><div class="desc-item__value">{{ m.openDate }}</div></div>
+            <div v-if="m.basicAccount"><div class="desc-item__label">基本户账户</div><div class="desc-item__value">{{ m.basicAccount }}</div></div>
           </div>
           <table class="table" style="margin-top:8px" v-if="memberCommitments(m.memberCustomerNo).length">
             <thead><tr><th>承诺指标</th><th>基线</th><th>目标</th><th>单位</th></tr></thead>
@@ -181,144 +213,167 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="empty" style="padding:8px">该成员暂无承诺指标</div>
+          <div v-else class="empty-line" style="padding:8px">该成员暂无承诺指标</div>
         </el-collapse-item>
       </el-collapse>
     </div>
 
     <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用;仅贷款场景,存款无授信) -->
+    <!-- 低频只读资料(docs/29 §2.3):默认折叠为一行轻提示,点击展开查看 -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
-      <table class="table" v-if="creditAgreements.length">
-        <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
-        <tbody>
-          <tr v-for="(a, i) in creditAgreements" :key="i">
-            <td>
-              {{ a.agreementNo || '—' }}
-              <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
-            </td>
-            <td>{{ agreementTypeText(a.agreementType) }}</td>
-            <td>{{ currencyText(a.currency || 'CNY') }}</td>
-            <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
-            <td>{{ a.startDate || '—' }}</td>
-            <td>{{ a.endDate || '—' }}</td>
-            <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
-            <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
-            <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty">暂无授信协议数据</div>
+      <template v-if="creditAgreements.length">
+        <div v-if="fold.credit" class="empty-line">授信协议共 {{ creditAgreements.length }} 笔,已折叠 —— <button class="btn btn--text" @click="fold.credit = false">展开 ▾</button></div>
+        <div v-show="!fold.credit">
+          <table class="table">
+            <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
+            <tbody>
+              <tr v-for="(a, i) in creditAgreements" :key="i">
+                <td>
+                  {{ a.agreementNo || '—' }}
+                  <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
+                </td>
+                <td>{{ agreementTypeText(a.agreementType) }}</td>
+                <td>{{ currencyText(a.currency || 'CNY') }}</td>
+                <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+                <td>{{ a.startDate || '—' }}</td>
+                <td>{{ a.endDate || '—' }}</td>
+                <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
+                <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
+                <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-line"><button class="btn btn--text" @click="fold.credit = true">收起 ▲</button></div>
+        </div>
+      </template>
+      <div v-else class="empty-line">暂无授信协议数据</div>
     </div>
 
     <!-- 6b. 申请材料附件(仅贷款场景;存款无申请材料附件概念) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
-      <table class="table" v-if="attachments.length">
-        <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="(a, i) in attachments" :key="i">
-            <td>{{ a.fileName }}</td>
-            <td class="num">{{ fmtSize(a.fileSize) }}</td>
-            <td>{{ a.createTime ? String(a.createTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
-            <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty">暂无附件(申请时未上传材料)</div>
+      <template v-if="attachments.length">
+        <div v-if="fold.attach" class="empty-line">附件共 {{ attachments.length }} 个,已折叠 —— <button class="btn btn--text" @click="fold.attach = false">展开 ▾</button></div>
+        <div v-show="!fold.attach">
+          <table class="table">
+            <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="(a, i) in attachments" :key="i">
+                <td>{{ a.fileName }}</td>
+                <td class="num">{{ fmtSize(a.fileSize) }}</td>
+                <td>{{ a.createTime ? String(a.createTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
+                <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-line"><button class="btn btn--text" @click="fold.attach = true">收起 ▲</button></div>
+        </div>
+      </template>
+      <div v-else class="empty-line">暂无附件(申请时未上传材料)</div>
     </div>
 
     <!-- 7b. 他行融资(申请人工补录/Excel 导入 + 数仓征信) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>他行融资</span></div>
-      <div class="detail-grid" v-if="otherLoanSummary.length">
-        <div><span class="dg-label">他行机构数</span>{{ otherLoanSummary[0].lenderCount ?? '—' }}</div>
-        <div><span class="dg-label">授信总额</span>{{ fmtAmount(otherLoanSummary[0].creditAmountTotal) }} 万元</div>
-        <div><span class="dg-label">已用总额</span>{{ fmtAmount(otherLoanSummary[0].usedAmountTotal) }} 万元</div>
-        <div><span class="dg-label">未结清笔数</span>{{ otherLoanSummary[0].loanAccountCount ?? '—' }}</div>
-        <div><span class="dg-label">逾期账户</span>{{ otherLoanSummary[0].overdueAccountCount ?? '—' }}</div>
-        <div><span class="dg-label">逾期余额</span>{{ fmtAmount(otherLoanSummary[0].overdueBalance) }} 万元</div>
-        <div><span class="dg-label">不良余额</span>{{ fmtAmount(otherLoanSummary[0].nplBalance) }} 万元</div>
-        <div><span class="dg-label">关注类余额</span>{{ fmtAmount(otherLoanSummary[0].specialMentionBalance) }} 万元</div>
-        <div><span class="dg-label">对外担保余额</span>{{ fmtAmount(otherLoanSummary[0].externalGuaranteeBalance) }} 万元</div>
-        <div><span class="dg-label">报告日期(征信)</span>{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div>
-      </div>
-      <table class="table" v-if="otherLoans.length" style="margin-top:8px">
-        <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
-        <tbody>
-          <tr v-for="(d, i) in otherLoans" :key="i">
-            <td>{{ d.lenderName }}</td>
-            <td class="num">{{ fmtAmount(d.creditAmount) }}</td>
-            <td class="num">{{ fmtAmount(d.usedAmount) }}</td>
-            <td class="num">{{ fmtAmount(d.balanceAmount) }}</td>
-            <td class="num">{{ d.annualRate ?? '—' }}</td>
-            <td>{{ d.dataDt ? String(d.dataDt).slice(0, 10) : '—' }}</td>
-            <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty">暂无他行融资记录</div>
+      <template v-if="otherLoanSummary.length || otherLoans.length">
+        <div v-if="fold.otherLoan" class="empty-line">他行融资汇总与明细共 {{ otherLoans.length }} 笔,已折叠 —— <button class="btn btn--text" @click="fold.otherLoan = false">展开 ▾</button></div>
+        <div v-show="!fold.otherLoan">
+          <div class="desc-grid desc-grid--3" v-if="otherLoanSummary.length">
+            <div><div class="desc-item__label">他行机构数</div><div class="desc-item__value">{{ otherLoanSummary[0].lenderCount ?? '—' }}</div></div>
+            <div><div class="desc-item__label">授信总额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].creditAmountTotal) }} 万元</div></div>
+            <div><div class="desc-item__label">已用总额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].usedAmountTotal) }} 万元</div></div>
+            <div><div class="desc-item__label">未结清笔数</div><div class="desc-item__value">{{ otherLoanSummary[0].loanAccountCount ?? '—' }}</div></div>
+            <div><div class="desc-item__label">逾期账户</div><div class="desc-item__value">{{ otherLoanSummary[0].overdueAccountCount ?? '—' }}</div></div>
+            <div><div class="desc-item__label">逾期余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].overdueBalance) }} 万元</div></div>
+            <div><div class="desc-item__label">不良余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].nplBalance) }} 万元</div></div>
+            <div><div class="desc-item__label">关注类余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].specialMentionBalance) }} 万元</div></div>
+            <div><div class="desc-item__label">对外担保余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].externalGuaranteeBalance) }} 万元</div></div>
+            <div><div class="desc-item__label">报告日期(征信)</div><div class="desc-item__value">{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div></div>
+          </div>
+          <table class="table" v-if="otherLoans.length" style="margin-top:8px">
+            <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
+            <tbody>
+              <tr v-for="(d, i) in otherLoans" :key="i">
+                <td>{{ d.lenderName }}</td>
+                <td class="num">{{ fmtAmount(d.creditAmount) }}</td>
+                <td class="num">{{ fmtAmount(d.usedAmount) }}</td>
+                <td class="num">{{ fmtAmount(d.balanceAmount) }}</td>
+                <td class="num">{{ d.annualRate ?? '—' }}</td>
+                <td>{{ d.dataDt ? String(d.dataDt).slice(0, 10) : '—' }}</td>
+                <td><span class="badge badge--neutral">{{ inputModeText(d.inputMode) }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-line"><button class="btn btn--text" @click="fold.otherLoan = true">收起 ▲</button></div>
+        </div>
+      </template>
+      <div v-else class="empty-line">暂无他行融资记录</div>
     </div>
 
     <!-- 7c. 关联人情况(数仓客户关系 + 申请录入) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>关联人情况</span></div>
-      <table class="table" v-if="relatedPersons.length">
-        <thead>
-          <tr><th>姓名/名称</th><th>证件号码</th><th>关系类型</th><th>行内客户号</th><th>企业性质</th><th>行业</th><th>信用等级</th><th>五级分类</th><th>职业</th><th>年收入</th><th>授信协议数</th><th>本行贷款余额(万元)</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="(r, i) in relatedPersons" :key="i">
-            <td>{{ r.personName }}</td>
-            <td>{{ r.certNo || '—' }}</td>
-            <td>{{ relationTypeText(r.relationType) }}</td>
-            <td>{{ r.relatedCustomerNo || '—' }}</td>
-            <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
-            <td v-else>—</td>
-            <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
-            <td v-else>—</td>
-            <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
-            <td v-else>—</td>
-            <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
-            <td v-else>—</td>
-            <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
-            <td v-else>—</td>
-            <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
-            <td v-else>—</td>
-            <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
-            <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <template v-else>
-        <table class="table" v-if="relations.length">
-          <thead>
-            <tr><th>关联人</th><th>关系类型</th><th>关联强度</th><th>企业性质</th><th>行业</th><th>信用等级</th><th>五级分类</th><th>职业</th><th>年收入</th><th>授信协议数</th><th>本行贷款余额(万元)</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, i) in relations" :key="i">
-              <td>{{ r.relatedCustomerNo }}</td>
-              <td>{{ relationTypeText(r.relationType) }}</td>
-              <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
-              <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
-              <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
-              <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
-              <td v-else>—</td>
-              <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
-              <td v-else>—</td>
-              <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
-              <td v-else>—</td>
-              <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
-              <td v-else>—</td>
-              <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
-              <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty">暂无关联人记录</div>
+      <template v-if="relatedPersons.length || relations.length">
+        <div v-if="fold.related" class="empty-line">关联人共 {{ relatedPersons.length || relations.length }} 人,已折叠 —— <button class="btn btn--text" @click="fold.related = false">展开 ▾</button></div>
+        <div v-show="!fold.related">
+          <table class="table" v-if="relatedPersons.length">
+            <thead>
+              <tr><th>姓名/名称</th><th>证件号码</th><th>关系类型</th><th>行内客户号</th><th>企业性质</th><th>行业</th><th>信用等级</th><th>五级分类</th><th>职业</th><th>年收入</th><th>授信协议数</th><th>本行贷款余额(万元)</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(r, i) in relatedPersons" :key="i">
+                <td>{{ r.personName }}</td>
+                <td>{{ r.certNo || '—' }}</td>
+                <td>{{ relationTypeText(r.relationType) }}</td>
+                <td>{{ r.relatedCustomerNo || '—' }}</td>
+                <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
+                <td v-else>—</td>
+                <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
+                <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <table class="table" v-else>
+            <thead>
+              <tr><th>关联人</th><th>关系类型</th><th>关联强度</th><th>企业性质</th><th>行业</th><th>信用等级</th><th>五级分类</th><th>职业</th><th>年收入</th><th>授信协议数</th><th>本行贷款余额(万元)</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(r, i) in relations" :key="i">
+                <td>{{ r.relatedCustomerNo }}</td>
+                <td>{{ relationTypeText(r.relationType) }}</td>
+                <td>{{ r.relationStrength === 'STRONG' ? '强' : r.relationStrength === 'WEAK' ? '弱' : (r.relationStrength || '—') }}</td>
+                <td v-if="r.custType === 'CORP'">{{ customerTypeText(r.entpCharic || '—') }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ r.industry || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ r.creditLevel || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'CORP'">{{ fiveLevelClassText(r.fiveLevelClass) }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'INDIV'">{{ r.occupation || '—' }}</td>
+                <td v-else>—</td>
+                <td v-if="r.custType === 'INDIV'">{{ fmtAmount(r.annualIncome) }}</td>
+                <td v-else>—</td>
+                <td class="num">{{ r.creditAgreementCount ?? '—' }}</td>
+                <td class="num">{{ r.loanBalanceTotal ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-line"><button class="btn btn--text" @click="fold.related = true">收起 ▲</button></div>
+        </div>
       </template>
+      <div v-else class="empty-line">暂无关联人记录</div>
     </div>
 
     <!-- 8. 存款权限上限提示(存款账户列表已取消展示;本节点权限上限为审批决策依据,保留) -->
@@ -329,7 +384,10 @@
         <span v-if="pi.requested_rate != null"> · 申请利率较上限 {{ ((pi.requested_rate - pi.boundary_rate) * 100).toFixed(0) }} BP</span>
       </div>
     </div>
+    </div>
 
+    <!-- 第三段:承诺与履约(贡献度参考/历史履约/机构达成) -->
+    <div class="anchor-section" id="s-contrib">
     <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
@@ -404,32 +462,42 @@
           </tbody>
         </table>
       </template>
-      <div v-else class="empty">该客户暂无历史承诺申请</div>
+      <div v-else class="empty-line">该客户暂无历史承诺申请</div>
     </div>
 
     <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>机构达成</span><span class="badge badge--info">数仓</span></div>
-      <table class="table" v-if="orgPerformance.length">
-        <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>达成率</th><th>数据日期</th></tr></thead>
-        <tbody>
-          <tr v-for="(o, i) in orgPerformance" :key="i">
-            <td>{{ o.orgCode || '—' }}</td>
-            <td>{{ o.statMonth || '—' }}</td>
-            <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
-            <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
-            <td class="num">
-              <span v-if="o.completionRate != null" :class="Number(o.completionRate) >= 100 ? 'rate-ok' : 'rate-bad'">
-                {{ o.completionRate }}%
-              </span>
-              <span v-else>暂无数据</span>
-            </td>
-            <td>{{ o.dataDt || '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty">暂无数据</div>
+      <template v-if="orgPerformance.length">
+        <div v-if="fold.orgPerf" class="empty-line">机构达成共 {{ orgPerformance.length }} 条,已折叠 —— <button class="btn btn--text" @click="fold.orgPerf = false">展开 ▾</button></div>
+        <div v-show="!fold.orgPerf">
+          <table class="table">
+            <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>达成率</th><th>数据日期</th></tr></thead>
+            <tbody>
+              <tr v-for="(o, i) in orgPerformance" :key="i">
+                <td>{{ o.orgCode || '—' }}</td>
+                <td>{{ o.statMonth || '—' }}</td>
+                <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
+                <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
+                <td class="num">
+                  <span v-if="o.completionRate != null" :class="Number(o.completionRate) >= 100 ? 'rate-ok' : 'rate-bad'">
+                    {{ o.completionRate }}%
+                  </span>
+                  <span v-else>暂无数据</span>
+                </td>
+                <td>{{ o.dataDt || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-line"><button class="btn btn--text" @click="fold.orgPerf = true">收起 ▲</button></div>
+        </div>
+      </template>
+      <div v-else class="empty-line">暂无数据</div>
     </div>
+    </div>
+
+    <!-- 第四段:流程轨迹(决议/表决记录/路由链与留痕时间线) -->
+    <div class="anchor-section" id="s-flow">
 
     <!-- 11b. 决议与执行核验(§12.7 ⑪:决议日期=issue_time,无有效期周期) -->
     <div class="card" v-if="resolutions.length">
@@ -488,6 +556,65 @@
       </table>
     </div>
 
+    <!-- 12. 流程轨迹(流程路由链 + 审批动作) -->
+    <div class="card">
+      <div class="card__head"><span>流程轨迹</span></div>
+      <!-- 当前执行状态:卡在哪个节点、什么状态、什么时候到达(客户经理/审批人一眼看到进度) -->
+      <div class="flow-status" v-if="flowStatus">
+        <div class="flow-status__item"><span class="dg-label">当前节点</span><b>{{ nodeLabel(flowStatus.currentNodeCode) }}</b></div>
+        <div class="flow-status__item"><span class="dg-label">执行状态</span><b>{{ flowStatusText }}</b></div>
+        <div class="flow-status__item"><span class="dg-label">到达时间</span><b>{{ fmtDate(flowStatus.nodeReachTime) }}</b></div>
+      </div>
+      <!-- 流程路由链:首节点→当前节点(高亮)→终审,已过=完成/当前=处理中/后续=待办(通用 .flow-node 胶囊) -->
+      <div v-if="routeChain.length" class="flow-steps">
+        <template v-for="(code, idx) in routeChain" :key="code">
+          <span class="flow-node" :class="{
+            'flow-node--done': idx < currentNodeIndex,
+            'flow-node--current': idx === currentNodeIndex,
+            'flow-node--todo': idx > currentNodeIndex
+          }">
+            {{ nodeLabel(code) }}
+            <span v-if="idx < currentNodeIndex" class="flow-node__tag">已经审批完成</span>
+            <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound" class="flow-node__tag">
+              <template v-if="voteRound.roundStatus === 'PASSED' || voteRound.roundStatus === 'FAILED'">
+                表决{{ voteRound.roundStatus === 'PASSED' ? '通过' : '未通过' }} · 赞成 {{ voteRound.approveCount }} / 反对 {{ voteRound.rejectCount }} (通过线 ≥{{ voteRound.requiredCount }})
+              </template>
+              <template v-else>
+                {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 通过线 ≥{{ voteRound.requiredCount }}
+              </template>
+            </span>
+            <span v-else-if="idx === currentNodeIndex" class="flow-node__tag">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
+            <span v-else class="flow-node__tag">待办</span>
+          </span>
+          <span v-if="idx < routeChain.length - 1" class="flow-node__arrow">→</span>
+        </template>
+      </div>
+      <!-- 轨迹从客户经理提交开始显示;每条含动作/节点/处理人/状态变迁/利率变化/时间 -->
+      <el-timeline v-if="flowTrace.length" style="margin-top:12px">
+        <el-timeline-item v-for="(t, i) in flowTrace" :key="i" :timestamp="fmtDate(t.operationTime)" placement="top">
+          <div>
+            <span class="badge" :class="traceBadge(t.actionType)">
+              {{ actionText(t.actionType) }}
+            </span>
+            <span class="dg-label" style="margin-left:8px">{{ nodeLabel(t.nodeCode) }}</span>
+            <span v-if="t.operatorName" style="margin-left:8px">处理人:{{ t.operatorName }}</span>
+            <span v-if="t.fromStatus || t.toStatus" class="badge badge--neutral" style="margin-left:8px">
+              {{ itemStatusText(t.fromStatus) }} → {{ itemStatusText(t.toStatus) }}
+            </span>
+            <span v-if="t.beforeRate != null && t.afterRate != null && t.beforeRate !== t.afterRate" style="margin-left:8px">
+              利率 {{ fmtRate(t.beforeRate) }} → {{ fmtRate(t.afterRate) }}
+            </span>
+          </div>
+          <div class="stat-card__sub" v-if="t.actionComment">{{ t.actionComment }}</div>
+        </el-timeline-item>
+      </el-timeline>
+      <div v-else-if="routeChain.length" class="empty-line">尚无审批动作,申请已流转至当前节点。</div>
+      <div v-else class="empty-line">暂无数据</div>
+    </div>
+    </div>
+
+    <!-- 第五段:审批决定(行长整单决策/按担保分项逐项审批 + 吸底操作条) -->
+    <div class="anchor-section" id="s-decide">
     <!-- 11d. 行长决策(整单,§7.5):六人小组表决通过后待总行行长决策;与申请/审批页一致不拆分为项,
          行长统一「同意利率/一票否决」,并在本区查看六人小组匿名审批意见(§12.7) -->
     <div class="card" v-if="isPresidentDecision">
@@ -545,7 +672,7 @@
               </tr>
             </tbody>
           </table>
-          <div v-if="!(presidentOpinions[it.id] || []).length" class="empty" style="padding:8px">暂无委员匿名意见</div>
+          <div v-if="!(presidentOpinions[it.id] || []).length" class="empty-line" style="padding:8px">暂无委员匿名意见</div>
         </el-collapse-item>
       </el-collapse>
       <div class="op-form__row" style="margin-top:12px">
@@ -556,62 +683,6 @@
         <button class="btn btn--primary" :disabled="submitting" @click="doPresidentDecision('APPROVE')">同意利率</button>
         <button class="btn btn--danger" :disabled="submitting" @click="doPresidentDecision('VETO')">一票否决</button>
       </div>
-    </div>
-
-    <!-- 12. 流程轨迹(流程路由链 + 审批动作) -->
-    <div class="card">
-      <div class="card__head"><span>流程轨迹</span></div>
-      <!-- 当前执行状态:卡在哪个节点、什么状态、什么时候到达(客户经理/审批人一眼看到进度) -->
-      <div class="flow-status" v-if="flowStatus">
-        <div class="flow-status__item"><span class="dg-label">当前节点</span><b>{{ nodeLabel(flowStatus.currentNodeCode) }}</b></div>
-        <div class="flow-status__item"><span class="dg-label">执行状态</span><b>{{ flowStatusText }}</b></div>
-        <div class="flow-status__item"><span class="dg-label">到达时间</span><b>{{ fmtDate(flowStatus.nodeReachTime) }}</b></div>
-      </div>
-      <!-- 流程路由链:首节点→当前节点(高亮)→终审,已过=完成/当前=处理中/后续=待办 -->
-      <div v-if="routeChain.length" class="flow-steps">
-        <template v-for="(code, idx) in routeChain" :key="code">
-          <div class="flow-step" :class="{
-            'flow-step--done': idx < currentNodeIndex,
-            'flow-step--current': idx === currentNodeIndex,
-            'flow-step--todo': idx > currentNodeIndex
-          }">
-            <span class="flow-step__label">{{ nodeLabel(code) }}</span>
-            <span v-if="idx < currentNodeIndex" class="flow-step__tag">已经审批完成</span>
-            <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound" class="flow-step__tag">
-              <template v-if="voteRound.roundStatus === 'PASSED' || voteRound.roundStatus === 'FAILED'">
-                表决{{ voteRound.roundStatus === 'PASSED' ? '通过' : '未通过' }} · 赞成 {{ voteRound.approveCount }} / 反对 {{ voteRound.rejectCount }} (通过线 ≥{{ voteRound.requiredCount }})
-              </template>
-              <template v-else>
-                {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 通过线 ≥{{ voteRound.requiredCount }}
-              </template>
-            </span>
-            <span v-else-if="idx === currentNodeIndex" class="flow-step__tag">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
-            <span v-else class="flow-step__tag">待办</span>
-          </div>
-          <span v-if="idx < routeChain.length - 1" class="flow-step__arrow">→</span>
-        </template>
-      </div>
-      <!-- 轨迹从客户经理提交开始显示;每条含动作/节点/处理人/状态变迁/利率变化/时间 -->
-      <el-timeline v-if="flowTrace.length" style="margin-top:12px">
-        <el-timeline-item v-for="(t, i) in flowTrace" :key="i" :timestamp="fmtDate(t.operationTime)" placement="top">
-          <div>
-            <span class="badge" :class="traceBadge(t.actionType)">
-              {{ actionText(t.actionType) }}
-            </span>
-            <span class="dg-label" style="margin-left:8px">{{ nodeLabel(t.nodeCode) }}</span>
-            <span v-if="t.operatorName" style="margin-left:8px">处理人:{{ t.operatorName }}</span>
-            <span v-if="t.fromStatus || t.toStatus" class="badge badge--neutral" style="margin-left:8px">
-              {{ itemStatusText(t.fromStatus) }} → {{ itemStatusText(t.toStatus) }}
-            </span>
-            <span v-if="t.beforeRate != null && t.afterRate != null && t.beforeRate !== t.afterRate" style="margin-left:8px">
-              利率 {{ fmtRate(t.beforeRate) }} → {{ fmtRate(t.afterRate) }}
-            </span>
-          </div>
-          <div class="stat-card__sub" v-if="t.actionComment">{{ t.actionComment }}</div>
-        </el-timeline-item>
-      </el-timeline>
-      <div v-else-if="routeChain.length" class="empty">尚无审批动作,申请已流转至当前节点。</div>
-      <div v-else class="empty">暂无数据</div>
     </div>
 
     <!-- 12. 审批决定(按担保分项;参照 demo 逐分项同意/否决 + 一键通过/一键否决,仅当前节点待办可操作) -->
@@ -742,22 +813,21 @@
           </table>
           <div v-else class="op-item__empty-tip">无担保明细</div>
           </template>
-          <!-- 利率对比:原执行 / 申请 / 审批后(可调),要审批的利率一目了然 -->
-          <div class="op-item__rates">
-            <span class="op-rate"><span class="dg-label">原执行利率</span><b>{{ fmtRate(it.originalRate) }}</b></span>
-            <span class="op-rate"><span class="dg-label">申请利率</span><b>{{ fmtRate(it.requestedRate) }}</b></span>
-            <span class="op-rate"><span class="dg-label">测算利率</span><b>{{ fmtRate(it.calculatedRate) }}</b></span>
-            <span class="op-rate" v-if="!itemPassed(it)">
-              <span class="dg-label">审批后利率</span>
+          <!-- 利率对比(docs/29 §2.3 利率对比条):原执行 → 申请 → 审批后(可调),测算利率并列表末参考 -->
+          <div class="rate-compare">
+            <span class="rate-compare__item">原执行利率<strong>{{ fmtRate(it.originalRate) }}</strong></span>
+            <span class="rate-compare__arrow">→</span>
+            <span class="rate-compare__item">申请利率<strong>{{ fmtRate(it.requestedRate) }}</strong></span>
+            <span class="rate-compare__arrow">→</span>
+            <span class="rate-compare__item" v-if="!itemPassed(it)">审批后利率
               <template v-if="isCommitteeVoting || isSecretaryNode">
                 <!-- 六人小组无利率修改权限:只读展示当前审批利率,仅同意/否决 -->
                 <!-- 贷审会秘书岗(需求四)同为审核岗:只读展示,仅同意/否决 -->
-                <b>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</b>
+                <strong>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</strong>
               </template>
-              <template v-else>
-                <el-input-number v-model="opRates[it.id]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" :disabled="itemApproved(it) || itemRejected(it) || !canOperate(it)" style="width:140px" />
-              </template>
+              <el-input-number v-else v-model="opRates[it.id]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" :disabled="itemApproved(it) || itemRejected(it) || !canOperate(it)" style="width:140px" />
             </span>
+            <span class="rate-compare__item">测算利率<strong>{{ fmtRate(it.calculatedRate) }}</strong></span>
           </div>
           <!-- 小组节点:委员不调整利率,只读展示且提示匿名投同意/否决 -->
           <div class="stat-card__sub" v-if="isCommitteeVoting">
@@ -787,46 +857,48 @@
           <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && !itemPassed(it) && !itemApproved(it)">该分项不在本节点表决范围,仅展示。</div>
           <div class="op-item__passed-tip" v-else>该分项已由上级节点审批通过,当前节点仅展示,无需重复审批。</div>
         </div>
-        <div class="op-form__row">
-          <label class="op-form__label">审批意见</label>
-          <el-input v-model="opComment" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="请输入审批意见(否决时建议说明原因)" />
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <template v-if="isCommitteeVoting">
-            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll()">提交本人全部同意票</button>
-            <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAllReject()">提交本人全部否决票</button>
-            <span class="stat-card__sub" style="align-self:center">
-              已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
-            </span>
-          </template>
-          <template v-else>
-            <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doApproveAll">一键通过审批</button>
-            <button class="btn btn--danger" :disabled="submitting || !pendingRejectItems.length" @click="doRejectAll">一键否决</button>
-          </template>
-          <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
-        </div>
       </div>
-
-      <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
-      <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
-        <div class="dlg-tip">该申请为客户经理登记的新增客户,提交时数仓尚未收录客户号。数仓生成客户号后请在此回填真实客户号,系统将同步申请/分项/快照与后续承诺数据;也可输入证件号自动反查数仓。</div>
-        <div class="form-field">
-          <label class="form-field__label">真实客户号</label>
-          <input class="form-input" v-model="backfillForm.customerNo" placeholder="数仓生成的客户号(优先)" />
-        </div>
-        <div class="form-field" style="margin-top:10px">
-          <label class="form-field__label">证件号(或)</label>
-          <input class="form-input" v-model="backfillForm.certNo" placeholder="统一社会信用代码 / 身份证号,自动反查数仓客户号" />
-        </div>
-        <div class="dlg-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-          <button class="btn btn--secondary" @click="backfillVisible = false">取消</button>
-          <button class="btn btn--primary" :disabled="backfilling" @click="doBackfill">确认回填</button>
-        </div>
-      </el-dialog>
     </div>
     <div class="card" v-else-if="pi.status === 'ROUTING'">
-      <div class="empty">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
+      <div class="empty-line">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
     </div>
+    </div>
+
+    <!-- 审批操作吸底(docs/29 §2.3):审批意见与一键通过/否决固定页底随手可及,分项多也不再回滚页底;v-model 与 handler 不变 -->
+    <div class="approve-bar" v-if="actionable">
+      <div class="approve-bar__inner">
+        <el-input v-model="opComment" type="textarea" :rows="1" maxlength="500" placeholder="请输入审批意见(否决时建议说明原因)" style="flex:1" />
+        <template v-if="isCommitteeVoting">
+          <span class="stat-card__sub" style="white-space:nowrap;align-self:center">
+            已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
+          </span>
+          <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll()">提交本人全部同意票</button>
+          <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAllReject()">提交本人全部否决票</button>
+        </template>
+        <template v-else>
+          <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doApproveAll">一键通过审批</button>
+          <button class="btn btn--danger" :disabled="submitting || !pendingRejectItems.length" @click="doRejectAll">一键否决</button>
+        </template>
+        <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
+      </div>
+    </div>
+
+    <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
+    <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
+      <div class="dlg-tip">该申请为客户经理登记的新增客户,提交时数仓尚未收录客户号。数仓生成客户号后请在此回填真实客户号,系统将同步申请/分项/快照与后续承诺数据;也可输入证件号自动反查数仓。</div>
+      <div class="form-field">
+        <label class="form-field__label">真实客户号</label>
+        <input class="form-input" v-model="backfillForm.customerNo" placeholder="数仓生成的客户号(优先)" />
+      </div>
+      <div class="form-field" style="margin-top:10px">
+        <label class="form-field__label">证件号(或)</label>
+        <input class="form-input" v-model="backfillForm.certNo" placeholder="统一社会信用代码 / 身份证号,自动反查数仓客户号" />
+      </div>
+      <div class="dlg-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn btn--secondary" @click="backfillVisible = false">取消</button>
+        <button class="btn btn--primary" :disabled="backfilling" @click="doBackfill">确认回填</button>
+      </div>
+    </el-dialog>
   </div>
   </div>
 </template>
@@ -936,6 +1008,33 @@ const presidentVoteResult = computed(() => {
 })
 
 const opComment = ref('')
+
+// 吸顶摘要条申请金额:同申请全部分项金额合计(万元,纯展示口径)
+const applyAmountTotal = computed(() =>
+  siblingItems.value.reduce((s: number, it: any) => s + (Number(it.pricingAmount) || 0), 0))
+
+// 锚点导航:吸顶摘要条跳转对应区块(原生 href 锚点会污染前端路由,改用滚动定位)
+function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+// 低频只读资料卡默认折叠(docs/29 §2.3):授信/附件/他行融资/关联人/机构达成,v-show 切换
+const fold = ref({ credit: true, attach: true, otherLoan: true, related: true, orgPerf: true })
+
+// 分项表明细展开行(docs/29 §2.3):主列之外的字段收进展开行,按分项 id 记录展开状态
+const expandedItemIds = ref<Set<string>>(new Set())
+function itemDetailOpen(id: any): boolean {
+  return expandedItemIds.value.has(String(id))
+}
+function toggleItemDetail(id: any) {
+  const k = String(id)
+  const next = new Set(expandedItemIds.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expandedItemIds.value = next
+}
+// 分项表展开行 colspan:6 个固定主列 + 集团成员列 + 贷款担保方式列
+const itemTableCols = computed(() => 6 + (isGroup.value ? 1 : 0) + (isLoan.value ? 1 : 0))
 
 // 分项审批(参照 demo):同申请分项摘要、每分项审批利率、本次会话内已同意分项
 const siblingItems = ref<any[]>([])
@@ -1715,11 +1814,12 @@ onMounted(load)
   border: 1px solid var(--color-border);
 }
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
-.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; font-size: 14px; }
 /* 表格自然宽:design-system .table 为 fit-content + overflow-x:auto,宽表(关联人 12 列/他行融资等)横向滚动,
    长文本列不再被 width:100% 压缩换行、行高失控(UI 审查 T9) */
 .table { border-radius: var(--radius-sm); }
 .detail-wrap { min-height: 200px; }
+/* 吸底审批操作条为 fixed 定位:审批人可操作时给页尾留出条高,避免遮挡内容 */
+.detail-wrap--action { padding-bottom: 96px; }
 .remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
@@ -1737,21 +1837,12 @@ onMounted(load)
 .op-item__name { font-weight: 600; }
 .op-item__subhead { margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--color-text-sub); }
 .op-item__empty-tip { margin-top: 8px; font-size: 12px; color: var(--color-text-sub); background: var(--color-bg); border-radius: 6px; padding: 8px 12px; }
-.op-item__rates { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 10px; font-size: 13px; }
-.op-rate b { font-size: 14px; margin-left: 2px; }
 .op-item__actions { display: flex; gap: 8px; margin-top: 8px; }
 .op-item__passed-tip { margin-top: 8px; font-size: 12px; color: var(--color-text-sub); }
-/* 流程路由链步骤条(首节点→当前节点→终审) */
-.flow-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 10px 2px 4px; }
-.flow-step { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 13px; border: 1px solid var(--color-border); color: var(--color-text-sub); }
-.flow-step--done { border-color: var(--color-success); color: var(--color-success); background: var(--color-success-light, #f0fdf4); }
-.flow-step--current { border-color: var(--color-warning); color: var(--color-warning); background: var(--color-warning-light, #fef3c7); font-weight: 600; }
-.flow-step--todo { opacity: .6; }
-.flow-step__arrow { color: var(--color-border); margin: 0 2px; }
-.flow-step__tag { margin-left: 6px; font-size: 12px; font-weight: 400; white-space: nowrap; }
-.flow-step--done .flow-step__tag { color: var(--color-success); }
-.flow-step--current .flow-step__tag { color: var(--color-warning); }
-.flow-step--todo .flow-step__tag { color: var(--color-text-sub); }
+/* 流程路由链节点内标签与箭头(节点胶囊用 design-system .flow-node,此处仅补标签/待办/箭头) */
+.flow-node__tag { margin-left: 6px; font-weight: 400; white-space: nowrap; }
+.flow-node--todo { opacity: .6; }
+.flow-node__arrow { color: var(--color-border); align-self: center; }
 .warn-bar { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 /* 借据链接与弹窗提示(借据仅作参考) */
 .link { color: var(--color-primary); cursor: pointer; text-decoration: underline; }
@@ -1800,8 +1891,4 @@ onMounted(load)
 .vote-summary__meta { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; padding-top: 2px; }
 .vote-summary__meta .dg-label { margin-right: 4px; font-size: 12px; }
 .vote-summary__meta b { font-weight: 600; color: var(--color-text-main); }
-/* 中间断点:中等宽度下网格降列(页面自适应增强) */
-@media (max-width: 1100px) {
-  .detail-grid { grid-template-columns: repeat(2, 1fr); }
-}
 </style>

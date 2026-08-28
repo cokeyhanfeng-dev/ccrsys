@@ -125,7 +125,7 @@
           </div>
         </div>
       </div>
-      <div v-else class="msg-empty">暂无消息</div>
+      <div v-else class="empty-line msg-empty">暂无消息</div>
     </el-drawer>
   </div>
 </template>
@@ -287,8 +287,7 @@ function onCommand(cmd: string) {
 </script>
 
 <style scoped>
-/* 侧边栏固定,不随页面滚动;内容区独立滚动 */
-.app-shell { min-height: 100vh; }
+/* 侧边栏固定,不随页面滚动;内容区独立滚动(.app-shell 基础样式见 design-system) */
 .app-sidebar {
   position: fixed;
   top: 0;
@@ -468,14 +467,14 @@ function onCommand(cmd: string) {
   outline-offset: -2px;
 }
 .msg-item:hover {
-  background: #f9fafb;
+  background: var(--color-bg);
 }
 .msg-item--unread {
   background: var(--color-primary-light);
 }
 /* §UI审查:未读消息 hover 加深一档提供反馈 */
 .msg-item--unread:hover {
-  background: #dbeafe;
+  background: var(--color-primary-softer);
 }
 .msg-item__icon {
   flex: none;
@@ -515,10 +514,9 @@ function onCommand(cmd: string) {
   font-size: 12px;
   color: var(--color-text-sub);
 }
+/* 空态字号与颜色由 design-system .empty-line 提供,这里只保留居中与留白 */
 .msg-empty {
-  padding: 40px 0;
+  padding: 24px 0;
   text-align: center;
-  color: var(--color-text-sub);
-  font-size: 13px;
 }
 </style>

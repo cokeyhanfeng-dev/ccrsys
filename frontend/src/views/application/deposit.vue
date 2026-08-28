@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="deposit-page form-compact">
     <div class="section-head">
       <div class="section-title">存款利率提升申请</div>
     </div>
@@ -13,9 +13,10 @@
 
     <!-- 1. 客户信息(复用贷款申请的客户查询带出逻辑) -->
     <div class="form-card">
-      <div class="form-card__title">
-        客户信息
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">客户信息</span>
       </div>
+      <div class="form-group-title">客户查询</div>
       <div class="form-grid form-grid--5">
         <div class="form-field">
           <label class="form-field__label">客户主体 <span class="req">*</span></label>
@@ -24,7 +25,7 @@
             <option value="GROUP">集团客户</option>
           </select>
         </div>
-        <!-- 非集团:客户名称/客户号/客户性质(集团分支见下方 GROUP 模板) -->
+        <!-- 非集团:客户名称/客户号(集团分支见下方 GROUP 模板) -->
         <template v-if="form.customerScope !== 'GROUP'">
           <div class="form-field">
             <label class="form-field__label">客户名称 <span class="req">*</span></label>
@@ -44,7 +45,7 @@
           </div>
         </template>
 
-        <!-- 集团客户:联想查询 + 集团信息带出(§2026-08-25 精简为集团客户/集团编号/统一社会信用代码;证件号码已删,信用代码数仓无字段可编辑,§2026-08-26) -->
+        <!-- 集团客户:联想查询 + 集团编号带出(§2026-08-25 精简字段;编号只读展示用 .form-static,§2026-08-28) -->
         <template v-else>
           <div class="form-field">
             <label class="form-field__label">集团客户名称 <span class="req">*</span></label>
@@ -52,26 +53,26 @@
               placeholder="输入集团名称联想选择;未收录回车补录" style="width:100%" @select="selectGroup" @keyup.enter="queryGroup" />
           </div>
           <div class="form-field"><label class="form-field__label">集团客户编号</label>
-            <input class="form-input" :value="form.groupNo" readonly placeholder="查询后带出" /></div>
-          <div class="form-field"><label class="form-field__label">统一社会信用代码</label>
-            <input class="form-input" v-model="form.ucrCode" placeholder="数仓无,请手工填写" /></div>
+            <div class="form-static">{{ form.groupNo || '查询后带出' }}</div></div>
         </template>
 
-        <!-- 对公字段(数仓带出,可修改;所属行业已删,后续需要再加,§2026-08-26) -->
-        <template v-if="form.customerScope === 'CORPORATE'">
-          <div class="form-field">
-            <label class="form-field__label">统一社会信用代码</label>
-            <input class="form-input" v-model="form.ucrCode" placeholder="数仓带出,可修改" />
-          </div>
-        </template>
+        <!-- 统一社会信用代码并入客户查询同一网格,不再单列一整行(数仓带出,可修改) -->
+        <div class="form-field">
+          <label class="form-field__label">统一社会信用代码</label>
+          <input class="form-input" v-model="form.ucrCode" :placeholder="form.customerScope === 'GROUP' ? '数仓无,请手工填写' : '数仓带出,可修改'" />
+        </div>
       </div>
     </div>
 
 
     <!-- 2. 存款分项(结构化 depositItems,不再拼 remark) -->
     <div class="form-card">
-      <div class="form-card__title">
-        存款分项
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">存款分项</span>
+        <span class="card-toolbar__sub">共 {{ items.length }} 笔</span>
+        <div class="card-toolbar__actions">
+          <button class="btn btn--secondary" @click="addItem">＋ 添加存款分项</button>
+        </div>
       </div>
       <!-- 每分项一张卡片(字段带标签分行分块,避免多列横向滚动导致关键字段看不见;提交结构不变) -->
       <div v-for="(d, i) in items" :key="i" class="mortgage-item deposit-item">
@@ -99,10 +100,11 @@
                 </option>
               </select>
               <input v-else class="form-input" v-model="d.depositAccountNo" placeholder="输入存款账号,自动查询数仓" @blur="onAccountLookup(d)" />
-              <div v-if="d.lookupFound" class="section-tip" style="color:var(--color-success);margin-top:4px">
+              <!-- 存量账户反查提示:统一 .form-hint,命中/未命中用状态色区分 -->
+              <div v-if="d.lookupFound" class="form-hint lookup-hint--ok">
                 数仓已匹配:余额 {{ d.accountBalance ?? '-' }} 万 · 执行利率 {{ d.originalRate || '-' }}% · 开户 {{ d.openDate || '-' }} · 到期 {{ d.maturityDate || '-' }}
               </div>
-              <div v-else-if="d.lookupDone" class="section-tip" style="color:var(--color-warning);margin-top:4px">
+              <div v-else-if="d.lookupDone" class="form-hint lookup-hint--warn">
                 数仓未找到该账户,请手工完善产品/期限/执行利率
               </div>
             </template>
@@ -145,24 +147,24 @@
           </div>
         </div>
       </div>
-      <button class="btn btn--secondary" style="margin-top:12px" @click="addItem">＋ 添加存款分项</button>
     </div>
 
     <!-- 3. 提交预览(路由预览 + 提交校验 + 正式提交) -->
     <div class="form-card">
-      <div class="form-card__title">
-        提交预览
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">提交预览</span>
         <InfoTip content="点击「提交申请」后在确认弹窗中核对客户信息、申请概要与审批路由,再正式提交。" />
       </div>
-      <div class="form-field form-field--stack">
+      <div class="form-field">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
       </div>
+    </div>
 
-      <div style="display:flex;gap:12px;margin-top:12px">
-        <button class="btn btn--secondary" :disabled="saving || submitting" @click="onSaveDraft">存草稿</button>
-        <button class="btn btn--primary" :disabled="saving || submitting" @click="onSubmit">{{ submitting ? '提交中…' : '提交申请' }}</button>
-      </div>
+    <!-- 吸底操作条:存草稿/提交(按钮功能不变,自提交预览卡迁入) -->
+    <div class="page-action-bar">
+      <button class="btn btn--secondary" :disabled="saving || submitting" @click="onSaveDraft">存草稿</button>
+      <button class="btn btn--primary" :disabled="saving || submitting" @click="onSubmit">{{ submitting ? '提交中…' : '提交申请' }}</button>
     </div>
 
     <!-- 提交前校验确认弹窗 -->
@@ -923,49 +925,16 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
-/* 开户机构下拉(el-select)与 .form-input 对齐(36px 高度/边框/圆角一致,跟随全局紧凑值) */
-.open-org-select.el-select { width: 100%; }
-.open-org-select.el-select :deep(.el-select__wrapper) {
-  min-height: 36px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px #dcdfe6 inset;
-}
-.open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
+/* 为吸底操作条预留空间,避免尾部内容被遮挡 */
+.deposit-page { padding-bottom: 64px; }
 .section-head { margin-bottom: 10px; }
-.section-tip { font-size: 13px; color: var(--color-text-sub); }
-/* 表单字段横向布局:label 定宽右对齐 + 输入框同行,输入框左缘整齐对齐 */
-.form-field {
-  display: grid;
-  grid-template-columns: 108px 1fr;
-  align-items: center;
-  column-gap: 6px;
-}
-.form-field__label { margin-bottom: 0; font-size: 13px; text-align: right; padding-right: 2px; }
+/* 表单字段 label 统一置上(与贷款申请一致) */
+.form-field { display: block; min-width: 0; }
+.form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; }
 .form-field > .form-input,
 .form-field > .form-select,
 .form-field > .el-select,
-.form-field > .el-autocomplete,
-.form-field > div:not(.section-tip):not(.limit-hint) {
-  width: 100%;
-  min-width: 0;
-  grid-column: 2;
-}
-/* 反查提示/标准上限说明置于输入框下方,与输入框左缘对齐 */
-.form-field > .section-tip,
-.form-field > .limit-hint { grid-column: 2; }
-/* 客户信息区自适应列(§UI审查:固定 5 列在字段不足时右侧留空,改 auto-fit 贴合实际字段) */
-.form-grid--5 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-.form-grid--5 .form-field { display: block; }
-.form-grid--5 .form-field__label { display: block; margin-bottom: 3px; font-size: 13px; text-align: left; padding-right: 0; }
-.form-grid--5 .form-field > .form-input,
-.form-grid--5 .form-field > .form-select,
-.form-grid--5 .form-field > .el-select,
-.form-grid--5 .form-field > .el-autocomplete,
-.form-grid--5 .form-field > div:not(.section-tip):not(.limit-hint) { grid-column: auto; width: 100%; min-width: 0; }
-/* 提交预览申请备注:保持原竖排风格(label 左对齐在上方,文本框全宽) */
-.form-field--stack { display: block; }
-.form-field--stack .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
+.form-field > .el-autocomplete { width: 100%; min-width: 0; }
 /* 文本框内字体优化:字号与页面正文一致(14px)+字体族统一+数字等宽对齐+占位提示可读(原生控件与 Element 控件一致) */
 .form-field .form-input,
 .form-field .form-select,
@@ -992,46 +961,28 @@ async function loadDraftIntoForm(id: number | string) {
   margin-bottom: 10px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-/* 4 列网格:文本框随列收窄;label 同行后列宽紧凑,跨列字段降至 span 2 */
+/* 4 列网格:文本框随列收窄 */
 .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 10px; }
-.table { border-radius: var(--radius); overflow-x: auto; }
-.customer-cands { margin-top: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-x: auto; background: var(--color-surface); }
-.customer-cand { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
-.customer-cand:last-child { border-bottom: none; }
-.customer-cand:hover { background: var(--color-primary-light); }
+/* 客户信息区自适应列(auto-fill:字段不足占满整行时保持列宽紧凑,右侧留空轨道;原 auto-fit 会把单字段拉满整行) */
+.form-grid--5 { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .req { color: var(--color-danger); }
-.sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 .draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
-/* 规则来源提示(§12.4⑦) */
-.rule-notice {
-  background: var(--color-primary-light); color: var(--color-primary);
-  border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm);
-  padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
-}
-/* 产品标准上限提示(§12.4) */
-.limit-hint { font-size: 12px; color: var(--color-text-sub); margin-top: 4px; }
-.limit-hint--exceed { color: var(--color-danger); font-weight: 600; }
-.route-node {
-  display: inline-block; padding: 1px 8px; border-radius: 999px;
-  background: var(--color-primary-light); color: var(--color-primary);
-  font-size: 12px; font-weight: 500;
-}
+/* 存量账户反查提示状态色(基底为全局 .form-hint) */
+.lookup-hint--ok { color: var(--color-success); }
+.lookup-hint--warn { color: var(--color-warning); }
 /* 存款分项卡片(复用全局 .mortgage-item/.mortgage-item__head/.mortgage-item__grid) */
 .deposit-item { margin-bottom: 10px; }
 .deposit-item__title { font-size: 14px; font-weight: 600; }
 /* 存款分项字段 4 列×2 行(§2026-08-26 删币种后 8 字段均匀:账户方式/存款账户/产品/期限 + 金额/执行利率/申请利率/测算利率) */
 .deposit-item .mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
-/* §UI审查:存款分项卡 label 方向与客户信息区统一(label 置上) */
-.deposit-item .mortgage-item__grid .form-field { display: block; }
-.deposit-item .mortgage-item__grid .form-field__label { display: block; margin-bottom: 4px; font-size: 13px; text-align: left; padding-right: 0; }
-.deposit-item .mortgage-item__grid .form-field > .form-input,
-.deposit-item .mortgage-item__grid .form-field > .form-select { width: 100%; min-width: 0; }
-@media (max-width: 1100px) {
-  .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-}
 /* 中间断点:4 列网格降为 2 列(与贷款申请一致) */
 @media (max-width: 1100px) {
   .form-grid { grid-template-columns: repeat(2, 1fr); }
+  .deposit-item .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+/* 768px 断点:表单网格与分项字段全部降为单列 */
+@media (max-width: 768px) {
+  .form-grid, .form-grid--5 { grid-template-columns: 1fr; }
+  .deposit-item .mortgage-item__grid { grid-template-columns: 1fr !important; }
 }
 </style>

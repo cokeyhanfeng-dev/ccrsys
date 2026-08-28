@@ -50,11 +50,13 @@
       <div class="workbench-grid__left">
         <!-- 客户经理:我的申请动态 -->
         <div class="card workbench-card" v-if="role === 'customer_manager'">
-          <div class="card__head">
-            <span>我的申请动态</span>
-            <button class="btn btn--primary btn-sm" @click="router.push('/application/loan')">
-              <el-icon><Plus /></el-icon>&nbsp;发起新申请
-            </button>
+          <div class="card-toolbar">
+            <span class="card-toolbar__title">我的申请动态</span>
+            <span class="card-toolbar__actions">
+              <button class="btn btn--primary btn-sm" @click="router.push('/application/loan')">
+                <el-icon><Plus /></el-icon>&nbsp;发起新申请
+              </button>
+            </span>
           </div>
           <table class="table" v-if="myApps.length">
             <thead>
@@ -79,14 +81,14 @@
               </tr>
             </tbody>
           </table>
-          <div class="empty" v-else>暂无进行中的申请，已完成申请请在「历史申请」中查看</div>
+          <div class="empty-line" v-else>暂无进行中的申请，已完成申请请在「历史申请」中查看</div>
         </div>
 
         <!-- 其他角色:待我处理(审批/表决/决策聚合) -->
         <div class="card workbench-card" v-else>
-          <div class="card__head">
-            <span>待我处理</span>
-            <span class="badge badge--info">{{ todoItems.length }} 项</span>
+          <div class="card-toolbar">
+            <span class="card-toolbar__title">待我处理</span>
+            <span class="card-toolbar__actions"><span class="badge badge--info">{{ todoItems.length }} 项</span></span>
           </div>
           <div class="todo-list" v-if="todoItems.length">
             <div class="todo-card" v-for="t in todoItems" :key="t.key">
@@ -108,7 +110,7 @@
               </div>
             </div>
           </div>
-          <div class="empty" v-else>{{ todoEmptyText }}</div>
+          <div class="empty-line" v-else>{{ todoEmptyText }}</div>
         </div>
       </div>
 
@@ -116,9 +118,11 @@
       <div class="workbench-grid__right">
         <!-- 贡献度跟踪概况 -->
         <div class="card workbench-card">
-          <div class="card__head">
-            <span>贡献度跟踪概况</span>
-            <button class="btn btn--text" @click="router.push('/commitment')">查看全部</button>
+          <div class="card-toolbar">
+            <span class="card-toolbar__title">贡献度跟踪概况</span>
+            <span class="card-toolbar__actions">
+              <button class="btn btn--text" @click="router.push('/commitment')">查看全部</button>
+            </span>
           </div>
           <template v-if="planTotal">
             <div class="dist-row" v-for="d in distList" :key="d.label">
@@ -127,7 +131,7 @@
               <b class="dist-row__num" :style="{ color: d.color }">{{ d.count }}</b>
             </div>
           </template>
-          <div class="empty" v-else>暂无承诺计划</div>
+          <div class="empty-line" v-else>暂无承诺计划</div>
 
           <template v-if="atRiskTop.length">
             <div class="risk-title">有风险计划(前 5)</div>
@@ -514,6 +518,11 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 .welcome-card__date { text-align: right; flex: none; }
 .welcome-card__day { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .welcome-card__date-text { margin-top: 4px; font-size: 12px; opacity: .8; }
+/* 窄屏欢迎区纵向堆叠,日期区回到左对齐 */
+@media (max-width: 768px) {
+  .welcome-card { flex-direction: column; align-items: flex-start; }
+  .welcome-card__date { text-align: left; }
+}
 
 /* ---------- KPI 卡可点击(键盘可达,§UI审查) ---------- */
 .stat-card--link { cursor: pointer; }
@@ -546,7 +555,14 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 .todo-card__customer { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
 .todo-card__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; }
+@media (max-width: 1100px) { .todo-card__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 768px) { .todo-card__grid { grid-template-columns: 1fr; } }
 .todo-card__action { flex: none; display: flex; align-items: center; gap: 8px; margin-left: 16px; }
+/* 窄屏待办卡操作区换行到内容下方 */
+@media (max-width: 768px) {
+  .todo-card { flex-direction: column; align-items: stretch; }
+  .todo-card__action { margin-left: 0; margin-top: 10px; }
+}
 .dg-label { color: var(--color-text-sub); margin-right: 6px; }
 .btn-sm { padding: 4px 10px; font-size: 13px; }
 

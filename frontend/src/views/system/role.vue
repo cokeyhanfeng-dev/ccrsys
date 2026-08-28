@@ -6,11 +6,16 @@
     </div>
 
     <div class="card">
-      <div class="card__head">
-        <span>角色列表</span>
-        <button class="btn btn--primary" @click="openCreate">＋ 新建角色</button>
+      <!-- 工具区统一 card-toolbar:标题在左,新建归右侧 actions -->
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">角色列表</span>
+        <div class="card-toolbar__actions">
+          <button class="btn btn--primary" @click="openCreate">＋ 新建角色</button>
+        </div>
       </div>
-      <table class="table">
+      <!-- 表格横滚容器:窄屏横向滚动,避免列被挤压 -->
+      <div class="table-scroll">
+      <table class="table table--full">
         <thead>
           <tr><th>角色编码</th><th>角色名称</th><th>菜单权限</th><th>备注</th><th>状态</th><th>操作</th></tr>
         </thead>
@@ -30,6 +35,7 @@
           <tr v-if="!roles.length"><td colspan="6" class="empty-cell">暂无数据</td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- 新建/编辑弹窗:角色 + 菜单权限勾选 -->
@@ -142,8 +148,9 @@ onMounted(load)
 </script>
 
 <style scoped>
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
-.req { color: var(--color-danger); }
+/* 表格横滚:列多时窄屏横向滚动 */
+.table-scroll { overflow-x: auto; }
+.table-scroll .table--full { min-width: 680px; }
 .menu-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .menu-check { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
 </style>
