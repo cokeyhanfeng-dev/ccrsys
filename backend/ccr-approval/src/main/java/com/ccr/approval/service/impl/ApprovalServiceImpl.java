@@ -183,19 +183,29 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ApprovalResult approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
+    public ApprovalResult approve(Long applicationId, String nodeCode, BigDecimal adjustRate, String comment,
                         Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments) {
         SysUserRead operator = checkOperatorAndNode(nodeCode);
         guardIdempotency(idempotencyKey);
-        CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
-        CcrApplication application = getApplication(item.getApplicationId());
-        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按分项 dept_code)
-        guardNodeAssignee(nodeCode, application, operator, item.getDeptCode());
+        CcrApplication application = getApplication(applicationId);
+        // 整单交付改造(2026-08-29):审批推进以申请单为准,校验当前节点一致;
+        // 历史申请(整单字段未冻结)从在途分项推导当前节点与部门归属(新旧统一,不改存量数据)
+        CcrPricingItem legacyAnchor = legacyDerivationSource(application);
+        String effectiveNode = legacyAnchor != null ? legacyAnchor.getCurrentNodeCode()
+                : application.getCurrentNodeCode();
+        if (!nodeCode.equals(effectiveNode)) {
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                    "申请不在节点[" + nodeCode + "],实际节点[" + effectiveNode + "]");
+        }
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按整单 dept_code)
+        guardNodeAssignee(nodeCode, application, operator,
+                StrUtil.isNotBlank(application.getDeptCode()) ? application.getDeptCode()
+                        : (legacyAnchor != null ? legacyAnchor.getDeptCode() : null));
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
-        // 存款双轨消除:普通审批链对 DEPOSIT 分项只允许支行行长节点动作
+        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行行长节点动作
         if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
-            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手,此后上会小组表决");
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款申请仅支行行长过手,此后上会小组表决");
         }
         // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
         if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
@@ -216,411 +226,183 @@ public class ApprovalServiceImpl implements ApprovalService {
                 .eq(CcrNodePermission::getBusinessType, businessType)
                 .last("limit 1"));
 
-        // B07 调价边界:主动调价不得突破本节点权限边界(超权限利率只能保留上送,不能由本节点调价产生),
-        // 且不得突破产品硬边界(RuleEngine 校验,越界抛 HARD_BOUNDARY)
-        BigDecimal beforeRate = item.getCurrentApprovalRate();
-        boolean adjusted = adjustRate != null && (beforeRate == null || adjustRate.compareTo(beforeRate) != 0);
-        BigDecimal effectiveRate = adjusted ? adjustRate : beforeRate;
-        if (adjusted) {
-            if (!inNodePermission(businessType, adjustRate, perm)) {
-                throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
-                        "调价突破本节点权限边界:节点[" + nodeCode + "] 调价利率 " + adjustRate);
-            }
-            ruleEngine.checkHardBoundary(businessType, item.getProductCode(), adjustRate);
-        }
-        // 调价后按新利率重算矩阵路由(§8.6):跨上会线(如 3.9→3.7)时终审岗位/链路随之变化,
-        // 刷新冻结的 route_code/route_chain/dept_code 等,推进按新链取下一节点;存款链固定不重算
-        RouteResult reroute = (adjusted && !deposit) ? recalcRoute(application, item, adjustRate) : null;
-        if (reroute != null) {
-            applyReroute(item, reroute);
-        }
-
-        // ===== 整单流转口径 v2(用户拍板 2026-08-27):中间节点逐分项审批,全齐套后整单上送 =====
-        // 同申请全部分项(create_time 升序保证轨迹顺序稳定);兜底含触发分项自身
-        List<CcrPricingItem> appItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+        // 整单化:本次整单动作目标分项 = 同申请 ROUTING 且当前节点==本节点(整单同步推进,无分项提前终审)
+        List<CcrPricingItem> routingItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
                 .eq(CcrPricingItem::getApplicationId, application.getId())
+                .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                .eq(CcrPricingItem::getCurrentNodeCode, nodeCode)
                 .orderByAsc(CcrPricingItem::getCreateTime));
-        if (appItems.isEmpty()) {
-            appItems = new ArrayList<>(List.of(item));
+        if (routingItems.isEmpty()) {
+            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(), "申请无待处理分项,请勿重复操作");
+        }
+        List<Long> routingIds = routingItems.stream().map(CcrPricingItem::getId).toList();
+        // 防重复守卫:本节点已有任一在途分项处理记录(APPROVE/REJECT)→整单已处理,拒绝重复
+        Long acted = approvalActionMapper.selectCount(new LambdaQueryWrapper<CcrApprovalAction>()
+                .eq(CcrApprovalAction::getNodeCode, nodeCode)
+                .in(CcrApprovalAction::getActionType, "APPROVE", "REJECT")
+                .in(CcrApprovalAction::getPricingItemId, routingIds));
+        if (acted != null && acted > 0) {
+            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(), "申请本节点已处理,请勿重复操作");
         }
 
+        // B07 调价边界:整单统一调整利率(adjustRate 优先,rateAdjustments 逐分项覆盖兼容旧前端),
+        // 应用到全部在途分项;不得突破本节点权限边界与产品硬边界(越界抛 HARD_BOUNDARY)
+        Map<Long, BigDecimal> effectiveRates = new LinkedHashMap<>();
+        for (CcrPricingItem i : routingItems) {
+            BigDecimal rate = adjustRate != null ? adjustRate
+                    : (rateAdjustments == null ? null : rateAdjustments.get(i.getId()));
+            if (rate == null) {
+                rate = i.getCurrentApprovalRate();
+            }
+            effectiveRates.put(i.getId(), rate);
+            boolean itemAdjusted = adjustRate != null
+                    && (i.getCurrentApprovalRate() == null
+                        || adjustRate.compareTo(i.getCurrentApprovalRate()) != 0);
+            if (!itemAdjusted) {
+                continue;
+            }
+            if (!inNodePermission(businessType, rate, perm)) {
+                throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                        "调价突破本节点权限边界:节点[" + nodeCode + "] 调价利率 " + rate);
+            }
+            ruleEngine.checkHardBoundary(businessType, i.getProductCode(), rate);
+        }
+        boolean adjusted = adjustRate != null;
+
+        // 整单链锚定:贷款=当前在途分项中有效利率最低者;存款=原流程(首个分项)。
+        // 调价后或历史申请整单链为空 → 按锚定分项要素重算并刷新申请单冻结字段(§8.6 重锚定)
+        CcrPricingItem anchor = routingItems.get(0);
+        if (!deposit) {
+            for (CcrPricingItem i : routingItems) {
+                if (effectiveRates.get(i.getId()) != null
+                        && effectiveRates.get(i.getId()).compareTo(effectiveRates.get(anchor.getId())) < 0) {
+                    anchor = i;
+                }
+            }
+        }
+        List<String> chain;
+        String routeCode;
+        if (deposit) {
+            chain = parseRouteChain(application.getRouteChain());
+            if (chain.isEmpty()) {
+                chain = RouteChains.fullChain(businessType);
+            }
+            routeCode = application.getRouteCode();
+        } else if (adjusted || StrUtil.isBlank(application.getRouteChain())) {
+            RouteResult reroute = recalcRoute(application, anchor,
+                    adjusted ? effectiveRates.get(anchor.getId()) : anchor.getRequestedRate());
+            applyRerouteApplication(application, reroute);
+            chain = reroute.getRouteChain();
+            routeCode = reroute.getFinalNodeCode();
+        } else {
+            chain = parseRouteChain(application.getRouteChain());
+            routeCode = application.getRouteCode();
+        }
+
+        // ===== 整单流转口径(整单交付改造 2026-08-29):一次动作即整单推进/终审,无逐分项齐套 =====
         // 权限内判定:贷款 审批利率≥节点下限;存款/保证金 审批利率≤期限上限(冻结 boundary_rate,含等于)
         boolean withinPermission;
         if (deposit) {
-            BigDecimal upper = item.getBoundaryRate();
-            withinPermission = upper != null && effectiveRate != null && effectiveRate.compareTo(upper) <= 0;
+            BigDecimal upper = anchor.getBoundaryRate();
+            BigDecimal anchorEff = effectiveRates.get(anchor.getId());
+            withinPermission = upper != null && anchorEff != null && anchorEff.compareTo(upper) <= 0;
         } else {
-            withinPermission = inNodePermission(businessType, effectiveRate, perm);
+            withinPermission = inNodePermission(businessType, effectiveRates.get(anchor.getId()), perm);
         }
-        // 下一节点:存款链支行过手后直上小组;贷款链优先沿分项冻结链路(矩阵驱动,可跳过无权限节点如GM),
-        // 回退固定链;链终点(正常不可达)按权限内终审兜底
-        List<String> frozenChain = parseRouteChain(item.getRouteChain());
-        String next = deposit ? RouteChains.SIX_PEOPLE_GROUP
-                : (reroute != null ? nextAfterReroute(nodeCode, reroute.getRouteChain())
-                                   : RouteChains.nextNode(nodeCode, frozenChain));
-        // 终审节点判定:仅当前节点 = 矩阵冻结的终审岗位(route_code)才具备权限内终审资格;
-        // 链路中间节点(如强制上会场景的支行/分管行长)即使利率在权限内也只有知晓/过手权,须沿链上送,
-        // 避免在此截胡终审——预览为「上会+行长决策」,实际却被中间节点直接终审,前后口径不一致
-        String routeCode = item.getRouteCode();
-        boolean isFinalNode = StrUtil.isBlank(routeCode) || routeCode.equals(nodeCode);
-
-        // 齐套判定:同申请全部「本节点 ROUTING」分项均须已取得本节点 APPROVE(触发分项本次动作即视为已通过)。
-        // 「本节点已同意」口径 = ccr_approval_action 按 node_code + APPROVE 过滤覆盖的分项(与详情页
-        // siblingItems.agreed 同源);上级节点 APPROVE 不再视为本节点已通过——中间节点逐项审批,
-        // 每个节点的每个分项都要逐个同意,全部齐套后才整单推进
-        List<Long> appItemIds = appItems.stream().map(CcrPricingItem::getId).toList();
-        List<Long> nodeApprovedIds = approvalActionMapper.selectList(
-                new LambdaQueryWrapper<CcrApprovalAction>()
-                        .select(CcrApprovalAction::getPricingItemId)
-                        .eq(CcrApprovalAction::getActionType, "APPROVE")
-                        .eq(CcrApprovalAction::getNodeCode, nodeCode)
-                        .in(CcrApprovalAction::getPricingItemId, appItemIds))
-                .stream().map(CcrApprovalAction::getPricingItemId).toList();
-        // 本节点已否决分项(逐项否决模型 2026-08-27 用户拍板:否决与同意一样记本节点动作,齐套后统一分派;
-        // 部分否决整单上送、否决分项置 REJECTED 展示给上级,全部否决整单退回)
-        List<Long> nodeRejectedIds = approvalActionMapper.selectList(
-                new LambdaQueryWrapper<CcrApprovalAction>()
-                        .select(CcrApprovalAction::getPricingItemId)
-                        .eq(CcrApprovalAction::getActionType, "REJECT")
-                        .eq(CcrApprovalAction::getNodeCode, nodeCode)
-                        .in(CcrApprovalAction::getPricingItemId, appItemIds))
-                .stream().map(CcrApprovalAction::getPricingItemId).toList();
-        // 齐套判定:同申请全部「本节点 ROUTING」分项均须已取得本节点处理记录(APPROVE 同意或 REJECT 否决,
-        // 触发分项本次动作即视为已处理)。口径 = ccr_approval_action 按 node_code+action 过滤覆盖的分项
-        // (与详情页 siblingItems.agreed/rejected 同源);上级节点动作不再视为本节点已通过——
-        // 中间节点逐项审批,每个节点的每个分项都要逐个同意/否决,全部齐套后才整单推进
-        boolean allProcessed = appItems.stream().allMatch(i ->
-                !(PricingItemStatus.ROUTING.getCode().equals(i.getStatus())
-                        && nodeCode.equals(i.getCurrentNodeCode()))
-                    || (i.getId().equals(item.getId())
-                        || nodeApprovedIds.contains(i.getId())
-                        || nodeRejectedIds.contains(i.getId())
-                        // 秘书岗过手放行(2026-08-28 用户拍板):SECRETARY 节点上未命中秘书岗条件的分项
-                        // (route_chain 不含 SECRETARY)仅过手,不要求秘书岗审批动作,不阻塞齐套——
-                        // 整单都过秘书岗,但秘书岗只审命中分项,批完即齐套再整单上送小组
-                        || secretaryPassThrough(i, nodeCode)));
-        // 防重复守卫:触发分项已在本节点同意或否决过(齐套判定前,覆盖未齐套/齐套两条路径),重复提交直接拒绝,
-        // 避免重复 update/重复留痕
-        if (nodeApprovedIds.contains(item.getId()) || nodeRejectedIds.contains(item.getId())) {
-            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(),
-                    "分项[" + item.getPricingItemNo() + "]本节点已处理,请勿重复操作");
+        // 下一节点:存款链支行过手后直上小组;贷款沿整单链推进(矩阵驱动,可跳过无权限节点如GM)。
+        // 终点判定:当前节点 == 整单链终审岗位(route_code)才具备整单终审资格;链路中间节点
+        // (强制上会场景的支行/部门总/分管)即使利率在权限内也只有过手权,须沿链上送,不就地终审
+        boolean isFinalNode;
+        String next;
+        if (deposit) {
+            next = RouteChains.SIX_PEOPLE_GROUP;
+            isFinalNode = false;
+        } else {
+            next = RouteChains.nextNode(nodeCode, chain);
+            isFinalNode = StrUtil.isBlank(routeCode) || routeCode.equals(nodeCode);
         }
 
-        if (!allProcessed) {
-            // 未齐套:记「本节点已同意」,保持 ROUTING 在当前节点,停留待其余分项逐个同意
-            updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.ROUTING.getCode(),
-                    adjusted ? effectiveRate : null, null, versionNo);
-            if (adjusted) {
-                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
-            }
-            // §14.7 流转留痕:ROUTING→ROUTING 表示本节点已同意、待整单齐套
-            insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
-                    comment, beforeRate, effectiveRate, idempotencyKey,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.ROUTING.getCode()));
-            warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "APPROVE",
-                    operatorName(operator), comment);
-            log.info("分项 {} 节点 {} 已同意(待整单齐套), 操作人 {} 调价:{}",
-                    pricingItemId, nodeCode, operator.getId(), adjusted);
-            // 审批提交成功提示:待同申请其余分项齐套后整单推进
-            return ApprovalResult.go(nodeCode);
-        }
-
-        // 齐套:重新判定本节点 ROUTING 分项是否有任一超权限(触发分项本次动作即视为已通过;
-        // sibling 按 rateAdjustments 调整后利率判定,存款按期限上限)
-        boolean anyOutOfPermission = appItems.stream().anyMatch(i -> {
-            if (!(PricingItemStatus.ROUTING.getCode().equals(i.getStatus())
-                    && nodeCode.equals(i.getCurrentNodeCode()))) {
-                return false;
-            }
-            // 本节点已否决分项不参与推进与超权限判定(齐套后置 REJECTED 展示给上级,不按利率上送)
-            if (nodeRejectedIds.contains(i.getId())) {
-                return false;
-            }
-            if (i.getId().equals(item.getId())) {
-                return !withinPermission;
-            }
-            BigDecimal siblingAdjust = rateAdjustments == null ? null : rateAdjustments.get(i.getId());
-            boolean siblingAdjusted = siblingAdjust != null
-                    && (i.getCurrentApprovalRate() == null
-                        || siblingAdjust.compareTo(i.getCurrentApprovalRate()) != 0);
-            BigDecimal siblingEffective = siblingAdjusted ? siblingAdjust : i.getCurrentApprovalRate();
-            if (deposit) {
-                BigDecimal upper = i.getBoundaryRate();
-                return upper == null || siblingEffective == null || siblingEffective.compareTo(upper) > 0;
-            }
-            return !inNodePermission(businessType, siblingEffective, perm);
-        });
-
-        // 本节点 ROUTING 待处理分项(含触发分项):齐套分派与整单终审/上送只针对这批——
-        // 已上送/已终审 sibling 不参与,避免整单终审时对历史 sibling 重复 update 触发状态冲突
-        List<CcrPricingItem> nodeItems = appItems.stream()
-                .filter(i -> PricingItemStatus.ROUTING.getCode().equals(i.getStatus())
-                        && nodeCode.equals(i.getCurrentNodeCode()))
-                .toList();
-        // 齐套终审资格:本节点全部 ROUTING 分项 route_code 均空或=当前节点——混合 route_code 时
-        // 异链/超权限 sibling 须上送,不能就地终审;next==null(冻结链已尽)归终审兜底,不走整单上送
-        // 把 currentNodeCode 置空(前端 go(null) 也会误判终审)
-        boolean allItemsFinalAtThisNode = nodeItems.stream().allMatch(i ->
-                StrUtil.isBlank(i.getRouteCode()) || i.getRouteCode().equals(nodeCode));
-        // 本节点存在已否决分项:不能整单终审(B1 会把否决分项误置 APPROVED_LEVEL),须走上送分支
-        // 把否决分项置 REJECTED 展示给上级(部分否决语义)
-        boolean anyRejectedAtNode = nodeItems.stream().anyMatch(i -> nodeRejectedIds.contains(i.getId()));
-
-        if ((isFinalNode || next == null) && !anyOutOfPermission && allItemsFinalAtThisNode && !anyRejectedAtNode) {
-            // 整单齐套终审:全部分项一起置 APPROVED_LEVEL,走既有终态串联(决议/承诺/主申请聚合)
-            updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                    adjusted ? effectiveRate : null, effectiveRate, versionNo);
-            if (adjusted) {
-                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
-            }
-            insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
-                    comment, beforeRate, effectiveRate, idempotencyKey,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-            for (CcrPricingItem sibling : nodeItems) {
-                if (sibling.getId().equals(item.getId())) {
-                    continue;
-                }
-                // sibling 调价(与整单上送分支同口径):rateAdjustments 调整后利率作为终审利率并留痕
-                BigDecimal siblingAdjust = rateAdjustments == null ? null : rateAdjustments.get(sibling.getId());
-                boolean siblingAdjusted = siblingAdjust != null
-                        && (sibling.getCurrentApprovalRate() == null
-                            || siblingAdjust.compareTo(sibling.getCurrentApprovalRate()) != 0);
-                BigDecimal siblingFinal = siblingAdjusted ? siblingAdjust : sibling.getCurrentApprovalRate();
-                if (siblingAdjusted) {
-                    ruleEngine.checkHardBoundary(businessType, sibling.getProductCode(), siblingAdjust);
-                }
-                updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                        siblingAdjusted ? siblingAdjust : null, siblingFinal, null);
-                insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
-                        "整单终审:本节点全部分项权限内通过,随分项[" + item.getPricingItemNo() + "]齐套终审"
-                                + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
-                        sibling.getCurrentApprovalRate(), siblingFinal, null,
+        if (isFinalNode) {
+            // 整单终审:全部分项一起置 APPROVED_LEVEL,走既有终态串联(决议/承诺/主申请聚合)
+            updateWholeOrderItems(routingItems, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
+                    effectiveRates, null, null);
+            for (CcrPricingItem i : routingItems) {
+                BigDecimal eff = effectiveRates.get(i.getId());
+                insertAction(buildAction(i.getId(), "APPROVE", nodeCode, operator.getId(),
+                        comment, i.getCurrentApprovalRate(), eff, idempotencyKey,
                         PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-                if (siblingAdjusted) {
-                    saveAdjustment(sibling, nodeCode, operator.getId(),
-                            sibling.getCurrentApprovalRate(), siblingAdjust, perm);
+                if (eff != null && (i.getCurrentApprovalRate() == null || eff.compareTo(i.getCurrentApprovalRate()) != 0)) {
+                    saveAdjustment(i, nodeCode, operator.getId(), i.getCurrentApprovalRate(), eff, perm);
                 }
             }
             // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
-            warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "APPROVE",
+            warmFlowService.recordBusinessTrail(application.getApplicationNo(), nodeCode, "APPROVE",
                     operatorName(operator), comment);
-            // 逐项触发终态串联(决议+承诺计划+主申请聚合,仅本节点 ROUTING 分项,异常不阻断主流程)
-            for (CcrPricingItem appItem : nodeItems) {
-                itemFinalizationService.afterItemTerminal(appItem.getId(), "LEVEL_APPROVED");
+            // 逐项触发终态串联(决议+承诺计划+主申请聚合,整单一起终审,异常不阻断主流程)
+            for (CcrPricingItem i : routingItems) {
+                itemFinalizationService.afterItemTerminal(i.getId(), "LEVEL_APPROVED");
             }
-            log.info("分项 {} 节点 {} 通过, 操作人 {} 调价:{} 整单齐套终审(共 {} 项)",
-                    pricingItemId, nodeCode, operator.getId(), adjusted, appItems.size());
-            // 审批提交成功提示:整单齐套终审,流程完结
+            log.info("申请 {} 节点 {} 整单终审通过(共 {} 项), 操作人 {} 调价:{}",
+                    applicationId, nodeCode, routingItems.size(), operator.getId(), adjusted);
             return ApprovalResult.terminal();
         }
 
-        // 整单上送:任一分项超权限通过,或权限内但当前节点非终审岗位(链路中间节点过手)
-        // → 该申请全部本节点 ROUTING 分项一起推进下一节点
-        // 触发分项冻结链已尽(route_code==当前节点,当前节点即其终审岗位)且利率权限内:
-        //   触发分项就地终审,不随上送(同申请异链 sibling 由下方分流各自推进/就地终审);
-        //   仅当触发分项确超权限且链路已尽(配置异常)才显式报错,不置空 currentNodeCode 误判终审
-        if (next == null && !(isFinalNode && withinPermission)) {
-            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
-                    "节点[" + nodeCode + "]冻结链路已尽且存在超权限分项,无法整单上送,请检查链路配置");
-        }
-        // 秘书岗整单门槛(2026-08-28 用户拍板):任一上送分项命中秘书岗(SECRETARY),整单统一先到秘书岗,
-        // 秘书岗批完再整单上送小组——严禁未过秘书岗直接到小组。就地终审 sibling 已终态不参与上送。
-        boolean anySecretaryGate = SECRETARY_NODE.equals(next)
-                || nodeItems.stream().anyMatch(i ->
-                        !nodeRejectedIds.contains(i.getId())
-                                && SECRETARY_NODE.equals(nextAfterReroute(nodeCode, parseRouteChain(i.getRouteChain()))));
-        boolean toGroup = !anySecretaryGate && next != null && RouteChains.SIX_PEOPLE_GROUP.equals(next);
-        if (anySecretaryGate) {
-            next = SECRETARY_NODE;
-        }
-        if (next != null) {
-            updateItemWithStateAndVersion(item, next, PricingItemStatus.ROUTING.getCode(),
-                    adjusted ? effectiveRate : null, null, versionNo);
-            if (adjusted) {
-                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
-            }
-            // §14.7 流转留痕:动作前 ROUTING,动作后 上送→ROUTING / 上送小组→VOTING
-            insertAction(buildAction(item.getId(), "ESCALATE", nodeCode, operator.getId(),
-                    comment, beforeRate, effectiveRate, idempotencyKey,
+        // 整单上送:全部分项一起推进下一节点(小组节点经 createGroupRound 合批,入批后置 VOTING)
+        boolean toGroup = RouteChains.SIX_PEOPLE_GROUP.equals(next);
+        updateWholeOrderItems(routingItems, next, PricingItemStatus.ROUTING.getCode(),
+                effectiveRates, null, null);
+        for (CcrPricingItem i : routingItems) {
+            BigDecimal eff = effectiveRates.get(i.getId());
+            insertAction(buildAction(i.getId(), "ESCALATE", nodeCode, operator.getId(),
+                    comment, i.getCurrentApprovalRate(), eff, idempotencyKey,
                     PricingItemStatus.ROUTING.getCode(),
                     toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
-        } else {
-            // 触发分项就地终审(route_code==当前节点且利率权限内):与 sibling 就地终审 L491-505 同口径
-            updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                    adjusted ? effectiveRate : null, effectiveRate, versionNo);
-            if (adjusted) {
-                saveAdjustment(item, nodeCode, operator.getId(), beforeRate, adjustRate, perm);
-            }
-            insertAction(buildAction(item.getId(), "APPROVE", nodeCode, operator.getId(),
-                    comment, beforeRate, effectiveRate, idempotencyKey,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-            itemFinalizationService.afterItemTerminal(item.getId(), "LEVEL_APPROVED");
-        }
-        // 逐项否决模型:本节点已否决分项不随整单上送推进,置 REJECTED 终态(带否决原因),上级审批该申请
-        // 时展示否决结果;也排除在 sibling 上送分流之外
-        for (CcrPricingItem rejected : nodeItems) {
-            if (!nodeRejectedIds.contains(rejected.getId())) {
-                continue;
-            }
-            updateSiblingWholeOrder(rejected, nodeCode, PricingItemStatus.REJECTED.getCode(),
-                    null, "本节点否决,整单上送时随单置终态");
-            insertAction(buildAction(rejected.getId(), "REJECT", nodeCode, operator.getId(),
-                    "整单上送:同意分项[" + item.getPricingItemNo() + "]推进[" + next + "],本分项本节点否决随整单置终态展示上级",
-                    rejected.getCurrentApprovalRate(), rejected.getCurrentApprovalRate(), null,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
-            // 否决终态:聚合主申请(部分终态保持 ROUTING;REJECTED 非 COMMITTEE_REJECT 不签决议)
-            itemFinalizationService.afterItemTerminal(rejected.getId(), null);
-        }
-        for (CcrPricingItem sibling : appItems) {
-            if (sibling.getId().equals(item.getId())
-                    || !PricingItemStatus.ROUTING.getCode().equals(sibling.getStatus())
-                    || !nodeCode.equals(sibling.getCurrentNodeCode())
-                    || nodeRejectedIds.contains(sibling.getId())) {
-                continue;
-            }
-            // 本次提交带利率调整的分项(rateAdjustments):存款链固定不重算,但调整利率需保存并留痕
-            BigDecimal siblingAdjust = rateAdjustments == null ? null : rateAdjustments.get(sibling.getId());
-            boolean siblingAdjusted = siblingAdjust != null
-                    && (sibling.getCurrentApprovalRate() == null
-                        || siblingAdjust.compareTo(sibling.getCurrentApprovalRate()) != 0);
-            // 存款双轨消除(§7.3):任一超上限整单上会,全部分项无条件推进小组,与 D16b 一致
-            if (deposit) {
-                if (siblingAdjusted) {
-                    ruleEngine.checkHardBoundary(businessType, sibling.getProductCode(), siblingAdjust);
-                }
-                updateSiblingWholeOrder(sibling, RouteChains.SIX_PEOPLE_GROUP,
-                        PricingItemStatus.ROUTING.getCode(), siblingAdjusted ? siblingAdjust : null, null, null);
-                insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
-                        "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至[SIX_PEOPLE_GROUP]"
-                                + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
-                        sibling.getCurrentApprovalRate(),
-                        siblingAdjusted ? siblingAdjust : sibling.getCurrentApprovalRate(), null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.VOTING.getCode()));
-                if (siblingAdjusted) {
-                    saveAdjustment(sibling, nodeCode, operator.getId(),
-                            sibling.getCurrentApprovalRate(), siblingAdjust, perm);
-                }
-                continue;
-            }
-            // 贷款按 sibling 自身 route_code 分流(用户拍板:小组只审批自身权限内的分项):
-            // 当前节点即该 sibling 冻结终审岗位(route_code==当前节点)且利率权限内 → 就地终审,
-            // 不随触发分项连带进小组、不建表决轮次;其余 sibling 沿自身 route_chain 推进
-            // 本次提交带利率调整的 sibling(rateAdjustments):先按调整后利率重算矩阵路由并刷新冻结链路
-            // (跨上会线如 3.9→3.7 时终审岗位随之变为小组),再按新路由判定分流,修复合单上送时
-            // 非触发分项利率修改被丢弃的问题
-            RouteResult siblingReroute = null;
-            if (siblingAdjusted) {
-                ruleEngine.checkHardBoundary(businessType, sibling.getProductCode(), siblingAdjust);
-                siblingReroute = recalcRoute(application, sibling, siblingAdjust);
-                applyReroute(sibling, siblingReroute);
-            }
-            BigDecimal siblingEffective = siblingAdjusted ? siblingAdjust : sibling.getCurrentApprovalRate();
-            String siblingRouteCode = siblingReroute != null ? siblingReroute.getFinalNodeCode() : sibling.getRouteCode();
-            boolean siblingFinal = StrUtil.isBlank(siblingRouteCode) || siblingRouteCode.equals(nodeCode);
-            boolean siblingWithin = inNodePermission(businessType, siblingEffective, perm);
-            if (siblingFinal && siblingWithin) {
-                updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                        siblingAdjusted ? siblingAdjust : null, siblingEffective, null);
-                insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
-                        "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项在节点["
-                                + nodeCode + "]权限内通过就地终审"
-                                + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
-                        sibling.getCurrentApprovalRate(), siblingEffective, null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-                if (siblingAdjusted) {
-                    saveAdjustment(sibling, nodeCode, operator.getId(),
-                            sibling.getCurrentApprovalRate(), siblingAdjust, perm);
-                }
-                // 终态串联(决议+承诺计划+主申请聚合,异常不阻断主流程)
-                itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
-            } else {
-                List<String> siblingChain = siblingReroute != null ? siblingReroute.getRouteChain()
-                        : parseRouteChain(sibling.getRouteChain());
-                String siblingNext = siblingReroute != null
-                        ? nextAfterReroute(nodeCode, siblingChain)
-                        : RouteChains.nextNode(nodeCode, siblingChain);
-                // 整单统一过秘书岗(2026-08-28 用户拍板):任一上送分项命中秘书岗,所有上送 sibling
-                // 都先到秘书岗、不各自分流——保证整单必经秘书岗,严禁未过秘书岗直接到小组
-                if (anySecretaryGate) {
-                    siblingNext = SECRETARY_NODE;
-                }
-                // 秘书岗节点整单上送:秘书岗批完整单统一上送小组,未命中分项(链无 SECRETARY)
-                // 沿触发分项目标推进、不就地终审——整单一起到小组
-                if (siblingNext == null && SECRETARY_NODE.equals(nodeCode)) {
-                    siblingNext = next;
-                }
-                if (siblingNext == null) {
-                    // 链路已尽且当前节点非终审岗位的异常口径:按权限内就地终审兜底,避免分项悬挂
-                    updateSiblingWholeOrder(sibling, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                            siblingAdjusted ? siblingAdjust : null, siblingEffective, null);
-                    insertAction(buildAction(sibling.getId(), "APPROVE", nodeCode, operator.getId(),
-                            "整单上送:触发分项[" + item.getPricingItemNo() + "]上送[" + next + "],本分项链路已尽就地终审兜底"
-                                    + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
-                            sibling.getCurrentApprovalRate(), siblingEffective, null,
-                            PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-                    if (siblingAdjusted) {
-                        saveAdjustment(sibling, nodeCode, operator.getId(),
-                                sibling.getCurrentApprovalRate(), siblingAdjust, perm);
-                    }
-                    itemFinalizationService.afterItemTerminal(sibling.getId(), "LEVEL_APPROVED");
-                } else {
-                    boolean siblingToGroup = RouteChains.SIX_PEOPLE_GROUP.equals(siblingNext);
-                    // 触发分项就地终审场景(混合 route_code:触发分项链尽就地终审):sibling 推进去向
-                    // 反映到返回结果——next 取 sibling 实际推进节点、进小组则建批,前端按此提示去向
-                    if (next == null) {
-                        next = siblingNext;
-                    }
-                    if (siblingToGroup) {
-                        toGroup = true;
-                    }
-                    updateSiblingWholeOrder(sibling, siblingNext, PricingItemStatus.ROUTING.getCode(),
-                            siblingAdjusted ? siblingAdjust : null, null, null);
-                    insertAction(buildAction(sibling.getId(), "ESCALATE", nodeCode, operator.getId(),
-                            "整单上送:分项[" + item.getPricingItemNo() + "]保留超权限利率通过,随整单推进至["
-                                    + siblingNext + "]"
-                                    + (siblingAdjusted ? "(调价 " + sibling.getCurrentApprovalRate() + "→" + siblingAdjust + ")" : ""),
-                            sibling.getCurrentApprovalRate(), siblingEffective, null,
-                            PricingItemStatus.ROUTING.getCode(),
-                            siblingToGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
-                    if (siblingAdjusted) {
-                        saveAdjustment(sibling, nodeCode, operator.getId(),
-                                sibling.getCurrentApprovalRate(), siblingAdjust, perm);
-                    }
-                }
+            if (eff != null && (i.getCurrentApprovalRate() == null || eff.compareTo(i.getCurrentApprovalRate()) != 0)) {
+                saveAdjustment(i, nodeCode, operator.getId(), i.getCurrentApprovalRate(), eff, perm);
             }
         }
+        // 同步整单当前节点(申请单为准,分项 current_node_code 已随 updateWholeOrderItems 推进)
+        updateApplicationNode(application, next, null);
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
-        warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "APPROVE",
+        warmFlowService.recordBusinessTrail(application.getApplicationNo(), nodeCode, "APPROVE",
                 operatorName(operator), comment);
-
         if (toGroup) {
-            // 上送小组:同申请小组节点未入批分项自动合为一批,入批后分项置 VOTING
-            voteService.createGroupRound(item.getApplicationId());
+            voteService.createGroupRound(applicationId);
         }
-        log.info("分项 {} 节点 {} 超权限保留利率通过, 操作人 {} 整单上送 {} 上送小组:{}",
-                pricingItemId, nodeCode, operator.getId(), next, toGroup);
+        log.info("申请 {} 节点 {} 整单上送 {} 上送小组:{}, 操作人 {} 调价:{}",
+                applicationId, nodeCode, next, toGroup, operator.getId(), adjusted);
         // 审批提交成功提示:整单上送推进至下一节点(六人小组等)
         return ApprovalResult.go(next);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ApprovalResult reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey) {
+    public ApprovalResult reject(Long applicationId, String nodeCode, String comment, Integer versionNo, String idempotencyKey) {
         SysUserRead operator = checkOperatorAndNode(nodeCode);
         // §7.3 普通节点否决原因必填
         if (StrUtil.isBlank(comment)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "否决必须填写原因(§7.3)");
         }
         guardIdempotency(idempotencyKey);
-        CcrPricingItem item = getRoutingItem(pricingItemId, nodeCode);
-        CcrApplication application = getApplication(item.getApplicationId());
-        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按分项 dept_code)
-        guardNodeAssignee(nodeCode, application, operator, item.getDeptCode());
+        CcrApplication application = getApplication(applicationId);
+        // 整单交付改造(2026-08-29):审批推进以申请单为准,校验当前节点一致;
+        // 历史申请(整单字段未冻结)从在途分项推导当前节点与部门归属(新旧统一,不改存量数据)
+        CcrPricingItem legacyAnchor = legacyDerivationSource(application);
+        String effectiveNode = legacyAnchor != null ? legacyAnchor.getCurrentNodeCode()
+                : application.getCurrentNodeCode();
+        if (!nodeCode.equals(effectiveNode)) {
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                    "申请不在节点[" + nodeCode + "],实际节点[" + effectiveNode + "]");
+        }
+        // 节点审批人配置限制(§5.5.1):配置了有效指派时仅解析出的处理人可操作(§D16a 部门分流按整单 dept_code)
+        guardNodeAssignee(nodeCode, application, operator,
+                StrUtil.isNotBlank(application.getDeptCode()) ? application.getDeptCode()
+                        : (legacyAnchor != null ? legacyAnchor.getDeptCode() : null));
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
-        // 存款双轨消除:普通审批链对 DEPOSIT 分项只允许支行行长节点动作
+        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行行长节点动作
         if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
-            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款分项仅支行行长过手");
+            throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款申请仅支行行长过手");
         }
         // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
         if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
@@ -640,175 +422,45 @@ public class ApprovalServiceImpl implements ApprovalService {
                 .eq(CcrNodePermission::getBusinessType, businessType)
                 .last("limit 1"));
 
-        // ===== 逐项否决模型(用户拍板 2026-08-27):否决与同意同样逐项审批,全齐套后整单分派 =====
-        // 点单个分项只记该分项「本节点已否决」(ROUTING→ROUTING 停留);逐项点完同申请全部
-        // 「本节点 ROUTING」分项后整单分派:未全部否决 → 整单上送(被否决分项置 REJECTED 终态,
-        // 不再上送、上级无需重复否决);全部否决 → 整单直接退回
-        List<CcrPricingItem> appItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+        // ===== 整单否决(整单交付改造 2026-08-29):任一节点一次否决即整单否决,无部分否决 =====
+        // 本次整单动作目标分项 = 同申请 ROUTING 且当前节点==本节点
+        List<CcrPricingItem> routingItems = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
                 .eq(CcrPricingItem::getApplicationId, application.getId())
+                .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                .eq(CcrPricingItem::getCurrentNodeCode, nodeCode)
                 .orderByAsc(CcrPricingItem::getCreateTime));
-        List<Long> appItemIds = appItems.stream().map(CcrPricingItem::getId).toList();
-        List<Long> nodeApprovedIds = approvalActionMapper.selectList(
-                new LambdaQueryWrapper<CcrApprovalAction>()
-                        .select(CcrApprovalAction::getPricingItemId)
-                        .eq(CcrApprovalAction::getActionType, "APPROVE")
-                        .eq(CcrApprovalAction::getNodeCode, nodeCode)
-                        .in(CcrApprovalAction::getPricingItemId, appItemIds))
-                .stream().map(CcrApprovalAction::getPricingItemId).toList();
-        List<Long> nodeRejectedIds = approvalActionMapper.selectList(
-                new LambdaQueryWrapper<CcrApprovalAction>()
-                        .select(CcrApprovalAction::getPricingItemId)
-                        .eq(CcrApprovalAction::getActionType, "REJECT")
-                        .eq(CcrApprovalAction::getNodeCode, nodeCode)
-                        .in(CcrApprovalAction::getPricingItemId, appItemIds))
-                .stream().map(CcrApprovalAction::getPricingItemId).toList();
-        // 防重复守卫:触发分项已在本节点同意或否决过,重复提交直接拒绝,避免重复 update/重复留痕
-        if (nodeApprovedIds.contains(item.getId()) || nodeRejectedIds.contains(item.getId())) {
-            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(),
-                    "分项[" + item.getPricingItemNo() + "]本节点已处理,请勿重复操作");
+        if (routingItems.isEmpty()) {
+            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(), "申请无待处理分项,请勿重复操作");
         }
-        // 本节点 ROUTING 待处理分项(含触发分项):齐套判定与分派只针对这批——已上送/已终审 sibling 不参与
-        List<CcrPricingItem> nodeItems = appItems.stream()
-                .filter(i -> PricingItemStatus.ROUTING.getCode().equals(i.getStatus())
-                        && nodeCode.equals(i.getCurrentNodeCode()))
-                .toList();
-        // 齐套判定:本节点全部 ROUTING 分项均须已取得本节点处理记录(APPROVE 同意或 REJECT 否决,
-        // 触发分项本次动作即视为已处理)——与 approve 同口径
-        boolean allProcessed = nodeItems.stream().allMatch(i ->
-                i.getId().equals(item.getId())
-                        || nodeApprovedIds.contains(i.getId())
-                        || nodeRejectedIds.contains(i.getId()));
+        List<Long> routingIds = routingItems.stream().map(CcrPricingItem::getId).toList();
+        // 防重复守卫:本节点已有任一在途分项处理记录 → 整单已处理,拒绝重复
+        Long acted = approvalActionMapper.selectCount(new LambdaQueryWrapper<CcrApprovalAction>()
+                .eq(CcrApprovalAction::getNodeCode, nodeCode)
+                .in(CcrApprovalAction::getActionType, "APPROVE", "REJECT")
+                .in(CcrApprovalAction::getPricingItemId, routingIds));
+        if (acted != null && acted > 0) {
+            throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(), "申请本节点已处理,请勿重复操作");
+        }
 
-        // 记「本节点已否决」:保持 ROUTING 在当前节点(逐项模型下否决不是终态动作,停留待齐套分派)
-        updateItemWithStateAndVersion(item, nodeCode, PricingItemStatus.ROUTING.getCode(),
-                null, null, versionNo);
-        // §14.7 流转留痕:ROUTING→ROUTING 表示本节点已否决、待整单齐套
-        insertAction(buildAction(item.getId(), "REJECT", nodeCode, operator.getId(),
-                comment, item.getCurrentApprovalRate(), item.getCurrentApprovalRate(), idempotencyKey,
-                PricingItemStatus.ROUTING.getCode(), PricingItemStatus.ROUTING.getCode()));
+        // 整单否决:全部分项一起置 REJECTED 终态(finalReason 注明否决原因),主申请经
+        // afterItemTerminal 聚合为 REJECTED「已否决」,流程直接结束(不是退回客户经理重办)
+        updateWholeOrderItems(routingItems, nodeCode, PricingItemStatus.REJECTED.getCode(),
+                null, null, comment);
+        for (CcrPricingItem i : routingItems) {
+            insertAction(buildAction(i.getId(), "REJECT", nodeCode, operator.getId(),
+                    comment, i.getCurrentApprovalRate(), i.getCurrentApprovalRate(), idempotencyKey,
+                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
+        }
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
-        warmFlowService.recordBusinessTrail(item.getPricingItemNo(), nodeCode, "REJECT",
+        warmFlowService.recordBusinessTrail(application.getApplicationNo(), nodeCode, "REJECT",
                 operatorName(operator), comment);
-        if (!allProcessed) {
-            log.info("分项 {} 节点 {} 已否决(待整单齐套), 操作人 {}", pricingItemId, nodeCode, operator.getId());
-            return ApprovalResult.go(nodeCode);
+        // 否决终态串联:聚合主申请 REJECTED(REJECTED 非 COMMITTEE_REJECT 不签决议)
+        for (CcrPricingItem i : routingItems) {
+            itemFinalizationService.afterItemTerminal(i.getId(), null);
         }
-
-        // 齐套分派一:全部否决 → 整单否决,流程直接结束(主申请聚合置否决态,非退回)。
-        // 触发分项本次动作即视为已否决(nodeRejectedIds 是动作前快照不含触发项,须显式计入)
-        boolean allRejected = nodeItems.stream().allMatch(i ->
-                i.getId().equals(item.getId()) || nodeRejectedIds.contains(i.getId()));
-        if (allRejected) {
-            // 整单否决:触发分项与同申请其余 ROUTING 分项一并置 REJECTED(终态),finalReason 注明否决原因;
-            // 主申请经 afterItemTerminal 聚合为 REJECTED「已否决」,流程结束,不是退回客户经理重办
-            // (用户拍板 2026-08-27:整单否决≠退回)
-            updateSiblingWholeOrder(item, item.getCurrentNodeCode(), PricingItemStatus.REJECTED.getCode(),
-                    null, comment);
-            insertAction(buildAction(item.getId(), "REJECT", nodeCode, operator.getId(),
-                    comment, item.getCurrentApprovalRate(), item.getCurrentApprovalRate(), null,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
-            for (CcrPricingItem sibling : appItems) {
-                if (sibling.getId().equals(item.getId())
-                        || !PricingItemStatus.ROUTING.getCode().equals(sibling.getStatus())) {
-                    continue;
-                }
-                updateSiblingWholeOrder(sibling, sibling.getCurrentNodeCode(), PricingItemStatus.REJECTED.getCode(),
-                        null, "整单否决:触发分项[" + item.getPricingItemNo() + "]");
-                insertAction(buildAction(sibling.getId(), "REJECT", nodeCode, operator.getId(),
-                        "整单否决:触发分项[" + item.getPricingItemNo() + "],原因:" + StrUtil.nullToEmpty(comment),
-                        sibling.getCurrentApprovalRate(), sibling.getCurrentApprovalRate(), null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
-            }
-            // 否决终态:聚合主申请状态(全部 REJECTED → 主申请 REJECTED)
-            itemFinalizationService.afterItemTerminal(item.getId(), null);
-            log.info("分项 {} 节点 {} 整单否决(流程直接结束,主申请置否决态), 操作人 {}", pricingItemId, nodeCode, operator.getId());
-            return ApprovalResult.terminal();
-        }
-
-        // 齐套分派二:部分否决 → 整单上送。被否决分项(含触发分项)置 REJECTED 终态,不上送、
-        // 上级无需重复否决(用户拍板 2026-08-27);同意分项按各自 route_chain 分流推进(与 approve 整单上送同口径)
-        boolean anyToGroup = false;
-        String escalateNext = null;
-        for (CcrPricingItem rejected : nodeItems) {
-            if (!nodeRejectedIds.contains(rejected.getId()) && !rejected.getId().equals(item.getId())) {
-                continue;
-            }
-            updateSiblingWholeOrder(rejected, nodeCode, PricingItemStatus.REJECTED.getCode(),
-                    null, "本节点否决,部分否决整单上送置终态");
-            insertAction(buildAction(rejected.getId(), "REJECT", nodeCode, operator.getId(),
-                    "部分否决整单上送:本分项本节点否决置终态展示上级,原因:" + StrUtil.nullToEmpty(comment),
-                    rejected.getCurrentApprovalRate(), rejected.getCurrentApprovalRate(), null,
-                    PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
-            // 否决终态串联:聚合主申请(部分终态保持 ROUTING;REJECTED 非 COMMITTEE_REJECT 不签决议)
-            itemFinalizationService.afterItemTerminal(rejected.getId(), null);
-        }
-        for (CcrPricingItem agreed : nodeItems) {
-            if (agreed.getId().equals(item.getId()) || nodeRejectedIds.contains(agreed.getId())) {
-                continue;
-            }
-            BigDecimal agreedRate = agreed.getCurrentApprovalRate();
-            if (deposit) {
-                // 存款链固定不重算:全部分项无条件推进小组
-                updateSiblingWholeOrder(agreed, RouteChains.SIX_PEOPLE_GROUP, PricingItemStatus.ROUTING.getCode(),
-                        null, null, null);
-                insertAction(buildAction(agreed.getId(), "ESCALATE", nodeCode, operator.getId(),
-                        "部分否决整单上送:触发否决分项[" + item.getPricingItemNo() + "],本分项同意随整单推进至[SIX_PEOPLE_GROUP]",
-                        agreedRate, agreedRate, null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.VOTING.getCode()));
-                anyToGroup = true;
-                escalateNext = RouteChains.SIX_PEOPLE_GROUP;
-                continue;
-            }
-            // 贷款按 route_code 分流:本节点即该分项冻结终审岗位(route_code==本节点)且利率权限内 → 就地终审;
-            // 其余同意分项沿自身 route_chain 推进
-            String agreedRouteCode = agreed.getRouteCode();
-            boolean agreedFinal = StrUtil.isBlank(agreedRouteCode) || agreedRouteCode.equals(nodeCode);
-            boolean agreedWithin = inNodePermission(businessType, agreedRate, perm);
-            if (agreedFinal && agreedWithin) {
-                updateSiblingWholeOrder(agreed, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                        null, agreedRate, null);
-                insertAction(buildAction(agreed.getId(), "APPROVE", nodeCode, operator.getId(),
-                        "部分否决整单上送:触发否决分项[" + item.getPricingItemNo() + "]上送,本分项在节点["
-                                + nodeCode + "]权限内通过就地终审",
-                        agreedRate, agreedRate, null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-                // 终态串联(决议+承诺计划+主申请聚合,异常不阻断主流程)
-                itemFinalizationService.afterItemTerminal(agreed.getId(), "LEVEL_APPROVED");
-                continue;
-            }
-            List<String> agreedChain = parseRouteChain(agreed.getRouteChain());
-            String agreedNext = RouteChains.nextNode(nodeCode, agreedChain);
-            if (agreedNext == null) {
-                // 链路已尽且当前节点非终审岗位的异常口径:按就地终审兜底,避免分项悬挂
-                updateSiblingWholeOrder(agreed, nodeCode, PricingItemStatus.APPROVED_LEVEL.getCode(),
-                        null, agreedRate, null);
-                insertAction(buildAction(agreed.getId(), "APPROVE", nodeCode, operator.getId(),
-                        "部分否决整单上送:触发否决分项[" + item.getPricingItemNo() + "]上送,本分项链路已尽就地终审兜底",
-                        agreedRate, agreedRate, null,
-                        PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
-                itemFinalizationService.afterItemTerminal(agreed.getId(), "LEVEL_APPROVED");
-            } else {
-                boolean agreedToGroup = RouteChains.SIX_PEOPLE_GROUP.equals(agreedNext);
-                if (agreedToGroup) {
-                    anyToGroup = true;
-                }
-                updateSiblingWholeOrder(agreed, agreedNext, PricingItemStatus.ROUTING.getCode(),
-                        null, null, null);
-                insertAction(buildAction(agreed.getId(), "ESCALATE", nodeCode, operator.getId(),
-                        "部分否决整单上送:触发否决分项[" + item.getPricingItemNo() + "]上送,本分项同意随整单推进至["
-                                + agreedNext + "]",
-                        agreedRate, agreedRate, null,
-                        PricingItemStatus.ROUTING.getCode(),
-                        agreedToGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
-                escalateNext = agreedNext;
-            }
-        }
-        if (anyToGroup) {
-            // 上送小组:同申请小组节点未入批分项自动合为一批,入批后分项置 VOTING
-            voteService.createGroupRound(item.getApplicationId());
-        }
-        log.info("分项 {} 节点 {} 否决(部分否决,整单上送), 操作人 {}", pricingItemId, nodeCode, operator.getId());
-        return escalateNext != null ? ApprovalResult.go(escalateNext) : ApprovalResult.terminal();
+        log.info("申请 {} 节点 {} 整单否决(流程直接结束,主申请置否决态), 操作人 {}",
+                applicationId, nodeCode, operator.getId());
+        return ApprovalResult.terminal();
     }
 
     // ---------- 审批中客户号回填(2026-08-20 #017) ----------
@@ -2443,5 +2095,93 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (inThis == null || inThis == 0) {
             throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "仅可查看本人审批过的申请");
         }
+    }
+
+    // ==================== 整单流转工具(整单交付改造 2026-08-29:审批推进以申请单为准) ====================
+
+    /** 历史申请推导源:整单路由字段未冻结(DDL 前提交,current_node_code/dept_code 均空)时取首个在途分项,
+     * 用于推导整单当前节点/部门归属;整单字段已冻结返回 null 不触发查询。新旧统一不改存量数据(2026-08-29)。 */
+    private CcrPricingItem legacyDerivationSource(CcrApplication application) {
+        if (StrUtil.isNotBlank(application.getCurrentNodeCode())
+                && StrUtil.isNotBlank(application.getDeptCode())) {
+            return null;
+        }
+        return pricingItemMapper.selectOne(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, application.getId())
+                .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                .orderByAsc(CcrPricingItem::getCreateTime)
+                .last("limit 1"));
+    }
+
+    /**
+     * 整单流转批量更新在途分项:一次审批动作对同申请全部在途分项一致推进。
+     * WHERE id=? AND status='ROUTING'、version_no 自增(整单模型不做逐分项乐观锁,防重复靠节点动作守卫);
+     * approvalRates 非空时同步各分项 current_approval_rate(整单统一调价);
+     * 终审(APPROVED_LEVEL)未显式传 finalRate 时回退分项有效利率落 final_rate,否决(REJECTED)不落 final_rate。
+     */
+    private void updateWholeOrderItems(List<CcrPricingItem> items, String targetNode, String targetStatus,
+                                       Map<Long, BigDecimal> approvalRates, BigDecimal finalRate, String finalReason) {
+        for (CcrPricingItem i : items) {
+            BigDecimal eff = approvalRates == null ? null : approvalRates.get(i.getId());
+            BigDecimal finalRateNow;
+            if (finalRate != null) {
+                finalRateNow = finalRate;
+            } else if (PricingItemStatus.APPROVED_LEVEL.getCode().equals(targetStatus)) {
+                // 整单终审:最终利率 = 分项有效利率(调价后利率或原当前审批利率)
+                finalRateNow = eff != null ? eff : i.getCurrentApprovalRate();
+            } else {
+                finalRateNow = null;
+            }
+            LambdaUpdateWrapper<CcrPricingItem> wrapper = new LambdaUpdateWrapper<CcrPricingItem>()
+                    .eq(CcrPricingItem::getId, i.getId())
+                    .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                    .set(CcrPricingItem::getCurrentNodeCode, targetNode)
+                    .set(CcrPricingItem::getStatus, targetStatus)
+                    .set(eff != null, CcrPricingItem::getCurrentApprovalRate, eff)
+                    .set(finalRateNow != null, CcrPricingItem::getFinalRate, finalRateNow)
+                    .set(finalReason != null, CcrPricingItem::getFinalReason, finalReason)
+                    .setSql("version_no = version_no + 1")
+                    .set(CcrPricingItem::getUpdateTime, LocalDateTime.now())
+                    .set(CcrPricingItem::getUpdateBy, currentLoginUser.requireLoginId());
+            int rows = pricingItemMapper.update(null, wrapper);
+            if (rows == 0) {
+                throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                        "分项 " + i.getId() + " 状态已变迁,整单流转中止");
+            }
+        }
+    }
+
+    /** 同步申请单当前节点(status 非空时一并更新,如整单否决置 REJECTED;终态终审聚合走 afterItemTerminal) */
+    private void updateApplicationNode(CcrApplication application, String next, String status) {
+        LambdaUpdateWrapper<CcrApplication> wrapper = new LambdaUpdateWrapper<CcrApplication>()
+                .eq(CcrApplication::getId, application.getId())
+                .set(CcrApplication::getCurrentNodeCode, next)
+                .set(status != null, CcrApplication::getStatus, status)
+                .set(CcrApplication::getUpdateTime, LocalDateTime.now())
+                .set(CcrApplication::getUpdateBy, currentLoginUser.requireLoginId());
+        applicationMapper.update(null, wrapper);
+        application.setCurrentNodeCode(next);
+        if (status != null) {
+            application.setStatus(status);
+        }
+    }
+
+    /** 刷新申请单整单路由字段(route_code/route_chain/start_node_code/boundary_rate/matched_matrix_no/dept_code),
+     * 同步 DB 与内存。用 wrapper 形式更新,避免 updateById 触发 BaseEntity.versionNo 乐观锁自增。 */
+    private void applyRerouteApplication(CcrApplication application, RouteResult nr) {
+        application.setRouteCode(nr.getFinalNodeCode());
+        application.setRouteChain(JSONUtil.toJsonStr(nr.getRouteChain()));
+        application.setStartNodeCode(nr.getStartNodeCode());
+        application.setDeptCode(nr.getDeptCode());
+        application.setBoundaryRate(nr.getBoundaryRate());
+        application.setMatchedMatrixNo(nr.getMatchedMatrixNo());
+        applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                .eq(CcrApplication::getId, application.getId())
+                .set(CcrApplication::getRouteCode, application.getRouteCode())
+                .set(CcrApplication::getRouteChain, application.getRouteChain())
+                .set(CcrApplication::getStartNodeCode, application.getStartNodeCode())
+                .set(CcrApplication::getDeptCode, application.getDeptCode())
+                .set(CcrApplication::getBoundaryRate, application.getBoundaryRate())
+                .set(CcrApplication::getMatchedMatrixNo, application.getMatchedMatrixNo()));
     }
 }

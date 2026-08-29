@@ -176,7 +176,7 @@ public class VoteServiceImpl implements VoteService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void submitBallot(Long roundId, Long pricingItemId, String choice, String comment, String idempotencyKey) {
+    public void submitBallot(Long roundId, Long applicationId, String choice, String comment, String idempotencyKey) {
         if (!"APPROVE".equals(choice) && !"REJECT".equals(choice)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "票型只能为 APPROVE/REJECT");
         }
@@ -184,12 +184,14 @@ public class VoteServiceImpl implements VoteService {
         if (round == null || !"VOTING".equals(round.getStatus())) {
             throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), "批次不在表决中");
         }
-        // (roundId, pricingItemId) 必须属于该批次
-        Long inRound = roundItemMapper.selectCount(new LambdaQueryWrapper<CcrVoteRoundItem>()
-                .eq(CcrVoteRoundItem::getRoundId, roundId)
-                .eq(CcrVoteRoundItem::getPricingItemId, pricingItemId));
-        if (inRound == null || inRound == 0) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "分项不属于该表决批次");
+        // 整单化:批与申请一一对应,校验 applicationId 属于该批次
+        if (applicationId == null || !applicationId.equals(round.getApplicationId())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "申请不属于该表决批次");
+        }
+        // 批内锚定分项(整单化:代表整单落票据/计票/留痕)
+        CcrPricingItem anchor = anchorItemOf(round);
+        if (anchor == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "批次无待表决分项");
         }
         // 委员只能投本人任务(身份取登录人,不接受传参)
         Long voterUserId = currentLoginUser.requireLoginId();
@@ -203,6 +205,16 @@ public class VoteServiceImpl implements VoteService {
         if ("REPLACED".equals(assignment.getStatus())) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "已被替补,不再具有本批次投票权");
         }
+        // 整单化一席位一票:原委员已投则替补不再投(uk_ballot 仅按投票人 hash 防重,须显式防重)
+        String myHash = voterHash(voterUserId);
+        boolean seatVoted = ballotExists(roundId, anchor.getId(), myHash);
+        if (!seatVoted && assignment.getSubstituteFromUserId() != null) {
+            seatVoted = ballotExists(roundId, anchor.getId(),
+                    voterHash(assignment.getSubstituteFromUserId()));
+        }
+        if (seatVoted) {
+            throw new ServiceException(ErrorCode.DUPLICATE_VOTE.getCode(), "重复投票:本席位已投,每人每批只能投一次");
+        }
         // 幂等键防护(uk_ballot_idem 兜底)
         if (StrUtil.isNotBlank(idempotencyKey)) {
             Long dupKey = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
@@ -214,7 +226,7 @@ public class VoteServiceImpl implements VoteService {
 
         CcrBallot ballot = new CcrBallot();
         ballot.setRoundId(roundId);
-        ballot.setPricingItemId(pricingItemId);
+        ballot.setPricingItemId(anchor.getId());
         // 开发期明文+哈希;接入加密组件后替换为密文
         ballot.setVoterUserIdCipher(String.valueOf(voterUserId));
         ballot.setVoterUserHash(voterHash(voterUserId));
@@ -225,28 +237,42 @@ public class VoteServiceImpl implements VoteService {
         try {
             ballotMapper.insert(ballot);
         } catch (DuplicateKeyException e) {
-            throw new ServiceException(ErrorCode.DUPLICATE_VOTE.getCode(), "重复投票:每人每分项只能投一次");
+            throw new ServiceException(ErrorCode.DUPLICATE_VOTE.getCode(), "重复投票:每人每批只能投一次");
         }
 
-        // 单委员 assignment 仅在投完批次内全部分项后置 SUBMITTED
-        markAssignmentSubmittedIfDone(round, assignment);
+        // 整单化:投一票即本委员本批完成(一个申请一个批一个整单票)
+        assignment.setSubmitTime(LocalDateTime.now());
+        assignment.setStatus("SUBMITTED");
+        assignmentMapper.updateById(assignment);
         // Warm-Flow 业务轨迹:投票提交(操作人传登录人id字符串;失败仅记日志,不阻断主流程)
-        CcrPricingItem ballotItem = pricingItemMapper.selectById(pricingItemId);
         warmFlowService.recordBusinessTrail(
-                ballotItem == null ? String.valueOf(pricingItemId) : ballotItem.getPricingItemNo(),
-                "SIX_PEOPLE_GROUP", choice, String.valueOf(voterUserId), comment);
-        // 统一计票:批次内全部分项均收齐全部委员票后一次性计票(全员投完才见结果)
+                String.valueOf(applicationId), "SIX_PEOPLE_GROUP", choice, String.valueOf(voterUserId), comment);
+        // 整单计票:本批全部委员票收齐后一次性计票(全员投完才见结果)
         if (isRoundAllVoted(round)) {
             countAllItems(round);
         }
     }
 
+    /** 批内锚定分项(整单化:批=申请,取批内第一个分项代表整单落票据/计票/留痕) */
+    private CcrPricingItem anchorItemOf(CcrVoteRound round) {
+        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
+                .eq(CcrVoteRoundItem::getRoundId, round.getId())
+                .orderByAsc(CcrVoteRoundItem::getPricingItemId)
+                .last("limit 1"));
+        return items.isEmpty() ? null : pricingItemMapper.selectById(items.get(0).getPricingItemId());
+    }
+
     @Override
-    public Map<String, Object> myBallot(Long roundId, Long pricingItemId) {
+    public Map<String, Object> myBallot(Long roundId, Long applicationId) {
         Long voterUserId = currentLoginUser.requireLoginId();
+        CcrVoteRound round = voteRoundMapper.selectById(roundId);
+        CcrPricingItem anchor = round == null ? null : anchorItemOf(round);
+        if (anchor == null) {
+            return null;
+        }
         CcrBallot ballot = ballotMapper.selectOne(new LambdaQueryWrapper<CcrBallot>()
                 .eq(CcrBallot::getRoundId, roundId)
-                .eq(CcrBallot::getPricingItemId, pricingItemId)
+                .eq(CcrBallot::getPricingItemId, anchor.getId())
                 .eq(CcrBallot::getVoterUserHash, voterHash(voterUserId)));
         if (ballot == null) {
             return null;
@@ -260,10 +286,18 @@ public class VoteServiceImpl implements VoteService {
     }
 
     @Override
-    public CcrVoteResult getVoteResult(Long pricingItemId) {
-        return voteResultMapper.selectOne(
-                new LambdaQueryWrapper<CcrVoteResult>()
-                        .eq(CcrVoteResult::getPricingItemId, pricingItemId));
+    public CcrVoteResult getVoteResult(Long applicationId) {
+        // 整单化:按申请最新表决批次取整单计票结果
+        CcrVoteRound round = voteRoundMapper.selectOne(new LambdaQueryWrapper<CcrVoteRound>()
+                .eq(CcrVoteRound::getApplicationId, applicationId)
+                .orderByDesc(CcrVoteRound::getCreateTime)
+                .last("limit 1"));
+        if (round == null) {
+            return null;
+        }
+        return voteResultMapper.selectOne(new LambdaQueryWrapper<CcrVoteResult>()
+                .eq(CcrVoteResult::getRoundId, round.getId())
+                .last("limit 1"));
     }
 
     @Override
@@ -411,9 +445,9 @@ public class VoteServiceImpl implements VoteService {
     /**
      * 表决超时强制计票(§7.5.5):VOTING 批次超过 ccr.vote.round-timeout-hours(默认 72h)
      * 按已投票数计票——赞成≥requiredCount 通过,否则不通过;结果落库与正常计票一致
-     * (含 PRESIDENT_DECISION 流转与批次关闭)
+     * (含 PRESIDENT_DECISION 流转与批次关闭);整单化后按批一次计票
      *
-     * @return 本次强制计票的分项数
+     * @return 本次强制计票的批次数
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -426,21 +460,20 @@ public class VoteServiceImpl implements VoteService {
         for (CcrVoteRound expiredRound : expired) {
             // 统一锁序(round→分项):先锁批次行,与 submitBallot 一致,避免并发死锁
             CcrVoteRound round = voteRoundMapper.selectByIdForUpdate(expiredRound.getId());
-            List<CcrVoteRoundItem> items = roundItemMapper.selectList(
-                    new LambdaQueryWrapper<CcrVoteRoundItem>()
-                            .eq(CcrVoteRoundItem::getRoundId, round.getId()));
-            for (CcrVoteRoundItem item : items) {
-                Long existed = voteResultMapper.selectCount(new LambdaQueryWrapper<CcrVoteResult>()
-                        .eq(CcrVoteResult::getPricingItemId, item.getPricingItemId()));
-                if (existed != null && existed > 0) {
-                    continue;
-                }
-                countItem(round, item.getPricingItemId(), true);
-                count++;
+            CcrPricingItem anchor = anchorItemOf(round);
+            if (anchor == null) {
+                continue;
             }
+            Long existed = voteResultMapper.selectCount(new LambdaQueryWrapper<CcrVoteResult>()
+                    .eq(CcrVoteResult::getPricingItemId, anchor.getId()));
+            if (existed != null && existed > 0) {
+                continue;
+            }
+            countItem(round, anchor.getId(), true);
+            count++;
         }
         if (count > 0) {
-            log.info("表决超时扫描完成,强制计票分项 {} 个", count);
+            log.info("表决超时扫描完成,强制计票批次 {} 个", count);
         }
         return count;
     }
@@ -535,26 +568,6 @@ public class VoteServiceImpl implements VoteService {
         return round;
     }
 
-    /**
-     * 单委员 assignment 完成标记:投完批次内全部分项(替补委员只要求原成员未投的剩余分项)后
-     * 才置 SUBMITTED;多分项批次下不再"投一单即完成"
-     */
-    private void markAssignmentSubmittedIfDone(CcrVoteRound round, CcrVoteAssignment assignment) {
-        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
-                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
-        String voterHash = voterHash(assignment.getVoterUserId());
-        String fromHash = assignment.getSubstituteFromUserId() == null
-                ? null : voterHash(assignment.getSubstituteFromUserId());
-        boolean allDone = items.stream().allMatch(item ->
-                ballotExists(round.getId(), item.getPricingItemId(), voterHash)
-                        || (fromHash != null && ballotExists(round.getId(), item.getPricingItemId(), fromHash)));
-        if (allDone && !items.isEmpty()) {
-            assignment.setSubmitTime(LocalDateTime.now());
-            assignment.setStatus("SUBMITTED");
-            assignmentMapper.updateById(assignment);
-        }
-    }
-
     private boolean ballotExists(Long roundId, Long pricingItemId, String voterHash) {
         Long count = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
                 .eq(CcrBallot::getRoundId, roundId)
@@ -564,40 +577,29 @@ public class VoteServiceImpl implements VoteService {
     }
 
     /**
-     * 批次内全部分项均已收齐全部委员票(§统一计票)。
-     * 按 ballot 计数判定,天然覆盖替补场景(原委员/替补只占同一席位一票);
-     * 单委员 assignment 状态不能作全员判据,故不依赖 markAssignmentSubmittedIfDone。
+     * 整单投票是否收齐(整单交付改造 2026-08-29:一批=一申请=一个整单票,
+     * 每席位一票由 submitBallot 防重保证,本批 ballot 总数达到委员数即全员投完)。
      */
     private boolean isRoundAllVoted(CcrVoteRound round) {
-        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
-                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
-        if (items.isEmpty()) {
-            return false;
-        }
-        for (CcrVoteRoundItem item : items) {
-            Long n = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
-                    .eq(CcrBallot::getRoundId, round.getId())
-                    .eq(CcrBallot::getPricingItemId, item.getPricingItemId()));
-            if (n == null || n < round.getVoterCount()) {
-                return false;
-            }
-        }
-        return true;
+        Long total = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
+                .eq(CcrBallot::getRoundId, round.getId()));
+        return total != null && total >= round.getVoterCount();
     }
 
-    /** 统一计票:批次内全部分项一次性计票(同事务,结果同时落库,批次随后统一关闭) */
+    /** 整单计票(整单交付改造 2026-08-29):一批一次计票(批=申请,结果作用于批内全部分项,同事务) */
     private void countAllItems(CcrVoteRound round) {
-        List<CcrVoteRoundItem> items = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
-                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
-        for (CcrVoteRoundItem item : items) {
-            countItem(round, item.getPricingItemId(), false);
+        CcrPricingItem anchor = anchorItemOf(round);
+        if (anchor == null) {
+            return;
         }
+        countItem(round, anchor.getId(), false);
     }
 
     /**
-     * 分项计票(§7.5):partial=false 需收齐全部委员票(正常路径);
+     * 整单计票(§7.5):partial=false 需收齐全部委员票(正常路径);
      * partial=true 为超时强制计票(§7.5.5),按已投票数计,赞成≥requiredCount 通过否则不通过。
-     * 计票结果同事务写 ccr_approval_action 留痕(from VOTING,to PRESIDENT_DECISION/REJECTED)
+     * 计票结果作用于批内全部分项(通过→整单 PRESIDENT_DECISION 待行长决策;否决→整单 REJECTED 连坐),
+     * 同事务写 ccr_approval_action 留痕(from VOTING,to PRESIDENT_DECISION/REJECTED)
      */
     private void countItem(CcrVoteRound round, Long pricingItemId, boolean partial) {
         Long submitted = ballotMapper.selectCount(new LambdaQueryWrapper<CcrBallot>()
@@ -609,9 +611,9 @@ public class VoteServiceImpl implements VoteService {
         }
         if (partial && submittedCount == 0) {
             // 超时且无任何投票:仍按 0 赞成计票(不通过),保证批次可关闭
-            log.warn("分项 {} 批次 {} 超时且无任何投票,按不通过计票", pricingItemId, round.getId());
+            log.warn("申请 {} 批次 {} 超时且无任何投票,按不通过计票", round.getApplicationId(), round.getId());
         }
-        // 并发/重入防护:分项已有计票结果不再重复计票(uk_vote_result_pricing 兜底)
+        // 并发/重入防护:整单已有计票结果不再重复计票(uk_vote_result_pricing 按锚定分项兜底)
         Long counted = voteResultMapper.selectCount(new LambdaQueryWrapper<CcrVoteResult>()
                 .eq(CcrVoteResult::getPricingItemId, pricingItemId));
         if (counted != null && counted > 0) {
@@ -639,11 +641,16 @@ public class VoteServiceImpl implements VoteService {
             return;
         }
 
-        // 通过→行长决策(补齐 PRESIDENT_DECISION 状态使用);未通过→否决(终态,不恢复草稿 §B14)
-        CcrPricingItem item = pricingItemMapper.selectById(pricingItemId);
-        if (item != null) {
-            String countNote = (partial ? "超时计票:" : "计票:") + "赞成 " + result.getApproveCount()
-                    + "/" + result.getSubmittedCount();
+        // 整单化:计票结果作用于批内全部分项(整单一起置态,通过→行长决策,未通过→整单否决)
+        List<CcrVoteRoundItem> roundItems = roundItemMapper.selectList(new LambdaQueryWrapper<CcrVoteRoundItem>()
+                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
+        List<Long> roundItemIds = roundItems.stream().map(CcrVoteRoundItem::getPricingItemId)
+                .collect(Collectors.toList());
+        List<CcrPricingItem> allItems = roundItemIds.isEmpty() ? List.of()
+                : pricingItemMapper.selectBatchIds(roundItemIds);
+        String countNote = (partial ? "超时计票:" : "计票:") + "赞成 " + result.getApproveCount()
+                + "/" + result.getSubmittedCount();
+        for (CcrPricingItem item : allItems) {
             if (pass) {
                 item.setStatus(PricingItemStatus.PRESIDENT_DECISION.getCode());
                 updateItemWithLock(item);
@@ -651,22 +658,23 @@ public class VoteServiceImpl implements VoteService {
                 item.setStatus(PricingItemStatus.REJECTED.getCode());
                 item.setFinalReason("六人小组表决未通过(" + countNote + ")");
                 updateItemWithLock(item);
-                // 小组否决 → 生成否决决议(决议书,不建承诺计划)
-                // 分项独立(§用户拍板):仅否决该分项,不连坐同申请其余分项
-                itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_REJECT");
             }
             // §14.7 流转留痕:计票动作(系统动作,operator_id 记 0)
-            insertTrail(pricingItemId, pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
+            insertTrail(item.getId(), pass ? "COUNT_PASS" : "COUNT_REJECT", "SIX_PEOPLE_GROUP",
                     0L, countNote + ",结果 " + ("PASS".equals(result.getResult()) ? "通过" : "未通过"),
                     PricingItemStatus.VOTING.getCode(), item.getStatus());
         }
-        log.info("分项 {} 计票完成: 赞成{} 否决{}, 结果 {}", pricingItemId,
+        // 小组否决 → 整单生成否决决议(决议书,不建承诺计划;整单化按锚定分项触发一次)
+        if (!pass) {
+            itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_REJECT");
+        }
+        log.info("申请 {} 计票完成: 赞成{} 否决{}, 结果 {}", round.getApplicationId(),
                 result.getApproveCount(), result.getRejectCount(), result.getResult());
 
         // Warm-Flow 业务轨迹:计票结果(系统动作,operator 记 SYSTEM;失败仅记日志)
         warmFlowService.recordBusinessTrail(
-                item == null ? String.valueOf(pricingItemId) : item.getPricingItemNo(),
-                "SIX_PEOPLE_GROUP", pass ? "COUNT_PASS" : "COUNT_REJECT", "SYSTEM",
+                String.valueOf(round.getApplicationId()), "SIX_PEOPLE_GROUP",
+                pass ? "COUNT_PASS" : "COUNT_REJECT", "SYSTEM",
                 "计票:赞成 " + result.getApproveCount() + "/" + result.getSubmittedCount()
                         + ",结果 " + result.getResult());
 
@@ -691,19 +699,17 @@ public class VoteServiceImpl implements VoteService {
     }
 
     /**
-     * 批次关闭:批次内全部分项均有计票结果后才关闭(修复多分项批次提前关闭);
-     * PASSED=任一分项通过 / FAILED=全部未过(分项粒度结论以 ccr_vote_result 为准)
+     * 批次关闭(整单交付改造 2026-08-29):一批一次计票,计票完成即关闭;
+     * PASSED=通过 / FAILED=未过(整单结论以 ccr_vote_result 为准)
      */
     private void closeRoundIfAllCounted(CcrVoteRound round) {
-        Long itemCount = roundItemMapper.selectCount(new LambdaQueryWrapper<CcrVoteRoundItem>()
-                .eq(CcrVoteRoundItem::getRoundId, round.getId()));
-        List<CcrVoteResult> results = voteResultMapper.selectList(new LambdaQueryWrapper<CcrVoteResult>()
-                .eq(CcrVoteResult::getRoundId, round.getId()));
-        if (itemCount == null || results.size() < itemCount) {
+        CcrVoteResult result = voteResultMapper.selectOne(new LambdaQueryWrapper<CcrVoteResult>()
+                .eq(CcrVoteResult::getRoundId, round.getId())
+                .last("limit 1"));
+        if (result == null) {
             return;
         }
-        boolean anyPass = results.stream().anyMatch(r -> "PASS".equals(r.getResult()));
-        round.setStatus(anyPass ? "PASSED" : "FAILED");
+        round.setStatus("PASS".equals(result.getResult()) ? "PASSED" : "FAILED");
         round.setRoundEndTime(LocalDateTime.now());
         voteRoundMapper.updateById(round);
         log.info("批次 {} 关闭,结果 {}", round.getId(), round.getStatus());

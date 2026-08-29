@@ -98,13 +98,13 @@ class RateMatrixRouterImplTest {
     /** 非国企新增<5000万一年期链:BM/GM=LPR+40(3.4) → VP=LPR+20(3.2) → 小组 */
     private List<CcrRateMatrix> nonSoeNew1yChain() {
         return List.of(
-                loanRow("M-LT-NSOE-1Y-BM", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-LT-NSOE-1Y-BM", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "BRANCH_MANAGER", "RATE", null, 40, "+", "1Y", 1),
-                loanRow("M-LT-NSOE-1Y-GM", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-LT-NSOE-1Y-GM", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "DEPT_GENERAL_MANAGER", "RATE", null, 40, "+", "1Y", 2),
-                loanRow("M-LT-NSOE-1Y-VP", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-LT-NSOE-1Y-VP", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "VICE_PRESIDENT", "RATE", null, 20, "+", "1Y", 3),
-                loanRow("M-LT-NSOE-1Y-GROUP", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-LT-NSOE-1Y-GROUP", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "SIX_PEOPLE_GROUP", "RATE", null, 0, "+", "1Y", 4));
     }
 
@@ -135,11 +135,11 @@ class RateMatrixRouterImplTest {
     /** 非国企存量<5000万链:GM=orig-20BP floor3.0 → VP=floor3.0 → 小组(<3.0) */
     private List<CcrRateMatrix> nonSoeExistingChain() {
         return List.of(
-                loanRow("M-EX-GM", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "LT_5000", null,
+                loanRow("M-EX-GM", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "GE_1000_LT_5000", null,
                         "DEPT_GENERAL_MANAGER", "SPREAD", "3.0", 20, null, null, 2),
-                loanRow("M-EX-VP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "LT_5000", null,
+                loanRow("M-EX-VP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "GE_1000_LT_5000", null,
                         "VICE_PRESIDENT", "RATE", "3.0", null, null, null, 3),
-                loanRow("M-EX-GROUP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "LT_5000", null,
+                loanRow("M-EX-GROUP", "LOAN_PUBLIC", "EXISTING", "NON_SOE", "GE_1000_LT_5000", null,
                         "SIX_PEOPLE_GROUP", "RATE", "3.0", null, null, null, 4));
     }
 
@@ -187,7 +187,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 金额档_5000万整归GE_5000() {
         stubCurrentLpr("3.0", "3.5");
-        List<CcrRateMatrix> rows = new java.util.ArrayList<>(soeNew1yChain("LT_5000"));
+        List<CcrRateMatrix> rows = new java.util.ArrayList<>(soeNew1yChain("GE_1000_LT_5000"));
         rows.addAll(soeNew1yChain("GE_5000"));
         when(matrixMapper.selectList(any())).thenReturn(rows);
         // 5000万整 → GE_5000 档(国企新增,GM线=LPR+0=3.0)
@@ -274,7 +274,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 国企新增链_支行无权限_GM终审且支行必经() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "3.0"));
         assertEquals("DEPT_GENERAL_MANAGER", result.getFinalNodeCode());
         assertEquals("BRANCH_MANAGER", result.getStartNodeCode());
@@ -284,7 +284,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 国企新增链_等于VP边界_VP终审() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "2.9"));
         assertEquals("VICE_PRESIDENT", result.getFinalNodeCode());
     }
@@ -292,7 +292,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 国企新增链_低于全部下限_上会小组() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "2.85"));
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
         assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT", "SIX_PEOPLE_GROUP",
@@ -412,9 +412,9 @@ class RateMatrixRouterImplTest {
     @Test
     void 同优先级多命中_抛RULE_MULTI_MATCH() {
         when(matrixMapper.selectList(any())).thenReturn(List.of(
-                loanRow("M-DUP-1", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-DUP-1", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "BRANCH_MANAGER", "RATE", null, 40, "+", "1Y", 1),
-                loanRow("M-DUP-2", "LOAN_PUBLIC", "NEW", "NON_SOE", "LT_5000", "1Y",
+                loanRow("M-DUP-2", "LOAN_PUBLIC", "NEW", "NON_SOE", "GE_1000_LT_5000", "1Y",
                         "DEPT_GENERAL_MANAGER", "RATE", null, 40, "+", "1Y", 1)));
         ServiceException ex = assertThrows(ServiceException.class,
                 () -> router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.5")));
@@ -477,7 +477,7 @@ class RateMatrixRouterImplTest {
         frozen.setLpr1y(new BigDecimal("4.0"));
         frozen.setLpr5y(new BigDecimal("4.5"));
         when(lprVersionMapper.selectById(99L)).thenReturn(frozen);
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "3.5");
         in.setLprVersionId(99L);
         RouteResult result = router.calcRoute(in);
@@ -542,14 +542,14 @@ class RateMatrixRouterImplTest {
     @Test
     void 小组兜底行_matchedMatrixNo与boundaryRate均填充() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         // 小组兜底行边界=LPR-20BP=2.8;产品硬边界2.9 → 交集取max=2.9
         stubProductLimit("PUB_LOAN_01", "LOAN", "2.9");
         MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "2.85");
         in.setProductCode("PUB_LOAN_01");
         RouteResult result = router.calcRoute(in);
         assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
-        assertEquals("M-LT_5000-SOE-1Y-GROUP", result.getMatchedMatrixNo());
+        assertEquals("M-GE_1000_LT_5000-SOE-1Y-GROUP", result.getMatchedMatrixNo());
         assertEquals(0, new BigDecimal("2.9").compareTo(result.getBoundaryRate()));
     }
 
@@ -616,8 +616,8 @@ class RateMatrixRouterImplTest {
     void 贷款_命中上会条件金额档_必经小组() {
         stubCurrentLpr("3.0", "3.5");
         when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
-        // LT_5000 命中 vote_condition.amount_tier → 强制上会(本应 BM 终审)
-        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"amount_tier\":\"LT_5000\"}"));
+        // 金额 2000万=GE_1000_LT_5000 命中 vote_condition.amount_tier → 强制上会(本应 BM 终审)
+        stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"amount_tier\":\"GE_1000_LT_5000\"}"));
         MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
         in.setProductCode("PUB_LOAN_01");
         RouteResult result = router.calcRoute(in);
@@ -628,7 +628,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 贷款_多键上会条件_金额档不命中不上会_矩阵GM终审() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeExistingChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeExistingChain("GE_1000_LT_5000"));
         // 上会条件 GE_5000+SOE(AND):金额 2000万(LT_5000)不命中金额档 → 不强制上会,按矩阵分层
         stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N",
                 "{\"amount_tier\":\"GE_5000\",\"enterprise_type\":\"SOE\"}"));
@@ -660,7 +660,7 @@ class RateMatrixRouterImplTest {
     @Test
     void 贷款_命中上会条件企业类型SOE_必经小组() {
         stubCurrentLpr("3.0", "3.5");
-        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("LT_5000"));
+        when(matrixMapper.selectList(any())).thenReturn(soeNew1yChain("GE_1000_LT_5000"));
         // 国企 3.0 ≥ GM线3.0 本应 GM 终审;命中 enterprise_type=SOE → 强制上会
         stubProductRoute(productRoute("PUB_LOAN_01", "CHAINED", "N", "N", "{\"enterprise_type\":\"SOE\"}"));
         MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "SOE", "2000", 12, "3.0");

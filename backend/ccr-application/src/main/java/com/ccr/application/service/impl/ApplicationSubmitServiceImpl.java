@@ -166,6 +166,11 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
         Map<String, Map<String, Object>> corpCache = new HashMap<>();
         List<RoutePreviewResponse.ItemRoutePreview> previews = new ArrayList<>();
+        // 整单定链分项(整单交付改造:贷款=requested_rate 最低,存款=任意分项链相同);顶层整单链=该分项链路
+        RoutePreviewResponse.ItemRoutePreview anchorPreview = null;
+        RouteResult anchorRoute = null;
+        BigDecimal anchorRate = null;
+        boolean isLoan = "LOAN".equals(app.getBusinessType());
         for (CcrPricingItem item : items) {
             RoutePreviewResponse.ItemRoutePreview preview = new RoutePreviewResponse.ItemRoutePreview();
             preview.setPricingItemId(item.getId());
@@ -207,11 +212,31 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     response.setLprVersionId(route.getLprVersionId());
                     response.setLprVersionCode(route.getLprVersionCode());
                 }
+                // 整单定链:贷款取利率最低分项,存款取任一(链相同,取首个即可)
+                if (anchorPreview == null) {
+                    anchorPreview = preview;
+                    anchorRoute = route;
+                    anchorRate = item.getRequestedRate();
+                } else if (isLoan && item.getRequestedRate() != null
+                        && (anchorRate == null || item.getRequestedRate().compareTo(anchorRate) < 0)) {
+                    anchorPreview = preview;
+                    anchorRoute = route;
+                    anchorRate = item.getRequestedRate();
+                }
             } catch (ServiceException e) {
                 preview.setErrorCode(e.getCode());
                 preview.setErrorMessage(e.getMessage());
             }
             previews.add(preview);
+        }
+        // 顶层整单链(前端提交预览/流程条按整单展示;贷款=利率最低分项,存款=原流程)
+        if (anchorPreview != null && anchorRoute != null) {
+            response.setStartNodeCode(anchorPreview.getStartNodeCode());
+            response.setFinalNodeCode(anchorPreview.getFinalNodeCode());
+            response.setRouteChain(anchorPreview.getRouteChain());
+            response.setNextApproverNames(anchorPreview.getNextApproverNames());
+            response.setMatchedMatrixNo(anchorRoute.getMatchedMatrixNo());
+            response.setBoundaryRate(anchorRoute.getBoundaryRate());
         }
         response.setItems(previews);
 
@@ -425,8 +450,13 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         SnapshotBundleResult bundle = snapshotGateway.freeze(bundleId);
 
         // h) 逐分项算路由:置 ROUTING + 首节点 BRANCH_MANAGER + 终审岗位 + 冻结边界/矩阵行号(§8.6)
+        //    整单交付改造:分项路由字段保留冻结(审计溯源),审批推进以申请单整单链为准
         Map<String, Map<String, Object>> corpCache = new HashMap<>();
         List<SubmitResponse.ItemRoute> itemRoutes = new ArrayList<>();
+        CcrPricingItem chainAnchorItem = null;
+        RouteResult chainAnchorRoute = null;
+        BigDecimal anchorRate = null;
+        boolean isLoan = "LOAN".equals(app.getBusinessType());
         for (CcrPricingItem item : items) {
             RouteResult route = rateMatrixRouter.calcRoute(buildRouteInput(app, item, groupCreditTotal, corpCache));
             item.setStatus(PricingItemStatus.ROUTING.getCode());
@@ -441,6 +471,27 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             item.setRouteChain(JSONUtil.toJsonStr(route.getRouteChain()));
             pricingItemMapper.updateById(item);
             itemRoutes.add(toItemRoute(item, route.getRouteChain()));
+            // 整单定链分项:贷款取利率最低分项(流程最深),存款取任一(链相同,取首个即可)
+            if (chainAnchorItem == null) {
+                chainAnchorItem = item;
+                chainAnchorRoute = route;
+                anchorRate = item.getRequestedRate();
+            } else if (isLoan && item.getRequestedRate() != null
+                    && (anchorRate == null || item.getRequestedRate().compareTo(anchorRate) < 0)) {
+                chainAnchorItem = item;
+                chainAnchorRoute = route;
+                anchorRate = item.getRequestedRate();
+            }
+        }
+        // 整单链冻结到申请单(贷款=利率最低分项,存款=原流程;审批推进以此为准,§2026-08-29 整单交付)
+        if (chainAnchorRoute != null) {
+            app.setRouteCode(chainAnchorRoute.getFinalNodeCode());
+            app.setRouteChain(JSONUtil.toJsonStr(chainAnchorRoute.getRouteChain()));
+            app.setStartNodeCode(chainAnchorRoute.getStartNodeCode());
+            app.setCurrentNodeCode(chainAnchorRoute.getStartNodeCode());
+            app.setBoundaryRate(chainAnchorRoute.getBoundaryRate());
+            app.setMatchedMatrixNo(chainAnchorRoute.getMatchedMatrixNo());
+            app.setDeptCode(chainAnchorRoute.getDeptCode());
         }
 
         // i) 主申请置 ROUTING、冻结版本、写提交时间(freeze 已绑定快照包,重取避免乐观锁过期)
@@ -451,6 +502,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         fresh.setRuleSetVersionId(ruleSet == null ? null : ruleSet.getId());
         fresh.setRouteAsOfDate(routeAsOfDate);
         fresh.setSnapshotBundleId(bundle.getBundleId());
+        // 整单路由字段随主申请落库(整单交付改造;贷款=利率最低分项,存款=原流程)
+        fresh.setRouteCode(app.getRouteCode());
+        fresh.setRouteChain(app.getRouteChain());
+        fresh.setStartNodeCode(app.getStartNodeCode());
+        fresh.setCurrentNodeCode(app.getCurrentNodeCode());
+        fresh.setBoundaryRate(app.getBoundaryRate());
+        fresh.setMatchedMatrixNo(app.getMatchedMatrixNo());
+        fresh.setDeptCode(app.getDeptCode());
         applicationMapper.updateById(fresh);
 
         // 审计留痕(§15.2):提交核心字段快照(主单+分项要素),同事务写入
@@ -604,24 +663,21 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义),
-     * 以及提交通知 NOTIFY(申请人 + 首节点支行行长);事件写入失败随提交事务整体回滚,不出现半成品
+     * j) 同事务写 Outbox 事件(§3.5/§7.2 步骤7):整单交付改造后 FLOW_START 逐分项一条改整单一条
+     * (business_id=applicationNo,Warm-Flow 流程实例按申请单一个),以及提交通知 NOTIFY(申请人 + 首节点支行行长);
+     * 事件写入失败随提交事务整体回滚,不出现半成品
      */
     private void publishSubmitEvents(CcrApplication app, List<CcrPricingItem> items) {
         String createBy = app.getApplicantUserId() == null ? "0" : app.getApplicantUserId().toString();
-        for (CcrPricingItem item : items) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("applicationId", app.getId());
-            payload.put("applicationNo", app.getApplicationNo());
-            payload.put("pricingItemId", item.getId());
-            payload.put("pricingItemNo", item.getPricingItemNo());
-            payload.put("nodeCode", item.getStartNodeCode());
-            payload.put("routeCode", item.getRouteCode());
-            // 流程定义版本:利率审批标准流程(Warm-Flow 轨迹载体)
-            payload.put("flowCode", "rate_approval");
-            payload.put("createBy", createBy);
-            outboxService.publish(OutboxEventType.FLOW_START, item.getPricingItemNo(), JSONUtil.toJsonStr(payload));
-        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("applicationId", app.getId());
+        payload.put("applicationNo", app.getApplicationNo());
+        payload.put("nodeCode", app.getStartNodeCode());
+        payload.put("routeCode", app.getRouteCode());
+        // 流程定义版本:利率审批标准流程(Warm-Flow 轨迹载体)
+        payload.put("flowCode", "rate_approval");
+        payload.put("createBy", createBy);
+        outboxService.publish(OutboxEventType.FLOW_START, app.getApplicationNo(), JSONUtil.toJsonStr(payload));
         // 提交通知:申请人 + 首节点审批人(支行行长);messageKey 幂等防重
         String itemNos = items.stream().map(CcrPricingItem::getPricingItemNo).reduce((a, b) -> a + "," + b).orElse("");
         Map<String, Object> applicantNotify = new LinkedHashMap<>();

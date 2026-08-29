@@ -22,29 +22,31 @@ public interface ApprovalService {
     List<CcrPricingItem> listTodo();
 
     /**
-     * 普通节点通过(可调价)
+     * 普通节点通过(可调价;整单交付改造 2026-08-29:按申请整单审批,一次动作即整单推进/终审)
      *
-     * @param pricingItemId  定价分项
-     * @param nodeCode       当前节点(必须等于分项当前节点且登录人具备该节点角色)
-     * @param adjustRate     触发分项调价后利率(可为空=不调价;调价不得突破本节点权限边界与产品硬边界)
+     * @param applicationId  申请主键
+     * @param nodeCode       当前节点(必须等于申请当前节点且登录人具备该节点角色)
+     * @param adjustRate     整单统一调价后利率(可为空=不调价;应用到全部在途分项,不得突破本节点权限边界与产品硬边界)
      * @param comment        意见
-     * @param versionNo      分项乐观锁版本号(必传,防并发覆盖)
+     * @param versionNo      兼容参数(整单化后防重复靠节点动作守卫,不强制乐观锁)
      * @param idempotencyKey 幂等键(可空,重复抛 IDEMPOTENCY_REPEAT)
-     * @param rateAdjustments 同申请其余分项(随整单推进的 sibling)调价利率:分项id→调整后利率,
-     *                        仅收录相对当前利率有变化的分项;调价分项按新利率重算矩阵路由并按新链路推进
-     * @return 流转去向结果(terminal 终审结束 / nextNodeCode 下一节点,供前端提交成功提示)
+     * @param rateAdjustments 兼容逐分项调价:分项id→调整后利率(adjustRate 为空时生效;整单化后建议用整单统一利率)
+     * @return 流转去向结果(terminal 整单终审结束 / nextNodeCode 下一节点,供前端提交成功提示)
      */
-    ApprovalResult approve(Long pricingItemId, String nodeCode, BigDecimal adjustRate, String comment,
+    ApprovalResult approve(Long applicationId, String nodeCode, BigDecimal adjustRate, String comment,
                  Integer versionNo, String idempotencyKey, Map<Long, BigDecimal> rateAdjustments);
 
     /**
-     * 普通节点否决(§7.3 否决原因必填;2026-08-27 逐项否决:记本节点已否决停留,全齐套后
-     * 部分否决整单上送/全部否决整单退回)
+     * 普通节点否决(§7.3 否决原因必填;整单交付改造 2026-08-29:任一节点一次否决即整单否决)
      *
-     * @return 流转去向结果(terminal 整单否决退回或部分否决全部就地终审 / nextNodeCode 下一节点,
-     *         未齐套停留为本节点),供前端停留继续或返回列表
+     * @param applicationId  申请主键
+     * @param nodeCode       当前节点(必须等于申请当前节点且登录人具备该节点角色)
+     * @param comment        否决原因(必填)
+     * @param versionNo      兼容参数(整单化后防重复靠节点动作守卫,不强制乐观锁)
+     * @param idempotencyKey 幂等键(可空,重复抛 IDEMPOTENCY_REPEAT)
+     * @return 流转去向结果(terminal 整单否决流程结束),供前端返回列表
      */
-    ApprovalResult reject(Long pricingItemId, String nodeCode, String comment, Integer versionNo, String idempotencyKey);
+    ApprovalResult reject(Long applicationId, String nodeCode, String comment, Integer versionNo, String idempotencyKey);
 
     /**
      * 已办列表(§11.4):当前登录人办理过的任务(审批动作轨迹,含计票/行长决策留痕)

@@ -23,7 +23,25 @@ public class RoutePreviewResponse {
     /** 本次预览采用的 LPR 版本号 */
     private String lprVersionCode;
 
-    /** 逐分项路由预览 */
+    /** 整单审批链首节点(恒为 BRANCH_MANAGER;整单交付改造:贷款=利率最低分项,存款=原流程) */
+    private String startNodeCode;
+
+    /** 整单终审岗位编码 */
+    private String finalNodeCode;
+
+    /** 整单完整路由链路 */
+    private List<String> routeChain;
+
+    /** 整单下一步审批人姓名(routeChain 首节点解析) */
+    private List<String> nextApproverNames;
+
+    /** 整单命中的权限矩阵行编号(审计溯源) */
+    private String matchedMatrixNo;
+
+    /** 整单终审节点边界利率(审计溯源) */
+    private BigDecimal boundaryRate;
+
+    /** 逐分项路由预览(退化只读分项明细,审批按整单) */
     private List<ItemRoutePreview> items;
 
     /**

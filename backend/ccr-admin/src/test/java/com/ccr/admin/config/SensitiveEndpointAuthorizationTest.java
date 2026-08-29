@@ -42,10 +42,11 @@ class SensitiveEndpointAuthorizationTest {
     }
 
     @Test
-    void customerDataEntryEndpoints_requireCustomerManager() {
-        assertRoles(CustomerController.class, Set.of("customer_manager"));
-        assertRoles(GroupQueryController.class, Set.of("customer_manager"));
-        assertRoles(OtherLoanImportController.class, Set.of("customer_manager"));
+    void customerDataEntryEndpoints_requireCustomerManagerOrAdmin() {
+        // 2026-08-20(5e36369):Sa-Token 严格匹配,admin 原被拦报"无权限";改为与 ResolutionController 一致的多角色 OR 放行
+        assertRoles(CustomerController.class, Set.of("customer_manager", "admin"));
+        assertRoles(GroupQueryController.class, Set.of("customer_manager", "admin"));
+        assertRoles(OtherLoanImportController.class, Set.of("customer_manager", "admin"));
     }
 
     @Test

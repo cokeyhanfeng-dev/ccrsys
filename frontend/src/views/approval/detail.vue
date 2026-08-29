@@ -685,186 +685,79 @@
       </div>
     </div>
 
-    <!-- 12. 审批决定(按担保分项;参照 demo 逐分项同意/否决 + 一键通过/一键否决,仅当前节点待办可操作) -->
+    <!-- 12. 审批决定(整单交付改造 2026-08-29:整单一次审批,不逐分项点同意/否决;
+         分项明细只读,贷款按利率最低分项定流程,整单统一利率/操作) -->
     <div class="card" v-if="actionable">
       <div class="card__head">
-        <span>审批决定(按担保分项)</span>
-        <span class="badge badge--processing" v-if="!isCommitteeVoting">当前节点:{{ nodeLabel(pi.current_node_code) }} · 已处理 {{ nodeProcessedCount }}/{{ nodeRoutingItems.length }} 项(同意 {{ nodeApprovedCount }} / 否决 {{ nodeRejectedCount }}) · 全部处理后整单上送</span>
-        <span class="badge badge--processing" v-else>申请共 {{ siblingItems.length }} 个分项 · 本节点待表决 {{ pendingItems.length }} 项</span>
+        <span>审批决定(整单)</span>
+        <span class="badge badge--processing">当前节点:{{ nodeLabel(currentNodeCode) }} · 整单一次审批</span>
       </div>
-      <div class="op-form">
-        <div v-for="it in opItems" :key="it.id" class="op-item"
-             :class="{ 'op-item--done': itemApproved(it), 'op-item--rejected': itemRejected(it) || it.status === 'REJECTED', 'op-item--passed': itemPassed(it), 'op-item--lock': !canOperate(it) && !itemPassed(it) }">
-          <div class="op-item__head">
-            <span class="op-item__name">{{ itemName(it) }}</span>
-            <strong>
-              <template v-if="itemPassed(it)"><span class="badge badge--info"><el-icon style="margin-right:4px"><CircleCheck /></el-icon>上级节点已通过 · 仅展示</span></template>
-              <template v-else-if="isCommitteeVoting && itemApproved(it)">
-                <span class="badge badge--success"><el-icon style="margin-right:4px"><Select /></el-icon>已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }}</span>
-              </template>
-              <template v-else-if="itemApproved(it)"><span class="badge badge--success"><el-icon style="margin-right:4px"><Check /></el-icon>已同意 · {{ fmtRate(opRates[it.id]) }}</span></template>
-              <template v-else-if="itemRejected(it)"><span class="badge badge--danger"><el-icon style="margin-right:4px"><CircleClose /></el-icon>本节点已否决 · 待整单齐套</span></template>
-              <template v-else-if="it.status === 'REJECTED'"><span class="badge badge--danger"><el-icon style="margin-right:4px"><CircleClose /></el-icon>已否决 · 上级仅查看</span></template>
-              <template v-else-if="canOperate(it)"><span class="badge badge--warning"><el-icon style="margin-right:4px"><Clock /></el-icon>{{ isCommitteeVoting ? '待投票' : '待处理' }}</span></template>
-              <template v-else-if="isCommitteeVoting"><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
-              <template v-else><span class="badge badge--neutral">{{ itemStatusText(it.status) }}</span></template>
-            </strong>
-          </div>
-          <!-- 申请内容(要审批的金额/期限/产品;贷款合同号与合同下借据展示已取消;2026-08-27 补申请类型/授信总额徽标) -->
-          <div class="op-item__subhead">{{ isLoan ? '申请内容' : '存款信息' }}
-            <span v-if="applyBizTypeText !== '—'" class="badge badge--info" style="margin-left:8px">{{ applyBizTypeText }}</span>
-            <span v-if="applyTotalCredit != null" class="badge badge--neutral" style="margin-left:8px">授信总额 {{ fmtAmount(applyTotalCredit) }} 万元</span>
-          </div>
-          <table class="table">
-            <thead><tr>
-              <th>金额(万元)</th><th>期限</th><th>产品</th>
-            </tr></thead>
-            <tbody>
-              <tr>
-                <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-                <td>{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</td>
-                <td>{{ productName(it.productCode) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <!-- 担保信息(按分项挂载,审批端完整展示申请录入内容;仅贷款场景,存款无担保) -->
-          <template v-if="isLoan">
-          <div class="op-item__subhead">担保信息</div>
-          <table class="table" v-if="(it.guarantees || []).length">
-            <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th></tr></thead>
-            <tbody>
-              <template v-for="(g, gi) in it.guarantees" :key="gi">
-                <tr>
-                  <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
-                  <td>{{ measureTypeText(g.measureType) }}</td>
-                  <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
-                </tr>
-                <!-- 担保措施明细(抵押物/保证人/质押/保证金/存单,取快照 extJson;键值表格与贷款区风格一致) -->
-                <tr class="measure-detail" v-if="extOf(g)">
-                  <td colspan="3">
-                    <template v-if="g.measureType === 'MORTGAGE'">
-                      <table class="measure-table">
-                        <tbody>
-                          <tr>
-                            <th>类型</th><td>{{ extOf(g).collateralType || '—' }}</td>
-                            <th>名称</th><td>{{ extOf(g).name || '—' }}</td>
-                          </tr>
-                          <template v-if="extOf(g).collateralType === '土地'">
-                            <tr><th>坐落</th><td>{{ extOf(g).address || '—' }}</td><th>面积</th><td>{{ extOf(g).area ? extOf(g).area + '㎡' : '—' }}</td></tr>
-                            <tr><th>使用权</th><td colspan="3">{{ extOf(g).landUseType || '—' }}{{ extOf(g).landUseExpiry ? '至' + extOf(g).landUseExpiry : '' }}</td></tr>
-                          </template>
-                          <template v-else-if="extOf(g).collateralType === '设备'">
-                            <tr><th>规格型号</th><td>{{ extOf(g).specModel || '—' }}</td><th>数量</th><td>{{ extOf(g).quantity || '—' }}</td></tr>
-                            <tr><th>购置日期</th><td colspan="3">{{ extOf(g).purchaseDate || '—' }}</td></tr>
-                          </template>
-                          <template v-else-if="extOf(g).collateralType === '车辆'">
-                            <tr><th>车牌号</th><td>{{ extOf(g).plateNo || '—' }}</td><th>车架号</th><td>{{ extOf(g).vin || '—' }}</td></tr>
-                            <tr><th>登记日期</th><td colspan="3">{{ extOf(g).regDate || '—' }}</td></tr>
-                          </template>
-                          <template v-else>
-                            <tr><th>坐落</th><td>{{ extOf(g).address || '—' }}</td><th>面积</th><td>{{ extOf(g).area ? extOf(g).area + '㎡' : '—' }}</td></tr>
-                            <tr><th>产权证号</th><td colspan="3">{{ extOf(g).certNo || '—' }}</td></tr>
-                          </template>
-                          <tr>
-                            <th>估值(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td>
-                            <th>权属人</th><td>{{ extOf(g).owner || '—' }}</td>
-                          </tr>
-                          <tr><th>抵押率</th><td colspan="3">{{ extOf(g).mortgageRatio ? extOf(g).mortgageRatio + '%' : '—' }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="g.measureType === 'GUARANTOR'">
-                      <table class="measure-table">
-                        <tbody>
-                          <tr><th>保证人名称</th><td colspan="3">{{ extOf(g).name || '—' }}</td></tr>
-                          <tr><th>证件号码</th><td>{{ extOf(g).certNo || '—' }}</td><th>担保余额(万元)</th><td>{{ fmtAmount(extOf(g).balance) }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="g.measureType === 'PLEDGE'">
-                      <table class="measure-table">
-                        <tbody>
-                          <tr><th>质押物类型</th><td>{{ extOf(g).pledgeType || '—' }}</td><th>名称</th><td>{{ extOf(g).name || '—' }}</td></tr>
-                          <tr><th>估值(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td><th>权属人</th><td>{{ extOf(g).owner || '—' }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="g.measureType === 'BILL_MARGIN' || g.measureType === 'CREDIT_MARGIN' || g.measureType === 'MARGIN_PLEDGE'">
-                      <table class="measure-table">
-                        <tbody>
-                          <tr><th>保证金(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td><th>比例</th><td>{{ extOf(g).marginRatio ? extOf(g).marginRatio + '%' : '—' }}</td></tr>
-                          <tr><th>期限(月)</th><td colspan="3">{{ extOf(g).termMonths || '—' }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="g.measureType === 'CERTIFICATE_DEPOSIT'">
-                      <table class="measure-table">
-                        <tbody>
-                          <tr><th>存单号</th><td>{{ extOf(g).certificateNo || '—' }}</td><th>金额(万元)</th><td>{{ fmtAmount(g.guaranteeAmount) }}</td></tr>
-                          <tr><th>到期日</th><td colspan="3">{{ extOf(g).maturityDate || '—' }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <span v-else class="dg-label">暂无措施明细数据</span>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-          <div v-else class="op-item__empty-tip">无担保明细</div>
-          </template>
-          <!-- 利率对比(docs/29 §2.3 利率对比条):原执行 → 申请 → 审批后(可调),测算利率并列表末参考 -->
-          <div class="rate-compare">
-            <span class="rate-compare__item">原执行利率<strong>{{ fmtRate(it.originalRate) }}</strong></span>
-            <span class="rate-compare__arrow">→</span>
-            <span class="rate-compare__item">申请利率<strong>{{ fmtRate(it.requestedRate) }}</strong></span>
-            <span class="rate-compare__arrow">→</span>
-            <span class="rate-compare__item" v-if="!itemPassed(it)">审批后利率
-              <template v-if="isCommitteeVoting || isSecretaryNode">
-                <!-- 六人小组无利率修改权限:只读展示当前审批利率,仅同意/否决 -->
-                <!-- 贷审会秘书岗(需求四)同为审核岗:只读展示,仅同意/否决 -->
-                <strong>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</strong>
-              </template>
-              <el-input-number v-else v-model="opRates[it.id]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" :disabled="itemApproved(it) || itemRejected(it) || !canOperate(it)" style="width:140px" />
-            </span>
-            <span class="rate-compare__item">测算利率<strong>{{ fmtRate(it.calculatedRate) }}</strong></span>
-          </div>
-          <!-- 小组节点:委员不调整利率,只读展示且提示匿名投同意/否决 -->
-          <div class="stat-card__sub" v-if="isCommitteeVoting">
-            仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决出决议书。
-          </div>
-          <div class="stat-card__sub" v-else-if="!itemPassed(it) && canOperate(it)">
-            <template v-if="isSecretaryNode">
-              贷审会秘书岗为审核岗:仅同意/否决,不调整利率;否决即整单拦截,流程终止。
-            </template>
-            <template v-else>
-              {{ isLoan
-                ? '审批利率不低于本节点下限方可权限内通过;低于下限将保留利率随整单上送下一节点。'
-                : '审批利率不高于本节点上限方可权限内通过;超出将保留利率上送小组表决。' }}
-            </template>
-          </div>
-          <div class="op-item__actions" v-if="!itemPassed(it) && (isVotableItem(it) || !isCommitteeVoting)">
-            <template v-if="isVotableItem(it)">
-              <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doVoteItem(it, 'APPROVE')">同意</button>
-              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || !canOperate(it)" @click="doVoteItem(it, 'REJECT')">否决</button>
-            </template>
-            <template v-else>
-              <button class="btn btn--primary" :disabled="submitting || itemApproved(it) || itemRejected(it) || it.status === 'REJECTED' || !canOperate(it)" @click="doApproveItem(it)">同意本项</button>
-              <button class="btn btn--danger" :disabled="submitting || itemApproved(it) || itemRejected(it) || it.status === 'REJECTED' || !canOperate(it)" @click="doRejectItem(it)">否决本项</button>
-            </template>
-          </div>
-          <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && itemApproved(it)">本人已投:{{ myBallotChoice(it) === 'APPROVE' ? '同意' : '否决' }},提交后不可修改。</div>
-          <div class="op-item__passed-tip" v-else-if="isCommitteeVoting && !itemPassed(it) && !itemApproved(it)">该分项不在本节点表决范围,仅展示。</div>
-          <div class="op-item__passed-tip" v-else>该分项已由上级节点审批通过,当前节点仅展示,无需重复审批。</div>
-        </div>
+      <div class="stat-card__sub" style="margin-bottom:10px">
+        {{ isLoan
+          ? `本申请共 ${siblingItems.length} 个分项,按利率最低分项定整单流程,一次审批处理整单(任一节点否决即整单否决)。`
+          : `本申请共 ${siblingItems.length} 个分项,按原流程整单审批,一次处理整单。` }}
+      </div>
+      <!-- 分项明细只读(整单统一决策,分项不再独立审批) -->
+      <div class="op-item__subhead">分项明细(只读)</div>
+      <table class="table">
+        <thead><tr>
+          <th>分项编号</th><th>成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
+        </tr></thead>
+        <tbody>
+          <tr v-for="it in siblingItems" :key="it.id">
+            <td>{{ it.pricingItemNo || it.id }}</td>
+            <td>{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+            <td>{{ fmtTerm(it) }}</td>
+            <td>{{ productName(it.productCode) }}</td>
+            <td>{{ guaranteesText(it.guarantees) }}</td>
+            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+            <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+            <td class="num">{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</td>
+            <td><span v-if="isAnchorItem(it)" class="badge badge--info">定链分项</span><span v-else class="dg-label">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <!-- 整单利率(贷款非小组/非秘书岗可调:整单统一审批利率,后端应用到全部在途分项;存款/审核岗只读) -->
+      <div class="rate-compare" style="margin-top:12px">
+        <span class="rate-compare__item">申请利率<strong>{{ fmtRate(anchorRate) }}</strong></span>
+        <span class="rate-compare__arrow">→</span>
+        <span class="rate-compare__item">审批后利率(整单)
+          <el-input-number v-if="canAdjustWholeOrderRate" v-model="opRate" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:140px" />
+          <template v-else><strong>{{ fmtRate(opRate) }}</strong></template>
+        </span>
+        <span class="rate-compare__item">测算利率<strong>{{ fmtRate(anchorCalculatedRate) }}</strong></span>
+      </div>
+      <div class="stat-card__sub" v-if="canAdjustWholeOrderRate" style="margin-top:8px">
+        {{ isLoan ? '整单审批利率统一应用到全部在途分项;不得突破本节点权限边界与产品硬边界,低于下限保留利率随整单上送下一节点。' : '' }}
+      </div>
+      <div class="stat-card__sub" v-else-if="isCommitteeVoting" style="margin-top:8px">
+        委员仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决整单。
+      </div>
+      <div class="stat-card__sub" v-else-if="isSecretaryNode" style="margin-top:8px">
+        贷审会秘书岗为审核岗:仅同意/否决,不调整利率;否决即整单拦截,流程终止。
+      </div>
+      <!-- 整单操作(一次操作处理整单;小组为投整单票) -->
+      <div class="op-item__actions" style="margin-top:12px">
+        <template v-if="isCommitteeVoting">
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doVote('APPROVE')">提交同意票(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doVote('REJECT')">提交否决票(整单)</button>
+        </template>
+        <template v-else>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doApprove">同意审批(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doReject">否决(整单)</button>
+        </template>
+      </div>
+      <div class="op-item__passed-tip" v-if="wholeOrderActed" style="margin-top:8px">
+        {{ isCommitteeVoting ? '本人已投整单票,提交后不可修改。' : '本申请当前节点已审批处理,无需重复操作。' }}
       </div>
     </div>
-    <div class="card" v-else-if="pi.status === 'ROUTING'">
-      <div class="empty-line">该分项当前节点为「{{ nodeLabel(pi.current_node_code) }}」,不在本人审批范围,仅可查看。</div>
+    <div class="card" v-else-if="flowStatus?.currentStatus === 'ROUTING'">
+      <div class="empty-line">该申请当前节点为「{{ nodeLabel(currentNodeCode) }}」,不在本人审批范围,仅可查看。</div>
     </div>
     </div>
 
-    <!-- 审批操作吸底(docs/29 §2.3):审批意见与一键通过/否决固定页底随手可及,分项多也不再回滚页底;v-model 与 handler 不变 -->
+    <!-- 审批操作吸底(整单交付改造 2026-08-29):审批意见与整单通过/否决固定页底随手可及;一次操作处理整单 -->
     <div class="approve-bar" v-if="actionable">
       <div class="approve-bar__inner">
         <el-input v-model="opComment" type="textarea" :rows="1" maxlength="500" placeholder="请输入审批意见(否决时建议说明原因)" style="flex:1" />
@@ -872,12 +765,12 @@
           <span class="stat-card__sub" style="white-space:nowrap;align-self:center">
             已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
           </span>
-          <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doVoteAll()">提交本人全部同意票</button>
-          <button class="btn btn--danger" :disabled="submitting || !pendingItems.length" @click="doVoteAllReject()">提交本人全部否决票</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doVote('APPROVE')">提交同意票(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doVote('REJECT')">提交否决票(整单)</button>
         </template>
         <template v-else>
-          <button class="btn btn--primary" :disabled="submitting || !pendingItems.length" @click="doApproveAll">一键通过审批</button>
-          <button class="btn btn--danger" :disabled="submitting || !pendingRejectItems.length" @click="doRejectAll">一键否决</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doApprove">同意审批(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doReject">否决(整单)</button>
         </template>
         <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
       </div>
@@ -935,7 +828,8 @@ const loaded = ref(false)
 const loading = ref(true)
 const loadError = ref(false)
 const submitting = ref(false)
-const pricingItemId = computed(() => route.params.id as string)
+// 整单交付改造(2026-08-29):详情入口为申请号,整单一次审批
+const applicationId = computed(() => route.params.id as string)
 
 const pi = ref<any>({})
 const application = ref<any>({})
@@ -1036,25 +930,24 @@ function toggleItemDetail(id: any) {
 // 分项表展开行 colspan:6 个固定主列 + 集团成员列 + 贷款担保方式列
 const itemTableCols = computed(() => 6 + (isGroup.value ? 1 : 0) + (isLoan.value ? 1 : 0))
 
-// 分项审批(参照 demo):同申请分项摘要、每分项审批利率、本次会话内已同意分项
+// 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
-const opRates = ref<Record<string, number>>({})
-const locallyApproved = ref<Set<string>>(new Set())
-// 逐项否决模型(2026-08-27):本节点刚否决的分项乐观记录(未齐套停留时徽标/按钮立即生效)
-const locallyRejected = ref<Set<string>>(new Set())
 
 const ROLE_NODE: Record<string, string> = {
   branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT',
   committee_member: 'SIX_PEOPLE_GROUP', secretary: 'SECRETARY'
 }
 
-// 六人小组节点(委员内联审批):当前分项在小组节点且登录人具备委员身份(含兼岗,§D-7)
+// 整单当前节点:优先申请单(application.current_node_code,后端 detail 已整单化),回退锚定分项
+const currentNodeCode = computed(() => flowStatus.value?.currentNodeCode || pi.value.current_node_code || '')
+
+// 六人小组节点(委员内联审批):整单在小组节点且登录人具备委员身份(含兼岗,§D-7)
 const isCommitteeVoting = computed(() =>
-  pi.value.current_node_code === 'SIX_PEOPLE_GROUP'
+  currentNodeCode.value === 'SIX_PEOPLE_GROUP'
   && (userStore.userInfo?.roles || []).includes('committee_member'))
 
 // 贷审会秘书岗节点(需求四):审核岗仅同意/否决,不调整利率,否决即整单拦截
-const isSecretaryNode = computed(() => pi.value.current_node_code === 'SECRETARY')
+const isSecretaryNode = computed(() => currentNodeCode.value === 'SECRETARY')
 
 const isLoan = computed(() => application.value.businessType !== 'DEPOSIT')
 const businessTypeText = computed(() => application.value.businessType === 'DEPOSIT' ? '存款' : '贷款')
@@ -1089,7 +982,7 @@ const statusText = computed(() => itemStatusText(pi.value.status))
 
 // 当前节点在路由链中的位置(高亮)
 const currentNodeIndex = computed(() => {
-  const idx = routeChain.value.indexOf(pi.value.current_node_code)
+  const idx = routeChain.value.indexOf(currentNodeCode.value)
   return idx < 0 ? 0 : idx
 })
 
@@ -1097,48 +990,60 @@ const currentNodeIndex = computed(() => {
 // 六人小组节点:委员可操作(VOTING 即小组轮次中),与普通节点 ROUTING 语义对齐
 const actionable = computed(() => {
   const roles = userStore.userInfo?.roles || []
-  const node = pi.value.current_node_code
+  const node = currentNodeCode.value
   if (!node) return false
   // §D-7 兼岗:roles 含 committee_member(含主角色非委员被配置进小组名单)即按委员处理
   if (node === 'SIX_PEOPLE_GROUP' && roles.includes('committee_member')) {
-    // 委员在小组节点全程可见表决操作区:即使最后一人投完分项翻出 VOTING(PRESIDENT_DECISION/REJECTED),
+    // 委员在小组节点全程可见表决操作区:即使最后一人投完翻出 VOTING(PRESIDENT_DECISION/REJECTED),
     // 也保留卡片展示已投状态与进度,避免"最后一人投完后页面效果与其他委员不一致"(卡片整卡消失)
     return true
   }
   // §秘书岗(计划财务部总经理兼任):SECRETARY 节点按 roles 数组含 secretary 判定(与委员兼岗一致,不只看主角色)
   if (node === 'SECRETARY' && roles.includes('secretary')) {
-    return pi.value.status === 'ROUTING'
+    return flowStatus.value?.currentStatus === 'ROUTING'
   }
   const role = roles[0] || ''
   if (ROLE_NODE[role] !== node) return false
-  return pi.value.status === 'ROUTING'
+  return flowStatus.value?.currentStatus === 'ROUTING'
 })
 
-// 分项审批决定区(参照 demo):同申请分项逐项同意/否决 + 一键通过/一键否决
-const opItems = computed(() => siblingItems.value)
-// 本节点可操作且未处理(未同意/未否决)的分项(「一键通过」处理对象;逐项否决模型 2026-08-27 下已否决分项不再点)
-const pendingItems = computed(() => siblingItems.value.filter(it => canOperate(it) && !itemApproved(it) && !itemRejected(it)))
-const pendingRejectItems = computed(() => siblingItems.value.filter(it => canOperate(it) && !itemApproved(it) && !itemRejected(it)))
-const approvedCount = computed(() => siblingItems.value.filter(it => itemApproved(it)).length)
-// 上级节点已通过、当前节点仅展示的分项(不参与本节点审批,也不计入「一键通过」)
-const passedCount = computed(() => siblingItems.value.filter(it => itemPassed(it)).length)
-// 逐项审批模型进度(2026-08-27 用户拍板):分母=本节点 ROUTING 待逐项同意分项,分子=其中已同意数;
-// 已上送/终审/上级 passed 分项不参与,进度语义更准
-const nodeRoutingItems = computed(() => siblingItems.value.filter(it =>
-  it.status === 'ROUTING' && it.currentNodeCode === pi.value.current_node_code))
-const nodeApprovedCount = computed(() => nodeRoutingItems.value.filter(it =>
-  it.agreed === true || locallyApproved.value.has(it.id)).length)
-const nodeRejectedCount = computed(() => nodeRoutingItems.value.filter(it =>
-  it.rejected === true || locallyRejected.value.has(it.id)).length)
-// 本节点已处理(同意+否决)总数,进度文案用
-const nodeProcessedCount = computed(() => nodeApprovedCount.value + nodeRejectedCount.value)
-
-// 逐项审批模型(2026-08-27 用户拍板):普通节点「上级已通过」的分项仍须在当前节点逐项同意——
-// 上游 APPROVE 不再视为本节点已通过,故普通节点 itemPassed 恒 false,分项正常显示审批按钮可逐项点;
-// 仅六人小组节点保留 passed 语义(上级已通过的记名意见仅展示,不参与委员投票)
-function itemPassed(it: any): boolean {
-  if (!isCommitteeVoting.value) return false
-  return it.passed === true && !itemApproved(it)
+// 整单交付改造(2026-08-29):审批按整单,不再逐分项点同意/否决。
+// 定链分项=在途分项中有效利率最低者(贷款,整单流程由它决定);存款取批内第一个分项
+function pickAnchorItem(items: any[]): any {
+  if (!items || !items.length) return null
+  if (isLoan.value) {
+    const routing = items.filter((it) => it.status === 'ROUTING')
+    const pool = routing.length ? routing : items
+    return pool.reduce((min, it) => {
+      const r = Number(it.currentApprovalRate ?? it.requestedRate ?? Number.MAX_VALUE)
+      const mr = Number(min.currentApprovalRate ?? min.requestedRate ?? Number.MAX_VALUE)
+      return r < mr ? it : min
+    })
+  }
+  return items[0]
+}
+const anchorItem = computed(() => pickAnchorItem(siblingItems.value))
+// 定链分项申请/测算利率(整单区只读展示)
+const anchorRate = computed(() => anchorItem.value?.requestedRate)
+const anchorCalculatedRate = computed(() => anchorItem.value?.calculatedRate)
+// 整单统一审批利率(后端 adjustRate 应用到全部在途分项)
+const opRate = ref<number | null>(null)
+// 整单利率相对定链分项基线是否变化(决定是否传 adjustRate)
+function wholeOrderRateChanged(): boolean {
+  const base = anchorItem.value?.currentApprovalRate ?? anchorItem.value?.requestedRate
+  return opRate.value != null && base != null && Number(opRate.value) !== Number(base)
+}
+// 整单是否已处理:委员=本人已投整单票;普通节点=该节点已有审批动作(通过/上送/否决)
+const wholeOrderActed = computed(() => {
+  if (isCommitteeVoting.value) return !!voteRound.value?.myChoice
+  return nodeHandled(currentNodeCode.value)
+})
+// 整单利率可调:贷款且非小组/秘书岗(审核岗只读利率),且当前节点可操作
+const canAdjustWholeOrderRate = computed(() =>
+  actionable.value && isLoan.value && !isCommitteeVoting.value && !isSecretaryNode.value)
+// 定链分项标识(分项明细表「定链分项」徽标)
+function isAnchorItem(it: any): boolean {
+  return anchorItem.value != null && String(anchorItem.value.id) === String(it.id)
 }
 
 // 登录人当前角色节点
@@ -1148,9 +1053,9 @@ const currentRoleNode = computed(() => ROLE_NODE[userStore.userInfo?.roles?.[0] 
 const canViewVote = computed(() => ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || ''))
 
 function canOperate(it: any): boolean {
-  // 六人小组节点:委员对小组轮次内分项(VOTING 本人未投)可操作;普通节点沿用 ROUTING 口径
+  // 六人小组节点:委员对小组轮次内分项(VOTING 本人未投整单票)可操作;普通节点沿用 ROUTING 口径
   if (isCommitteeVoting.value) {
-    return it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP' && !myBallotChoice(it)
+    return it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP' && !voteRound.value?.myChoice
   }
   // 秘书岗兼岗(§需求四,计划财务部总经理兼任,主角色 dept_gm + 附加 secretary):
   // SECRETARY 节点按 roles 含 secretary 判定(与 actionable 一致,不只看主角色),否则按钮恒禁用
@@ -1169,14 +1074,15 @@ const hasPlaceholderCustomer = computed(() =>
   || groupMembers.value.some((m) => isPlaceholderCustomerNo(m.memberCustomerNo)))
 const canBackfill = computed(() =>
   hasPlaceholderCustomer.value
-  && (canOperate(pi.value) || ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || '')))
+  && (canOperate(anchorItem.value) || ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || '')))
 
 const backfillVisible = ref(false)
 const backfilling = ref(false)
 const backfillForm = ref<{ customerNo: string; certNo: string }>({ customerNo: '', certNo: '' })
 const backfillTargetId = ref<number | string>('') // 回填目标分项(集团按成员定位分项)
 function openBackfillDlg() {
-  backfillTargetId.value = pricingItemId.value
+  // 整单回填以锚定分项为落点(后端按申请整单替换,任一分项即可)
+  backfillTargetId.value = anchorItem.value?.id ?? ''
   backfillForm.value = { customerNo: '', certNo: '' }
   backfillVisible.value = true
 }
@@ -1213,33 +1119,8 @@ async function doBackfill() {
   }
 }
 
-// 委员本人票型(已投分项显示"已投:同意/否决"并禁用)
-function myBallotChoice(it: any): string | undefined {
-  return it.myChoice || undefined
-}
-
-// 六人小组待表决分项(委员:仅小组节点 VOTING 分项显示同意/否决按钮;上级已通过/不在小组的分项只读)
-function isVotableItem(it: any): boolean {
-  return isCommitteeVoting.value && it.status === 'VOTING' && it.currentNodeCode === 'SIX_PEOPLE_GROUP'
-}
-
-function itemApproved(it: any): boolean {
-  if (locallyApproved.value.has(it.id)) return true
-  // 六人小组节点:本人已投即视为已处理(委员一人一票,投后不可改;
-  // 最后一人投完分项翻出 VOTING 仍保持"已投"展示,不因状态翻转丢失已投标识)
-  if (isCommitteeVoting.value) {
-    return !!myBallotChoice(it)
-  }
-  // 终态分项(上送/终审/否决)视为已处理;仍 ROUTING 时以后端 agreed(本节点已同意待齐套)为准
-  return it.status !== 'ROUTING' || it.agreed === true
-}
-
-// 逐项否决模型(2026-08-27):本节点已否决待齐套(ROUTING 且后端 rejected 记录)或本地刚否决的分项;
-// REJECTED 终态分项(上级看到的被否决分项)由 it.status === 'REJECTED' 单独判定,不在本函数
-function itemRejected(it: any): boolean {
-  if (locallyRejected.value.has(it.id)) return true
-  return it.rejected === true
-}
+// 整单交付改造(2026-08-29):已无逐分项审批,itemApproved/itemRejected/myBallotChoice/isVotableItem 移除,
+// 整单处理状态统一由 wholeOrderActed 判定(委员=本人已投整单票,普通节点=该节点已有审批动作)
 
 function itemName(it: any): string {
   // 载体类型:贷款合同按业务口径展示为授信方案(2026-08-27),存款账户不变
@@ -1262,22 +1143,8 @@ function memberLabel(memberNo?: string): string {
   return customerNoText(memberNo)
 }
 
-// 分项调整利率相对基线是否变化(决定是否传 adjustRate)
-function rateChanged(it: any): boolean {
-  const base = it.currentApprovalRate ?? it.requestedRate
-  return opRates.value[it.id] != null && base != null && Number(opRates.value[it.id]) !== Number(base)
-}
-
-// 收集本次提交所有相对基线变化的分项调价(含触发分项:后端触发分项以 adjustRate 为准、sibling 以 rateAdjustments 为准,
-// 触发分项不在 sibling 循环内,不会重复处理)。修复合单上送时非触发分项利率修改被丢弃的问题。
-function collectRateAdjustments(): Record<string, number | string> | undefined {
-  const adj: Record<string, number | string> = {}
-  for (const it of siblingItems.value) {
-    if (itemPassed(it) || itemRejected(it) || !rateChanged(it)) continue
-    adj[String(it.id)] = opRates.value[it.id] as number
-  }
-  return Object.keys(adj).length ? adj : undefined
-}
+// 整单交付改造(2026-08-29):整单统一 adjustRate(应用到全部在途分项),逐分项 rateChanged/collectRateAdjustments 移除,
+// 由 wholeOrderRateChanged 替代(定链分项利率相对基线变化)
 
 
 const groupTotalAmount = computed(() =>
@@ -1408,7 +1275,7 @@ async function load() {
   loading.value = true
   loadError.value = false
   try {
-    const data = await getApprovalDetail(pricingItemId.value)
+    const data = await getApprovalDetail(applicationId.value)
     pi.value = data.pricingItem || {}
     application.value = data.application?.[0] || {}
     customer.value = data.customer?.[0] || {}
@@ -1443,12 +1310,10 @@ async function load() {
     voteRound.value = data.voteRound || null
     // 分项审批决定区:同申请分项摘要(后端未返回时回退为当前分项单元素),每分项预填审批利率
     siblingItems.value = (data.siblingItems && data.siblingItems.length) ? data.siblingItems : [data.pricingItem || {}]
-    const rates: Record<string, number> = {}
-    for (const it of siblingItems.value) {
-      const base = it.currentApprovalRate ?? it.requestedRate
-      rates[it.id] = base != null ? Number(base) : undefined
-    }
-    opRates.value = rates
+    // 整单统一审批利率:预填定链分项当前审批利率(审批人可调,后端应用到全部在途分项)
+    const anchor = pickAnchorItem(siblingItems.value)
+    const baseRate = anchor?.currentApprovalRate ?? anchor?.requestedRate
+    opRate.value = baseRate != null ? Number(baseRate) : null
     // 行长/审计视角:加载六人小组匿名审批意见(§12.7,按轮次查询按分项归组)
     if (canViewVote.value) {
       await loadPresidentOpinions()
@@ -1541,31 +1406,25 @@ function approveSuccessMsg(res?: ApprovalResult, nodeCode?: string): string {
   return `审批提交成功,已推进至「${nodeLabel(res.nextNodeCode)}」`
 }
 
-// 逐分项「同意本项」(参照 demo):该分项本次同意,同申请全部分项齐套后整单终审/上送
-async function doApproveItem(it: any) {
-  if (opRates.value[it.id] == null) {
-    ElMessage.warning('请填写审批利率')
+// 整单同意审批(2026-08-29):一次操作处理整单;调整利率统一应用到全部在途分项,不得越界
+async function doApprove() {
+  if (isLoan.value && opRate.value == null) {
+    ElMessage.warning('请填写整单审批利率')
     return
   }
+  const nodeCode = currentNodeCode.value
+  if (!nodeCode) return
   submitting.value = true
   try {
     const res = await approveTask({
-      pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
-      nodeCode: it.currentNodeCode,
-      adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
-      rateAdjustments: collectRateAdjustments(),
+      applicationId: applicationId.value, // 雪花 id 传字符串,避免 JS 精度丢失
+      nodeCode,
+      adjustRate: wholeOrderRateChanged() ? opRate.value : null,
       comment: opComment.value || undefined,
-      versionNo: it.versionNo
+      versionNo: application.value.versionNo
     }, newIdempotencyKey())
-    locallyApproved.value.add(it.id)
-    ElMessage.success(approveSuccessMsg(res, it.currentNodeCode))
-    // 逐项审批模型:未齐套(后端停留原节点,nextNodeCode==当前节点)则刷新留在本页继续点其余分项;
-    // 整单推进/终审(nextNodeCode 变化或 terminal)才返回列表
-    if (res?.terminal || (res?.nextNodeCode && res.nextNodeCode !== it.currentNodeCode)) {
-      goBack()
-    } else {
-      await load()
-    }
+    ElMessage.success(approveSuccessMsg(res, nodeCode))
+    goBack()
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态
   } finally {
@@ -1573,71 +1432,32 @@ async function doApproveItem(it: any) {
   }
 }
 
-// 一键通过审批:后端整单流转(§14.7)——「权限内通过但未齐套」时一次 approve 只记当前分项 agreed,
-// 仍停留原节点,故需对每个待办分项逐项 approve;最后一项权限内通过时后端自动整单齐套终审(terminal),
-// 任一分项超权限时后端将全部 ROUTING 分项整单上送/终审,后续项已随整单推进,循环遇节点变化即停止。
-// 不能对已推进的分项二次调用(会报 1007"分项当前不在节点[旧节点],实际节点[新节点]"),故 catch 后 break 收尾。
-async function doApproveAll() {
-  const pending = pendingItems.value
-  if (!pending.length) {
-    ElMessage.warning('没有待审批的分项')
-    return
-  }
-  // 校验所有待审批分项利率都已填写(不只 pending[0],避免后续分项缺利率导致整单报错)
-  for (const it of pending) {
-    if (opRates.value[it.id] == null) {
-      ElMessage.warning(`请填写分项 ${it.pricingItemNo || it.id} 的审批利率`)
-      return
-    }
-  }
-  submitting.value = true
-  let okCount = 0
-  try {
-    for (const it of pending) {
-      try {
-        const res = await approveTask({
-          pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
-          nodeCode: it.currentNodeCode,
-          adjustRate: rateChanged(it) ? opRates.value[it.id] : null,
-          rateAdjustments: collectRateAdjustments(),
-          comment: opComment.value || undefined,
-          versionNo: it.versionNo
-        }, newIdempotencyKey())
-        okCount++
-        // 整单已上送/终审(节点推进或终态):剩余分项已随整单一并处理,停止循环
-        if (res?.terminal || (res?.nextNodeCode && res.nextNodeCode !== it.currentNodeCode)) break
-      } catch {
-        // 分项已不在当前节点(整单上送/终审连带推进)或并发冲突:剩余由整单流程处理,结束循环
-        break
-      }
-    }
-    if (okCount === pending.length) {
-      ElMessage.success(`审批提交成功,共通过 ${pending.length} 个分项`)
-    } else {
-      ElMessage.success(`已处理 ${okCount}/${pending.length} 个分项,申请已整单推进/终审`)
-    }
-    goBack()
-  } finally {
-    submitting.value = false
-  }
-}
+// 整单交付改造(2026-08-29):一键通过 doApproveAll 移除,整单一次审批由 doApprove 承担
 
-// 委员逐项投票(六人小组内联审批):调 submitBallot,一人一票投后不可改
-async function doVoteItem(it: any, choice: string) {
-  const roundId = it.roundId ?? voteRound.value?.roundId
+// 委员整单投票(2026-08-29):一批=一申请=整单票,投一次即整单票;一人一票投后不可改
+async function doVote(choice: string) {
+  const roundId = voteRound.value?.roundId
   if (!roundId) {
     ElMessage.warning('未找到当前表决轮次,请刷新后重试')
     return
   }
+  if (choice === 'REJECT' && !opComment.value?.trim()) {
+    try {
+      await ElMessageBox.confirm('反对票未填写意见,建议补充以便后续环节参考,仍确认提交?', '反对意见缺失', {
+        type: 'warning', confirmButtonText: '仍提交', cancelButtonText: '返回补充'
+      })
+    } catch {
+      return
+    }
+  }
   submitting.value = true
   try {
     await submitBallot(roundId, {
-      pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
+      applicationId: applicationId.value,
       choice,
       comment: opComment.value || undefined
     }, newIdempotencyKey())
-    locallyApproved.value.add(it.id)
-    ElMessage.success(choice === 'APPROVE' ? '已提交同意票' : '已提交否决票')
+    ElMessage.success(choice === 'APPROVE' ? '已提交同意票(整单)' : '已提交否决票(整单)')
     await load() // 刷新本人票与匿名汇总
   } catch {
     load() // 已投/轮次关闭等:刷新最新状态
@@ -1646,153 +1466,37 @@ async function doVoteItem(it: any, choice: string) {
   }
 }
 
-// 委员一键提交本人全部同意票(对未投分项逐项 submitBallot)。
-// 六人小组按"一人一票、集体计票"表决:单委员无权直接否决整单,否决须由计票(≥4 票赞成才通过)决定。
-async function doVoteAll() {
-  const roundId = voteRound.value?.roundId
-  if (!roundId) {
-    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
-    return
-  }
-  const pending = pendingItems.value
-  if (!pending.length) {
-    ElMessage.warning('没有待投票的分项')
-    return
-  }
-  submitting.value = true
-  try {
-    for (const it of pending) {
-      await submitBallot(roundId, {
-        pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
-        choice: 'APPROVE',
-        comment: opComment.value || undefined
-      }, newIdempotencyKey())
-      locallyApproved.value.add(it.id)
-    }
-    ElMessage.success(`已提交 ${pending.length} 项同意票,等待其他委员投票`)
-    await load()
-  } catch {
-    load()
-  } finally {
-    submitting.value = false
-  }
-}
-
-// 委员一键提交本人全部否决票(对未投分项逐项 submitBallot,与 doVoteAll 对称)。
-// 全员投完后统一计票,分项独立:该分项否决不牵连其他分项。
-async function doVoteAllReject() {
-  const roundId = voteRound.value?.roundId
-  if (!roundId) {
-    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
-    return
-  }
-  const pending = pendingItems.value
-  if (!pending.length) {
-    ElMessage.warning('没有待投票的分项')
-    return
-  }
-  submitting.value = true
-  try {
-    for (const it of pending) {
-      await submitBallot(roundId, {
-        pricingItemId: String(it.id), // 雪花 id 传字符串,避免 JS 精度丢失
-        choice: 'REJECT',
-        comment: opComment.value || undefined
-      }, newIdempotencyKey())
-      locallyApproved.value.add(it.id)
-    }
-    ElMessage.success(`已提交 ${pending.length} 项否决票,等待其他委员投票`)
-    await load()
-  } catch {
-    load()
-  } finally {
-    submitting.value = false
-  }
-}
-
-// 逐项否决(2026-08-27 用户拍板):点单个分项只否决该分项——记「本节点已否决」ROUTING 停留,逐项点完
-// 同申请全部待处理分项后整单分派(未全部否决→整单上送,否决分项置终态展示上级,上级仅查看不重复否决;
-// 全部否决→整单退回)。已处理分项按钮置灰,一键否决只处理本节点可操作且未处理的分项。
-async function doRejectItem(it: any) {
-  // P2-1:否决必填意见(否决后该分项本节点不再可操作,客户经理凭意见了解否决原因)
+// 整单否决(2026-08-29):任一节点否决即整单否决,同申请全部分项一并退回;否决必填意见
+async function doReject() {
+  // P2-1:否决必填意见(否决后整单退回,客户经理凭意见了解否决原因)
   if (!opComment.value?.trim()) {
     ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
     return
   }
-  ElMessageBox.confirm('确认否决该分项?已否决分项本节点不再可操作,待整单齐套后统一分派。', '否决分项', { type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消' })
-    .then(async () => {
-      submitting.value = true
-      try {
-        const res = await rejectTask({
-          pricingItemId: it.id, // 雪花 id 传字符串,避免 JS 精度丢失
-          nodeCode: it.currentNodeCode,
-          comment: opComment.value || undefined,
-          versionNo: it.versionNo
-        }, newIdempotencyKey())
-        locallyRejected.value.add(it.id)
-        // 逐项否决模型:未齐套(后端停留原节点,nextNodeCode==当前节点)则刷新留本页继续;整单退回/上送才返回列表
-        if (res?.terminal || (res?.nextNodeCode && res.nextNodeCode !== it.currentNodeCode)) {
-          ElMessage.warning('已否决')
-          goBack()
-        } else {
-          ElMessage.warning('已否决,待整单齐套后分派')
-          await load()
-        }
-      } catch {
-        load() // 版本冲突/已处理等:刷新最新状态
-      } finally {
-        submitting.value = false
-      }
+  try {
+    await ElMessageBox.confirm('确认否决该整单?任一节点否决即整单否决,同申请全部分项一并退回,流程直接结束。', '否决整单', {
+      type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消'
     })
-    .catch(() => undefined)
-}
-
-// 一键否决:只处理本节点可操作且未处理(未同意/未否决)的分项,逐项否决;最后一项齐套触发整单退回/上送
-async function doRejectAll() {
-  const pending = pendingRejectItems.value
-  if (!pending.length) {
-    ElMessage.warning('没有待否决的分项')
+  } catch {
     return
   }
-  if (!opComment.value?.trim()) {
-    ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
-    return
+  const nodeCode = currentNodeCode.value
+  if (!nodeCode) return
+  submitting.value = true
+  try {
+    await rejectTask({
+      applicationId: applicationId.value, // 雪花 id 传字符串,避免 JS 精度丢失
+      nodeCode,
+      comment: opComment.value || undefined,
+      versionNo: application.value.versionNo
+    }, newIdempotencyKey())
+    ElMessage.warning('已否决,整单退回')
+    goBack()
+  } catch {
+    load() // 版本冲突/已处理等:刷新最新状态
+  } finally {
+    submitting.value = false
   }
-  ElMessageBox.confirm(`确认否决 ${pending.length} 个待处理分项?已同意分项不受影响,全部否决则整单否决、流程直接结束。`, '一键否决', { type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消' })
-    .then(async () => {
-      submitting.value = true
-      let okCount = 0
-      try {
-        for (const it of pending) {
-          try {
-            const res = await rejectTask({
-              pricingItemId: it.id,
-              nodeCode: it.currentNodeCode,
-              comment: opComment.value || undefined,
-              versionNo: it.versionNo
-            }, newIdempotencyKey())
-            locallyRejected.value.add(it.id)
-            okCount++
-            // 整单已退回/上送(terminal 或节点推进):剩余分项已随整单一并处理,停止循环
-            if (res?.terminal || (res?.nextNodeCode && res.nextNodeCode !== it.currentNodeCode)) break
-          } catch {
-            // 分项已不在当前节点(整单退回/上送连带处理)或并发冲突:结束循环
-            break
-          }
-        }
-        if (okCount === pending.length) {
-          ElMessage.warning(`已否决 ${pending.length} 个分项`)
-        } else {
-          ElMessage.warning(`已否决 ${okCount}/${pending.length} 个分项,申请已整单退回/上送`)
-        }
-        goBack()
-      } catch {
-        load()
-      } finally {
-        submitting.value = false
-      }
-    })
-    .catch(() => undefined)
 }
 
 onMounted(load)

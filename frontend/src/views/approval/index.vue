@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">利率审批</div>
-      <InfoTip content="流转到本人当前审批节点、需要处理的申请列表(按登录人角色过滤);已办与统计见工作台。" />
+      <InfoTip content="流转到本人当前审批节点的申请列表(整单审批:一次对整张申请单操作,含多个分项;贷款按利率最低分项定流程,存款按原流程)。已办与统计见工作台。" />
     </div>
 
 
@@ -26,7 +26,7 @@
             <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个担保分项</span>
           </div>
           <div class="todo-card__sub" v-if="c.single">申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }}</div>
-          <div class="todo-card__sub" v-else>申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }} · 需完成 {{ c.itemCount }} 个担保分项</div>
+          <div class="todo-card__sub" v-else>申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }} · 共 {{ c.itemCount }} 个分项(整单一次审批)</div>
           <!-- 卡片摘要键值:统一 design-system 描述列表 -->
           <div class="desc-grid desc-grid--3">
             <div class="desc-item"><div class="desc-item__label">申请利率</div><div class="desc-item__value">{{ c.rate }}{{ c.single ? '%' : '' }}</div></div>
@@ -193,15 +193,15 @@ async function load() {
 }
 
 
-// 核验资料(§12.8):取审批详情的摘要信息
+// 核验资料(§12.8):取审批详情的摘要信息(整单化传 applicationId)
 async function openCheck(c: any) {
   check.value = {
-    show: true, loaded: false, id: c.id,
+    show: true, loaded: false, id: c.applicationId, applicationId: c.applicationId,
     customer: c.customer, amount: `${fmtAmount(c.amount)} 万元`, rate: `${c.rate}%`,
     originalRate: c.originalRate, qualityOverall: '', dataDt: '—', error: ''
   }
   try {
-    const d = await getApprovalDetail(c.id)
+    const d = await getApprovalDetail(c.applicationId)
     const pi = d.pricingItem || {}
     const customer = d.customer?.[0] || {}
     check.value.customer = customer.customerName || pi.pricing_customer_no || c.customer
@@ -217,7 +217,8 @@ async function openCheck(c: any) {
 
 function goDetail(c: any) {
   check.value.show = false
-  router.push(`/approval/${c.id}`)
+  // 整单详情入口用 applicationId(后端 /ccr/approval/{applicationId}/detail)
+  router.push(`/approval/${c.applicationId}`)
 }
 
 onMounted(load)

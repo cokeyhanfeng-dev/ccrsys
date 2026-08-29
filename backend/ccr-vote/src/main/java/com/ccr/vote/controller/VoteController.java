@@ -145,24 +145,32 @@ public class VoteController {
         return R.ok(jdbcTemplate.queryForList(sql, voterUserId, voterUserId));
     }
 
-    /** 委员提交本人票(一人一票);Idempotency-Key 头可选 */
+    /** 委员提交本人票(整单交付改造 2026-08-29:一批=一申请,投整单票);Idempotency-Key 头可选 */
     @PostMapping("/vote-rounds/{roundId}/ballots")
     public R<Void> submitBallot(@PathVariable Long roundId,
                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                 @RequestBody Map<String, Object> body) {
+        Object target = body.get("applicationId");
+        if (target == null) {
+            target = body.get("pricingItemId");
+        }
+        if (target == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "缺少投票目标 applicationId(或兼容 pricingItemId)");
+        }
         voteService.submitBallot(
                 roundId,
-                Long.valueOf(body.get("pricingItemId").toString()),
+                Long.valueOf(target.toString()),
                 body.get("choice").toString(),
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 idempotencyKey);
         return R.ok();
     }
 
-    /** 本人选择与提交结果(只返回本人票型) */
+    /** 本人选择与提交结果(只返回本人票型;整单化按申请查询) */
     @GetMapping("/vote-rounds/{roundId}/ballots/my")
-    public R<Map<String, Object>> myBallot(@PathVariable Long roundId, @RequestParam Long pricingItemId) {
-        return R.ok(voteService.myBallot(roundId, pricingItemId));
+    public R<Map<String, Object>> myBallot(@PathVariable Long roundId, @RequestParam Long applicationId) {
+        return R.ok(voteService.myBallot(roundId, applicationId));
     }
 
     /** 委员替补(§7.4,授权角色:行长或流程管理员) */
@@ -175,15 +183,15 @@ public class VoteController {
                 body.get("reason") == null ? null : body.get("reason").toString()));
     }
 
-    /** 查询分项计票结果(匿名性:仅行长/审计(admin)可查,普通用户拒绝) */
-    @GetMapping("/vote-results/{pricingItemId}")
-    public R<CcrVoteResult> voteResult(@PathVariable Long pricingItemId) {
+    /** 查询整单计票结果(匿名性:仅行长/审计(admin)可查,普通用户拒绝;整单化按申请查询) */
+    @GetMapping("/vote-results/{applicationId}")
+    public R<CcrVoteResult> voteResult(@PathVariable Long applicationId) {
         try {
             currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_PRESIDENT, CurrentLoginUser.ROLE_ADMIN);
         } catch (ServiceException e) {
             throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "计票结果仅行长/审计可见");
         }
-        return R.ok(voteService.getVoteResult(pricingItemId));
+        return R.ok(voteService.getVoteResult(applicationId));
     }
 
     /** 行长查看批次委员匿名意见(§12.7,仅行长/审计;按分项返回匿名码+票型+意见,不含真实身份) */

@@ -214,6 +214,18 @@ export interface RoutePreview {
   groupCreditTotal?: number
   lprVersionId?: number
   lprVersionCode?: string
+  /** 整单审批链首节点(整单交付改造:贷款=利率最低分项,存款=原流程) */
+  startNodeCode?: string
+  /** 整单终审岗位编码 */
+  finalNodeCode?: string
+  /** 整单完整路由链路 */
+  routeChain?: string[]
+  /** 整单下一步审批人姓名(routeChain 首节点解析) */
+  nextApproverNames?: string[]
+  /** 整单命中的权限矩阵行编号(审计溯源) */
+  matchedMatrixNo?: string
+  /** 整单终审节点边界利率(审计溯源) */
+  boundaryRate?: number
   items: Array<{
     pricingItemId: number
     pricingItemNo: string

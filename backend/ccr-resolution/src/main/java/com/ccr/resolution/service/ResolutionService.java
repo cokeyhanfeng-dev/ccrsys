@@ -15,10 +15,11 @@ import java.util.Map;
 public interface ResolutionService {
 
     /**
-     * 生成决议(审批通过后):只形成 ISSUED,不直接视为合同已执行(§12.4)
-     * 供审批/表决模块在审批终态后直接注入调用;前置校验:分项终态(APPROVED_LEVEL/FINAL)、按分项幂等
+     * 生成决议(整单交付改造 2026-08-29:按申请维度生成,一申请一份):
+     * 只形成 ISSUED,不直接视为合同已执行(§12.4)
+     * 供审批/表决模块在审批终态后直接注入调用;前置校验:申请终态(批准决议/否决决议)、按申请幂等
      */
-    CcrResolution createResolution(Long pricingItemId, BigDecimal finalRate, String carrierType,
+    CcrResolution createResolution(Long applicationId, BigDecimal finalRate, String carrierType,
                                    String carrierBusinessKey, LocalDate effectiveFrom,
                                    LocalDate effectiveTo, String decisionSource);
 

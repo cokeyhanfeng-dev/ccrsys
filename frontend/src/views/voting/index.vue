@@ -2,27 +2,30 @@
   <div>
     <div class="section-head">
       <div class="section-title">利率审批小组成员工作台 · 待我表决</div>
-      <InfoTip content="仅提交本人&quot;赞成/反对&quot;意见,后台自动计票;不展示其他成员票型或汇总票数,本人意见提交后不可修改。" />
+      <InfoTip content="整单表决:一批=一个申请=一张整单票,同一申请多个分项一起表决。仅提交本人&quot;赞成/反对&quot;意见,后台自动计票;不展示其他成员票型或汇总票数,本人意见提交后不可修改。" />
     </div>
 
     <div class="card">
       <div class="card__head">
         <span>待我表决</span>
-        <span class="badge badge--warning">本人待表决 {{ pendingCount }} 项</span>
+        <span class="badge badge--warning">本人待表决 {{ pendingCount }} 笔</span>
       </div>
       <table class="table">
         <thead>
-          <tr><th>定价分项</th><th>担保类型</th><th>申请金额(万元)</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th><th>操作</th></tr>
+          <tr><th>申请编号</th><th>业务类型</th><th>分项</th><th>申请利率</th><th>本人票型</th><th>表决意见</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in rows" :key="row.roundId + '-' + row.pricingItemId">
+          <tr v-for="(row, idx) in rows" :key="row.roundId">
             <td>
-              <div>{{ row.pricingItemNo }}</div>
-              <div class="section-tip">{{ productName(row.productCode) }}</div>
+              <div>{{ row.applicationNo }}</div>
+              <div class="section-tip">{{ row.customerNo }}</div>
             </td>
-            <td><span class="badge badge--info">{{ guaranteeTypeText(row.guaranteeType, '—') }}</span></td>
-            <td class="num">{{ row.pricingAmount ?? '—' }}</td>
-            <td class="num">{{ row.requestedRate }}%</td>
+            <td><span class="badge badge--info">{{ row.businessType === 'DEPOSIT' ? '存款' : '贷款' }}</span></td>
+            <td>{{ row.itemCount }} 个分项</td>
+            <td class="num">
+              <div>{{ row.requestedRate }}%</div>
+              <div class="section-tip">整单按最低利率定流程</div>
+            </td>
             <td>
               <template v-if="!row.submitted">
                 <label class="vote-option"><input type="radio" :name="'vote-'+idx" value="APPROVE" v-model="row.choice" /> 赞成</label>
@@ -39,7 +42,7 @@
             <td><span :class="row.submitted ? 'badge badge--success' : 'badge badge--neutral'">{{ row.submitted ? '已提交' : '未提交' }}</span></td>
             <td><button class="btn btn--text" @click="goDetail(row)">查看详情</button></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="8"><div class="empty">暂无待表决分项</div></td></tr>
+          <tr v-if="!rows.length"><td colspan="8"><div class="empty">暂无待表决申请</div></td></tr>
         </tbody>
       </table>
       <div class="vote-bar" v-if="pendingCount > 0">
@@ -56,7 +59,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listVoteTodo, fetchMyBallot, submitBallot } from '@/api/vote'
 import { newIdempotencyKey } from '@/api/approval'
-import { productName, guaranteeTypeText, voteChoiceBadge } from '@/utils/dict'
+import { voteChoiceBadge } from '@/utils/dict'
 
 const router = useRouter()
 const rows = ref<any[]>([])
@@ -64,27 +67,41 @@ const submitting = ref(false)
 
 const pendingCount = computed(() => rows.value.filter((r) => !r.submitted).length)
 
+// 整单化:一批=一申请=整单票;后端 todo 返回分项级行,同一申请多分项按 roundId 聚合成一行展示,
+// 申请利率取分项最低(与整单定链口径一致),投票统一传 applicationId(投一次即整单票)
 async function load() {
   try {
     const data = await listVoteTodo<any[]>()
-    const list = (data || []).map((p) => ({
-      roundId: p.roundId,
-      pricingItemId: p.pricingItemId,
-      productCode: p.productCode || '—',
-      pricingItemNo: p.pricingItemNo || '',
-      guaranteeType: p.guaranteeType || '',
-      pricingAmount: p.pricingAmount,
-      requestedRate: p.requestedRate,
-      choice: '',
-      comment: '',
-      submitted: false,
-      myChoice: '',
-      myComment: ''
-    }))
-    // 逐项查询本人已投票型(只返回本人票,不泄露他人信息)
+    const byRound = new Map<number, any>()
+    for (const p of (data || [])) {
+      let row = byRound.get(p.roundId)
+      if (!row) {
+        row = {
+          roundId: p.roundId,
+          applicationId: p.applicationId,
+          applicationNo: p.applicationNo || '',
+          businessType: p.businessType || '',
+          customerNo: p.customerNo || '',
+          itemCount: 0,
+          requestedRate: null,
+          choice: '',
+          comment: '',
+          submitted: false,
+          myChoice: '',
+          myComment: ''
+        }
+        byRound.set(p.roundId, row)
+      }
+      row.itemCount += 1
+      if (p.requestedRate != null && (row.requestedRate == null || p.requestedRate < row.requestedRate)) {
+        row.requestedRate = p.requestedRate
+      }
+    }
+    const list = Array.from(byRound.values())
+    // 逐申请查询本人已投票型(只返回本人票,不泄露他人信息)
     await Promise.all(list.map(async (row) => {
       try {
-        const my = await fetchMyBallot(row.roundId, row.pricingItemId)
+        const my = await fetchMyBallot(row.roundId, row.applicationId)
         if (my && my.voteChoice) {
           row.submitted = true
           row.myChoice = my.voteChoice
@@ -98,9 +115,9 @@ async function load() {
   }
 }
 
-// 查看分项审批详情(只读,委员无操作权限)
+// 查看整单审批详情(只读,委员无操作权限;整单入口用 applicationId)
 function goDetail(row: any) {
-  router.push(`/approval/detail/${row.pricingItemId}`)
+  router.push(`/approval/${row.applicationId}`)
 }
 
 async function submitAll() {
@@ -114,7 +131,7 @@ async function submitAll() {
   if (noCommentRejects.length) {
     try {
       await ElMessageBox.confirm(
-        `${noCommentRejects.length} 项反对票未填写意见。建议补充意见以便后续环节参考,仍确认提交?`,
+        `${noCommentRejects.length} 笔申请反对票未填写意见。建议补充意见以便后续环节参考,仍确认提交?`,
         '反对意见缺失', { type: 'warning', confirmButtonText: '仍提交', cancelButtonText: '返回补充' }
       )
     } catch {
@@ -125,14 +142,14 @@ async function submitAll() {
   for (const row of targets) {
     try {
       await submitBallot(row.roundId, {
-        pricingItemId: row.pricingItemId,
+        applicationId: row.applicationId,
         choice: row.choice,
         comment: row.comment || undefined
       }, newIdempotencyKey())
       row.submitted = true
       row.myChoice = row.choice
       row.myComment = row.comment
-    } catch { /* 拦截器提示,继续其余分项 */ }
+    } catch { /* 拦截器提示,继续其余申请 */ }
   }
   submitting.value = false
   ElMessage.success('已提交本人选票')

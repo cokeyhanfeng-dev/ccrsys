@@ -9,6 +9,7 @@ import com.ccr.common.core.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +79,27 @@ public class CcrApplication extends BaseEntity {
 
     /** 客户信息人工修正快照(JSON;数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示) */
     private String customerInfoJson;
+
+    /** 整单路由编码(终审岗位,提交/推进时冻结;整单交付改造后审批以申请单为准) */
+    private String routeCode;
+
+    /** 整单审批链(JSON数组,贷款=利率最低分项,存款=原流程,提交/推进时冻结) */
+    private String routeChain;
+
+    /** 整单审批链首节点编码(提交路由后冻结,贷款/存款恒为BRANCH_MANAGER) */
+    private String startNodeCode;
+
+    /** 整单当前节点编码(审批推进以申请单为准,同步各分项 current_node_code) */
+    private String currentNodeCode;
+
+    /** 整单终审节点边界利率(矩阵∩产品硬边界交集,审计溯源) */
+    private BigDecimal boundaryRate;
+
+    /** 整单命中的权限矩阵行编号(审计溯源) */
+    private String matchedMatrixNo;
+
+    /** 整单路由命中部门编码(节点审批人归属分流) */
+    private String deptCode;
 
     /** 授信协议补录/修正快照(JSON;存量=协议带出可修正,新增=手工补录,协议号可空;审批详情授信信息区优先展示补录值) */
     private String creditInfoJson;

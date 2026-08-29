@@ -652,10 +652,10 @@ class ApplicationSubmitServiceImplTest {
         assertEquals(1, response.getItems().size());
         assertEquals(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"), response.getItems().get(0).getRouteChain());
 
-        // Outbox(§3.5/§7.2 步骤7):逐分项 FLOW_START(payload 含分项+起始节点+流程定义) + 申请人/支行行长 NOTIFY
-        verify(outboxService).publish(eq("FLOW_START"), eq("PI-11"),
+        // Outbox(§3.5/§7.2 步骤7):整单一条 FLOW_START(business_id=applicationNo,payload 含整单首节点+终审岗位+流程定义) + 申请人/支行行长 NOTIFY
+        verify(outboxService).publish(eq("FLOW_START"), eq("CCR20260806ABCD"),
                 argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval")
-                        && p.contains("PI-11")));
+                        && p.contains("CCR20260806ABCD")));
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:APPLICANT"), anyString());
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"),
                 argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("\"orgId\":1001")

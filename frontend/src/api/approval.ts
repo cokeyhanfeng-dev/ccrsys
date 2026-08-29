@@ -7,14 +7,14 @@ export function listApprovalTasks<T = any[]>(): Promise<T> {
   return get<T>('/ccr/approval/tasks')
 }
 
-/** 审批详情:分项+申请+客户+融资+贡献度+担保+路由链+资料校验+拟达成贡献度+流程轨迹(+集团成员) */
-export function getApprovalDetail<T = any>(pricingItemId: number | string): Promise<T> {
-  return get<T>(`/ccr/approval/${pricingItemId}/detail`)
+/** 审批详情:整单维度(2026-08-29 整单交付:传 applicationId;分项+申请+客户+融资+贡献度+担保+整单路由链+资料校验+拟达成贡献度+流程轨迹(+集团成员)) */
+export function getApprovalDetail<T = any>(applicationId: number | string): Promise<T> {
+  return get<T>(`/ccr/approval/${applicationId}/detail`)
 }
 
 export interface ApprovalActionBody {
-  // 雪花 id 为 19 位,超出 JS Number 安全整数,必须传字符串避免精度丢失
-  pricingItemId: number | string
+  // 整单交付改造(2026-08-29):审批目标为申请单 applicationId(雪花 id 19 位传字符串避免精度丢失)
+  applicationId: number | string
   nodeCode: string
   adjustRate?: number | string | null
   // 同申请其余分项(随整单推进的 sibling)调价利率:分项id→调整后利率,仅收录相对当前利率有变化的分项;
@@ -40,7 +40,7 @@ export function approveTask(body: ApprovalActionBody, idempotencyKey?: string): 
   })
 }
 
-/** 普通节点否决(2026-08-27 逐项否决,返回流转去向与 approve 同构);Idempotency-Key 头可选 */
+/** 普通节点否决(整单交付:任一节点否决→整单一起 REJECTED/VETOED,返回流转去向与 approve 同构);Idempotency-Key 头可选 */
 export function rejectTask(body: ApprovalActionBody, idempotencyKey?: string): Promise<ApprovalResult> {
   return request<ApprovalResult>({
     url: '/ccr/approval/tasks/reject',

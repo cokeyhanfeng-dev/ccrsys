@@ -54,43 +54,63 @@
             </table>
           </div>
         </template>
-        <!-- 审批路由预览(参照存款预览样式;§2026-08-26 提交确认弹窗统一展示,贷款/存款均传 routeResult) -->
-        <template v-if="routePreview?.items?.length">
+        <!-- 审批路由预览(整单交付改造 2026-08-29:展示申请级整单主链 + 分项明细只读;贷款=分项中利率最低者定链,存款=原流程) -->
+        <template v-if="routePreview">
           <div class="check-section">
             <div class="check-section__title">
               审批路由预览
               <span class="badge badge--info">LPR 版本:{{ routePreview.lprVersionCode || '暂无数据' }}</span>
             </div>
-            <table class="table">
-              <thead>
-                <tr><th>分项编号</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>路由链路</th><th>终审岗位</th><th>硬边界</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="it in routePreview.items" :key="it.pricingItemId">
-                  <td>{{ it.pricingItemNo }}</td>
-                  <td>{{ productName(it.productCode || '') }}</td>
-                  <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
-                  <td>{{ rateDirectionText(it.rateDirection) }}</td>
-                  <td>
-                    <template v-if="it.errorCode">
-                      <span class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
-                    </template>
-                    <template v-else-if="it.routeChain?.length">
-                      <span v-for="(n, ni) in it.routeChain" :key="ni">
-                        <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < it.routeChain.length - 1"> → </span>
-                      </span>
-                    </template>
-                    <span v-else>暂无数据</span>
-                  </td>
-                  <td>{{ it.errorCode ? '—' : nodeLabel(it.finalNodeCode) }}</td>
-                  <td>
-                    <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
-                    <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
-                    <span v-else class="badge badge--neutral">暂无数据</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <!-- 整单主链:一条流程(贷款按分项最低利率,存款按原流程);后续审批人按整单推进 -->
+            <template v-if="routePreview.routeChain?.length">
+              <div class="desc-grid desc-grid--3">
+                <div class="desc-item">
+                  <div class="desc-item__label">整单路由</div>
+                  <div class="desc-item__value">
+                    <span v-for="(n, ni) in routePreview.routeChain" :key="ni">
+                      <span class="route-node">{{ nodeLabel(n) }}</span><span v-if="ni < routePreview.routeChain.length - 1"> → </span>
+                    </span>
+                  </div>
+                </div>
+                <div class="desc-item">
+                  <div class="desc-item__label">终审岗位</div>
+                  <div class="desc-item__value">{{ nodeLabel(routePreview.finalNodeCode) }}</div>
+                </div>
+                <div class="desc-item">
+                  <div class="desc-item__label">下一步审批人</div>
+                  <div class="desc-item__value">{{ (routePreview.nextApproverNames || []).join('、') || '—' }}</div>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="empty" style="padding:12px 0">整单路由暂无数据</div>
+            </template>
+            <!-- 分项明细(只读;路由失败/硬边界逐分项提示,整单化后不再逐分项展示独立链路) -->
+            <template v-if="routePreview.items?.length">
+              <div class="check-section__title" style="margin-top:14px">分项明细</div>
+              <table class="table">
+                <thead>
+                  <tr><th>分项编号</th><th>产品</th><th>申请利率</th><th>比较方向</th><th>硬边界</th><th>说明</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="it in routePreview.items" :key="it.pricingItemId">
+                    <td>{{ it.pricingItemNo }}</td>
+                    <td>{{ productName(it.productCode || '') }}</td>
+                    <td class="num">{{ it.requestedRate != null ? it.requestedRate + '%' : '—' }}</td>
+                    <td>{{ rateDirectionText(it.rateDirection) }}</td>
+                    <td>
+                      <span v-if="it.hardBoundaryPass === true" class="badge badge--success">通过({{ it.hardBoundaryRate }}%)</span>
+                      <span v-else-if="it.hardBoundaryPass === false" class="badge badge--danger">突破({{ it.hardBoundaryRate }}%)</span>
+                      <span v-else class="badge badge--neutral">暂无数据</span>
+                    </td>
+                    <td>
+                      <span v-if="it.errorCode" class="badge badge--danger">路由失败:{{ it.errorMessage || it.errorCode }}</span>
+                      <span v-else class="section-tip">已并入整单路由</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
           </div>
         </template>
         <template v-if="check">

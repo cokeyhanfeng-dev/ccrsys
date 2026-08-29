@@ -94,32 +94,40 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         if (PricingItemStatus.FINAL.getCode().equals(item.getStatus())
                 || PricingItemStatus.APPROVED_LEVEL.getCode().equals(item.getStatus())
                 || committeeReject) {
-            Map<String, Object> payload = buildResolutionPayload(item, decisionSource);
-            try {
-                // 同事务写事件:event_no=RESOLUTION_CREATE:item:{id} 幂等,消费者异步生成决议
-                outboxService.publish(OutboxEventType.RESOLUTION_CREATE,
-                        "item:" + item.getId(), JSONUtil.toJsonStr(payload));
-            } catch (Exception e) {
-                // 事件表写入失败才降级同步串联(内部失败落 PENDING 通知,不阻断主流程)
-                log.error("分项 {} RESOLUTION_CREATE 事件写入失败,降级同步串联", item.getId(), e);
-                processResolutionCreateSafely(item, payload);
+            // 整单化:决议按申请维度一份,仅首个终态分项触发事件;同申请其余分项终态幂等跳过(只聚合)
+            Long resolutionCount = resolutionMapper.selectCount(new LambdaQueryWrapper<CcrResolution>()
+                    .eq(CcrResolution::getApplicationId, item.getApplicationId()));
+            if (resolutionCount != null && resolutionCount > 0) {
+                log.info("申请 {} 已生成决议,整单终态事件幂等跳过(分项 {})",
+                        item.getApplicationId(), item.getPricingItemNo());
+            } else {
+                Map<String, Object> payload = buildResolutionPayload(item, decisionSource);
+                try {
+                    // 同事务写事件:event_no=RESOLUTION_CREATE:app:{id} 幂等,消费者异步生成整单决议
+                    outboxService.publish(OutboxEventType.RESOLUTION_CREATE,
+                            "app:" + item.getApplicationId(), JSONUtil.toJsonStr(payload));
+                } catch (Exception e) {
+                    // 事件表写入失败才降级同步串联(内部失败落 PENDING 通知,不阻断主流程)
+                    log.error("申请 {} RESOLUTION_CREATE 事件写入失败,降级同步串联", item.getApplicationId(), e);
+                    processResolutionCreateSafely(item, payload);
+                }
             }
         }
         aggregateApplication(item.getApplicationId());
     }
 
-    /** 决议事件载荷(日期/利率以字符串固化,消费重试口径不变) */
+    /** 决议事件载荷(日期/利率以字符串固化,消费重试口径不变;整单化按申请维度) */
     private Map<String, Object> buildResolutionPayload(CcrPricingItem item, String decisionSource) {
         // 否决决议无最终利率(finalRate 为空);批准决议取终态利率,缺失时回退当前审批利率
         BigDecimal finalRate = "COMMITTEE_REJECT".equals(decisionSource) ? null
                 : (item.getFinalRate() != null ? item.getFinalRate() : item.getCurrentApprovalRate());
+        CcrApplication application = applicationMapper.selectById(item.getApplicationId());
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("pricingItemId", item.getId());
-        payload.put("pricingItemNo", item.getPricingItemNo());
         payload.put("applicationId", item.getApplicationId());
+        payload.put("applicationNo", application == null ? null : application.getApplicationNo());
         payload.put("finalRate", finalRate == null ? null : finalRate.toPlainString());
         payload.put("carrierType", item.getPricingCarrierType());
-        payload.put("carrierBusinessKey", item.getPricingItemNo());
+        payload.put("carrierBusinessKey", application == null ? null : application.getApplicationNo());
         payload.put("effectiveFrom", LocalDate.now().toString());
         payload.put("effectiveTo", LocalDate.now().plusDays(resolutionEffectiveDays).toString());
         payload.put("decisionSource", StrUtil.blankToDefault(decisionSource, "LEVEL_APPROVED"));
@@ -130,59 +138,59 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
 
     @Override
     public void processResolutionCreate(Map<String, Object> payload) {
-        Long pricingItemId = toLong(payload.get("pricingItemId"));
-        CcrPricingItem item = pricingItemId == null ? null : pricingItemMapper.selectById(pricingItemId);
-        if (item == null) {
-            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "分项不存在: " + pricingItemId);
+        Long applicationId = toLong(payload.get("applicationId"));
+        CcrApplication application = applicationId == null ? null : applicationMapper.selectById(applicationId);
+        if (application == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在: " + applicationId);
         }
-        CcrResolution resolution = createResolutionIdempotent(item, payload);
+        CcrResolution resolution = createResolutionIdempotent(application, payload);
         if (resolution == null) {
             throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
-                    "决议生成结果为空,等待重试: 分项 " + pricingItemId);
+                    "决议生成结果为空,等待重试: 申请 " + applicationId);
         }
         // 否决决议(COMMITTEE_REJECT)不建承诺跟踪计划(§7.7 承诺计划仅对批准决议);批准决议才链式承诺计划
         if (!"COMMITTEE_REJECT".equals(StrUtil.blankToDefault(
                 toStr(payload.get("decisionSource")), "LEVEL_APPROVED"))) {
             // 链式承诺计划事件(业务关键:写入失败降级同步建计划)
             Map<String, Object> commitmentPayload = new LinkedHashMap<>();
-            commitmentPayload.put("pricingItemId", item.getId());
+            commitmentPayload.put("applicationId", application.getId());
             commitmentPayload.put("resolutionId", resolution.getId());
             try {
                 outboxService.publish(OutboxEventType.COMMITMENT_CREATE,
-                        "item:" + item.getId(), JSONUtil.toJsonStr(commitmentPayload));
+                        "app:" + application.getId(), JSONUtil.toJsonStr(commitmentPayload));
             } catch (Exception e) {
-                log.error("分项 {} COMMITMENT_CREATE 事件写入失败,降级同步建计划", item.getId(), e);
-                createCommitmentPlanSafely(item, resolution);
+                log.error("申请 {} COMMITMENT_CREATE 事件写入失败,降级同步建计划", application.getId(), e);
+                createCommitmentPlanSafely(application, resolution);
             }
         }
         // 决议签发通知申请人(通知为尽力而为:事件写失败仅记日志)
-        publishResolutionIssuedNotify(item, resolution);
+        publishResolutionIssuedNotify(application, resolution);
     }
 
     @Override
     public void processCommitmentCreate(Map<String, Object> payload) {
-        Long pricingItemId = toLong(payload.get("pricingItemId"));
+        Long applicationId = toLong(payload.get("applicationId"));
         Long resolutionId = toLong(payload.get("resolutionId"));
-        CcrPricingItem item = pricingItemId == null ? null : pricingItemMapper.selectById(pricingItemId);
+        CcrApplication application = applicationId == null ? null : applicationMapper.selectById(applicationId);
         CcrResolution resolution = resolutionId == null ? null : resolutionMapper.selectById(resolutionId);
-        if (item == null || resolution == null) {
+        if (application == null || resolution == null) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(),
-                    "承诺计划事件要素缺失: 分项 " + pricingItemId + " 决议 " + resolutionId);
+                    "承诺计划事件要素缺失: 申请 " + applicationId + " 决议 " + resolutionId);
         }
-        // 幂等:该申请已存在承诺计划则跳过(event_no 防重之外的业务兜底;承诺按申请聚合,同申请多分项终态只建一份)
+        // 幂等:该申请已存在承诺计划则跳过(event_no 防重之外的业务兜底;承诺按申请聚合,整单化一申请一份)
         Long exists = commitmentPlanMapper.selectCount(new LambdaQueryWrapper<CcrCommitmentPlan>()
-                .eq(CcrCommitmentPlan::getApplicationId, item.getApplicationId()));
+                .eq(CcrCommitmentPlan::getApplicationId, applicationId));
         if (exists != null && exists > 0) {
-            log.info("申请 {} 已存在承诺计划,幂等跳过(分项 {})", item.getApplicationId(), item.getPricingItemNo());
+            log.info("申请 {} 已存在承诺计划,幂等跳过", applicationId);
             return;
         }
-        createCommitmentPlan(item, resolution);
+        createCommitmentPlan(application, resolution);
     }
 
     /** 决议生成(幂等,IDEMPOTENCY_REPEAT 视为已生成取原决议);其余异常上抛由 Outbox 退避重试 */
-    private CcrResolution createResolutionIdempotent(CcrPricingItem item, Map<String, Object> payload) {
+    private CcrResolution createResolutionIdempotent(CcrApplication application, Map<String, Object> payload) {
         try {
-            return resolutionService.createResolution(item.getId(),
+            return resolutionService.createResolution(application.getId(),
                     payload.get("finalRate") == null ? null : new BigDecimal(payload.get("finalRate").toString()),
                     toStr(payload.get("carrierType")),
                     toStr(payload.get("carrierBusinessKey")),
@@ -193,16 +201,15 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             if (ErrorCode.IDEMPOTENCY_REPEAT.getCode() == e.getCode()) {
                 // 幂等:决议已存在,取原决议继续承诺计划串联
                 return resolutionMapper.selectOne(new LambdaQueryWrapper<CcrResolution>()
-                        .eq(CcrResolution::getPricingItemId, item.getId()));
+                        .eq(CcrResolution::getApplicationId, application.getId()));
             }
             throw e;
         }
     }
 
-    /** 决议签发通知事件(messageKey=RES_ISSUED:{resolutionId} 幂等) */
-    private void publishResolutionIssuedNotify(CcrPricingItem item, CcrResolution resolution) {
+    /** 决议签发通知事件(messageKey=RES_ISSUED:{resolutionId} 幂等;整单化按申请维度) */
+    private void publishResolutionIssuedNotify(CcrApplication application, CcrResolution resolution) {
         try {
-            CcrApplication application = applicationMapper.selectById(item.getApplicationId());
             Long applicantId = application == null ? null : application.getApplicantUserId();
             if (applicantId == null) {
                 return;
@@ -215,69 +222,73 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             payload.put("channel", "SYSTEM");
             payload.put("messageKey", "RES_ISSUED:" + resolution.getId());
             payload.put("content", committeeReject
-                    ? "定价分项 " + item.getPricingItemNo() + " 未通过审批,决议 "
+                    ? "申请 " + application.getApplicationNo() + " 未通过审批,决议 "
                     + resolution.getResolutionNo() + " 已签发"
-                    : "定价分项 " + item.getPricingItemNo() + " 审批通过,决议 "
+                    : "申请 " + application.getApplicationNo() + " 审批通过,决议 "
                     + resolution.getResolutionNo() + " 已签发");
             outboxService.publish(OutboxEventType.NOTIFY,
                     "RES_ISSUED:" + resolution.getId(), JSONUtil.toJsonStr(payload));
         } catch (Exception e) {
-            log.error("分项 {} 决议签发通知事件写入失败(不阻断)", item.getId(), e);
+            log.error("申请 {} 决议签发通知事件写入失败(不阻断)", application == null ? null : application.getId(), e);
         }
     }
 
     // ---------- 降级同步路径(仅事件表写入失败时进入) ----------
 
-    /** 同步兜底:决议+承诺串联,失败落 PENDING 通知,不阻断主流程 */
+    /** 同步兜底:决议+承诺串联,失败落 PENDING 通知,不阻断主流程(整单化按申请维度) */
     private void processResolutionCreateSafely(CcrPricingItem item, Map<String, Object> payload) {
+        CcrApplication application = applicationMapper.selectById(item.getApplicationId());
+        if (application == null) {
+            log.error("分项 {} 所属申请不存在,决议同步兜底中止", item.getId());
+            return;
+        }
         CcrResolution resolution;
         try {
-            resolution = createResolutionIdempotent(item, payload);
+            resolution = createResolutionIdempotent(application, payload);
         } catch (Exception e) {
-            notifyFinalizeFailure(item, "RESOLUTION", e.getMessage());
-            log.error("分项 {} 决议生成失败(降级同步,不阻断主流程)", item.getId(), e);
+            notifyFinalizeFailure(application, "RESOLUTION", e.getMessage());
+            log.error("申请 {} 决议生成失败(降级同步,不阻断主流程)", application.getId(), e);
             return;
         }
         if (resolution == null) {
-            notifyFinalizeFailure(item, "RESOLUTION", "决议生成结果为空");
+            notifyFinalizeFailure(application, "RESOLUTION", "决议生成结果为空");
             return;
         }
-        createCommitmentPlanSafely(item, resolution);
-        publishResolutionIssuedNotify(item, resolution);
+        createCommitmentPlanSafely(application, resolution);
+        publishResolutionIssuedNotify(application, resolution);
     }
 
     /** 同步兜底:承诺计划,失败落 PENDING 通知,不阻断主流程 */
-    private void createCommitmentPlanSafely(CcrPricingItem item, CcrResolution resolution) {
+    private void createCommitmentPlanSafely(CcrApplication application, CcrResolution resolution) {
         try {
-            createCommitmentPlan(item, resolution);
-            log.info("分项 {} 承诺计划创建成功,决议 {}", item.getId(), resolution.getResolutionNo());
+            createCommitmentPlan(application, resolution);
+            log.info("申请 {} 承诺计划创建成功,决议 {}", application.getId(), resolution.getResolutionNo());
         } catch (Exception e) {
-            notifyFinalizeFailure(item, "COMMITMENT", e.getMessage());
-            log.error("分项 {} 承诺计划创建异常(不阻断主流程)", item.getId(), e);
+            notifyFinalizeFailure(application, "COMMITMENT", e.getMessage());
+            log.error("申请 {} 承诺计划创建异常(不阻断主流程)", application.getId(), e);
         }
     }
 
-    /** 承诺计划:指标来源 ccr_application_commitment(申请模块 03a 写入);无指标的分项跳过建计划 */
-    private void createCommitmentPlan(CcrPricingItem item, CcrResolution resolution) {
+    /** 承诺计划:指标来源 ccr_application_commitment(申请模块 03a 写入);无指标的申请跳过建计划(整单化按申请维度) */
+    private void createCommitmentPlan(CcrApplication application, CcrResolution resolution) {
         List<ApplicationCommitmentRead> rows = commitmentReadMapper.selectList(
                 new LambdaQueryWrapper<ApplicationCommitmentRead>()
-                        .eq(ApplicationCommitmentRead::getApplicationId, item.getApplicationId())
+                        .eq(ApplicationCommitmentRead::getApplicationId, application.getId())
                         .eq(ApplicationCommitmentRead::getDelFlag, "0"));
         if (rows.isEmpty()) {
-            log.info("分项 {} 无承诺指标,跳过承诺计划创建", item.getId());
+            log.info("申请 {} 无承诺指标,跳过承诺计划创建", application.getId());
             return;
         }
-        CcrApplication application = applicationMapper.selectById(item.getApplicationId());
-        String scopeType = application == null ? null : application.getCustomerScope();
+        String scopeType = application.getCustomerScope();
 
         CcrCommitmentPlan plan = new CcrCommitmentPlan();
-        plan.setApplicationId(item.getApplicationId());
+        plan.setApplicationId(application.getId());
         plan.setResolutionId(resolution.getId());
         plan.setScopeType(scopeType);
-        plan.setCustomerNo(application == null ? null : application.getCustomerNo());
-        plan.setGroupNo(application == null ? null : application.getGroupNo());
-        // 集团场景分项定价客户即成员客户
-        plan.setMemberCustomerNo("GROUP".equals(scopeType) ? item.getPricingCustomerNo() : null);
+        plan.setCustomerNo(application.getCustomerNo());
+        plan.setGroupNo(application.getGroupNo());
+        // 集团共享口径建计划,成员分配由承诺指标逐成员携带(整单化不取单分项成员客户号)
+        plan.setMemberCustomerNo("GROUP".equals(scopeType) ? application.getCustomerNo() : null);
         // 集团成员分配由申请承诺指标逐成员携带,按集团共享口径建计划(不强制成员合计=集团目标)
         plan.setAllocationMode("GROUP".equals(scopeType) ? "GROUP_SHARED" : null);
         // 默认承诺跟踪周期一年
@@ -310,9 +321,9 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         commitmentService.createPlan(plan, metrics, memberAllocs);
     }
 
-    /** 失败通知落库(send_status=PENDING,message_key 幂等),由消息模块 processPendingAndRetry 消费 */
-    private void notifyFinalizeFailure(CcrPricingItem item, String stage, String reason) {
-        String messageKey = "FINALIZE_FAIL:" + stage + ":" + item.getId();
+    /** 失败通知落库(send_status=PENDING,message_key 幂等),由消息模块 processPendingAndRetry 消费(整单化按申请维度) */
+    private void notifyFinalizeFailure(CcrApplication application, String stage, String reason) {
+        String messageKey = "FINALIZE_FAIL:" + stage + ":app:" + application.getId();
         try {
             Long exists = notificationLogMapper.selectCount(new LambdaQueryWrapper<CcrNotificationLog>()
                     .eq(CcrNotificationLog::getMessageKey, messageKey));
@@ -327,12 +338,12 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             notification.setRecipientId("admin");
             notification.setChannel("SYSTEM");
             notification.setMessageKey(messageKey);
-            notification.setMessageContent("分项[" + item.getPricingItemNo() + "]终态串联失败(" + stage + "):" + reason);
+            notification.setMessageContent("申请[" + application.getApplicationNo() + "]终态串联失败(" + stage + "):" + reason);
             notification.setSendStatus("PENDING");
             notification.setRetryCount(0);
             notificationLogMapper.insert(notification);
         } catch (Exception e) {
-            log.error("分项 {} 终态串联失败通知落库异常", item.getId(), e);
+            log.error("申请 {} 终态串联失败通知落库异常", application.getId(), e);
         }
     }
 

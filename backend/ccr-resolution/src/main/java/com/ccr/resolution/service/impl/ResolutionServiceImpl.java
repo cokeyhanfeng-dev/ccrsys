@@ -74,38 +74,39 @@ public class ResolutionServiceImpl implements ResolutionService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public CcrResolution createResolution(Long pricingItemId, BigDecimal finalRate, String carrierType,
+    public CcrResolution createResolution(Long applicationId, BigDecimal finalRate, String carrierType,
                                           String carrierBusinessKey, LocalDate effectiveFrom,
                                           LocalDate effectiveTo, String decisionSource) {
         // 否决决议(COMMITTEE_REJECT)无最终利率,finalRate 可空;批准决议最终利率必填
         boolean committeeReject = "COMMITTEE_REJECT".equals(decisionSource);
-        if (pricingItemId == null || (finalRate == null && !committeeReject)) {
+        if (applicationId == null || (finalRate == null && !committeeReject)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                    committeeReject ? "分项必填" : "分项与最终利率必填");
+                    committeeReject ? "申请必填" : "申请与最终利率必填");
         }
+        // 幂等:一申请一份决议(整单交付改造 2026-08-29 按申请维度)
         Long dup = resolutionMapper.selectCount(new LambdaQueryWrapper<CcrResolution>()
-                .eq(CcrResolution::getPricingItemId, pricingItemId));
+                .eq(CcrResolution::getApplicationId, applicationId));
         if (dup != null && dup > 0) {
-            throw new ServiceException(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), "该分项已存在决议");
+            throw new ServiceException(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), "该申请已存在决议");
         }
-        // 校验分项状态:批准决议为权限内已批或终态(PRD V2 §7.6:APPROVED_LEVEL→FINAL);
-        // 否决决议(COMMITTEE_REJECT)放行分项 REJECTED(小组表决未通过出否决决议书)
-        CcrPricingItem item = pricingItemReadMapper.selectById(pricingItemId);
-        if (item != null) {
-            boolean approvedStatus = "APPROVED_LEVEL".equals(item.getStatus())
-                    || "FINAL".equals(item.getStatus());
-            boolean rejectedStatus = committeeReject && "REJECTED".equals(item.getStatus());
-            if (!approvedStatus && !rejectedStatus) {
-                throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
-                        "分项状态未通过,不能生成决议");
-            }
+        // 校验申请终态:批准决议为申请下存在已批准/终态分项(整单终审全部分项一起 APPROVED_LEVEL);
+        // 否决决议(COMMITTEE_REJECT)放行申请下存在 REJECTED 分项(小组否决连坐整单出否决决议书)
+        List<CcrPricingItem> items = pricingItemReadMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                .eq(CcrPricingItem::getApplicationId, applicationId));
+        boolean approvedStatus = items.stream().anyMatch(i ->
+                "APPROVED_LEVEL".equals(i.getStatus()) || "FINAL".equals(i.getStatus()));
+        boolean rejectedStatus = committeeReject && items.stream().anyMatch(i ->
+                "REJECTED".equals(i.getStatus()));
+        if (!approvedStatus && !rejectedStatus) {
+            throw new ServiceException(ErrorCode.FLOW_STATUS_CONFLICT.getCode(),
+                    "申请下无已通过/已否决的分项,不能生成决议");
         }
 
         CcrResolution resolution = new CcrResolution();
         // 决议编号:RES+yyyyMMdd+8位随机数,降低碰撞
         resolution.setResolutionNo("RES" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
                 + RandomUtil.randomNumbers(8));
-        resolution.setPricingItemId(pricingItemId);
+        resolution.setApplicationId(applicationId);
         resolution.setPricingCarrierType(carrierType);
         resolution.setPricingCarrierBusinessKey(carrierBusinessKey);
         resolution.setFinalRate(finalRate);

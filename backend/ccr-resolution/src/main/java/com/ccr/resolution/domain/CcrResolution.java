@@ -20,7 +20,10 @@ public class CcrResolution extends BaseEntity {
     /** 决议编号(唯一) */
     private String resolutionNo;
 
-    /** 定价分项主键(唯一) */
+    /** 申请主键(整单交付改造 2026-08-29:决议按申请维度生成,一申请一份) */
+    private Long applicationId;
+
+    /** 定价分项主键(历史决议兼容;整单化新决议为空) */
     private Long pricingItemId;
 
     /** LOAN_CONTRACT / DEPOSIT_ACCOUNT */

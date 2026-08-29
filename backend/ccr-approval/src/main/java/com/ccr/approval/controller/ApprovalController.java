@@ -96,27 +96,32 @@ public class ApprovalController {
      * 客户/融资/贡献度优先读提交时冻结快照(source=SNAPSHOT,含 snapshotInfo),无快照降级数仓(source=REALTIME);
      * 另含历史履约(tracking)与机构达成(orgPerformance)
      */
-    @GetMapping("/{pricingItemId}/detail")
-    public R<Map<String, Object>> detail(@PathVariable Long pricingItemId) {
-        applicationAccessService.requirePricingItemView(pricingItemId);
+    // 整单交付改造(2026-08-29):详情入口改 applicationId(与 approve/reject 一致);
+    // 锚定分项=批内第一个分项,作为整单代表返回 pricingItem(审批动作/决议/表决均按锚定分项落库,
+    // 整单链/当前节点以申请单为准);旧前端按分项 id 直达不再支持,需用申请号入口
+    @GetMapping("/{applicationId}/detail")
+    public R<Map<String, Object>> detail(@PathVariable Long applicationId) {
+        applicationAccessService.requireView(applicationId);
         List<Map<String, Object>> items = jdbcTemplate.queryForList(
-                "SELECT * FROM ccr_pricing_item WHERE id = ? AND del_flag = '0'", pricingItemId);
+                "SELECT * FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY id LIMIT 1", applicationId);
         if (items.isEmpty()) {
-            throw new ServiceException(404, "定价分项不存在");
+            throw new ServiceException(404, "申请无定价分项");
         }
         Map<String, Object> item = items.get(0);
+        // 锚定分项 id:整单动作/决议/表决/担保明细均挂锚定分项,按它查即覆盖整单
+        Long pricingItemId = ((Number) item.get("id")).longValue();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("pricingItem", item);
 
-        Long appId = (item.get("application_id") instanceof Number)
-                ? ((Number) item.get("application_id")).longValue() : null;
+        Long appId = applicationId;
         String custNo = item.get("pricing_customer_no") == null ? "" : item.get("pricing_customer_no").toString();
         String businessType = null;
 
         // 申请概要
         if (appId != null) {
             List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                    "SELECT a.id, a.application_no applicationNo, a.business_type businessType, a.customer_no customerNo, a.group_no groupNo, a.application_remark applicationRemark, a.snapshot_bundle_id snapshotBundleId, a.customer_info_json customerInfoJson, a.credit_info_json creditInfoJson, a.submit_time submitTime, a.applicant_user_id applicantUserId, a.group_info_json groupInfoJson, a.applicant_org_id applicantOrgId, d.dept_name applicantOrgName"
+                    "SELECT a.id, a.application_no applicationNo, a.business_type businessType, a.customer_no customerNo, a.group_no groupNo, a.application_remark applicationRemark, a.snapshot_bundle_id snapshotBundleId, a.customer_info_json customerInfoJson, a.credit_info_json creditInfoJson, a.submit_time submitTime, a.applicant_user_id applicantUserId, a.group_info_json groupInfoJson, a.applicant_org_id applicantOrgId, d.dept_name applicantOrgName,"
+                            + " a.route_chain routeChain, a.current_node_code currentNodeCode, a.route_code routeCode, a.start_node_code startNodeCode, a.boundary_rate boundaryRate, a.matched_matrix_no matchedMatrixNo, a.version_no versionNo, a.status applicationStatus"
                             + " FROM ccr_application a LEFT JOIN ccr_sys_dept d ON d.id = a.applicant_org_id AND d.del_flag = '0' WHERE a.id = ?", appId);
             result.put("application", apps);
             if (!apps.isEmpty()) {
@@ -147,9 +152,22 @@ public class ApprovalController {
                 }
             }
         }
-        // 流程路由链:优先用提交冻结的完整链路(矩阵驱动,与审批推进一致,可跳过无权限节点如GM),回退固定链按 route_code 截断
+        // 流程路由链(整单交付改造):优先申请单整单链(application.route_chain,贷款=利率最低分项定链),
+        // 回退锚定分项冻结链,再回退固定链按 route_code 截断;route_code 同样以申请单为准
         Object routeCode = item.get("route_code");
         Object routeChainObj = item.get("route_chain");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> appRowData = (List<Map<String, Object>>) result.get("application");
+        if (appRowData != null && !appRowData.isEmpty()) {
+            Object appChain = appRowData.get(0).get("routeChain");
+            if (appChain != null && StrUtil.isNotBlank(appChain.toString())) {
+                routeChainObj = appChain;
+            }
+            Object appRouteCode = appRowData.get(0).get("routeCode");
+            if (appRouteCode != null && StrUtil.isNotBlank(appRouteCode.toString())) {
+                routeCode = appRouteCode;
+            }
+        }
         String routeCodeStr = routeCode == null ? null : routeCode.toString();
         List<String> routeChain;
         if (routeChainObj != null && StrUtil.isNotBlank(routeChainObj.toString())) {
@@ -182,7 +200,8 @@ public class ApprovalController {
         if (submitTimeObj != null) {
             Map<String, Object> submit = new LinkedHashMap<>();
             submit.put("actionType", "SUBMIT");
-            submit.put("nodeCode", item.get("start_node_code"));
+            Object appStartNode = appRowData == null || appRowData.isEmpty() ? null : appRowData.get(0).get("startNodeCode");
+            submit.put("nodeCode", appStartNode != null ? appStartNode : item.get("start_node_code"));
             submit.put("operatorId", applicantUserIdObj);
             submit.put("operatorName", nickName(applicantUserIdObj));
             submit.put("actionComment", "客户经理提交申请,进入审批流程");
@@ -201,11 +220,14 @@ public class ApprovalController {
                         + " WHERE a.pricing_item_id = ? AND a.del_flag = '0' ORDER BY a.operation_time", pricingItemId));
         result.put("flowTrace", trace);
 
-        // 当前执行状态:当前节点 + 状态 + 到达当前节点时间(当前节点最早动作时间;首节点回退提交时间)
-        result.put("currentNodeCode", item.get("current_node_code"));
-        result.put("currentStatus", item.get("status"));
+        // 当前执行状态(整单交付改造):当前节点/状态优先申请单(application.current_node_code/status),
+        // 回退锚定分项;到达当前节点时间取当前节点最早动作时间(首节点回退提交时间)
+        Object appCurNode = appRowData == null || appRowData.isEmpty() ? null : appRowData.get(0).get("currentNodeCode");
+        Object appCurStatus = appRowData == null || appRowData.isEmpty() ? null : appRowData.get(0).get("applicationStatus");
+        result.put("currentNodeCode", appCurNode != null ? appCurNode : item.get("current_node_code"));
+        result.put("currentStatus", appCurStatus != null ? appCurStatus : item.get("status"));
         String nodeReachTime = submitTimeObj == null ? null : submitTimeObj.toString();
-        Object curNode = item.get("current_node_code");
+        Object curNode = appCurNode != null ? appCurNode : item.get("current_node_code");
         if (curNode != null) {
             List<Map<String, Object>> reachRows = jdbcTemplate.queryForList(
                     "SELECT MIN(operation_time) reachTime FROM ccr_approval_action WHERE pricing_item_id = ? AND node_code = ? AND del_flag = '0'",
@@ -1276,12 +1298,13 @@ public class ApprovalController {
         return R.ok(approvalService.listTodo());
     }
 
-    /** 普通节点通过(可携带分项审批利率;同申请其余分项利率调整经 rateAdjustments 一并生效);versionNo 必传,Idempotency-Key 头可选 */
+    /** 普通节点通过(整单交付改造 2026-08-29:按申请整单审批,可携带整单调价利率);
+     * body 传 applicationId(整单化新口径),兼容旧前端 pricingItemId 解析;versionNo 兼容传参,Idempotency-Key 头可选 */
     @PostMapping("/tasks/approve")
     public R<ApprovalResult> approve(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                            @RequestBody Map<String, Object> body) {
         ApprovalResult result = approvalService.approve(
-                Long.valueOf(body.get("pricingItemId").toString()),
+                resolveApplicationId(body),
                 body.get("nodeCode").toString(),
                 body.get("adjustRate") == null ? null : new BigDecimal(body.get("adjustRate").toString()),
                 body.get("comment") == null ? null : body.get("comment").toString(),
@@ -1305,17 +1328,30 @@ public class ApprovalController {
         return result.isEmpty() ? null : result;
     }
 
-    /** 普通节点否决(逐项否决,返回流转去向与 approve 同构);versionNo 必传,Idempotency-Key 头可选 */
+    /** 普通节点否决(整单交付改造 2026-08-29:一次否决即整单否决);
+     * body 传 applicationId(整单化新口径),兼容旧前端 pricingItemId 解析;versionNo 兼容传参,Idempotency-Key 头可选 */
     @PostMapping("/tasks/reject")
     public R<ApprovalResult> reject(@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                     @RequestBody Map<String, Object> body) {
         ApprovalResult result = approvalService.reject(
-                Long.valueOf(body.get("pricingItemId").toString()),
+                resolveApplicationId(body),
                 body.get("nodeCode").toString(),
                 body.get("comment") == null ? null : body.get("comment").toString(),
                 body.get("versionNo") == null ? null : Integer.valueOf(body.get("versionNo").toString()),
                 idempotencyKey);
         return R.ok(result);
+    }
+
+    /** 解析审批动作目标申请 id:整单化优先 applicationId,兼容旧前端 pricingItemId */
+    private Long resolveApplicationId(Map<String, Object> body) {
+        Object appId = body.get("applicationId");
+        if (appId == null) {
+            appId = body.get("pricingItemId");
+        }
+        if (appId == null) {
+            throw new ServiceException(400, "缺少审批目标 applicationId(或兼容参数 pricingItemId)");
+        }
+        return Long.valueOf(appId.toString());
     }
 
     /**

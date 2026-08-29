@@ -50,6 +50,7 @@ class OutboxHandlersTest {
 
     @Test
     void flowStart_startsInstanceWhenAbsent() {
+        // 整单交付改造(2026-08-29):FLOW_START 逐分项一条改整单一条,business_id=applicationNo
         FlowStartOutboxHandler handler = new FlowStartOutboxHandler();
         ReflectionTestUtils.setField(handler, "warmFlowService", warmFlowService);
         ReflectionTestUtils.setField(handler, "jdbcTemplate", jdbcTemplate);
@@ -57,9 +58,10 @@ class OutboxHandlersTest {
         when(warmFlowService.start(anyString(), anyString(), anyString(), anyString())).thenReturn(9001L);
 
         handler.handle(event("FLOW_START",
-                "{\"pricingItemNo\":\"PI-1\",\"nodeCode\":\"BRANCH_MANAGER\",\"flowCode\":\"rate_approval\",\"createBy\":\"1001\"}"));
+                "{\"applicationId\":1,\"applicationNo\":\"CCR20260806ABCD\",\"nodeCode\":\"BRANCH_MANAGER\","
+                        + "\"routeCode\":\"SIX_PEOPLE_GROUP\",\"flowCode\":\"rate_approval\",\"createBy\":\"1001\"}"));
 
-        verify(warmFlowService).start("rate_approval", "PI-1", "1001", "BRANCH_MANAGER");
+        verify(warmFlowService).start("rate_approval", "CCR20260806ABCD", "1001", "BRANCH_MANAGER");
     }
 
     @Test
@@ -69,7 +71,8 @@ class OutboxHandlersTest {
         ReflectionTestUtils.setField(handler, "jdbcTemplate", jdbcTemplate);
         when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(1L);
 
-        handler.handle(event("FLOW_START", "{\"pricingItemNo\":\"PI-1\",\"nodeCode\":\"BRANCH_MANAGER\"}"));
+        handler.handle(event("FLOW_START",
+                "{\"applicationId\":1,\"applicationNo\":\"CCR20260806ABCD\",\"nodeCode\":\"BRANCH_MANAGER\",\"flowCode\":\"rate_approval\"}"));
 
         verify(warmFlowService, never()).start(anyString(), anyString(), anyString(), anyString());
     }

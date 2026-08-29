@@ -69,7 +69,6 @@ async function load() {
         applicationNo: p.applicationNo || '-',
         customer: p.customerNo || '-',
         itemCount: items.length || 1,
-        firstItemId: first.pricingItemId,
         votesText: first.approveCount != null
           ? `赞成 ${first.approveCount} 票 / 反对 ${first.rejectCount ?? 0} 票`
           : '—',
@@ -85,9 +84,9 @@ async function load() {
 }
 
 function openDetail(c: any) {
-  if (!c.firstItemId) return
-  // 跳转审批详情页:完整申请内容 + 六人匿名意见 + 行长整单决策,与申请/审批页统一
-  router.push(`/approval/${c.firstItemId}`)
+  if (!c.applicationId) return
+  // 跳转审批详情页:完整申请内容 + 六人匿名意见 + 行长整单决策(整单入口用 applicationId,与申请/审批页统一)
+  router.push(`/approval/${c.applicationId}`)
 }
 onMounted(load)
 </script>

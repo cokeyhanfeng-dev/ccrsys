@@ -8,15 +8,15 @@ export function listVoteTodo<T = any[]>(): Promise<T> {
   return get<T>('/ccr/vote-rounds/todo')
 }
 
-/** 本人选择与提交结果(只返回本人票型;未投返回 null) */
-export function fetchMyBallot<T = any>(roundId: number | string, pricingItemId: number | string): Promise<T> {
-  return get<T>(`/ccr/vote-rounds/${roundId}/ballots/my`, { pricingItemId })
+/** 本人选择与提交结果(只返回本人票型;未投返回 null;整单化按申请查询) */
+export function fetchMyBallot<T = any>(roundId: number | string, applicationId: number | string): Promise<T> {
+  return get<T>(`/ccr/vote-rounds/${roundId}/ballots/my`, { applicationId })
 }
 
-/** 提交本人票:choice 仅 APPROVE/REJECT;pricingItemId 雪花 id 传字符串(避免 JS 精度丢失);Idempotency-Key 头可选 */
+/** 提交本人票(整单交付改造:一批=一申请=整单票;choice 仅 APPROVE/REJECT);Idempotency-Key 头可选 */
 export function submitBallot(
   roundId: number | string,
-  body: { pricingItemId: number | string; choice: string; comment?: string },
+  body: { applicationId: number | string; choice: string; comment?: string },
   idempotencyKey?: string
 ): Promise<void> {
   return request<void>({
@@ -27,9 +27,9 @@ export function submitBallot(
   })
 }
 
-/** 分项计票结果(仅行长/admin 可访问,委员调用会 403) */
-export function getVoteResult<T = any>(pricingItemId: number | string): Promise<T> {
-  return get<T>(`/ccr/vote-results/${pricingItemId}`)
+/** 整单计票结果(仅行长/admin 可访问,委员调用会 403;整单化按申请查询) */
+export function getVoteResult<T = any>(applicationId: number | string): Promise<T> {
+  return get<T>(`/ccr/vote-results/${applicationId}`)
 }
 
 /** 行长待决策列表(仅行长/admin) */

@@ -103,6 +103,7 @@ class ItemFinalizationServiceImplTest {
 
         application = new CcrApplication();
         application.setId(30L);
+        application.setApplicationNo("APP001");
         application.setCustomerScope("CORPORATE_SINGLE");
         application.setCustomerNo("C001");
         application.setApplicantUserId(1001L);
@@ -112,6 +113,8 @@ class ItemFinalizationServiceImplTest {
         resolution.setId(500L);
         resolution.setResolutionNo("RES001");
         resolution.setPricingItemId(10L);
+        resolution.setApplicationId(30L);
+        resolution.setDecisionSource("LEVEL_APPROVED");
     }
 
     private ApplicationCommitmentRead commitmentRow() {
@@ -129,12 +132,11 @@ class ItemFinalizationServiceImplTest {
 
     private Map<String, Object> resolutionPayload() {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("pricingItemId", 10L);
-        payload.put("pricingItemNo", "PI001");
         payload.put("applicationId", 30L);
+        payload.put("applicationNo", "APP001");
         payload.put("finalRate", "3.500000");
         payload.put("carrierType", "LOAN_CONTRACT");
-        payload.put("carrierBusinessKey", "PI001");
+        payload.put("carrierBusinessKey", "APP001");
         payload.put("effectiveFrom", "2026-08-07");
         payload.put("effectiveTo", "2027-02-03");
         payload.put("decisionSource", "LEVEL_APPROVED");
@@ -151,9 +153,9 @@ class ItemFinalizationServiceImplTest {
 
         finalizationService.afterItemTerminal(10L, "LEVEL_APPROVED");
 
-        // 批准分项:写 RESOLUTION_CREATE 事件(event_no 业务键 item:{id},payload 含利率/载体/决策来源)
-        verify(outboxService).publish(eq("RESOLUTION_CREATE"), eq("item:10"),
-                argThat((String p) -> p.contains("\"pricingItemId\":10")
+        // 整单化:写 RESOLUTION_CREATE 事件(event_no 业务键 app:{id},payload 含利率/载体/决策来源)
+        verify(outboxService).publish(eq("RESOLUTION_CREATE"), eq("app:30"),
+                argThat((String p) -> p.contains("\"applicationId\":30")
                         && p.contains("3.500000") && p.contains("LEVEL_APPROVED")));
         // 同事务不再同步调决议/承诺服务
         verify(resolutionService, never()).createResolution(any(), any(), any(), any(), any(), any(), any());
@@ -177,7 +179,7 @@ class ItemFinalizationServiceImplTest {
         // 事件表写入失败 → 降级同步串联,不阻断主流程
         finalizationService.afterItemTerminal(10L, "LEVEL_APPROVED");
 
-        verify(resolutionService).createResolution(eq(10L), any(), any(), any(), any(), any(), eq("LEVEL_APPROVED"));
+        verify(resolutionService).createResolution(eq(30L), any(), any(), any(), any(), any(), eq("LEVEL_APPROVED"));
         verify(commitmentService).createPlan(argThat(p -> Long.valueOf(500L).equals(p.getResolutionId())),
                 anyList(), anyList());
         verify(applicationMapper).updateById(argThat((CcrApplication a) -> "FINAL".equals(a.getStatus())));
@@ -198,7 +200,7 @@ class ItemFinalizationServiceImplTest {
 
         // 降级同步也失败:落 PENDING 通知,聚合仍执行
         verify(notificationLogMapper).insert(argThat((CcrNotificationLog n) ->
-                "PENDING".equals(n.getSendStatus()) && n.getMessageKey().startsWith("FINALIZE_FAIL:RESOLUTION:")));
+                "PENDING".equals(n.getSendStatus()) && n.getMessageKey().startsWith("FINALIZE_FAIL:RESOLUTION:app:")));
         verify(applicationMapper).updateById(argThat((CcrApplication a) -> "FINAL".equals(a.getStatus())));
     }
 
@@ -206,18 +208,17 @@ class ItemFinalizationServiceImplTest {
 
     @Test
     void processResolutionCreate_success_publishesCommitmentAndNotifyEvents() {
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(resolutionService.createResolution(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(resolution);
         when(applicationMapper.selectById(30L)).thenReturn(application);
 
         finalizationService.processResolutionCreate(resolutionPayload());
 
-        // 决议生成参数来自固化 payload
-        verify(resolutionService).createResolution(eq(10L), eq(new BigDecimal("3.500000")),
-                eq("LOAN_CONTRACT"), eq("PI001"), any(), any(), eq("LEVEL_APPROVED"));
-        // 链式 COMMITMENT_CREATE + 决议签发 NOTIFY
-        verify(outboxService).publish(eq("COMMITMENT_CREATE"), eq("item:10"),
+        // 决议生成参数来自固化 payload(整单化:applicationId 维度,carrierBusinessKey=applicationNo)
+        verify(resolutionService).createResolution(eq(30L), eq(new BigDecimal("3.500000")),
+                eq("LOAN_CONTRACT"), eq("APP001"), any(), any(), eq("LEVEL_APPROVED"));
+        // 链式 COMMITMENT_CREATE(app 维度) + 决议签发 NOTIFY
+        verify(outboxService).publish(eq("COMMITMENT_CREATE"), eq("app:30"),
                 argThat((String p) -> p.contains("\"resolutionId\":500")));
         verify(outboxService).publish(eq("NOTIFY"), eq("RES_ISSUED:500"),
                 argThat((String p) -> p.contains("1001") && p.contains("RES001")));
@@ -225,22 +226,21 @@ class ItemFinalizationServiceImplTest {
 
     @Test
     void processResolutionCreate_idempotentRepeat_reusesExistingResolution() {
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
         when(resolutionService.createResolution(any(), any(), any(), any(), any(), any(), any()))
-                .thenThrow(new ServiceException(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), "该分项已存在决议"));
+                .thenThrow(new ServiceException(ErrorCode.IDEMPOTENCY_REPEAT.getCode(), "该申请已存在决议"));
         when(resolutionMapper.selectOne(any(Wrapper.class))).thenReturn(resolution);
         when(applicationMapper.selectById(30L)).thenReturn(application);
 
         finalizationService.processResolutionCreate(resolutionPayload());
 
         // 幂等:取原决议继续链式事件
-        verify(outboxService).publish(eq("COMMITMENT_CREATE"), eq("item:10"),
+        verify(outboxService).publish(eq("COMMITMENT_CREATE"), eq("app:30"),
                 argThat((String p) -> p.contains("\"resolutionId\":500")));
     }
 
     @Test
     void processResolutionCreate_resolutionFails_throwsForRetry() {
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionService.createResolution(any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(), "决议服务异常"));
 
@@ -253,12 +253,11 @@ class ItemFinalizationServiceImplTest {
 
     @Test
     void processCommitmentCreate_createsPlan() {
-        Map<String, Object> payload = Map.of("pricingItemId", 10L, "resolutionId", 500L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
         when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(commitmentRow()));
-        when(applicationMapper.selectById(30L)).thenReturn(application);
 
         finalizationService.processCommitmentCreate(payload);
 
@@ -268,8 +267,8 @@ class ItemFinalizationServiceImplTest {
 
     @Test
     void processCommitmentCreate_existingPlan_idempotentSkip() {
-        Map<String, Object> payload = Map.of("pricingItemId", 10L, "resolutionId", 500L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
         when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
 
@@ -280,8 +279,8 @@ class ItemFinalizationServiceImplTest {
 
     @Test
     void processCommitmentCreate_noCommitmentRows_skipsPlan() {
-        Map<String, Object> payload = Map.of("pricingItemId", 10L, "resolutionId", 500L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
         when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
@@ -298,12 +297,11 @@ class ItemFinalizationServiceImplTest {
         ApplicationCommitmentRead memberRow = commitmentRow();
         memberRow.setMetricScope("GROUP_MEMBER");
         memberRow.setMemberCustomerNo("M001");
-        Map<String, Object> payload = Map.of("pricingItemId", 10L, "resolutionId", 500L);
-        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
         when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(memberRow));
-        when(applicationMapper.selectById(30L)).thenReturn(application);
 
         finalizationService.processCommitmentCreate(payload);
 
@@ -364,7 +362,7 @@ class ItemFinalizationServiceImplTest {
 
         finalizationService.afterItemTerminal(10L, "PRESIDENT_APPROVED");
 
-        verify(outboxService).publish(eq("RESOLUTION_CREATE"), eq("item:10"), contains("PRESIDENT_APPROVED"));
+        verify(outboxService).publish(eq("RESOLUTION_CREATE"), eq("app:30"), contains("PRESIDENT_APPROVED"));
         verify(applicationMapper).updateById(argThat((CcrApplication a) ->
                 "FINAL".equals(a.getStatus()) && a.getFinalTime() != null));
     }

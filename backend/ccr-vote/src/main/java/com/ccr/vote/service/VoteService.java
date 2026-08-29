@@ -23,24 +23,24 @@ public interface VoteService {
     CcrVoteRound createGroupRound(Long applicationId);
 
     /**
-     * 委员提交本人票(一人一票,提交后不可修改)
-     * 校验:(roundId,pricingItemId) 属于该批次;登录人为本批次未替补委员
+     * 委员提交本人票(整单交付改造 2026-08-29:一批=一申请=一票,一人一票提交后不可修改)
+     * 校验:applicationId 属于该批次(与 round.applicationId 一致);登录人为本批次未替补委员
      *
      * @param idempotencyKey 幂等键(可空),重复键抛 IDEMPOTENCY_REPEAT
      */
-    void submitBallot(Long roundId, Long pricingItemId, String choice, String comment, String idempotencyKey);
+    void submitBallot(Long roundId, Long applicationId, String choice, String comment, String idempotencyKey);
 
     /**
-     * 查询本人选择与提交结果(只返回本人票型,不泄露他人投票)
+     * 查询本人选择与提交结果(只返回本人票型,不泄露他人投票;整单化按申请查询)
      *
      * @return voteChoice/voteComment/submitTime;未投票返回 null
      */
-    Map<String, Object> myBallot(Long roundId, Long pricingItemId);
+    Map<String, Object> myBallot(Long roundId, Long applicationId);
 
     /**
-     * 查询分项计票结果(匿名口径:仅汇总票数,不返回投票人;接口层仅放行行长/审计角色)
+     * 查询整单计票结果(匿名口径:仅汇总票数,不返回投票人;接口层仅放行行长/审计角色;按申请最新批次)
      */
-    CcrVoteResult getVoteResult(Long pricingItemId);
+    CcrVoteResult getVoteResult(Long applicationId);
 
     /**
      * 行长决策(§7.5,整单):按申请决策——该申请下所有待行长决策分项
