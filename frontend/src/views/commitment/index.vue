@@ -2,25 +2,25 @@
   <div>
     <div class="section-head">
       <div class="section-title">贡献度跟踪</div>
-      <InfoTip content="承诺跟踪:跟踪中行实时取数仓最新批次算完成度,到期自动定案;数据范围由服务端按登录人角色确定。" />
+      <InfoTip content="承诺跟踪:按客户聚合展示,多指标取平均完成比例(单项超100%按100%计,暂无数据不计入);跟踪中行实时取数仓最新批次算完成度,到期自动定案;数据范围由服务端按登录人角色确定。" />
     </div>
 
-    <!-- 统计卡:跟踪中 / 已完成 / 未完成(基于当前列表) -->
+    <!-- 统计卡:跟踪中 / 已完成 / 未完成(按客户聚合状态) -->
     <div class="stat-row">
       <div class="stat-card">
         <span class="stat-card__label">跟踪中</span>
         <b class="stat-card__num stat-card__num--primary">{{ stats.tracking }}</b>
-        <div class="stat-card__sub">生效跟踪中的承诺</div>
+        <div class="stat-card__sub">承诺跟踪中的客户</div>
       </div>
       <div class="stat-card">
         <span class="stat-card__label">已完成</span>
         <b class="stat-card__num stat-card__num--success">{{ stats.met }}</b>
-        <div class="stat-card__sub">到期达成定案的承诺</div>
+        <div class="stat-card__sub">承诺到期达成定案的客户</div>
       </div>
       <div class="stat-card">
         <span class="stat-card__label">未完成</span>
         <b class="stat-card__num stat-card__num--danger">{{ stats.unmet }}</b>
-        <div class="stat-card__sub">到期未达成定案的承诺</div>
+        <div class="stat-card__sub">承诺到期未达成定案的客户</div>
       </div>
     </div>
 
@@ -39,40 +39,77 @@
         </span>
       </div>
       <div v-loading="listLoading">
-        <table class="table table--full" v-if="rows.length">
+        <table class="table table--full" v-if="groups.length">
           <thead>
             <tr>
-              <th>跟踪编号</th><th>客户</th><th>承诺指标</th><th>目标类型</th><th>目标值</th>
-              <th>当前值</th><th>完成比例</th><th>数据日期</th><th>截止日期</th><th>状态</th><th>操作</th>
+              <th>客户</th><th>承诺指标</th><th>平均完成比例</th><th>状态</th><th>截止日期</th><th>操作</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in rows" :key="r.id">
-              <td>{{ r.trackNo || '—' }}</td>
-              <td>
-                <div>{{ r.customerName || r.customerNo || '—' }}</div>
-                <div v-if="r.customerName" class="section-tip">{{ r.customerNo }}</div>
-              </td>
-              <td>
-                <div>{{ r.metricName || r.metricCode || '—' }}</div>
-                <div v-if="r.metricName" class="section-tip">{{ r.metricCode }}</div>
-              </td>
-              <td>{{ targetTypeText(r.targetKind) }}</td>
-              <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></td>
-              <td class="num">
-                <span v-if="r.actualValue != null">{{ fmtValue(r.actualValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></span>
-                <span v-else-if="r.dataStatus === 'NO_DATA'" class="section-tip">暂无数据</span>
-                <span v-else>—</span>
-              </td>
-              <td class="num">
-                <span v-if="r.ratio != null" :class="ratioBadge(r.ratio)">{{ pct(r.ratio) }}%</span>
-                <span v-else>—</span>
-              </td>
-              <td class="num">{{ r.dataDt || '—' }}</td>
-              <td class="num">{{ r.endDate || '—' }}</td>
-              <td><span :class="trackStatusBadge(r.status)">{{ trackStatusText(r.status) }}</span></td>
-              <td><button class="btn btn--text" @click="openDetail(r)">详情</button></td>
-            </tr>
+            <template v-for="g in groups" :key="g.key">
+              <!-- 客户聚合行 -->
+              <tr class="group-row" :class="{ 'group-row--open': expanded.has(g.key) }" @click="toggle(g.key)">
+                <td>
+                  <span class="expand-arrow" :class="{ 'expand-arrow--open': expanded.has(g.key) }">▸</span>
+                  <div class="inline-block">
+                    <div>{{ g.customerName || g.customerNo || '—' }}</div>
+                    <div v-if="g.customerName" class="section-tip">{{ g.customerNo }}</div>
+                  </div>
+                </td>
+                <td>
+                  <div>{{ g.metrics.length }} 项</div>
+                  <div class="section-tip">{{ g.firstMetricName }}</div>
+                </td>
+                <td class="num">
+                  <span v-if="g.avgRatio != null" :class="ratioBadge(g.avgRatio)">{{ pct(g.avgRatio) }}%</span>
+                  <span v-else class="section-tip">暂无数据</span>
+                  <div v-if="g.hasNoData" class="section-tip">含暂无数据指标</div>
+                </td>
+                <td><span :class="trackStatusBadge(g.status)">{{ trackStatusText(g.status) }}</span></td>
+                <td class="num">{{ g.endDate || '—' }}</td>
+                <td>
+                  <button class="btn btn--text" @click.stop="toggle(g.key)">
+                    {{ expanded.has(g.key) ? '收起' : '展开' }}
+                  </button>
+                </td>
+              </tr>
+              <!-- 展开:指标明细 -->
+              <tr v-if="expanded.has(g.key)" class="detail-row">
+                <td :colspan="6" style="padding: 0 12px 12px">
+                  <table class="table table--sub">
+                    <thead>
+                      <tr>
+                        <th>承诺指标</th><th>目标类型</th><th>目标值</th><th>当前值</th>
+                        <th>完成比例</th><th>数据日期</th><th>截止日期</th><th>状态</th><th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in g.metrics" :key="r.id">
+                        <td>
+                          <div>{{ r.metricName || r.metricCode || '—' }}</div>
+                          <div v-if="r.metricName" class="section-tip">{{ r.metricCode }}</div>
+                        </td>
+                        <td>{{ targetTypeText(r.targetKind) }}</td>
+                        <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></td>
+                        <td class="num">
+                          <span v-if="r.actualValue != null">{{ fmtValue(r.actualValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></span>
+                          <span v-else-if="r.dataStatus === 'NO_DATA'" class="section-tip">暂无数据</span>
+                          <span v-else>—</span>
+                        </td>
+                        <td class="num">
+                          <span v-if="r.ratio != null" :class="ratioBadge(r.ratio)">{{ pct(r.ratio) }}%</span>
+                          <span v-else>—</span>
+                        </td>
+                        <td class="num">{{ r.dataDt || '—' }}</td>
+                        <td class="num">{{ r.endDate || '—' }}</td>
+                        <td><span :class="trackStatusBadge(r.status)">{{ trackStatusText(r.status) }}</span></td>
+                        <td><button class="btn btn--text" @click.stop="openDetail(r)">详情</button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
         <div v-else class="empty-line">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div>
@@ -144,17 +181,79 @@ const rows = ref<any[]>([])
 const listLoading = ref(false)
 const listError = ref(false)
 const query = reactive({ status: '', customerNo: '' })
+const expanded = reactive(new Set<string>())
 
-// 统计卡:跟踪中 / 已完成 / 未完成(基于当前列表)
+// ---------- 客户聚合:按 customerNo 分组,平均比例 D2 口径(单项超100%按100%计,暂无数据不计入) ----------
+interface TrackGroup {
+  key: string
+  customerNo: string
+  customerName: string
+  metrics: any[]
+  firstMetricName: string
+  avgRatio: number | null
+  hasNoData: boolean
+  status: string
+  endDate: string | null
+}
+
+const groups = computed<TrackGroup[]>(() => {
+  const byCust = new Map<string, any[]>()
+  for (const r of rows.value) {
+    const key = r.customerNo || r.applicationNo || `row:${r.id}`
+    if (!byCust.has(key)) byCust.set(key, [])
+    byCust.get(key)!.push(r)
+  }
+  const rank: Record<string, number> = { FINISHED_UNMET: 0, TRACKING: 1, FINISHED_MET: 2 }
+  const list: TrackGroup[] = []
+  for (const [key, metrics] of byCust) {
+    // 平均:各指标 ratio 算术平均,单项超 100% 截断 100%;暂无数据(ratio null)不计入
+    const ratios = metrics
+      .map(m => m.ratio)
+      .filter((v: any) => v != null && Number.isFinite(Number(v)))
+      .map((v: any) => Math.min(Number(v), 1))
+    const avgRatio = ratios.length ? ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length : null
+    // 聚合状态:任一未完成→未完成;否则任一跟踪中→跟踪中;否则全部已完成
+    let status = 'FINISHED_MET'
+    for (const m of metrics) {
+      if (m.status === 'FINISHED_UNMET') { status = 'FINISHED_UNMET'; break }
+      if (m.status === 'TRACKING') status = 'TRACKING'
+    }
+    // 截止日:组内最晚(代表整个承诺周期)
+    let endDate: string | null = null
+    for (const m of metrics) {
+      if (m.endDate && (!endDate || m.endDate > endDate)) endDate = m.endDate
+    }
+    const first = metrics[0]
+    list.push({
+      key,
+      customerNo: key,
+      customerName: first?.customerName || '',
+      metrics,
+      firstMetricName: metrics.length === 1 ? (first?.metricName || first?.metricCode || '') : '',
+      avgRatio,
+      hasNoData: metrics.some(m => m.dataStatus === 'NO_DATA'),
+      status,
+      endDate
+    })
+  }
+  list.sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3))
+  return list
+})
+
+// 统计卡:按客户聚合状态计数
 const stats = computed(() => {
   const s = { tracking: 0, met: 0, unmet: 0 }
-  for (const r of rows.value) {
-    if (r.status === 'TRACKING') s.tracking++
-    else if (r.status === 'FINISHED_MET') s.met++
-    else if (r.status === 'FINISHED_UNMET') s.unmet++
+  for (const g of groups.value) {
+    if (g.status === 'TRACKING') s.tracking++
+    else if (g.status === 'FINISHED_MET') s.met++
+    else if (g.status === 'FINISHED_UNMET') s.unmet++
   }
   return s
 })
+
+function toggle(key: string) {
+  expanded.has(key) ? expanded.delete(key) : expanded.add(key)
+}
 
 async function load() {
   listLoading.value = true
@@ -231,4 +330,17 @@ onMounted(load)
 @media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { .stat-row { grid-template-columns: 1fr; } }
 .cell-unit { margin-left: 2px; color: var(--color-text-light); font-size: 12px; }
+.inline-block { display: inline-block; vertical-align: top; }
+
+/* 客户聚合行:可点击展开,悬停/展开态高亮 */
+.group-row { cursor: pointer; }
+.group-row:hover { background: var(--color-bg-hover, rgba(22, 119, 255, 0.04)); }
+.group-row--open { background: var(--color-bg-hover, rgba(22, 119, 255, 0.04)); }
+.expand-arrow { display: inline-block; width: 12px; margin-right: 6px; color: var(--color-text-light); transition: transform 0.18s ease; }
+.expand-arrow--open { transform: rotate(90deg); }
+
+/* 展开明细内嵌表格:无边框贴合全局扁平化 */
+.table--sub { border: none; margin: 8px 0 0; background: var(--color-surface); }
+.table--sub :deep(th) { font-size: 12px; }
+.table--sub :deep(td) { padding: 6px 8px; }
 </style>
