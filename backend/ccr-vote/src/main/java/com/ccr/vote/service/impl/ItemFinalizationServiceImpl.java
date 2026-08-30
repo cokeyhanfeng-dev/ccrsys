@@ -9,11 +9,9 @@ import com.ccr.application.enums.ApplicationStatus;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
-import com.ccr.commitment.domain.CcrCommitmentMemberAlloc;
-import com.ccr.commitment.domain.CcrCommitmentMetric;
-import com.ccr.commitment.domain.CcrCommitmentPlan;
-import com.ccr.commitment.mapper.CcrCommitmentPlanMapper;
-import com.ccr.commitment.service.CommitmentService;
+import com.ccr.commitment.domain.CcrCommitmentTrack;
+import com.ccr.commitment.mapper.CommitmentTrackMapper;
+import com.ccr.commitment.service.CommitmentTrackService;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.common.outbox.OutboxEventType;
@@ -72,9 +70,9 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
     @Resource
     private CcrResolutionMapper resolutionMapper;
     @Resource
-    private CommitmentService commitmentService;
+    private CommitmentTrackService commitmentTrackService;
     @Resource
-    private CcrCommitmentPlanMapper commitmentPlanMapper;
+    private CommitmentTrackMapper commitmentTrackMapper;
     @Resource
     private ApplicationCommitmentReadMapper commitmentReadMapper;
     @Resource
@@ -177,11 +175,11 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(),
                     "承诺计划事件要素缺失: 申请 " + applicationId + " 决议 " + resolutionId);
         }
-        // 幂等:该申请已存在承诺计划则跳过(event_no 防重之外的业务兜底;承诺按申请聚合,整单化一申请一份)
-        Long exists = commitmentPlanMapper.selectCount(new LambdaQueryWrapper<CcrCommitmentPlan>()
-                .eq(CcrCommitmentPlan::getApplicationId, applicationId));
+        // 幂等:该申请已存在承诺跟踪记录则跳过(event_no 防重之外的业务兜底;承诺按申请聚合,整单化一申请一份)
+        Long exists = commitmentTrackMapper.selectCount(new LambdaQueryWrapper<CcrCommitmentTrack>()
+                .eq(CcrCommitmentTrack::getApplicationId, applicationId));
         if (exists != null && exists > 0) {
-            log.info("申请 {} 已存在承诺计划,幂等跳过", applicationId);
+            log.info("申请 {} 已存在承诺跟踪,幂等跳过", applicationId);
             return;
         }
         createCommitmentPlan(application, resolution);
@@ -269,56 +267,65 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         }
     }
 
-    /** 承诺计划:指标来源 ccr_application_commitment(申请模块 03a 写入);无指标的申请跳过建计划(整单化按申请维度) */
+    /**
+     * 承诺跟踪(v2 简化,docs/28):指标来源 ccr_application_commitment,逐行转一条 TRACKING 记录;
+     * 目标类型仅 BALANCE/COUNT/RATIO——旧值 TARGET_BALANCE 映射 BALANCE,INCREMENT/CUMULATIVE 与 OTHER
+     * 不生成跟踪(旧行只读展示);org_id/manager_id 取申请 applicant_* 显式 set(异步 Outbox 消费不得靠 session);
+     * end_date 取承诺行截止日期(唯一时间基准,消除旧"计划+1年"双口径)。
+     */
     private void createCommitmentPlan(CcrApplication application, CcrResolution resolution) {
         List<ApplicationCommitmentRead> rows = commitmentReadMapper.selectList(
                 new LambdaQueryWrapper<ApplicationCommitmentRead>()
                         .eq(ApplicationCommitmentRead::getApplicationId, application.getId())
                         .eq(ApplicationCommitmentRead::getDelFlag, "0"));
         if (rows.isEmpty()) {
-            log.info("申请 {} 无承诺指标,跳过承诺计划创建", application.getId());
+            log.info("申请 {} 无承诺指标,跳过承诺跟踪创建", application.getId());
             return;
         }
-        String scopeType = application.getCustomerScope();
-
-        CcrCommitmentPlan plan = new CcrCommitmentPlan();
-        plan.setApplicationId(application.getId());
-        plan.setResolutionId(resolution.getId());
-        plan.setScopeType(scopeType);
-        plan.setCustomerNo(application.getCustomerNo());
-        plan.setGroupNo(application.getGroupNo());
-        // 集团共享口径建计划,成员分配由承诺指标逐成员携带(整单化不取单分项成员客户号)
-        plan.setMemberCustomerNo("GROUP".equals(scopeType) ? application.getCustomerNo() : null);
-        // 集团成员分配由申请承诺指标逐成员携带,按集团共享口径建计划(不强制成员合计=集团目标)
-        plan.setAllocationMode("GROUP".equals(scopeType) ? "GROUP_SHARED" : null);
-        // 默认承诺跟踪周期一年
-        plan.setStartDate(LocalDate.now());
-        plan.setEndDate(LocalDate.now().plusYears(1));
-
-        List<CcrCommitmentMetric> metrics = new ArrayList<>();
-        List<CcrCommitmentMemberAlloc> memberAllocs = new ArrayList<>();
+        List<CcrCommitmentTrack> tracks = new ArrayList<>();
         for (ApplicationCommitmentRead row : rows) {
-            CcrCommitmentMetric metric = new CcrCommitmentMetric();
-            metric.setMetricCode(row.getMetricCode());
-            metric.setMetricName(row.getMetricCode());
-            metric.setTargetType(row.getTargetType());
-            // 基线/目标兜底:申请未带基线值时不得向 NOT NULL 列写 null
-            metric.setBaselineValue(row.getBaselineValue() == null ? BigDecimal.ZERO : row.getBaselineValue());
-            metric.setTargetValue(row.getTargetValue() == null ? BigDecimal.ZERO : row.getTargetValue());
-            metric.setUnit(row.getUnit());
-            metric.setMetricScope(row.getMetricScope());
-            metrics.add(metric);
-            // 成员级指标换算成员分配(metricCode 关联,落库时由承诺服务换算 metric_id)
-            if (StrUtil.isNotBlank(row.getMemberCustomerNo())) {
-                CcrCommitmentMemberAlloc alloc = new CcrCommitmentMemberAlloc();
-                alloc.setMetricCode(row.getMetricCode());
-                alloc.setMemberCustomerNo(row.getMemberCustomerNo());
-                alloc.setAllocatedTarget(row.getTargetValue() == null ? BigDecimal.ZERO : row.getTargetValue());
-                alloc.setAllocatedBaseline(row.getBaselineValue() == null ? BigDecimal.ZERO : row.getBaselineValue());
-                memberAllocs.add(alloc);
+            String kind = mapTargetKind(row.getTargetType());
+            if (kind == null) {
+                // OTHER/INCREMENT/CUMULATIVE 不生成跟踪记录(旧行只读展示,不做数值对比)
+                log.info("申请 {} 承诺指标 {} 目标类型 {} 不生成跟踪记录", application.getId(),
+                        row.getMetricCode(), row.getTargetType());
+                continue;
             }
+            CcrCommitmentTrack track = new CcrCommitmentTrack();
+            track.setApplicationId(application.getId());
+            track.setApplicationNo(application.getApplicationNo());
+            track.setCustomerNo(application.getCustomerNo());
+            track.setMemberCustomerNo(row.getMemberCustomerNo());
+            // 机构/客户经理显式 set(申请人机构/申请人),不依赖 MetaObjectHandler session 兜底
+            track.setOrgId(application.getApplicantOrgId());
+            track.setManagerId(application.getApplicantUserId());
+            track.setMetricCode(row.getMetricCode());
+            track.setMetricName(row.getMetricCode());
+            track.setTargetKind(kind);
+            track.setTargetValue(row.getTargetValue());
+            track.setUnit(row.getUnit());
+            track.setEndDate(row.getEndDate());
+            track.setStatus("TRACKING");
+            tracks.add(track);
         }
-        commitmentService.createPlan(plan, metrics, memberAllocs);
+        if (tracks.isEmpty()) {
+            log.info("申请 {} 承诺指标全为不跟踪类型,跳过", application.getId());
+            return;
+        }
+        commitmentTrackService.createTracks(tracks);
+    }
+
+    /** 目标类型收敛映射:仅 BALANCE/COUNT/RATIO;TARGET_BALANCE→BALANCE;OTHER/INCREMENT/CUMULATIVE→null 跳过 */
+    private String mapTargetKind(String targetType) {
+        if (StrUtil.isBlank(targetType)) {
+            return null;
+        }
+        return switch (targetType) {
+            case "TARGET_BALANCE", "BALANCE" -> "BALANCE";
+            case "COUNT" -> "COUNT";
+            case "RATIO" -> "RATIO";
+            default -> null;
+        };
     }
 
     /** 失败通知落库(send_status=PENDING,message_key 幂等),由消息模块 processPendingAndRetry 消费(整单化按申请维度) */

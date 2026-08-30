@@ -106,12 +106,6 @@ ccr:
 #     timeout-scan-cron: 0 0 * * * ?   # 表决超时扫描(默认每小时)
 #   resolution:
 #     effective-days: 180              # 决议有效期(默认生效日起180天)
-#   commitment:
-#     jobs:
-#       daily-cron: 0 0 2 * * ?        # 承诺每日跟踪 Job(默认每天 02:00)
-#       expiry-cron: 0 30 2 * * ?      # 承诺到期处理 Job(默认每天 02:30)
-#       backfill-cron: 0 0 3 * * ?     # 承诺数据回填 Job(默认每天 03:00)
-#       monthly-cron: 0 0 5 1 * * ?    # 承诺月度汇总 Job(默认每月1日 05:00)
 #   message:
 #     retry-cron: 0 */2 * * * ?        # 消息重发 Job(默认每2分钟)
 #     max-retry: 3                     # 消息最大重试次数(默认3次,超过置为 FAILED)

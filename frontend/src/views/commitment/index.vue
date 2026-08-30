@@ -2,616 +2,168 @@
   <div>
     <div class="section-head">
       <div class="section-title">贡献度跟踪</div>
-      <InfoTip content="承诺计划三级钻取:客户 → 承诺记录 → 指标明细;数据范围由服务端按登录人角色确定。" />
+      <InfoTip content="承诺跟踪:跟踪中行实时取数仓最新批次算完成度,到期自动定案;数据范围由服务端按登录人角色确定。" />
     </div>
 
-    <!-- 返回上级导航(二级/三级) -->
-    <div class="breadcrumb-bar" v-if="level > 1">
-      <button class="btn btn--secondary" @click="goUp">← 返回上级</button>
-      <span class="section-tip">
-        {{ level === 2 ? currentCustomerLabel : `客户 ${currentCustomer} · 计划 ${currentPlan?.plan_no || ''}` }}
-      </span>
-    </div>
-
-    <!-- ============ 一级:客户列表(按客户聚合) ============ -->
-    <template v-if="level === 1">
-      <div class="stat-row">
-        <div class="stat-card">
-          <span class="stat-card__label">跟踪中</span>
-          <b class="stat-card__num stat-card__num--primary">{{ statCards.tracking }}</b>
-          <div class="stat-card__sub">生效跟踪中的承诺计划</div>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card__label">有风险</span>
-          <b class="stat-card__num stat-card__num--warning">{{ statCards.atRisk }}</b>
-          <div class="stat-card__sub">计划或指标评估有风险</div>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card__label">已达成</span>
-          <b class="stat-card__num stat-card__num--success">{{ statCards.achieved }}</b>
-          <div class="stat-card__sub">评估已达成的承诺指标</div>
-        </div>
+    <!-- 统计卡:跟踪中 / 已完成 / 未完成(基于当前列表) -->
+    <div class="stat-row">
+      <div class="stat-card">
+        <span class="stat-card__label">跟踪中</span>
+        <b class="stat-card__num stat-card__num--primary">{{ stats.tracking }}</b>
+        <div class="stat-card__sub">生效跟踪中的承诺</div>
       </div>
+      <div class="stat-card">
+        <span class="stat-card__label">已完成</span>
+        <b class="stat-card__num stat-card__num--success">{{ stats.met }}</b>
+        <div class="stat-card__sub">到期达成定案的承诺</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">未完成</span>
+        <b class="stat-card__num stat-card__num--danger">{{ stats.unmet }}</b>
+        <div class="stat-card__sub">到期未达成定案的承诺</div>
+      </div>
+    </div>
 
-      <div class="card">
-        <div class="card-toolbar">
-          <span class="card-toolbar__title">客户承诺概览</span>
-        </div>
-        <div v-loading="listLoading">
-        <table class="table customer-overview" v-if="customerRows.length">
+    <div class="card">
+      <div class="card-toolbar">
+        <span class="card-toolbar__title">承诺跟踪</span>
+        <span class="card-toolbar__actions">
+          <select class="form-select" v-model="query.status" style="width:130px" aria-label="状态筛选">
+            <option value="">全部状态</option>
+            <option value="TRACKING">跟踪中</option>
+            <option value="FINISHED_MET">已完成</option>
+            <option value="FINISHED_UNMET">未完成</option>
+          </select>
+          <input class="form-input" v-model="query.customerNo" style="width:180px" placeholder="客户号" @keyup.enter="load" />
+          <button class="btn btn--primary" @click="load">查询</button>
+        </span>
+      </div>
+      <div v-loading="listLoading">
+        <table class="table table--full" v-if="rows.length">
           <thead>
-            <tr><th>客户</th><th>计划数</th><th>指标数</th><th>平均达成率</th><th>含关联人达成率</th><th>有风险指标</th><th>操作</th></tr>
+            <tr>
+              <th>跟踪编号</th><th>客户</th><th>承诺指标</th><th>目标类型</th><th>目标值</th>
+              <th>当前值</th><th>完成比例</th><th>数据日期</th><th>截止日期</th><th>状态</th><th>操作</th>
+            </tr>
           </thead>
           <tbody>
-            <tr v-for="c in customerRows" :key="c.customerNo">
+            <tr v-for="r in rows" :key="r.id">
+              <td>{{ r.trackNo || '—' }}</td>
               <td>
-                <div>{{ c.customerNo }}</div>
-                <div v-if="c.customerName && c.customerName !== c.customerNo" class="section-tip">{{ c.customerName }}</div>
+                <div>{{ r.customerName || r.customerNo || '—' }}</div>
+                <div v-if="r.customerName" class="section-tip">{{ r.customerNo }}</div>
               </td>
-              <td class="num">{{ c.planCount }}</td>
-              <td class="num">{{ c.metricCount }}</td>
+              <td>
+                <div>{{ r.metricName || r.metricCode || '—' }}</div>
+                <div v-if="r.metricName" class="section-tip">{{ r.metricCode }}</div>
+              </td>
+              <td>{{ targetTypeText(r.targetKind) }}</td>
+              <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></td>
               <td class="num">
-                <span v-if="c.avgRatio != null" :class="ratioClass(c.avgRatio)">{{ c.avgRatio }}%</span>
-                <span v-else>暂无数据</span>
+                <span v-if="r.actualValue != null">{{ fmtValue(r.actualValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></span>
+                <span v-else-if="r.dataStatus === 'NO_DATA'" class="section-tip">暂无数据</span>
+                <span v-else>—</span>
               </td>
               <td class="num">
-                <span v-if="c.avgRelatedRatio != null" :class="ratioClass(c.avgRelatedRatio)">{{ c.avgRelatedRatio }}%</span>
-                <span v-else>暂无数据</span>
+                <span v-if="r.ratio != null" :class="ratioBadge(r.ratio)">{{ pct(r.ratio) }}%</span>
+                <span v-else>—</span>
               </td>
-              <td class="num">
-                <span v-if="c.atRiskCount" class="badge badge--danger">{{ c.atRiskCount }} 项</span>
-                <span v-else class="badge badge--success">0 项</span>
-              </td>
-              <td><button class="btn btn--text" @click="enterCustomer(c.customerNo)">查看承诺记录</button></td>
+              <td class="num">{{ r.dataDt || '—' }}</td>
+              <td class="num">{{ r.endDate || '—' }}</td>
+              <td><span :class="trackStatusBadge(r.status)">{{ trackStatusText(r.status) }}</span></td>
+              <td><button class="btn btn--text" @click="openDetail(r)">详情</button></td>
             </tr>
           </tbody>
         </table>
         <div v-else class="empty-line">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div>
-        </div>
       </div>
-    </template>
+    </div>
 
-    <!-- ============ 二级:该客户每一次申请(客户 → 申请 → 指标),卡片网格(替代 12 列表格,消除列拥挤与数据少时空白) ============ -->
-    <template v-else-if="level === 2">
-      <div class="card">
-        <div class="card-toolbar">
-          <span class="card-toolbar__title">申请承诺</span>
-          <span class="card-toolbar__actions"><span class="badge badge--info">{{ applicationRows.length }} 次申请</span></span>
-        </div>
-        <div class="plan-grid" v-if="applicationRows.length">
-          <div v-for="app in applicationRows" :key="app.applicationNo || app.plan_no || app.id" class="plan-card" role="button" tabindex="0" @click="enterApplication(app)" @keydown.enter.prevent="enterApplication(app)" @keydown.space.prevent="enterApplication(app)">
-            <div class="plan-card__head">
-              <b class="app-card__no">{{ app.applicationNo || '—' }}</b>
-              <span class="app-card__head-badges"><span class="app-card__label">申请</span><span :class="appStatusBadge(app.application_status)">{{ appStatusText(app.application_status) }}</span></span>
+    <!-- 承诺跟踪详情弹窗:承诺要素 + 实时/定案 + 所属申请 -->
+    <div class="modal" v-if="detail.show">
+      <div class="modal__card modal__card--wide">
+        <div class="modal__title">承诺跟踪详情 <span class="section-tip">{{ detail.row?.trackNo || '' }}</span></div>
+        <div class="modal__body" v-loading="detail.loading">
+          <template v-if="detail.row">
+            <div class="form-group-title">承诺要素</div>
+            <div class="desc-grid desc-grid--3">
+              <div><div class="desc-item__label">客户</div><div class="desc-item__value">{{ detail.row.customerName || detail.row.customerNo || '—' }}</div></div>
+              <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ detail.row.customerNo || '—' }}</div></div>
+              <div><div class="desc-item__label">成员客户号</div><div class="desc-item__value">{{ detail.row.memberCustomerNo || '—' }}</div></div>
+              <div><div class="desc-item__label">所属申请</div><div class="desc-item__value">{{ detail.row.applicationNo || '—' }}</div></div>
+              <div><div class="desc-item__label">承诺指标</div><div class="desc-item__value">{{ detail.row.metricName || detail.row.metricCode || '—' }}</div></div>
+              <div><div class="desc-item__label">目标类型</div><div class="desc-item__value">{{ targetTypeText(detail.row.targetKind) }}</div></div>
+              <div><div class="desc-item__label">目标值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.targetValue) }} {{ detail.row.unit || '' }}</div></div>
+              <div><div class="desc-item__label">截止日期</div><div class="desc-item__value">{{ detail.row.endDate || '—' }}</div></div>
+              <div><div class="desc-item__label">状态</div><div class="desc-item__value"><span :class="trackStatusBadge(detail.row.status)">{{ trackStatusText(detail.row.status) }}</span></div></div>
             </div>
-            <div class="app-card__row"><span class="dg-label">业务类型</span>{{ businessTypeText(app.business_type) }}</div>
-            <div class="app-card__row">
-              <span class="dg-label">申请金额</span>{{ fmtAmount(app.application_amount) }} 万元
-              <span class="app-card__sep">·</span>
-              <span class="dg-label">申请利率</span>{{ fmtRate(app.requested_rate, app.final_rate) }}
-            </div>
-            <div class="app-card__row">
-              <span class="dg-label">承诺计划</span><span class="badge badge--info">{{ app.plan_no || '—' }}</span>
-              <span class="app-card__sep">·</span>
-              <span class="dg-label">范围</span>{{ scopeText(app.scope_type) }}
-            </div>
-            <div class="app-card__row">
-              <span class="dg-label">平均达成率</span>
-              <span v-if="app.avgRatio != null" :class="ratioClass(app.avgRatio)">{{ app.avgRatio }}%</span>
-              <span v-else class="section-tip">暂无数据</span>
-              <span class="app-card__sep">·</span>
-              <span class="app-card__label">计划</span>
-              <span :class="statusBadge(app.status)">{{ statusText(app.status) }}</span>
-            </div>
-            <div class="app-card__foot">
-              <span class="app-card__time">{{ app.submitTime ? String(app.submitTime).replace('T', ' ').slice(0, 16) : '' }}</span>
-              <span class="app-card__go">查看指标 →</span>
-            </div>
-          </div>
-        </div>
-        <div v-else class="empty-line">该客户暂无申请承诺</div>
-      </div>
-    </template>
 
-    <!-- ============ 三级:指标钻取(计划详情) ============ -->
-    <template v-else>
-      <div v-loading="planLoading">
-      <div class="card">
-        <div class="card-toolbar">
-          <span class="card-toolbar__title">计划 {{ currentPlan?.plan_no }}</span>
-          <span class="card-toolbar__actions"><span :class="statusBadge(currentPlan?.status)">{{ statusText(currentPlan?.status) }}</span></span>
-        </div>
-        <div class="desc-grid desc-grid--3">
-          <div>
-            <div class="desc-item__label">客户名称</div>
-            <div class="desc-item__value">{{ currentPlan?.customer_name || currentPlan?.customer_no || '—' }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">客户号</div>
-            <div class="desc-item__value">{{ currentPlan?.customer_no || '—' }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">所属申请</div>
-            <div class="desc-item__value">{{ currentPlan?.application_no || '—' }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">业务类型</div>
-            <div class="desc-item__value">{{ businessTypeText(currentPlan?.business_type) }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">申请状态</div>
-            <div class="desc-item__value"><span class="badge" :class="appStatusBadge(currentPlan?.application_status)">{{ appStatusText(currentPlan?.application_status) }}</span></div>
-          </div>
-          <div>
-            <div class="desc-item__label">范围</div>
-            <div class="desc-item__value">{{ scopeText(currentPlan?.scope_type) }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">指标数</div>
-            <div class="desc-item__value desc-item__value--num">{{ planMetrics.length }} 项</div>
-          </div>
-          <div>
-            <div class="desc-item__label">承诺截止</div>
-            <div class="desc-item__value">{{ planEndDate || '—' }}</div>
-          </div>
-          <div>
-            <div class="desc-item__label">剩余时间</div>
-            <div class="desc-item__value">
-              <span v-if="deadlineTip" :class="deadlineTip.cls">{{ deadlineTip.text }}</span>
-              <span v-else>—</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 总体跟踪进度(Σ实际 / Σ目标,按各项指标加总计算) -->
-      <div class="card">
-        <div class="card-toolbar">
-          <span class="card-toolbar__title">总体跟踪进度</span>
-          <InfoTip content="按各项指标达成率的平均值计算（不含&quot;其它&quot;手工承诺）；累计实际值/目标值为各指标数值直接加总，可能跨越不同单位" />
-        </div>
-        <div v-if="overall" class="overall">
-          <div class="overall__sum">
-            <div class="overall__sum-item">
-              <span class="dg-label">累计实际值</span>
-              <b class="metric-val__num">{{ overall.sumActual }}</b>
-            </div>
-            <div class="overall__sum-item">
-              <span class="dg-label">累计目标值</span>
-              <b class="metric-val__num">{{ overall.sumTarget }}</b>
-            </div>
-            <div class="overall__sum-item">
-              <span class="dg-label">总体达成率</span>
-              <b :class="ratioClass(overall.ratio)">{{ overall.ratio }}%</b>
-            </div>
-          </div>
-          <el-progress
-            :percentage="progressPct(overall.ratio)"
-            :color="progressColor(overall.ratio)"
-            :format="() => `${overall.ratio}%`"
-            :stroke-width="14"
-          />
-        </div>
-        <div v-else class="empty-line">暂无数值指标,无法计算总体进度</div>
-      </div>
-
-      <!-- 指标完成进度(每指标:当前完成值 / 目标值 / 离达成值 / 达成率;绿≥100%/黄≥80%/红<80%) -->
-      <div class="card">
-        <div class="card-toolbar"><span class="card-toolbar__title">指标完成进度</span></div>
-        <div v-for="(m, i) in planMetrics" :key="i" class="metric-row">
-          <div class="metric-row__head">
-            <b>{{ metricName(m.metricCode) }}</b>
-            <span v-if="m.dataDt" class="section-tip">评估截至 {{ m.dataDt }}</span>
-            <span :class="resultBadge(m.resultStatus)">{{ resultText(m.resultStatus) }}</span>
-          </div>
-          <!-- §6.4 "其它"承诺:无数值达成率/进度条,不参与总体进度(D19);以客户经理手工描述跟踪(track_desc 留痕) -->
-          <div v-if="m.metricCode === 'OTHER'" class="other-track">
-            <div class="other-track__desc">
-              <span class="dg-label">跟踪描述</span>
-              <span v-if="m.trackDesc">{{ m.trackDesc }}</span>
-              <span v-else class="section-tip">暂无跟踪描述,手工录入留痕</span>
-            </div>
-            <div class="other-track__edit">
-              <textarea class="form-input other-track__textarea" rows="2"
-                :value="trackDraft[m.metricId ?? m.id] || ''"
-                @input="setTrackDraft(m, ($event.target as HTMLTextAreaElement).value)"
-                placeholder="录入本期跟踪描述（留痕；以文本替代数值对比）" />
-              <button class="btn btn--secondary other-track__save" :disabled="savingTrack" @click="saveTrack(m)">{{ savingTrack ? '保存中…' : '保存跟踪描述' }}</button>
-            </div>
-          </div>
-          <template v-else>
-            <div class="metric-row__vals">
-              <div class="metric-val">
-                <span class="dg-label">当前完成值</span>
-                <b class="metric-val__num">{{ m.actualValue ?? '—' }}</b>
-                <span class="metric-val__unit">{{ commitmentUnitText(m.unit) }}</span>
-              </div>
-              <div class="metric-val">
-                <span class="dg-label">目标值</span>
-                <b class="metric-val__num">{{ m.targetValue ?? '—' }}</b>
-                <span class="metric-val__unit">{{ commitmentUnitText(m.unit) }}</span>
-              </div>
-              <div class="metric-val">
-                <span class="dg-label">离达成值</span>
-                <b class="metric-val__num" :class="gapBadge(m)">{{ gapText(m) }}</b>
-                <span class="metric-val__unit" v-if="gapOf(m) != null">{{ commitmentUnitText(m.unit) }}</span>
-              </div>
-              <div class="metric-val">
-                <span class="dg-label">达成率</span>
-                <b class="metric-val__num" :class="ratioClass(m.achievementRatio)">{{ m.achievementRatio != null ? `${m.achievementRatio}%` : '—' }}</b>
-              </div>
-            </div>
-            <!-- 含关联人实绩并入(展示层聚合,同编码才并;§11.8):主客户+关联人总和达成率与状态 -->
-            <div v-if="m.relatedSummary" class="metric-row__related">
-              <div class="metric-row__related-head">
-                <span class="dg-label">含关联人实绩</span>
-                <span :class="resultBadge(m.relatedSummary.totalStatus)">{{ resultText(m.relatedSummary.totalStatus) }}</span>
-              </div>
-              <div class="metric-row__vals">
-                <div class="metric-val">
-                  <span class="dg-label">主客户</span>
-                  <b class="metric-val__num">{{ m.relatedSummary.mainActual ?? '—' }}</b>
-                </div>
-                <div class="metric-val" v-for="(rc, ri) in m.relatedSummary.relatedCustomers" :key="ri">
-                  <span class="dg-label">{{ relationTypeText(rc.relationType) }} {{ rc.customerNo }}</span>
-                  <b class="metric-val__num">{{ rc.actualValue ?? '—' }}</b>
-                </div>
-                <div class="metric-val">
-                  <span class="dg-label">总和实绩</span>
-                  <b class="metric-val__num">{{ m.relatedSummary.totalActual ?? '—' }}</b>
-                </div>
-                <div class="metric-val">
-                  <span class="dg-label">总和达成率</span>
-                  <b class="metric-val__num" :class="ratioClass(m.relatedSummary.totalRatioPct)">{{ m.relatedSummary.totalRatioPct != null ? `${m.relatedSummary.totalRatioPct}%` : '—' }}</b>
+            <div class="form-group-title" style="margin-top:16px">完成情况</div>
+            <div class="desc-grid desc-grid--3">
+              <div><div class="desc-item__label">当前值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.actualValue) }} {{ detail.row.unit || '' }}</div></div>
+              <div>
+                <div class="desc-item__label">完成比例</div>
+                <div class="desc-item__value desc-item__value--num">
+                  <span v-if="detail.row.ratio != null" :class="ratioBadge(detail.row.ratio)">{{ pct(detail.row.ratio) }}%</span>
+                  <span v-else-if="detail.row.dataStatus === 'NO_DATA'" class="section-tip">暂无数据</span>
+                  <span v-else>—</span>
                 </div>
               </div>
+              <div><div class="desc-item__label">数仓数据日期</div><div class="desc-item__value">{{ detail.row.dataDt || '—' }}</div></div>
+              <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.finalActual) }} {{ detail.row.unit || '' }}</div></div>
+              <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案比例</div><div class="desc-item__value desc-item__value--num">{{ detail.row.finalRatio != null ? pct(detail.row.finalRatio) + '%' : '—' }}</div></div>
+              <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案时间</div><div class="desc-item__value">{{ fmtTime(detail.row.finishTime) }}</div></div>
             </div>
-            <el-progress
-              :percentage="progressPct(m.achievementRatio)"
-              :color="progressColor(m.achievementRatio)"
-              :format="() => (m.achievementRatio != null ? `${m.achievementRatio}%` : '暂无数据')"
-            />
-            <!-- 每期履约明细(该申请承诺计划下指标各评估期完成情况) -->
-            <div v-if="m.evaluations?.length" class="period-block">
-              <button class="btn btn--text" @click="toggleEvals(m)">
-                {{ expandedEvals.has(m.metricId ?? m.id) ? '收起每期履约' : `查看每期履约(${m.evaluations.length} 期)` }}
-              </button>
-              <table class="table" v-if="expandedEvals.has(m.metricId ?? m.id)" style="margin-top:6px">
-                <thead><tr><th>评估期</th><th>实际值</th><th>达成率</th><th>结论</th></tr></thead>
-                <tbody>
-                  <tr v-for="(e, ei) in m.evaluations" :key="ei">
-                    <td>{{ String(e.dataDt).slice(0, 10) }}</td>
-                    <td class="num">{{ e.actualValue ?? '—' }}</td>
-                    <td class="num"><span :class="ratioClass(e.achievementRatio)">{{ e.achievementRatio != null ? `${e.achievementRatio}%` : '—' }}</span></td>
-                    <td><span class="badge" :class="resultBadge(e.resultStatus)">{{ resultText(e.resultStatus) }}</span></td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="detail.row.remark" class="desc-item__label" style="margin-top:10px">备注：{{ detail.row.remark }}</div>
+
+            <div v-if="detail.application" class="form-group-title" style="margin-top:16px">所属申请</div>
+            <div class="desc-grid desc-grid--3" v-if="detail.application">
+              <div><div class="desc-item__label">申请编号</div><div class="desc-item__value">{{ detail.application.application_no || '—' }}</div></div>
+              <div><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText(detail.application.business_type) }}</div></div>
+              <div><div class="desc-item__label">申请状态</div><div class="desc-item__value"><span class="badge" :class="appStatusBadge(detail.application.status)">{{ appStatusText(detail.application.status) }}</span></div></div>
+              <div><div class="desc-item__label">提交时间</div><div class="desc-item__value">{{ fmtTime(detail.application.submit_time) }}</div></div>
+              <div><div class="desc-item__label">申请金额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.application.application_amount) }}</div></div>
             </div>
           </template>
+          <div v-else class="empty-line">详情加载失败</div>
         </div>
-        <div v-if="!planMetrics.length" class="empty-line">暂无指标数据</div>
+        <div class="modal__actions">
+          <button class="btn btn--secondary" @click="detail.show = false">关闭</button>
+        </div>
       </div>
-      </div>
-
-    </template>
-
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { listCommitmentPlans, saveMetricTrackDesc } from '@/api/commitment'
-import { getCommitmentPlanDetail } from '@/api/approval2'
-import {
-  planStatusText, evalResultText, appStatusText,
-  customerScopeText, metricName, businessTypeText, commitmentUnitText, relationTypeText,
-  appStatusBadge as dictAppStatusBadge, planStatusBadge as dictPlanStatusBadge
-} from '@/utils/dict'
-
-// ---------- 钻取层级(§12.11):1 客户列表 / 2 客户承诺记录 / 3 指标明细 ----------
-const level = ref<1 | 2 | 3>(1)
-const currentCustomer = ref('')
-const currentPlan = ref<any | null>(null)
+import { listCommitmentTracks, getCommitmentTrackDetail } from '@/api/commitment'
+import { targetTypeText, appStatusText, appStatusBadge, businessTypeText } from '@/utils/dict'
 
 const rows = ref<any[]>([])
 const listLoading = ref(false)
 const listError = ref(false)
-const planLoading = ref(false)
-const savingTrack = ref(false)
+const query = reactive({ status: '', customerNo: '' })
 
-// 计划状态:当前(跟踪中口径) vs 历史(终态口径)
-const CURRENT_STATUS = ['PENDING', 'TRACKING', 'AT_RISK', 'DATA_PENDING']
-
-// ---------- 一级:按客户聚合 ----------
-interface CustomerRow {
-  customerNo: string
-  customerName: string
-  planCount: number
-  metricCount: number
-  avgRatio: number | null
-  avgRelatedRatio: number | null
-  atRiskCount: number
-}
-
-const customerRows = computed<CustomerRow[]>(() => {
-  const map = new Map<string, any[]>()
+// 统计卡:跟踪中 / 已完成 / 未完成(基于当前列表)
+const stats = computed(() => {
+  const s = { tracking: 0, met: 0, unmet: 0 }
   for (const r of rows.value) {
-    const key = r.customer_no || '(集团/未关联客户号)'
-    if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(r)
+    if (r.status === 'TRACKING') s.tracking++
+    else if (r.status === 'FINISHED_MET') s.met++
+    else if (r.status === 'FINISHED_UNMET') s.unmet++
   }
-  return [...map.entries()].map(([customerNo, list]) => {
-    const ratios = list.map((r) => r.achievement_ratio).filter((v) => v != null).map((v) => Number(v) * 100)
-    const customerName = list.find((r) => r.customer_name)?.customer_name || ''
-    return {
-      customerNo,
-      customerName,
-      planCount: new Set(list.map((r) => r.plan_no)).size,
-      metricCount: list.filter((r) => r.metric_code).length,
-      avgRatio: ratios.length ? Number((ratios.reduce((a, b) => a + b, 0) / ratios.length).toFixed(1)) : null,
-      // 含关联人达成率(展示层聚合,同编码才并;§11.8):按后端拼装的 total_ratio 比率聚合
-      avgRelatedRatio: (() => {
-        const rs = list.map((r) => r.total_ratio).filter((v) => v != null).map((v) => Number(v) * 100)
-        return rs.length ? Number((rs.reduce((a, b) => a + b, 0) / rs.length).toFixed(1)) : null
-      })(),
-      atRiskCount: list.filter((r) => r.result_status === 'AT_RISK' || r.status === 'AT_RISK').length
-    }
-  })
+  return s
 })
 
-// 一级统计卡:跟踪中/有风险/已达成
-const statCards = computed(() => {
-  const plans = planList.value
-  return {
-    tracking: plans.filter((p) => CURRENT_STATUS.includes(p.status)).length,
-    atRisk: plans.filter((p) => p.status === 'AT_RISK' || p.metrics.some((m: any) => m.result_status === 'AT_RISK')).length,
-    achieved: rows.value.filter((r) => r.result_status === 'ACHIEVED').length
-  }
-})
-
-// ---------- 计划聚合(二级/三级共用) ----------
-const planList = computed(() => {
-  const map = new Map<number, any>()
-  for (const r of rows.value) {
-    if (!map.has(r.id)) {
-      map.set(r.id, {
-        id: r.id, plan_no: r.plan_no, scope_type: r.scope_type,
-        customer_no: r.customer_no, status: r.status, metrics: [] as any[],
-        // 所属申请摘要(贡献度跟踪页展示"跟着哪个申请",后端 listPlans 随行返回)
-        application_no: r.application_no, submit_time: r.submit_time,
-        business_type: r.business_type, application_status: r.application_status,
-        customer_name: r.customer_name, application_amount: r.application_amount,
-        requested_rate: r.requested_rate, final_rate: r.final_rate
-      })
-    }
-    if (r.metric_code) map.get(r.id)!.metrics.push(r)
-  }
-  const list = [...map.values()]
-  for (const p of list) {
-    const ratios = p.metrics.map((m: any) => m.achievement_ratio).filter((v: any) => v != null).map((v: any) => Number(v) * 100)
-    p.avgRatio = ratios.length ? Number((ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length).toFixed(1)) : null
-  }
-  return list
-})
-
-// 二级:当前客户的承诺记录(当前/历史分组)
-const customerPlans = computed(() =>
-  planList.value.filter((p) => (p.customer_no || '(集团/未关联客户号)') === currentCustomer.value))
-const currentPlans = computed(() => customerPlans.value.filter((p) => CURRENT_STATUS.includes(p.status)))
-const historyPlans = computed(() => customerPlans.value.filter((p) => !CURRENT_STATUS.includes(p.status)))
-
-// 二级:该客户每一次申请(客户 → 申请 → 指标;承诺计划↔申请 1:1,按申请聚合展示)
-const applicationRows = computed(() => {
-  const map = new Map<string, any>()
-  for (const p of customerPlans.value) {
-    const key = p.application_no || `plan-${p.id}`
-    if (!map.has(key)) {
-      map.set(key, {
-        applicationNo: p.application_no,
-        submitTime: p.submit_time,
-        plan_no: p.plan_no,
-        scope_type: p.scope_type,
-        status: p.status,
-        id: p.id,
-        customer_no: p.customer_no,
-        business_type: p.business_type,
-        application_status: p.application_status,
-        customer_name: p.customer_name,
-        application_amount: p.application_amount,
-        requested_rate: p.requested_rate,
-        final_rate: p.final_rate,
-        metrics: [],
-      })
-    }
-    const row = map.get(key)!
-    if (Array.isArray(p.metrics)) row.metrics.push(...p.metrics)
-  }
-  const list = [...map.values()]
-  for (const app of list) {
-    const ratios = app.metrics.map((m: any) => m.achievement_ratio).filter((v: any) => v != null).map((v: any) => Number(v) * 100)
-    app.avgRatio = ratios.length ? Number((ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length).toFixed(1)) : null
-  }
-  return list
-})
-
-function enterApplication(app: any) {
-  enterPlan(app)
-}
-
-function enterCustomer(customerNo: string) {
-  currentCustomer.value = customerNo
-  level.value = 2
-}
-
-function goUp() {
-  if (level.value === 3) {
-    level.value = 2
-    currentPlan.value = null
-  } else {
-    level.value = 1
-    currentCustomer.value = ''
-  }
-}
-
-// 二级面包屑带出客户名称(§UI审查 ⑦)
-const currentCustomerName = computed(() => {
-  const row = customerRows.value.find((c) => c.customerNo === currentCustomer.value)
-  return row?.customerName || ''
-})
-const currentCustomerLabel = computed(() => {
-  const base = `客户 ${currentCustomer.value}`
-  const name = currentCustomerName.value
-  return name && name !== currentCustomer.value ? `${base}（${name}）` : base
-})
-
-// ---------- 三级:指标钻取(计划详情 + 总体进度) ----------
-const planDetail = ref<any | null>(null)
-
-// 指标行:计划详情接口返回 items=[{metric, latestEvaluation}],缺失时用列表行兜底
-const planMetrics = computed<any[]>(() => {
-  const items = planDetail.value?.items
-  if (Array.isArray(items) && items.length) {
-    return items.map((it: any) => {
-      const m = it.metric || {}
-      const ev = it.latestEvaluation || {}
-      return {
-        id: m.id,
-        metricId: m.id,
-        metricCode: m.metricCode,
-        metricName: m.metricName,
-        unit: m.unit,
-        targetValue: m.targetValue,
-        baselineValue: m.baselineValue,
-        targetType: m.targetType,
-        trackDesc: m.trackDesc,
-        actualValue: ev.actualValue,
-        achievementRatio: pctOf(ev.achievementRatio),
-        resultStatus: ev.resultStatus,
-        dataDt: ev.dataDt,
-        // 关联人实绩并入(展示层聚合,同编码才并;§11.8):主客户+关联人总和达成率/状态,无关联人或无同码数据为 null
-        relatedSummary: it.relatedSummary ? { ...it.relatedSummary, totalRatioPct: pctOf(it.relatedSummary.totalRatio) } : null,
-        // 每期履约明细(planDetail 返回该指标全部评估期,按 data_dt 倒序)
-        evaluations: (it.evaluations || []).map((e: any) => ({
-          dataDt: e.dataDt, actualValue: e.actualValue,
-          achievementRatio: pctOf(e.achievementRatio), resultStatus: e.resultStatus
-        }))
-      }
-    })
-  }
-  return (currentPlan.value?.metrics || []).map((r: any) => ({
-    id: r.id, metricId: r.id, metricCode: r.metric_code, metricName: r.metric_name,
-    unit: r.unit, targetValue: r.target_value, baselineValue: r.baseline_value,
-    trackDesc: r.track_desc, actualValue: r.actual_value,
-    achievementRatio: pctOf(r.achievement_ratio), resultStatus: r.result_status, dataDt: r.data_dt,
-    evaluations: [] as any[]
-  }))
-})
-
-// 时间维度:承诺截止日期 + 剩余天数(用户诉求②:总截止时间跟踪)
-const planEndDate = computed(() => planDetail.value?.plan?.endDate || currentPlan.value?.end_date || '')
-function daysLeft(endDate?: string): number | null {
-  if (!endDate) return null
-  const end = new Date(`${endDate}T00:00:00`).getTime()
-  const now = new Date().getTime()
-  const diff = Math.ceil((end - now) / 86400000)
-  return Number.isFinite(diff) ? diff : null
-}
-const deadlineTip = computed(() => {
-  const days = daysLeft(planEndDate.value)
-  if (days == null) return null
-  if (days < 0) return { cls: 'badge badge--danger', text: `已过期 ${-days} 天` }
-  if (days === 0) return { cls: 'badge badge--warning', text: '今日到期' }
-  return { cls: 'badge badge--info', text: `剩余 ${days} 天` }
-})
-
-// 总体跟踪进度(用户诉求③):各指标达成率(achievementRatio)的算术平均,不含 OTHER
-const overall = computed(() => {
-  const items = planMetrics.value.filter((m: any) => m.metricCode !== 'OTHER')
-  const ratios = items
-    .map((m: any) => Number(m.achievementRatio))
-    .filter((r: number) => Number.isFinite(r))
-  if (!ratios.length) return null
-  const ratio = Number((ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length).toFixed(1))
-  const sumActual = items.reduce((s: number, m: any) => s + (Number.isFinite(Number(m.actualValue)) ? Number(m.actualValue) : 0), 0)
-  const sumTarget = items.reduce((s: number, m: any) => s + (Number.isFinite(Number(m.targetValue)) ? Number(m.targetValue) : 0), 0)
-  return {
-    sumActual: Number(sumActual.toFixed(2)),
-    sumTarget: Number(sumTarget.toFixed(2)),
-    ratio
-  }
-})
-
-// 离达成值(用户诉求①)= 目标值 - 当前完成值;负值表示已超额达成
-function gapOf(m: any): number | null {
-  if (m.targetValue == null || m.actualValue == null) return null
-  const t = Number(m.targetValue)
-  const a = Number(m.actualValue)
-  if (!Number.isFinite(t) || !Number.isFinite(a)) return null
-  return Number((t - a).toFixed(2))
-}
-function gapText(m: any): string {
-  const gap = gapOf(m)
-  if (gap == null) return '—'
-  if (gap <= 0) return gap === 0 ? '已达成' : `已超额达成 ${Math.abs(gap)}`
-  return `还差 ${gap}`
-}
-function gapBadge(m: any): string {
-  const gap = gapOf(m)
-  if (gap == null) return ''
-  return gap <= 0 ? 'badge badge--success' : 'badge badge--warning'
-}
-
-async function enterPlan(p: any) {
-  currentPlan.value = p
-  planDetail.value = null
-  level.value = 3
-  planLoading.value = true
-  try {
-    const d = await getCommitmentPlanDetail(p.id)
-    planDetail.value = d
-  } catch {
-    // 计划详情接口不可用/无数据:以列表最新评估兜底展示
-  } finally {
-    planLoading.value = false
-  }
-}
-
-// ---------- "其它"承诺跟踪描述录入(§6.4:以 metric 主键为键的草稿,保存 track_desc 留痕) ----------
-const trackDraft = reactive<Record<number, string>>({})
-function setTrackDraft(m: any, v: string) {
-  trackDraft[Number(m.metricId ?? m.id)] = v
-}
-async function saveTrack(m: any) {
-  if (savingTrack.value) return
-  const metricId = Number(m.metricId ?? m.id)
-  const desc = (trackDraft[metricId] || '').trim()
-  if (!desc) {
-    ElMessage.warning('请录入跟踪描述')
-    return
-  }
-  savingTrack.value = true
-  try {
-    await saveMetricTrackDesc(metricId, desc)
-    // 更新本地行数据与当前计划指标,无需重拉列表
-    m.trackDesc = desc
-    trackDraft[metricId] = ''
-    ElMessage.success('跟踪描述已保存留痕')
-  } catch {
-    ElMessage.error('跟踪描述保存失败')
-  } finally {
-    savingTrack.value = false
-  }
-}
-
-
-// ---------- 数据加载(无参,服务端定数据范围) ----------
 async function load() {
   listLoading.value = true
   listError.value = false
   try {
-    rows.value = await listCommitmentPlans()
+    rows.value = await listCommitmentTracks({
+      status: query.status || undefined,
+      customerNo: query.customerNo?.trim() || undefined
+    })
   } catch {
     rows.value = []
     listError.value = true
@@ -620,112 +172,63 @@ async function load() {
   }
 }
 
+// ---------- 详情弹窗(承诺要素 + 实时/定案 + 所属申请) ----------
+const detail = reactive({ show: false, row: null as any, application: null as any, loading: false })
+async function openDetail(r: any) {
+  detail.show = true
+  detail.loading = true
+  detail.row = null
+  detail.application = null
+  try {
+    const d: any = await getCommitmentTrackDetail(r.id)
+    detail.row = d
+    detail.application = d?.application || null
+  } catch {
+    // 详情接口不可用时以列表行兜底展示(字段同 toView)
+    detail.row = r
+    detail.application = null
+  } finally {
+    detail.loading = false
+  }
+}
 
 // ---------- 展示映射 ----------
-function scopeText(s?: string) {
-  return customerScopeText(s)
+function trackStatusText(s?: string) {
+  return { TRACKING: '跟踪中', FINISHED_MET: '已完成', FINISHED_UNMET: '未完成' }[s || ''] || s || '—'
 }
-function ratioClass(ratio: number) {
-  return ratio >= 100 ? 'badge badge--success' : ratio >= 80 ? 'badge badge--warning' : 'badge badge--danger'
+function trackStatusBadge(s?: string) {
+  const map: Record<string, string> = {
+    TRACKING: 'badge--info', FINISHED_MET: 'badge--success', FINISHED_UNMET: 'badge--danger'
+  }
+  return `badge ${map[s || ''] || 'badge--neutral'}`
 }
-function progressPct(ratio: any) {
-  if (ratio == null) return 0
-  return Math.min(Math.max(Number(ratio), 0), 100)
-}
-// 颜色分级:绿≥100% / 黄≥80% / 红<80%
-function progressColor(ratio: any) {
-  if (ratio == null) return 'var(--color-text-light)'
-  const r = Number(ratio)
-  return r >= 100 ? 'var(--color-success)' : r >= 80 ? 'var(--color-warning)' : 'var(--color-danger)'
-}
-function statusText(s?: string) {
-  return planStatusText(s)
-}
-function statusBadge(s?: string) {
-  return dictPlanStatusBadge(s)
-}
-// 申请状态徽标(ccr_application.status:草稿/审批中/已通过/已否决等,承诺跟踪页展示所属申请)
-// §UI审查 ④:跨页统一口径复用 dict.appStatusBadge(SUBMITTING=info、PARTIAL_APPROVED=warning)
-function appStatusBadge(s?: string) {
-  return dictAppStatusBadge(s)
-}
-// 申请金额(万元)展示:千分位,空值显示 —
-function fmtAmount(v: any): string {
-  if (v == null || v === '') return '—'
-  const n = Number(v)
-  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '—'
-}
-// 申请利率展示:优先最终利率,无则申请利率(库中为数值如 3.5)
-function fmtRate(requested: any, final: any): string {
-  const v = final ?? requested
-  if (v == null || v === '') return '—'
-  const n = Number(v)
-  return Number.isFinite(n) ? `${n.toFixed(2)}%` : String(v)
-}
-function resultText(s?: string) {
-  return evalResultText(s)
-}
-// 达成率比率→百分比(库中 achievement_ratio 为比率 0.84,展示统一转 84)
-function pctOf(r: any): any {
+// 比率(0.84)→百分比(84.0)
+function pct(r: any): any {
   const n = Number(r)
   return r != null && Number.isFinite(n) ? Number((n * 100).toFixed(1)) : (r == null ? null : r)
 }
-// 每期履约明细展开状态(按指标主键)
-const expandedEvals = reactive<Set<number>>(new Set())
-function toggleEvals(m: any) {
-  const id = Number(m.metricId ?? m.id)
-  if (expandedEvals.has(id)) expandedEvals.delete(id)
-  else expandedEvals.add(id)
+// 完成比例徽标:≥100% 达成 / ≥80% 关注 / <80% 未达成
+function ratioBadge(ratio: any) {
+  if (ratio == null) return 'badge badge--neutral'
+  const p = Number(ratio) * 100
+  return p >= 100 ? 'badge badge--success' : p >= 80 ? 'badge badge--warning' : 'badge badge--danger'
 }
-function resultBadge(s?: string) {
-  const map: Record<string, string> = {
-    ACHIEVED: 'badge badge--success', AT_RISK: 'badge badge--warning',
-    DATA_PENDING: 'badge badge--neutral', ON_TRACK: 'badge badge--info'
-  }
-  return map[s || ''] || 'badge badge--neutral'
+function fmtValue(v: any): string {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  return Number.isFinite(n) ? String(n) : String(v)
+}
+function fmtTime(v: any): string {
+  if (!v) return '—'
+  return String(v).replace('T', ' ').slice(0, 19)
 }
 
 onMounted(load)
 </script>
 
 <style scoped>
-/* 客户承诺概览:列少时拉长撑满容器(参照 approval/detail.vue 宽屏恢复拉伸的做法) */
-.customer-overview { width: 100%; display: table; }
-.breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
 @media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { .stat-row { grid-template-columns: 1fr; } }
-.table { border-radius: var(--radius-sm); overflow-x: auto; }
-.dg-label { color: var(--color-text-sub); margin-right: 6px; }
-.plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 1200px) { .plan-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 768px) { .plan-grid { grid-template-columns: 1fr; } }
-.plan-card { border: 1px solid var(--color-border-light); border-radius: var(--radius); padding: 14px; cursor: pointer; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: border-color .18s, box-shadow .18s, transform .18s; }
-.plan-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow); transform: translateY(-2px); }
-.plan-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.plan-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-/* 二级:申请承诺卡片内容行(替代原 12 列表格) */
-.app-card__no { font-size: 14px; font-weight: 600; }
-.app-card__head-badges { display: inline-flex; align-items: center; gap: 4px; }
-.app-card__label { color: var(--color-text-sub); font-size: 12px; font-weight: 400; }
-.app-card__row { font-size: 13px; color: var(--color-text-main); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.app-card__sep { color: var(--color-text-light); }
-.app-card__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--color-border); font-size: 12px; color: var(--color-text-sub); }
-.app-card__go { color: var(--color-primary); font-weight: 500; }
-.metric-row { margin-bottom: 14px; }
-.metric-row__related { margin-top: 2px; padding: 8px 12px; background: var(--color-bg); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
-.metric-row__related-head { display: flex; align-items: center; gap: 12px; font-size: 13px; margin-bottom: 2px; }
-.metric-row__head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; font-size: 14px; }
-.metric-row__vals { display: flex; flex-wrap: wrap; gap: 24px; padding: 8px 0 4px; }
-.metric-val { display: inline-flex; align-items: baseline; gap: 6px; font-size: 14px; }
-.metric-val__num { font-size: 16px; font-weight: 700; }
-.metric-val__unit { font-size: 12px; color: var(--color-text-light); }
-.overall__sum { display: flex; flex-wrap: wrap; gap: 32px; margin-bottom: 10px; }
-.overall__sum-item { display: inline-flex; align-items: baseline; gap: 8px; font-size: 14px; }
-.other-track { background: var(--color-bg); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 6px; }
-.period-block { margin-top: 6px; }
-.other-track__desc { font-size: 13px; margin-bottom: 8px; }
-.other-track__edit { max-width: 560px; }
-.other-track__textarea { width: 100%; resize: vertical; }
-.other-track__save { margin-top: 6px; }
+.cell-unit { margin-left: 2px; color: var(--color-text-light); font-size: 12px; }
 </style>

@@ -810,9 +810,9 @@
               <label class="form-field__label">目标类型 <span class="req">*</span></label>
               <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral commitment-static">手工描述</span>
               <select v-else class="form-select" v-model="c.targetType">
-                <option value="TARGET_BALANCE">目标余额</option>
-                <option value="INCREMENT">承诺新增</option>
-                <option value="CUMULATIVE">期间累计</option>
+                <option value="BALANCE">余额</option>
+                <option value="COUNT">笔数</option>
+                <option value="RATIO">比例</option>
               </select>
             </div>
             <div class="form-field">
@@ -1888,7 +1888,7 @@ function onMetricChange(c: CommitmentRow) {
 }
 function addCommitment() {
   commitments.value.push({
-    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'TARGET_BALANCE',
+    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'BALANCE',
     baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
     // 适用范围概念已删除(§2026-08-26 用户要求):后台按客户号/证件号匹配,承诺不再携带 metricScope
     memberCustomerNo: '', endDate: ''

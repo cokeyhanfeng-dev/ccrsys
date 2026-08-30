@@ -249,9 +249,9 @@ export function ruleLevelText(code?: string, fallback = '—'): string {
   return textOf(RULE_LEVEL, code, fallback)
 }
 
-/** 承诺目标类型 */
+/** 承诺目标类型(仅 BALANCE/COUNT/RATIO;旧值 TARGET_BALANCE 已收敛映射,INCREMENT/CUMULATIVE 旧行只读) */
 export const TARGET_TYPE: Record<string, string> = {
-  TARGET_BALANCE: '目标余额', INCREMENT: '承诺新增', CUMULATIVE: '期间累计'
+  BALANCE: '余额', COUNT: '笔数', RATIO: '比例'
 }
 export function targetTypeText(code?: string, fallback = '—'): string {
   return textOf(TARGET_TYPE, code, fallback)

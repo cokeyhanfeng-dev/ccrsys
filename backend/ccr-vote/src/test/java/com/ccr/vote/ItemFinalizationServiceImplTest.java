@@ -8,10 +8,9 @@ import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.enums.PricingItemStatus;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
-import com.ccr.commitment.domain.CcrCommitmentMemberAlloc;
-import com.ccr.commitment.domain.CcrCommitmentPlan;
-import com.ccr.commitment.mapper.CcrCommitmentPlanMapper;
-import com.ccr.commitment.service.CommitmentService;
+import com.ccr.commitment.domain.CcrCommitmentTrack;
+import com.ccr.commitment.mapper.CommitmentTrackMapper;
+import com.ccr.commitment.service.CommitmentTrackService;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.common.outbox.OutboxService;
@@ -50,9 +49,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 分项终态串联单元测试(事件驱动改造后):
+ * 分项终态串联单元测试(事件驱动改造后 + v2 承诺跟踪简化):
  * afterItemTerminal 写 RESOLUTION_CREATE 事件(写入失败降级同步);主申请状态聚合;
- * processResolutionCreate/processCommitmentCreate 消费入口(幂等+链式事件)
+ * processResolutionCreate/processCommitmentCreate 消费入口(幂等+链式事件);
+ * processCommitmentCreate 建 ccr_commitment_track TRACKING 记录(逐行,目标类型收敛映射)
  */
 @ExtendWith(MockitoExtension.class)
 class ItemFinalizationServiceImplTest {
@@ -66,9 +66,9 @@ class ItemFinalizationServiceImplTest {
     @Mock
     private CcrResolutionMapper resolutionMapper;
     @Mock
-    private CommitmentService commitmentService;
+    private CommitmentTrackService commitmentTrackService;
     @Mock
-    private CcrCommitmentPlanMapper commitmentPlanMapper;
+    private CommitmentTrackMapper commitmentTrackMapper;
     @Mock
     private ApplicationCommitmentReadMapper commitmentReadMapper;
     @Mock
@@ -91,7 +91,7 @@ class ItemFinalizationServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, CcrResolution.class);
         TableInfoHelper.initTableInfo(assistant, ApplicationCommitmentRead.class);
         TableInfoHelper.initTableInfo(assistant, CcrNotificationLog.class);
-        TableInfoHelper.initTableInfo(assistant, CcrCommitmentPlan.class);
+        TableInfoHelper.initTableInfo(assistant, CcrCommitmentTrack.class);
 
         item = new CcrPricingItem();
         item.setId(10L);
@@ -157,9 +157,9 @@ class ItemFinalizationServiceImplTest {
         verify(outboxService).publish(eq("RESOLUTION_CREATE"), eq("app:30"),
                 argThat((String p) -> p.contains("\"applicationId\":30")
                         && p.contains("3.500000") && p.contains("LEVEL_APPROVED")));
-        // 同事务不再同步调决议/承诺服务
+        // 同事务不再同步调决议/承诺服务(v2 建跟踪由 COMMITMENT_CREATE 异步消费)
         verify(resolutionService, never()).createResolution(any(), any(), any(), any(), any(), any(), any());
-        verify(commitmentService, never()).createPlan(any(CcrCommitmentPlan.class), anyList(), anyList());
+        verify(commitmentTrackService, never()).createTracks(anyList());
         // 全部 FINAL → 主申请 FINAL + final_time
         verify(applicationMapper).updateById(argThat((CcrApplication a) ->
                 "FINAL".equals(a.getStatus()) && a.getFinalTime() != null));
@@ -176,12 +176,13 @@ class ItemFinalizationServiceImplTest {
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
 
-        // 事件表写入失败 → 降级同步串联,不阻断主流程
+        // 事件表写入失败 → 降级同步串联,不阻断主流程(v2:同步建 TRACKING 跟踪)
         finalizationService.afterItemTerminal(10L, "LEVEL_APPROVED");
 
         verify(resolutionService).createResolution(eq(30L), any(), any(), any(), any(), any(), eq("LEVEL_APPROVED"));
-        verify(commitmentService).createPlan(argThat(p -> Long.valueOf(500L).equals(p.getResolutionId())),
-                anyList(), anyList());
+        verify(commitmentTrackService).createTracks(argThat(tracks -> tracks.size() == 1
+                && "BALANCE".equals(tracks.get(0).getTargetKind())
+                && "DEPOSIT_BALANCE".equals(tracks.get(0).getMetricCode())));
         verify(applicationMapper).updateById(argThat((CcrApplication a) -> "FINAL".equals(a.getStatus())));
     }
 
@@ -249,69 +250,85 @@ class ItemFinalizationServiceImplTest {
         verify(outboxService, never()).publish(eq("COMMITMENT_CREATE"), anyString(), anyString());
     }
 
-    // ---------- processCommitmentCreate(COMMITMENT_CREATE 消费) ----------
+    // ---------- processCommitmentCreate(COMMITMENT_CREATE 消费,v2 建跟踪) ----------
 
     @Test
-    void processCommitmentCreate_createsPlan() {
+    void processCommitmentCreate_createsTracks() {
         Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
-        when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(commitmentRow()));
 
         finalizationService.processCommitmentCreate(payload);
 
-        verify(commitmentService).createPlan(argThat(p -> Long.valueOf(500L).equals(p.getResolutionId())),
-                anyList(), anyList());
+        // v2:逐行转 TRACKING 记录(TARGET_BALANCE→BALANCE;manager 取申请人;幂等查 track 表)
+        verify(commitmentTrackService).createTracks(argThat(tracks -> tracks.size() == 1
+                && "BALANCE".equals(tracks.get(0).getTargetKind())
+                && "DEPOSIT_BALANCE".equals(tracks.get(0).getMetricCode())
+                && new BigDecimal("200").compareTo(tracks.get(0).getTargetValue()) == 0
+                && Long.valueOf(1001L).equals(tracks.get(0).getManagerId())
+                && "TRACKING".equals(tracks.get(0).getStatus())));
     }
 
     @Test
-    void processCommitmentCreate_existingPlan_idempotentSkip() {
+    void processCommitmentCreate_existingTrack_idempotentSkip() {
         Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
-        when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
 
         finalizationService.processCommitmentCreate(payload);
 
-        verify(commitmentService, never()).createPlan(any(CcrCommitmentPlan.class), anyList(), anyList());
+        verify(commitmentTrackService, never()).createTracks(anyList());
     }
 
     @Test
-    void processCommitmentCreate_noCommitmentRows_skipsPlan() {
+    void processCommitmentCreate_noCommitmentRows_skipsTracks() {
         Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
-        when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
 
         finalizationService.processCommitmentCreate(payload);
 
-        verify(commitmentService, never()).createPlan(any(CcrCommitmentPlan.class), anyList(), anyList());
+        verify(commitmentTrackService, never()).createTracks(anyList());
     }
 
     @Test
-    void processCommitmentCreate_groupBuildsMemberAllocs() {
-        application.setCustomerScope("GROUP");
-        application.setGroupNo("G001");
+    void processCommitmentCreate_untrackedType_skips() {
+        ApplicationCommitmentRead other = commitmentRow();
+        other.setTargetType("OTHER");
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(resolutionMapper.selectById(500L)).thenReturn(resolution);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(other));
+
+        finalizationService.processCommitmentCreate(payload);
+
+        // OTHER 不生成跟踪记录(目标类型收敛:仅 BALANCE/COUNT/RATIO)
+        verify(commitmentTrackService, never()).createTracks(anyList());
+    }
+
+    @Test
+    void processCommitmentCreate_memberRow_carriesMemberNo() {
         ApplicationCommitmentRead memberRow = commitmentRow();
         memberRow.setMetricScope("GROUP_MEMBER");
         memberRow.setMemberCustomerNo("M001");
         Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(resolutionMapper.selectById(500L)).thenReturn(resolution);
-        when(commitmentPlanMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(memberRow));
 
         finalizationService.processCommitmentCreate(payload);
 
-        // 集团共享口径 + 成员分配按 metricCode 关联
-        verify(commitmentService).createPlan(
-                argThat(p -> "GROUP".equals(p.getScopeType()) && "GROUP_SHARED".equals(p.getAllocationMode())),
-                anyList(),
-                argThat((List<CcrCommitmentMemberAlloc> allocs) -> allocs.size() == 1
-                        && "M001".equals(allocs.get(0).getMemberCustomerNo())
-                        && "DEPOSIT_BALANCE".equals(allocs.get(0).getMetricCode())));
+        // v2:成员承诺逐行落 track,member_customer_no 填行字段(不再集团共享口径换算成员分配)
+        verify(commitmentTrackService).createTracks(argThat(tracks -> tracks.size() == 1
+                && "M001".equals(tracks.get(0).getMemberCustomerNo())
+                && "C001".equals(tracks.get(0).getCustomerNo())));
     }
 
     // ---------- 主申请状态聚合(口径不变) ----------

@@ -310,89 +310,6 @@
       </table>
     </div>
 
-    <!-- ========== 跟踪策略(§11.5/§11.7) ========== -->
-    <div v-if="activeTab === 'policy'" class="card" v-loading="loading.policy">
-      <div class="card-toolbar">
-        <span class="card-toolbar__title">跟踪策略</span>
-        <span class="card-toolbar__sub">版本化:草稿→送审→复核发布→停用;匹配优先级 指标+业务+机构 &gt; 指标+业务 &gt; 指标默认 &gt; 全行默认*</span>
-        <select class="form-select" v-model="policyMetric" style="width:170px" @change="loadPolicies" aria-label="指标筛选">
-          <option value="">全部指标</option>
-          <option value="*">全行默认</option>
-          <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
-        </select>
-        <div class="card-toolbar__actions">
-          <button v-if="canMaintain" class="btn btn--primary" @click="openPolicyCreate">＋ 新增策略</button>
-        </div>
-      </div>
-      <table class="table table--full">
-        <thead>
-          <tr>
-            <th>策略编号</th><th>策略名称</th><th>指标</th><th>业务类型</th><th>机构编码</th>
-            <th>优先级</th><th>状态</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in policyList" :key="p.id">
-            <td>{{ p.policyNo || '—' }}</td>
-            <td>{{ p.policyName }}</td>
-            <td>{{ metricName(p.metricCode) }}</td>
-            <td>{{ p.businessType ? businessTypeText(p.businessType) : '不限' }}</td>
-            <td>{{ p.orgCode || '通用' }}</td>
-            <td class="num">{{ p.priority ?? '—' }}</td>
-            <td><span :class="statusBadge(p.status)">{{ statusText(p.status) }}</span></td>
-            <td>
-              <button class="btn btn--text" @click="openVersionMgr(p)">版本管理</button>
-              <button v-if="canMaintain && p.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'REVIEW')">{{ pendingText(`policystatus:${p.id}`, '送审') }}</button>
-              <button v-if="canReview && p.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'EFFECTIVE')">{{ pendingText(`policystatus:${p.id}`, '复核发布') }}</button>
-              <button v-if="canMaintain && p.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doPolicyStatus(p, 'INVALID')">{{ pendingText(`policystatus:${p.id}`, '停用') }}</button>
-            </td>
-          </tr>
-          <tr v-if="!policyList.length"><td colspan="8" class="empty-cell">暂无数据</td></tr>
-        </tbody>
-      </table>
-
-      <!-- 策略试算(§11.7):选历史承诺计划,输出命中策略与预警判定 -->
-      <div class="trial-result">
-        <div class="form-group-title">策略试算</div>
-        <div class="simulate-bar">
-          <select class="form-select" v-model="simulatePlanId" style="width:260px" aria-label="历史承诺计划">
-            <option value="">选择历史承诺计划</option>
-            <option v-for="pl in planOptions" :key="pl.id" :value="pl.id">{{ pl.planNo }} · {{ pl.customerNo || '—' }}</option>
-          </select>
-          <button class="btn btn--primary" :disabled="!simulatePlanId" @click="runPolicySimulate">试算</button>
-          <span class="form-hint">按计划冻结的指标逐项匹配当前生效策略并判定预警等级</span>
-        </div>
-        <div v-if="simulateResult" style="margin-top:12px">
-          <div class="desc-grid desc-grid--3">
-            <div>
-              <div class="desc-item__label">计划</div>
-              <div class="desc-item__value">{{ simulateResult.planNo }} · 冻结策略版本 {{ simulateResult.frozenPolicyVersionId || '—' }}</div>
-            </div>
-          </div>
-          <table class="table table--full" style="margin-top:8px" v-if="simulateResult.metrics?.length">
-            <thead>
-              <tr>
-                <th>指标</th><th>命中策略</th><th>达成率</th><th>时间进度</th><th>阈值线(达成/风险)</th>
-                <th>临近到期(天)</th><th>容忍(天)</th><th>判定</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(m, i) in simulateResult.metrics" :key="i">
-                <td>{{ metricName(m.metricCode) }}</td>
-                <td>{{ m.matchedPolicyNo ? `${m.matchedPolicyNo}(${m.matchedVersionCode})` : '默认阈值' }}</td>
-                <td class="num">{{ m.achievementRatio != null ? m.achievementRatio + '%' : '—' }}</td>
-                <td class="num">{{ m.progressRatio != null ? m.progressRatio + '%' : '—' }}</td>
-                <td>{{ m.achieveLine ?? '—' }} / {{ m.atRiskLine ?? '—' }}</td>
-                <td class="num">{{ m.nearExpiryDays ?? '—' }}</td>
-                <td class="num">{{ m.toleranceDays ?? '—' }}</td>
-                <td><span :class="policyRiskBadge(m.judgeResult)">{{ policyRiskText(m.judgeResult) }}</span></td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else class="empty-line" style="margin-top:8px">该计划无承诺指标数据</div>
-        </div>
-      </div>
-    </div>
 
     <!-- ========== 指标字典(§9;admin 配置化) ========== -->
     <div v-if="activeTab === 'metricDict'" class="card" v-loading="loading.metric">
@@ -579,245 +496,6 @@
       <div v-else class="section-tip" style="margin-top:12px">填写上方维度后点击"试算",输出终审岗位与审批链路。</div>
     </div>
 
-    <!-- 新增跟踪策略弹窗(策略+首个版本+阈值一并提交,§11.5) -->
-    <div class="modal" v-if="policyDialog.show">
-      <div class="modal__card modal__card--wide">
-        <div class="modal__title">新增跟踪策略</div>
-        <div class="modal__body">
-          <div class="form-group-title">策略维度</div>
-          <div class="form-grid">
-            <div class="form-field">
-              <label class="form-field__label" for="pd-policyNo">策略编号 <span class="req">*</span></label>
-              <input id="pd-policyNo" class="form-input" v-model="policyDialog.form.policyNo" placeholder="如 P-2026-001" autocomplete="off" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-policyName">策略名称 <span class="req">*</span></label>
-              <input id="pd-policyName" class="form-input" v-model="policyDialog.form.policyName" autocomplete="off" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-metricCode">指标编码 <span class="req">*</span></label>
-              <select id="pd-metricCode" class="form-select" v-model="policyDialog.form.metricCode">
-                <option value="*">全行默认</option>
-                <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-bizType">业务类型</label>
-              <select id="pd-bizType" class="form-select" v-model="policyDialog.form.businessType">
-                <option value="">不限</option>
-                <option value="LOAN">贷款</option>
-                <option value="DEPOSIT">存款</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-orgCode">机构编码</label>
-              <input id="pd-orgCode" class="form-input" v-model="policyDialog.form.orgCode" placeholder="空=通用" autocomplete="off" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-priority">优先级</label>
-              <input id="pd-priority" class="form-input" v-model="policyDialog.form.priority" type="number" autocomplete="off" />
-            </div>
-          </div>
-
-          <div class="form-group-title">首个版本(草稿)</div>
-          <div class="form-grid">
-            <div class="form-field">
-              <label class="form-field__label" for="pd-verCode">版本号 <span class="req">*</span></label>
-              <input id="pd-verCode" class="form-input" v-model="policyDialog.version.versionCode" placeholder="如 V1" autocomplete="off" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-effFrom">生效时间 <span class="req">*</span></label>
-              <input id="pd-effFrom" class="form-input" v-model="policyDialog.version.effectiveFrom" type="datetime-local" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-effTo">失效时间</label>
-              <input id="pd-effTo" class="form-input" v-model="policyDialog.version.effectiveTo" type="datetime-local" />
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-checkFreq">校验频率</label>
-              <select id="pd-checkFreq" class="form-select" v-model="policyDialog.version.checkFrequency">
-                <option value="DAILY">每日</option>
-                <option value="WEEKLY">每周</option>
-                <option value="MONTHLY">每月</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-field__label" for="pd-tolerance">数据容忍天数</label>
-              <input id="pd-tolerance" class="form-input" v-model="policyDialog.version.dataToleranceDays" type="number" autocomplete="off" />
-            </div>
-          </div>
-
-          <div class="form-group-title">阈值配置</div>
-          <table class="table table--full">
-            <thead>
-              <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(t, i) in policyDialog.thrRows" :key="i">
-                <td>
-                  <select class="form-select" v-model="t.thresholdType">
-                    <option value="TIME_PROGRESS">时间进度</option>
-                    <option value="ACHIEVEMENT_RATE">达成率</option>
-                    <option value="CONSECUTIVE_DECLINE">连续下降</option>
-                    <option value="NEAR_EXPIRY">临近到期</option>
-                  </select>
-                </td>
-                <td><input class="form-input" v-model="t.thresholdValue" type="number" step="0.01" style="width:120px" /></td>
-                <td>
-                  <select class="form-select" v-model="t.compareOperator" style="width:90px">
-                    <option value=">">&gt;</option>
-                    <option value=">=">&gt;=</option>
-                    <option value="<">&lt;</option>
-                    <option value="<=">&lt;=</option>
-                  </select>
-                </td>
-                <td>
-                  <select class="form-select" v-model="t.riskLevel">
-                    <option value="NORMAL">正常</option>
-                    <option value="WATCH">关注</option>
-                    <option value="AT_RISK">风险</option>
-                  </select>
-                </td>
-                <td><button class="btn btn--text" @click="policyDialog.thrRows.splice(i, 1)">删除</button></td>
-              </tr>
-              <tr v-if="!policyDialog.thrRows.length"><td colspan="5" class="empty-cell">未配置阈值,将使用系统默认阈值</td></tr>
-            </tbody>
-          </table>
-          <button class="btn btn--secondary" style="margin-top:8px" @click="policyDialog.thrRows.push(emptyThreshold())">＋ 添加阈值行</button>
-        </div>
-        <div class="modal__actions">
-          <button class="btn btn--secondary" @click="policyDialog.show = false">取消</button>
-          <button class="btn btn--primary" @click="savePolicy">保存草稿</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 版本管理弹窗(版本列表+新增版本+阈值明细,§11.5) -->
-    <div class="modal" v-if="versionMgr.show">
-      <div class="modal__card modal__card--wide">
-        <div class="modal__title">
-          版本管理:{{ versionMgr.policy?.policyNo || '' }} {{ versionMgr.policy?.policyName || '' }}
-          <span style="font-size:12px;color:var(--color-text-sub);margin-left:8px">生效区间不得重叠;置生效即对该策略生效</span>
-        </div>
-        <div class="modal__body">
-          <table class="table table--full">
-            <thead>
-              <tr>
-                <th>版本号</th><th>生效时间</th><th>失效时间</th><th>校验频率</th><th>容忍天数</th><th>状态</th><th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="v in versionMgr.versions" :key="v.id">
-                <td>{{ v.versionCode || '—' }}</td>
-                <td>{{ fmtTime(v.effectiveFrom) }}</td>
-                <td>{{ fmtTime(v.effectiveTo) }}</td>
-                <td>{{ checkFreqText(v.checkFrequency) }}</td>
-                <td class="num">{{ v.dataToleranceDays ?? '—' }}</td>
-                <td><span :class="statusBadge(v.status)">{{ statusText(v.status) }}</span></td>
-                <td>
-                  <button class="btn btn--text" @click="openVersionThresholds(v)">阈值</button>
-                  <button v-if="canMaintain && v.status === 'DRAFT'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'REVIEW')">{{ pendingText(`versionstatus:${v.id}`, '送审') }}</button>
-                  <button v-if="canReview && v.status === 'REVIEW'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'EFFECTIVE')">{{ pendingText(`versionstatus:${v.id}`, '复核发布') }}</button>
-                  <button v-if="canMaintain && v.status === 'EFFECTIVE'" class="btn btn--text" :disabled="!!pending" @click="doVersionStatus(v, 'INVALID')">{{ pendingText(`versionstatus:${v.id}`, '停用') }}</button>
-                </td>
-              </tr>
-              <tr v-if="!versionMgr.versions.length"><td colspan="7" class="empty-cell">暂无版本</td></tr>
-            </tbody>
-          </table>
-
-          <div v-if="versionMgr.thrPanel.show" style="margin-top:16px;border-top:1px dashed var(--color-border);padding-top:12px">
-            <div class="form-group-title">阈值明细:版本 {{ versionMgr.thrPanel.versionCode }}</div>
-            <table class="table table--full" v-if="versionMgr.thrPanel.rows.length">
-              <thead><tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th></tr></thead>
-              <tbody>
-                <tr v-for="(t, i) in versionMgr.thrPanel.rows" :key="i">
-                  <td>{{ thresholdTypeText(t.thresholdType) }}</td>
-                  <td class="num">{{ t.thresholdValue }}</td>
-                  <td>{{ t.compareOperator || '—' }}</td>
-                  <td><span :class="policyRiskBadge(t.riskLevel)">{{ policyRiskText(t.riskLevel) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-else class="empty-line">该版本未配置阈值,将使用系统默认阈值</div>
-          </div>
-
-          <div v-if="versionMgr.addShow" style="margin-top:16px;border-top:1px dashed var(--color-border);padding-top:12px">
-            <div class="form-group-title">新增版本(草稿)</div>
-            <div class="form-grid">
-              <div class="form-field">
-                <label class="form-field__label" for="vm-verCode">版本号 <span class="req">*</span></label>
-                <input id="vm-verCode" class="form-input" v-model="versionMgr.form.versionCode" placeholder="如 V2" autocomplete="off" />
-              </div>
-              <div class="form-field">
-                <label class="form-field__label" for="vm-effFrom">生效时间 <span class="req">*</span></label>
-                <input id="vm-effFrom" class="form-input" v-model="versionMgr.form.effectiveFrom" type="datetime-local" />
-              </div>
-              <div class="form-field">
-                <label class="form-field__label" for="vm-effTo">失效时间</label>
-                <input id="vm-effTo" class="form-input" v-model="versionMgr.form.effectiveTo" type="datetime-local" />
-              </div>
-              <div class="form-field">
-                <label class="form-field__label" for="vm-checkFreq">校验频率</label>
-                <select id="vm-checkFreq" class="form-select" v-model="versionMgr.form.checkFrequency">
-                  <option value="DAILY">每日</option>
-                  <option value="WEEKLY">每周</option>
-                  <option value="MONTHLY">每月</option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label class="form-field__label" for="vm-tolerance">数据容忍天数</label>
-                <input id="vm-tolerance" class="form-input" v-model="versionMgr.form.dataToleranceDays" type="number" autocomplete="off" />
-              </div>
-            </div>
-            <div class="form-group-title">阈值</div>
-            <table class="table table--full">
-              <thead>
-                <tr><th>阈值类型</th><th>阈值数值</th><th>比较符</th><th>预警等级</th><th style="width:60px">操作</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(t, i) in versionMgr.form.thrRows" :key="i">
-                  <td>
-                    <select class="form-select" v-model="t.thresholdType">
-                      <option value="TIME_PROGRESS">时间进度</option>
-                      <option value="ACHIEVEMENT_RATE">达成率</option>
-                      <option value="CONSECUTIVE_DECLINE">连续下降</option>
-                      <option value="NEAR_EXPIRY">临近到期</option>
-                    </select>
-                  </td>
-                  <td><input class="form-input" v-model="t.thresholdValue" type="number" step="0.01" style="width:120px" /></td>
-                  <td>
-                    <select class="form-select" v-model="t.compareOperator" style="width:90px">
-                      <option value=">">&gt;</option>
-                      <option value=">=">&gt;=</option>
-                      <option value="<">&lt;</option>
-                      <option value="<=">&lt;=</option>
-                    </select>
-                  </td>
-                  <td>
-                    <select class="form-select" v-model="t.riskLevel">
-                      <option value="NORMAL">正常</option>
-                      <option value="WATCH">关注</option>
-                      <option value="AT_RISK">风险</option>
-                    </select>
-                  </td>
-                  <td><button class="btn btn--text" @click="versionMgr.form.thrRows.splice(i, 1)">删除</button></td>
-                </tr>
-                <tr v-if="!versionMgr.form.thrRows.length"><td colspan="5" class="empty-cell">未配置阈值,将使用系统默认阈值</td></tr>
-              </tbody>
-            </table>
-            <button class="btn btn--secondary" style="margin-top:8px" @click="versionMgr.form.thrRows.push(emptyThreshold())">＋ 添加阈值行</button>
-            <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn btn--secondary" @click="versionMgr.addShow = false">取消</button>
-              <button class="btn btn--primary" @click="savePolicyVersion">保存版本</button>
-            </div>
-          </div>
-        </div>
-        <div class="modal__actions">
-          <button class="btn btn--secondary" @click="versionMgr.show = false">关闭</button>
-          <button class="btn btn--primary" v-if="canMaintain && !versionMgr.addShow" @click="openAddVersion">＋ 新增版本</button>
-        </div>
-      </div>
-    </div>
 
     <!-- 新增/编辑产品目录弹窗(§8A.5①) -->
     <div class="modal" v-if="productDialog.show">
@@ -1508,12 +1186,6 @@ import {
   nodeLabel, customerTypeText, amountTierText, termTierText, rateDirectionText,
   businessTypeText, productName, currencyText
 } from '@/utils/dict'
-import {
-  listTrackingPolicies, createTrackingPolicy, createPolicyVersion,
-  changePolicyStatus, changeVersionStatus,
-  listPolicyVersions, listPolicyThresholds,
-  simulatePolicy, listCommitmentPlans
-} from '@/api/commitment'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -1527,7 +1199,6 @@ const tabs = [
   { key: 'product', label: '产品边界' },
   { key: 'productCenter', label: '产品配置' },
   { key: 'ruleset', label: '规则集' },
-  { key: 'policy', label: '跟踪策略' },
   { key: 'metricDict', label: '指标字典' },
   { key: 'changelog', label: '变更日志' },
   { key: 'trial', label: '路由试算' }
@@ -1550,7 +1221,7 @@ const lprStatus = ref('')
 const matrixStatus = ref('')
 const productStatus = ref('')
 // §UI审查:各 tab 表格加载态
-const loading = reactive({ lpr: false, matrix: false, product: false, ruleset: false, changelog: false, catalog: false, route: false, policy: false, metric: false })
+const loading = reactive({ lpr: false, matrix: false, product: false, ruleset: false, changelog: false, catalog: false, route: false, metric: false })
 // §UI审查:行内操作按钮 pendingId 防连点
 const pending = ref('')
 function pendingText(key: string, normal: string) {
@@ -2321,174 +1992,8 @@ async function runRouteSimulate() {
   }
 }
 
-// ---------- 跟踪策略(§11.5/§11.7) ----------
-const policyList = ref<any[]>([])
-const policyMetric = ref('')
 // 贡献度指标字典(§9;ccr_metric_definition 权威来源,store 拉取,失败回退静态)
 const metricDict = computed(() => useMetricDict().list)
-async function loadPolicies() {
-  loading.policy = true
-  try {
-    policyList.value = await listTrackingPolicies(policyMetric.value || undefined)
-  } catch {
-    policyList.value = []
-  } finally {
-    loading.policy = false
-  }
-}
-
-function emptyThreshold() {
-  return { thresholdType: 'TIME_PROGRESS', thresholdValue: null, compareOperator: '>=', riskLevel: 'WATCH' }
-}
-function thresholdTypeText(s: string) {
-  return { TIME_PROGRESS: '时间进度', ACHIEVEMENT_RATE: '达成率', CONSECUTIVE_DECLINE: '连续下降', NEAR_EXPIRY: '临近到期' }[s] || s || '—'
-}
-function checkFreqText(s: string) {
-  return { DAILY: '每日', WEEKLY: '每周', MONTHLY: '每月' }[s] || s || '—'
-}
-function policyRiskText(s: string) {
-  return { NORMAL: '正常', WATCH: '关注', AT_RISK: '风险', DATA_PENDING: '数据待产', NO_EVALUATION: '暂无评估' }[s] || s || '—'
-}
-function policyRiskBadge(s: string) {
-  const map: Record<string, string> = {
-    NORMAL: 'badge--success', WATCH: 'badge--warning', AT_RISK: 'badge--danger', DATA_PENDING: 'badge--neutral'
-  }
-  return `badge ${map[s] || 'badge--neutral'}`
-}
-
-// 新增策略(策略+首个版本+阈值一并提交)
-const policyDialog = reactive({ show: false, form: {} as any, version: {} as any, thrRows: [] as any[] })
-function openPolicyCreate() {
-  policyDialog.form = { policyNo: '', policyName: '', metricCode: '*', businessType: '', orgCode: '', priority: 100 }
-  policyDialog.version = { versionCode: 'V1', effectiveFrom: '', effectiveTo: '', checkFrequency: 'DAILY', dataToleranceDays: 7 }
-  policyDialog.thrRows = [emptyThreshold()]
-  policyDialog.show = true
-}
-async function savePolicy() {
-  const f = policyDialog.form
-  const v = policyDialog.version
-  if (!f.policyNo?.trim() || !f.policyName?.trim()) {
-    ElMessage.warning('策略编号与策略名称必填')
-    return
-  }
-  if (!v.versionCode?.trim() || !v.effectiveFrom) {
-    ElMessage.warning('版本号与生效时间必填')
-    return
-  }
-  const thresholds = policyDialog.thrRows
-    .filter((t: any) => t.thresholdValue !== null && t.thresholdValue !== '')
-    .map((t: any) => ({ ...t, thresholdValue: Number(t.thresholdValue) }))
-  await createTrackingPolicy(
-    { ...f, businessType: f.businessType || null, orgCode: f.orgCode?.trim() || null, priority: f.priority == null || f.priority === '' ? null : Number(f.priority) },
-    { ...v, effectiveTo: v.effectiveTo || null, dataToleranceDays: v.dataToleranceDays === '' || v.dataToleranceDays == null ? null : Number(v.dataToleranceDays) },
-    thresholds
-  )
-  policyDialog.show = false
-  ElMessage.success('策略草稿已保存')
-  loadPolicies()
-}
-
-async function doPolicyStatus(p: any, status: string) {
-  await withPending(`policystatus:${p.id}`, async () => {
-    if (status === 'EFFECTIVE') {
-      await ElMessageBox.confirm('复核发布后该策略生效,同维度旧策略将被替换。确认?', '复核发布确认', { type: 'warning' })
-    } else if (status === 'INVALID') {
-      await ElMessageBox.confirm('确认停用该生效策略?', '停用确认', { type: 'warning' })
-    }
-    await changePolicyStatus(p.id, status)
-    ElMessage.success(status === 'EFFECTIVE' ? '已发布生效' : status === 'INVALID' ? '已停用' : '已送审,待复核发布')
-    loadPolicies()
-  })
-}
-
-// 版本管理(版本列表+新增版本+阈值明细)
-const versionMgr = reactive({
-  show: false,
-  policy: null as any,
-  versions: [] as any[],
-  addShow: false,
-  form: {} as any,
-  thrPanel: { show: false, versionCode: '', rows: [] as any[] }
-})
-async function openVersionMgr(p: any) {
-  versionMgr.policy = p
-  versionMgr.addShow = false
-  versionMgr.thrPanel.show = false
-  try {
-    versionMgr.versions = await listPolicyVersions(p.id)
-  } catch {
-    versionMgr.versions = []
-  }
-  versionMgr.show = true
-}
-async function openVersionThresholds(v: any) {
-  versionMgr.thrPanel.versionCode = v.versionCode || '—'
-  try {
-    versionMgr.thrPanel.rows = await listPolicyThresholds(v.id)
-  } catch {
-    versionMgr.thrPanel.rows = []
-  }
-  versionMgr.thrPanel.show = true
-}
-function openAddVersion() {
-  versionMgr.form = { versionCode: '', effectiveFrom: '', effectiveTo: '', checkFrequency: 'DAILY', dataToleranceDays: 7, thrRows: [emptyThreshold()] }
-  versionMgr.addShow = true
-}
-async function savePolicyVersion() {
-  const v = versionMgr.form
-  if (!v.versionCode?.trim() || !v.effectiveFrom) {
-    ElMessage.warning('版本号与生效时间必填')
-    return
-  }
-  const thresholds = v.thrRows
-    .filter((t: any) => t.thresholdValue !== null && t.thresholdValue !== '')
-    .map((t: any) => ({ ...t, thresholdValue: Number(t.thresholdValue) }))
-  await createPolicyVersion(versionMgr.policy.id, {
-    versionCode: v.versionCode, effectiveFrom: v.effectiveFrom, effectiveTo: v.effectiveTo || null,
-    checkFrequency: v.checkFrequency,
-    dataToleranceDays: v.dataToleranceDays === '' || v.dataToleranceDays == null ? null : Number(v.dataToleranceDays)
-  }, thresholds)
-  versionMgr.addShow = false
-  versionMgr.versions = await listPolicyVersions(versionMgr.policy.id)
-  ElMessage.success('版本已保存')
-}
-async function doVersionStatus(v: any, status: string) {
-  await withPending(`versionstatus:${v.id}`, async () => {
-    if (status === 'EFFECTIVE') {
-      await ElMessageBox.confirm('版本生效区间与其他生效版本不得重叠,后端将强校验。确认复核发布?', '复核发布确认', { type: 'warning' })
-    } else if (status === 'INVALID') {
-      await ElMessageBox.confirm('确认停用该版本?', '停用确认', { type: 'warning' })
-    }
-    await changeVersionStatus(v.id, status)
-    versionMgr.versions = await listPolicyVersions(versionMgr.policy.id)
-    ElMessage.success(status === 'EFFECTIVE' ? '版本已生效' : status === 'INVALID' ? '版本已停用' : '已送审,待复核发布')
-  })
-}
-
-// 策略试算(§11.7):选历史承诺计划,输出命中策略与预警判定
-const planOptions = ref<any[]>([])
-const simulatePlanId = ref('' as any)
-const simulateResult = ref<any>(null)
-async function loadPlanOptions() {
-  try {
-    // plans 接口按指标展开行,需按计划去重并转驼峰(§11.7 试算以 planId 为准)
-    const rows: any[] = await listCommitmentPlans()
-    const seen = new Set<number>()
-    planOptions.value = (rows || [])
-      .filter((r) => r.id && !seen.has(r.id) && seen.add(r.id))
-      .map((r) => ({ id: r.id, planNo: r.plan_no, customerNo: r.customer_no }))
-  } catch {
-    planOptions.value = []
-  }
-}
-async function runPolicySimulate() {
-  if (!simulatePlanId.value) return
-  try {
-    simulateResult.value = await simulatePolicy(Number(simulatePlanId.value))
-  } catch {
-    simulateResult.value = null
-  }
-}
 
 // ---------- 路由试算 ----------
 const trial = reactive({
@@ -2540,8 +2045,6 @@ onMounted(() => {
   loadProductCatalog()
   loadEnabledProducts()
   loadProductRoutes()
-  loadPolicies()
-  loadPlanOptions()
   loadChangeLogs()
   loadMetricDefs()
 })
@@ -2551,8 +2054,6 @@ onMounted(() => {
 .trial-form { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
 .trial-form .form-field { min-width: 160px; }
 .trial-result { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
-/* 试算查询行:条件 + 按钮 + 说明 */
-.simulate-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* 描述列表中占满整行的项(审批链路/计算说明) */
 .desc-item--full { grid-column: 1 / -1; }
 .chain__arrow { color: var(--color-text-light); align-self: center; }

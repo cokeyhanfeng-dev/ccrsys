@@ -131,10 +131,10 @@
               <b class="dist-row__num" :style="{ color: d.color }">{{ d.count }}</b>
             </div>
           </template>
-          <div class="empty-line" v-else>暂无承诺计划</div>
+          <div class="empty-line" v-else>暂无承诺跟踪</div>
 
           <template v-if="atRiskTop.length">
-            <div class="risk-title">有风险计划(前 5)</div>
+            <div class="risk-title">待关注(前 5)</div>
             <div class="risk-item" v-for="(r, i) in atRiskTop" :key="i" @click="router.push('/commitment')" tabindex="0" role="link" aria-label="前往贡献度跟踪" @keydown.enter="router.push('/commitment')">
               <div class="risk-item__main">
                 <b>{{ r.customer }}</b>
@@ -158,7 +158,7 @@ import { useUserStore } from '@/store/user'
 import { get } from '@/api/request'
 import { listApprovalTasks, pageApprovalHistory } from '@/api/approval'
 import { listVoteTodo, listPresidentTodo } from '@/api/vote'
-import { listCommitmentPlans } from '@/api/commitment'
+import { listCommitmentTracks } from '@/api/commitment'
 import {
   appStatusText, roleText, productName,
   businessTypeText, nodeLabel, actionText, metricName
@@ -214,7 +214,7 @@ const presidentTodos = ref<any[]>([]) // 行长待决策
 const doneRows = ref<any[]>([])       // 本人已办
 const historyTotal = ref(0)           // 历史 total(累计已办)
 const applications = ref<any[]>([])   // 客户经理本人申请 / admin 全量在途
-const planRows = ref<any[]>([])       // 承诺计划(按指标打平的行)
+const trackRows = ref<any[]>([])       // 承诺跟踪记录(v2:TRACKING/FINISHED_MET/FINISHED_UNMET)
 
 function fmtTime(t?: string) {
   return t ? String(t).replace('T', ' ').slice(0, 16) : '—'
@@ -332,74 +332,50 @@ function appBadge(status?: string) {
   return map[status || ''] || 'badge badge--neutral'
 }
 
-// ---------- 贡献度跟踪(复用 commitment 页的聚合口径) ----------
-const CURRENT_STATUS = ['PENDING', 'TRACKING', 'AT_RISK', 'DATA_PENDING']
+// ---------- 贡献度跟踪(v2:track 记录,TRACKING/FINISHED_MET/FINISHED_UNMET) ----------
+// trackRows 声明见上方「数据」区(§217),此处不重复声明
 
-const planList = computed(() => {
-  const map = new Map<number, any>()
-  for (const r of planRows.value) {
-    if (!map.has(r.id)) {
-      map.set(r.id, {
-        id: r.id, plan_no: r.plan_no, customer_no: r.customer_no, status: r.status, metrics: [] as any[]
-      })
-    }
-    if (r.metric_code) map.get(r.id)!.metrics.push(r)
-  }
-  const list = [...map.values()]
-  for (const p of list) {
-    const ratios = p.metrics.map((m: any) => m.achievement_ratio).filter((v: any) => v != null).map(Number)
-    p.avgRatio = ratios.length ? Number((ratios.reduce((a: number, b: number) => a + b, 0) / ratios.length).toFixed(1)) : null
-  }
-  return list
-})
-
-const planStats = computed(() => {
-  const plans = planList.value
+const trackStats = computed(() => {
+  const rows = trackRows.value
   return {
-    // PENDING(待首次评估)/TRACKING 均属"跟踪中",与 /commitment 页 CURRENT_STATUS 口径一致(否则 PENDING 计划在工作台四档分布中无处安放)
-    tracking: plans.filter((p) => p.status === 'TRACKING' || p.status === 'PENDING').length,
-    atRisk: plans.filter((p) => p.status === 'AT_RISK' || p.metrics.some((m: any) => m.result_status === 'AT_RISK')).length,
-    achieved: plans.filter((p) => p.status === 'ACHIEVED').length,
-    dataPending: plans.filter((p) => p.status === 'DATA_PENDING').length,
-    active: plans.filter((p) => CURRENT_STATUS.includes(p.status)).length
+    tracking: rows.filter((r) => r.status === 'TRACKING').length,
+    met: rows.filter((r) => r.status === 'FINISHED_MET').length,
+    unmet: rows.filter((r) => r.status === 'FINISHED_UNMET').length
   }
 })
 
-const planTotal = computed(() => planList.value.length)
+const planTotal = computed(() => trackRows.value.length)
 
-// 状态分布条:跟踪中/有风险/已达成/数据待齐
+// 状态分布条:跟踪中/已完成/未完成
 const distList = computed(() => {
-  const s = planStats.value
+  const s = trackStats.value
   const entries = [
     { label: '跟踪中', count: s.tracking, color: 'var(--color-primary)' },
-    { label: '有风险', count: s.atRisk, color: 'var(--color-warning)' },
-    { label: '已达成', count: s.achieved, color: 'var(--color-success)' },
-    { label: '数据待齐', count: s.dataPending, color: 'var(--color-text-light)' }
+    { label: '已完成', count: s.met, color: 'var(--color-success)' },
+    { label: '未完成', count: s.unmet, color: 'var(--color-danger)' }
   ]
   const max = Math.max(...entries.map((e) => e.count), 1)
   return entries.map((e) => ({ ...e, pct: Math.max(Math.round((e.count / max) * 100), e.count ? 6 : 0) }))
 })
 
-// 有风险计划前 5 条(客户/指标/达成率)
+// 待关注前 5 条(未完成优先,其次跟踪中实时达成率升序;达成率 null 视为暂无数据排最后)
 const atRiskTop = computed(() => {
   const rows: any[] = []
-  for (const p of planList.value) {
+  const ratioOf = (r: any) => {
+    const ratio = r.status === 'TRACKING' ? r.ratio : r.finalRatio
+    return ratio == null ? Number.POSITIVE_INFINITY : Number(ratio)
+  }
+  const unmet = trackRows.value.filter((r) => r.status === 'FINISHED_UNMET')
+  const tracking = trackRows.value.filter((r) => r.status === 'TRACKING')
+      .sort((a, b) => ratioOf(a) - ratioOf(b))
+  for (const r of [...unmet, ...tracking]) {
     if (rows.length >= 5) break
-    const riskMetrics = p.metrics.filter((m: any) => m.result_status === 'AT_RISK')
-    if (riskMetrics.length) {
-      const m = riskMetrics[0]
-      rows.push({
-        customer: p.customer_no || '(集团)',
-        metric: `${metricName(m.metric_code)}${riskMetrics.length > 1 ? ` 等 ${riskMetrics.length} 项` : ''}`,
-        ratio: m.achievement_ratio != null ? `${m.achievement_ratio}%` : '暂无数据'
-      })
-    } else if (p.status === 'AT_RISK') {
-      rows.push({
-        customer: p.customer_no || '(集团)',
-        metric: `${p.metrics.length} 项指标`,
-        ratio: p.avgRatio != null ? `${p.avgRatio}%` : '暂无数据'
-      })
-    }
+    const ratio = r.status === 'TRACKING' ? r.ratio : r.finalRatio
+    rows.push({
+      customer: r.customerName || r.memberCustomerNo || r.customerNo || '(未知)',
+      metric: `${metricName(r.metricCode)}${r.status === 'FINISHED_UNMET' ? '(未完成)' : ''}`,
+      ratio: ratio != null ? `${(Number(ratio) * 100).toFixed(1)}%` : '暂无数据'
+    })
   }
   return rows
 })
@@ -413,11 +389,11 @@ const doneToday = computed(
 // 审批中=复合多状态(与历史申请页筛选/后端 status IN 口径一致;§2026-08-26 统计卡点击跳转历史并自动筛选)
 const IN_PROGRESS_STATUS = 'ROUTING,SUBMITTED,SUBMITTING,APPROVED_LEVEL,PROCESSING,VOTING,COMMITTEE_PASS,PRESIDENT_DECISION'
 const stats = computed(() => {
-  const s = planStats.value
+  const s = trackStats.value
   const trackCard = {
     icon: 'Timer', label: '贡献度跟踪', value: s.tracking,
     cls: 'stat-card__num--warning', to: '/commitment',
-    sub: s.atRisk ? `有风险 ${s.atRisk} 项` : '暂无风险计划', subDanger: s.atRisk > 0
+    sub: s.unmet ? `到期未完成 ${s.unmet} 项` : '暂无到期未完成', subDanger: s.unmet > 0
   }
   const todayCard = {
     icon: 'CircleCheck', label: '今日已办', value: doneToday.value,
@@ -439,8 +415,8 @@ const stats = computed(() => {
   if (r === 'admin' || r === 'auditor') {
     return [
       { icon: 'Document', label: '在途申请', value: inProgressCount.value, cls: 'stat-card__num--primary', to: `/history?status=${IN_PROGRESS_STATUS}`, sub: '全行流转中的申请', subDanger: false },
-      { icon: 'Timer', label: '跟踪中计划', value: s.tracking, cls: 'stat-card__num--primary', to: '/commitment', sub: '生效跟踪中的承诺计划', subDanger: false },
-      { icon: 'Warning', label: '有风险计划', value: s.atRisk, cls: s.atRisk ? 'stat-card__num--danger' : '', to: '/commitment', sub: '计划或指标评估有风险', subDanger: s.atRisk > 0 },
+      { icon: 'Timer', label: '跟踪中承诺', value: s.tracking, cls: 'stat-card__num--primary', to: '/commitment', sub: '跟踪中的承诺指标', subDanger: false },
+      { icon: 'Warning', label: '到期未完成', value: s.unmet, cls: s.unmet ? 'stat-card__num--danger' : '', to: '/commitment', sub: '承诺到期未达成', subDanger: s.unmet > 0 },
       todayCard
     ]
   }
@@ -466,7 +442,7 @@ async function safe(fn: () => Promise<void>) {
 async function load() {
   const r = role.value
   const jobs: Promise<void>[] = [
-    safe(async () => { planRows.value = (await listCommitmentPlans()) || [] })
+    safe(async () => { trackRows.value = (await listCommitmentTracks()) || [] })
   ]
   if (r === 'customer_manager' || r === 'admin' || r === 'auditor') {
     jobs.push(safe(async () => { applications.value = (await get<any[]>('/ccr/applications')) || [] }))

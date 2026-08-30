@@ -44,6 +44,9 @@ public class ApplicationCommitmentRead {
     /** 成员客户号(成员级指标) */
     private String memberCustomerNo;
 
+    /** 承诺截止日期(ccr_application_commitment.end_date,v2 承诺跟踪唯一时间基准) */
+    private java.time.LocalDate endDate;
+
     /** 逻辑删除:0 有效/1 已删(申请版本更新时旧指标逻辑删除,查询须过滤) */
     private String delFlag;
 }

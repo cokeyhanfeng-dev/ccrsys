@@ -9,8 +9,6 @@ import com.ccr.admin.system.controller.FlowConfigController;
 import com.ccr.admin.system.controller.ProductConfigController;
 import com.ccr.admin.system.controller.RunLogController;
 import com.ccr.admin.system.controller.RunLogFileController;
-import com.ccr.commitment.controller.CommitmentController;
-import com.ccr.commitment.controller.TrackingPolicyController;
 import com.ccr.message.controller.NotificationLogController;
 import com.ccr.message.controller.NotificationRuleController;
 import com.ccr.resolution.controller.ResolutionController;
@@ -63,9 +61,6 @@ class SensitiveEndpointAuthorizationTest {
     void configurationMaintenanceAndReview_areSeparatedByRole() {
         assertRoles(method(RuleController.class, "createSet"), Set.of("admin"));
         assertRoles(method(RuleController.class, "publishSet"), Set.of("admin", "config_reviewer"));
-        assertRoles(method(TrackingPolicyController.class, "create"), Set.of("admin"));
-        assertRoles(method(TrackingPolicyController.class, "changePolicyStatus"),
-                Set.of("admin", "config_reviewer"));
         assertRoles(method(NotificationRuleController.class, "create"), Set.of("admin"));
         assertRoles(method(NotificationRuleController.class, "changeStatus"),
                 Set.of("admin", "config_reviewer"));
@@ -81,8 +76,6 @@ class SensitiveEndpointAuthorizationTest {
     void manualSideEffectEndpoints_requireAdmin() {
         assertRoles(method(NotificationLogController.class, "send"), Set.of("admin"));
         assertRoles(method(NotificationLogController.class, "process"), Set.of("admin"));
-        assertRoles(method(CommitmentController.class, "createPlan"), Set.of("admin"));
-        assertRoles(method(CommitmentController.class, "evaluatePlan"), Set.of("admin"));
     }
 
     private Method method(Class<?> type, String name) {

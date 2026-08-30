@@ -65,6 +65,7 @@ export interface DepositItemInput {
 export interface CommitmentInput {
   pricingItemNo?: string
   metricCode: string
+  /** 目标类型(v2 收敛):BALANCE 余额 / COUNT 笔数 / RATIO 比例;旧值 TARGET_BALANCE 映射 BALANCE,INCREMENT/CUMULATIVE 不生成跟踪 */
   targetType: string
   baselineValue?: number | string
   targetValue: number | string

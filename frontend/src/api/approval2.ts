@@ -17,13 +17,3 @@ export function listRoundOpinions<T = any[]>(roundId: number | string): Promise<
 export function listProductLimits<T = any[]>(status?: string): Promise<T> {
   return get<T>('/ccr/products/rate-limits', status ? { status } : {})
 }
-
-/** 承诺计划详情(指标完成进度+评估历史) */
-export function getCommitmentPlanDetail<T = any>(planId: number | string): Promise<T> {
-  return get<T>(`/ccr/commitments/plans/${planId}`)
-}
-
-/** 承诺月报(§12.11):month=yyyy-MM,orgId 可选(缺省按登录人机构) */
-export function getCommitmentMonthlyReport<T = any>(month: string, orgId?: number | string): Promise<T> {
-  return get<T>('/ccr/commitments/monthly-report', orgId ? { month, orgId } : { month })
-}

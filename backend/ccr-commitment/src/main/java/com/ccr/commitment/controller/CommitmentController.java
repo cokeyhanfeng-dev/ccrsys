@@ -1,434 +1,101 @@
 package com.ccr.commitment.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
-import cn.dev33.satoken.annotation.SaMode;
-import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.util.StrUtil;
 import com.ccr.common.core.domain.R;
-import com.ccr.common.core.util.RelatedCustomerResolver;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
-import com.ccr.commitment.domain.CcrCommitmentMemberAlloc;
-import com.ccr.commitment.domain.CcrCommitmentMetric;
-import com.ccr.commitment.domain.CcrCommitmentPlan;
-import com.ccr.commitment.domain.CcrTrackingEvaluation;
-import com.ccr.commitment.service.CommitmentQueryService;
-import com.ccr.commitment.service.CommitmentService;
+import com.ccr.commitment.service.CommitmentTrackService;
 import jakarta.annotation.Resource;
-import lombok.Data;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-/** 创建计划请求 DTO(避免 Map 强转问题) */
-@Data
-class CreatePlanReq {
-    private CcrCommitmentPlan plan;
-    private List<CcrCommitmentMetric> metrics;
-    /** 集团成员分配(GROUP+FIXED_ALLOCATION 必填,metricCode 关联指标) */
-    private List<CcrCommitmentMemberAlloc> memberAllocs;
-}
 
 /**
- * 承诺跟踪接口(§11)
+ * 承诺跟踪接口(v2 简化,docs/28):一张跟踪表三种读法(实时完成度/惰性结算/机构达成率)。
+ * 旧计划/评估/策略/月报端点已随旧体系停用删除;机构达成率保留沿用的 GET /ccr/commitments/org-achievement,
+ * 换为聚合终态行(先惰性结算,met_rate/avg_ratio)。
  */
 @RestController
 @RequestMapping("/ccr/commitments")
 public class CommitmentController {
 
-    /** 承诺列表随行返回的申请简要信息 SELECT 片段(承诺跟踪页展示"跟着哪个申请") */
-    private static final String APP_SUMMARY_SELECT = """
-            a.business_type, a.status AS application_status,
-            COALESCE(cc.cust_name, ci.cust_nm, gg.group_name) AS customer_name,
-            (SELECT SUM(pi2.pricing_amount) FROM ccr_pricing_item pi2 WHERE pi2.application_id = a.id) AS application_amount,
-            pi.requested_rate, pi.final_rate,
-            """;
-
-    /** 申请摘要 JOIN 片段(数仓客户主数据/集团快照按客户自身最新批次取名称:集团走 group_no、单户走 customer_no;不可用全局 MAX(data_dt),否则非最新批客户匹配不到) */
-    private static final String APP_SUMMARY_JOIN = """
-            LEFT JOIN caps_corp_cust_basic_info cc
-                   ON cc.cust_no = a.customer_no AND cc.data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info WHERE cust_no = a.customer_no)
-            LEFT JOIN caps_indv_cust_basic_info ci
-                   ON ci.cust_no = a.customer_no AND ci.data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info WHERE cust_no = a.customer_no)
-            LEFT JOIN dw_customer_group_snapshot gg
-                   ON gg.group_no = a.group_no AND gg.data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = a.group_no)
-            """;
-
     @Resource
-    private CommitmentService commitmentService;
-
-    @Resource
-    private CommitmentQueryService commitmentQueryService;
+    private CommitmentTrackService commitmentTrackService;
 
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 计划详情(§11.8:计划+指标+最新评估明细;数据权限同列表) */
-    @GetMapping("/plans/{planId}")
-    public R<Map<String, Object>> planDetail(@PathVariable Long planId) {
-        return R.ok(commitmentQueryService.planDetail(planId));
+    /** 贡献度跟踪列表(v2:平铺 track 记录,TRACKING 实时算完成度/终态读定案;读前惰性结算;数据权限在 trackService 内) */
+    @GetMapping("/tracks")
+    public R<List<Map<String, Object>>> listTracks(@RequestParam(required = false) Long orgId,
+                                                   @RequestParam(required = false) Long managerId,
+                                                   @RequestParam(required = false) String customerNo,
+                                                   @RequestParam(required = false) String status) {
+        return R.ok(commitmentTrackService.listTracks(orgId, managerId, customerNo, status));
     }
 
-    /** 月报查询(§11.8:按月按机构聚合评估结果——计划数/达成率/风险分布;数据权限同列表) */
-    @GetMapping("/monthly-report")
-    public R<Map<String, Object>> monthlyReport(@RequestParam(required = false) String month,
-                                                @RequestParam(required = false) Long orgId) {
-        return R.ok(commitmentQueryService.monthlyReport(month, orgId));
+    /** 单条承诺跟踪详情(承诺要素 + 实时/定案信息 + 所属申请摘要) */
+    @GetMapping("/tracks/{trackId}")
+    public R<Map<String, Object>> trackDetail(@PathVariable Long trackId) {
+        return R.ok(commitmentTrackService.trackDetail(trackId));
     }
 
-    /** 客户所属机构达成率(§11.8 D19:dw_org_performance 最新批次+本系统评估数据组装;数据权限同列表) */
+    /** 客户所属机构达成率(§11.8 口径收敛:客户号→开户机构→聚合该机构终态行;数据权限在 trackService 内) */
     @GetMapping("/org-achievement")
     public R<Map<String, Object>> orgAchievement(@RequestParam String customerNo) {
-        return R.ok(commitmentQueryService.orgAchievement(customerNo));
-    }
-
-    /** 审批通过后生成承诺计划 */
-    @SaCheckRole("admin")
-    @PostMapping("/plans")
-    public R<CcrCommitmentPlan> createPlan(@RequestBody CreatePlanReq req) {
-        CcrCommitmentPlan plan = req.getPlan();
-        if (plan.getScopeType() == null) {
-            plan.setScopeType("CORPORATE_SINGLE");
+        Long orgId = resolveOrgId(customerNo);
+        if (orgId == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "客户未登记开户机构: " + customerNo);
         }
-        return R.ok(commitmentService.createPlan(plan, req.getMetrics(), req.getMemberAllocs()));
+        List<Map<String, Object>> rows = commitmentTrackService.orgAchievement(orgId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("customerNo", customerNo);
+        result.put("orgId", orgId);
+        result.put("orgName", orgName(orgId));
+        result.put("stats", rows.isEmpty() ? null : rows.get(0));
+        result.put("list", rows);
+        return R.ok(result);
     }
 
-    /** 人工状态变迁(TERMINATED/SUPERSEDED) */
-    @SaCheckRole("admin")
-    @PostMapping("/plans/{planId}/status")
-    public R<CcrCommitmentPlan> changeStatus(@PathVariable Long planId, @RequestBody Map<String, Object> body) {
-        return R.ok(commitmentService.changeStatus(
-                planId,
-                body.get("targetStatus") == null ? null : body.get("targetStatus").toString(),
-                body.get("remark") == null ? null : body.get("remark").toString()));
-    }
-
-    /** 单指标履约计算 */
-    @SaCheckRole("admin")
-    @PostMapping("/evaluate")
-    public R<CcrTrackingEvaluation> evaluate(@RequestBody Map<String, Object> body) {
-        return R.ok(commitmentService.evaluate(
-                Long.valueOf(body.get("metricId").toString()),
-                LocalDate.parse(body.get("dataDt").toString()),
-                new BigDecimal(body.get("actualValue").toString()),
-                body.get("sourceBatch") == null ? "MOCK-BATCH" : body.get("sourceBatch").toString()));
-    }
-
-    /** 按计划批量履约(定时任务入口) */
-    @SaCheckRole("admin")
-    @PostMapping("/plans/{planId}/evaluate")
-    public R<List<CcrTrackingEvaluation>> evaluatePlan(@PathVariable Long planId, @RequestBody Map<String, Object> body) {
-        return R.ok(commitmentService.evaluatePlan(
-                planId,
-                LocalDate.parse(body.get("dataDt").toString()),
-                body.get("sourceBatch") == null ? "MOCK-BATCH" : body.get("sourceBatch").toString()));
-    }
-
-    /** 保存指标跟踪描述(§6.4/§10.3.15:承诺类型"其它"手工跟踪留痕,track_desc 覆盖式更新) */
-    @SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
-    @PostMapping("/metrics/{metricId}/track")
-    public R<CcrCommitmentMetric> saveTrackDesc(@PathVariable Long metricId, @RequestBody Map<String, Object> body) {
-        if (!StpUtil.hasRole("admin")) {
-            Long owned = jdbcTemplate.queryForObject("""
-                    SELECT COUNT(*)
-                    FROM ccr_commitment_metric cm
-                    JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id AND cp.del_flag = '0'
-                    JOIN ccr_resolution r ON r.id = cp.resolution_id AND r.del_flag = '0'
-                    JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id AND pi.del_flag = '0'
-                    JOIN ccr_application a ON a.id = pi.application_id AND a.del_flag = '0'
-                    WHERE cm.id = ? AND cm.del_flag = '0' AND a.applicant_user_id = ?
-                    """, Long.class, metricId, StpUtil.getLoginIdAsLong());
-            if (owned == null || owned == 0) {
-                throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "无权维护该承诺指标");
+    /** 客户所属机构:数仓对公/对私主数据最新批次开户机构号 → ccr_sys_dept(org_code 匹配) */
+    private Long resolveOrgId(String customerNo) {
+        String orgCode = null;
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT openact_org_no FROM caps_corp_cust_basic_info "
+                        + "WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info WHERE cust_no = ?) LIMIT 1",
+                customerNo, customerNo);
+        if (!corp.isEmpty() && corp.get(0).get("openact_org_no") != null) {
+            orgCode = corp.get(0).get("openact_org_no").toString();
+        } else {
+            List<Map<String, Object>> indv = jdbcTemplate.queryForList(
+                    "SELECT opnact_org_no FROM caps_indv_cust_basic_info "
+                            + "WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info WHERE cust_no = ?) LIMIT 1",
+                    customerNo, customerNo);
+            if (!indv.isEmpty() && indv.get(0).get("opnact_org_no") != null) {
+                orgCode = indv.get(0).get("opnact_org_no").toString();
             }
         }
-        String trackDesc = body.get("trackDesc") == null ? null : body.get("trackDesc").toString();
-        return R.ok(commitmentService.saveTrackDesc(metricId, trackDesc));
-    }
-
-    /**
-     * 贡献度跟踪列表(数据权限,§5.4:身份/角色一律取登录态+用户表,不接受传参防越权):
-     * 6人小组/总行行长/admin/审计 → 全部;客户经理 → 本人申请;普通审批人 → 本人审批过的客户
-     */
-    @GetMapping("/plans")
-    public R<List<Map<String, Object>>> listPlans() {
-        Long operatorId = StpUtil.getLoginIdAsLong();
-        List<Map<String, Object>> users = jdbcTemplate.queryForList(
-                "SELECT role_code roleCode FROM ccr_sys_user WHERE id = ? AND del_flag = '0'", operatorId);
-        if (users.isEmpty()) {
-            throw new ServiceException(ErrorCode.UNAUTHORIZED.getCode(), "登录用户不存在");
-        }
-        String roleCode = users.get(0).get("roleCode") == null ? null : users.get(0).get("roleCode").toString();
-        String sql;
-        if ("committee_member".equals(roleCode) || "president".equals(roleCode)
-                || "admin".equals(roleCode) || "auditor".equals(roleCode)) {
-            sql = """
-                    SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           a.id application_id, a.application_no, a.submit_time,
-                           """ + APP_SUMMARY_SELECT + """
-                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
-                           te.actual_value, te.achievement_ratio, te.result_status
-                    FROM ccr_commitment_plan cp
-                    JOIN ccr_resolution r ON r.id = cp.resolution_id
-                    JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                    JOIN ccr_application a ON a.id = pi.application_id
-                    """ + APP_SUMMARY_JOIN + """
-                    LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
-                    LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
-                              ON t.metric_id = cm.id
-                    LEFT JOIN ccr_tracking_evaluation te ON te.metric_id = cm.id AND te.data_dt = t.max_dt
-                    WHERE cp.del_flag = '0'
-                    ORDER BY cp.create_time DESC
-                    """;
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
-            enrichRelatedSummary(rows);
-            return R.ok(rows);
-        }
-        if ("customer_manager".equals(roleCode)) {
-            sql = """
-                    SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                           a.id application_id, a.application_no, a.submit_time,
-                           """ + APP_SUMMARY_SELECT + """
-                           cm.id metric_id, cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value, cm.track_desc,
-                           te.actual_value, te.achievement_ratio, te.result_status
-                    FROM ccr_commitment_plan cp
-                    JOIN ccr_resolution r ON r.id = cp.resolution_id
-                    JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                    JOIN ccr_application a ON a.id = pi.application_id
-                    """ + APP_SUMMARY_JOIN + """
-                    LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
-                    LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
-                              ON t.metric_id = cm.id
-                    LEFT JOIN ccr_tracking_evaluation te ON te.metric_id = cm.id AND te.data_dt = t.max_dt
-                    WHERE cp.del_flag = '0' AND a.applicant_user_id = ?
-                    ORDER BY cp.create_time DESC
-                    """;
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, operatorId);
-            enrichRelatedSummary(rows);
-            return R.ok(rows);
-        }
-        // 普通审批人:本人审批过的申请的客户
-        sql = """
-                SELECT cp.id, cp.plan_no, cp.scope_type, cp.customer_no, cp.status,
-                       a.id application_id, a.application_no, a.submit_time,
-                       """ + APP_SUMMARY_SELECT + """
-                       cm.metric_code, cm.metric_name, cm.target_value, cm.target_type, cm.baseline_value,
-                       te.actual_value, te.achievement_ratio, te.result_status
-                FROM ccr_commitment_plan cp
-                JOIN ccr_resolution r ON r.id = cp.resolution_id
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                JOIN ccr_application a ON a.id = pi.application_id
-                """ + APP_SUMMARY_JOIN + """
-                LEFT JOIN ccr_commitment_metric cm ON cm.plan_id = cp.id
-                LEFT JOIN (SELECT metric_id, MAX(data_dt) max_dt FROM ccr_tracking_evaluation GROUP BY metric_id) t
-                          ON t.metric_id = cm.id
-                LEFT JOIN ccr_tracking_evaluation te ON te.metric_id = cm.id AND te.data_dt = t.max_dt
-                WHERE cp.del_flag = '0'
-                  AND pi.application_id IN (
-                      SELECT pi2.application_id FROM ccr_approval_action aa
-                      JOIN ccr_pricing_item pi2 ON pi2.id = aa.pricing_item_id
-                      WHERE aa.operator_id = ? AND aa.del_flag = '0'
-                  )
-                ORDER BY cp.create_time DESC
-                """;
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, operatorId);
-        enrichRelatedSummary(rows);
-        return R.ok(rows);
-    }
-
-    // ---------- 关联人实绩并入(展示层聚合,同编码才并;§11.8 客户概览用) ----------
-
-    /**
-     * 列表行批查拼装:主客户 + 有效关联人同码数仓实绩合计。
-     * 每行新增 related_actual_sum / total_actual / total_ratio(无关联人/无同码数据时置 null)。
-     */
-    private void enrichRelatedSummary(List<Map<String, Object>> rows) {
-        if (rows.isEmpty()) {
-            return;
-        }
-        Set<String> applicationIds = new LinkedHashSet<>();
-        for (Map<String, Object> row : rows) {
-            String applicationId = toStr(row.get("application_id"));
-            if (!isBlank(applicationId)) {
-                applicationIds.add(applicationId);
-            }
-        }
-        if (applicationIds.isEmpty()) {
-            return;
-        }
-        Map<String, List<Map<String, Object>>> relationsByApplication = validRelations(applicationIds);
-        if (relationsByApplication.isEmpty()) {
-            return;
-        }
-        Set<String> relatedCustomers = new LinkedHashSet<>();
-        for (List<Map<String, Object>> rels : relationsByApplication.values()) {
-            for (Map<String, Object> rel : rels) {
-                String relNo = toStr(rel.get("relatedCustomerNo"));
-                if (!isBlank(relNo)) {
-                    relatedCustomers.add(relNo);
-                }
-            }
-        }
-        Set<String> metricCodes = new LinkedHashSet<>();
-        for (Map<String, Object> row : rows) {
-            String code = toStr(row.get("metric_code"));
-            if (!isBlank(code)) {
-                metricCodes.add(code);
-            }
-        }
-        Map<String, BigDecimal> values = warehouseLatestValues(relatedCustomers, metricCodes);
-        for (Map<String, Object> row : rows) {
-            String customerNo = toStr(row.get("customer_no"));
-            String metricCode = toStr(row.get("metric_code"));
-            BigDecimal relatedSum = BigDecimal.ZERO;
-            boolean hasRelated = false;
-            List<Map<String, Object>> rels = relationsByApplication.get(toStr(row.get("application_id")));
-            if (rels != null) {
-                // 同一关联人多种关系只并入一次实绩
-                Set<String> seenRelated = new LinkedHashSet<>();
-                for (Map<String, Object> rel : rels) {
-                    String relNo = toStr(rel.get("relatedCustomerNo"));
-                    if (isBlank(relNo) || !seenRelated.add(relNo)) {
-                        continue;
-                    }
-                    BigDecimal value = values.get(keyOf(relNo, metricCode));
-                    if (value != null) {
-                        relatedSum = relatedSum.add(value);
-                        hasRelated = true;
-                    }
-                }
-            }
-            BigDecimal totalActual = null;
-            BigDecimal totalRatio = null;
-            if (hasRelated) {
-                BigDecimal mainActual = row.get("actual_value") == null ? BigDecimal.ZERO
-                        : new BigDecimal(row.get("actual_value").toString());
-                totalActual = mainActual.add(relatedSum);
-                totalRatio = ratio(toStr(row.get("target_type")),
-                        toBigDecimal(row.get("target_value")),
-                        toBigDecimal(row.get("baseline_value")),
-                        totalActual);
-            }
-            row.put("related_actual_sum", hasRelated ? relatedSum : null);
-            row.put("total_actual", totalActual);
-            row.put("total_ratio", totalRatio);
-        }
-    }
-
-    /** 批查申请关联人(前台录入,ccr_application_related_person;增量021,数仓关系不再参与);按 application_id 分组 */
-    private Map<String, List<Map<String, Object>>> validRelations(Set<String> applicationIds) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT application_id applicationId, related_customer_no relatedCustomerNo, relation_type relationType, cert_type certType, cert_no certNo "
-                        + "FROM ccr_application_related_person WHERE application_id IN (" + inClause(applicationIds) + ") AND del_flag = '0'");
-        // 空客户号关联人按证件号兜底反查数仓主数据补全
-        RelatedCustomerResolver.resolveBatch(jdbcTemplate, rows);
-        Map<String, List<Map<String, Object>>> byApplication = new HashMap<>();
-        for (Map<String, Object> row : rows) {
-            String applicationId = toStr(row.get("applicationId"));
-            if (!isBlank(applicationId)) {
-                byApplication.computeIfAbsent(applicationId, k -> new ArrayList<>()).add(row);
-            }
-        }
-        return byApplication;
-    }
-
-    /** 批查关联人数仓值:每组 (cust_no, metric_code) 取最新批次,折算贡献度行优先;同编码才并 */
-    private Map<String, BigDecimal> warehouseLatestValues(Set<String> customers, Set<String> metricCodes) {
-        Map<String, BigDecimal> result = new HashMap<>();
-        if (customers.isEmpty() || metricCodes.isEmpty()) {
-            return result;
-        }
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT cust_no custNo, metric_code metricCode, metric_value metricValue, value_type valueType, data_dt "
-                        + "FROM dw_contribution_metric WHERE cust_no IN (" + inClause(customers) + ") "
-                        + "AND metric_code IN (" + inClause(metricCodes) + ")");
-        // 每组 (cust_no, metric_code):折算贡献度行优先,否则取最新批次
-        Map<String, List<Map<String, Object>>> byKey = new HashMap<>();
-        for (Map<String, Object> row : rows) {
-            String key = keyOf(toStr(row.get("custNo")), toStr(row.get("metricCode")));
-            byKey.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
-        }
-        for (Map.Entry<String, List<Map<String, Object>>> e : byKey.entrySet()) {
-            Map<String, Object> chosen = null;
-            for (Map<String, Object> row : e.getValue()) {
-                if ("CONTRIBUTION_AMOUNT".equals(toStr(row.get("valueType")))) {
-                    chosen = row;
-                    break;
-                }
-            }
-            if (chosen == null) {
-                String maxDt = null;
-                for (Map<String, Object> row : e.getValue()) {
-                    String dt = toStr(row.get("data_dt"));
-                    if (dt != null && (maxDt == null || dt.compareTo(maxDt) > 0)) {
-                        maxDt = dt;
-                    }
-                }
-                for (Map<String, Object> row : e.getValue()) {
-                    if (maxDt != null && maxDt.equals(toStr(row.get("data_dt")))) {
-                        chosen = row;
-                        break;
-                    }
-                }
-            }
-            if (chosen != null && chosen.get("metricValue") != null) {
-                result.put(e.getKey(), new BigDecimal(chosen.get("metricValue").toString()));
-            }
-        }
-        return result;
-    }
-
-    private static String toStr(Object value) {
-        return value == null ? null : value.toString();
-    }
-
-    private static BigDecimal toBigDecimal(Object value) {
-        return value == null ? null : new BigDecimal(value.toString());
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.isBlank();
-    }
-
-    private static String keyOf(String custNo, String metricCode) {
-        return custNo + "|" + metricCode;
-    }
-
-    /** IN 子句(单引号转义防注入;值来自数仓主键/字典码) */
-    private String inClause(Set<String> values) {
-        StringBuilder sb = new StringBuilder();
-        for (String v : values) {
-            if (sb.length() > 0) {
-                sb.append(",");
-            }
-            sb.append("'").append(v.replace("'", "''")).append("'");
-        }
-        return sb.toString();
-    }
-
-    /** 达成率三公式(与 CommitmentQueryServiceImpl 同口径;INCREMENT 用增量) */
-    private BigDecimal ratio(String targetType, BigDecimal target, BigDecimal baseline, BigDecimal actual) {
-        if (actual == null || target == null || target.compareTo(BigDecimal.ZERO) == 0) {
+        if (StrUtil.isBlank(orgCode)) {
             return null;
         }
-        BigDecimal base = baseline == null ? BigDecimal.ZERO : baseline;
-        return switch (targetType == null ? "" : targetType) {
-            case "INCREMENT" -> actual.subtract(base).divide(target, 6, RoundingMode.HALF_UP);
-            default -> actual.divide(target, 6, RoundingMode.HALF_UP);
-        };
+        List<Map<String, Object>> dept = jdbcTemplate.queryForList(
+                "SELECT id FROM ccr_sys_dept WHERE org_code = ? AND del_flag = '0' LIMIT 1", orgCode);
+        return dept.isEmpty() ? null : Long.valueOf(dept.get(0).get("id").toString());
+    }
+
+    private String orgName(Long orgId) {
+        if (orgId == null) {
+            return null;
+        }
+        List<Map<String, Object>> dept = jdbcTemplate.queryForList(
+                "SELECT dept_name FROM ccr_sys_dept WHERE id = ? AND del_flag = '0'", orgId);
+        return dept.isEmpty() ? null : dept.get(0).get("dept_name").toString();
     }
 }
