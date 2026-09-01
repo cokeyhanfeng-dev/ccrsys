@@ -246,7 +246,8 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
-      time: fmtTime(first.createTime), to: `/approval/${first.id}`, actionText: '去审批',
+      // 整单详情入口用申请 id(后端 /ccr/approval/{applicationId}/detail);待办项带 applicationId,勿传分项 id 否则 404
+      time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.id}`, actionText: '去审批',
       extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
   }
@@ -274,7 +275,8 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
-      time: fmtTime(first.createTime), to: `/approval/${first.pricingItemId}`, actionText: '去审批',
+      // 委员待办:同样用申请 id 进整单详情(分项 id 会导致 404)
+      time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.pricingItemId}`, actionText: '去审批',
       sub: `申请 ${first.applicationNo || '—'} · ${nodeLabel(first.currentNodeCode)}`,
       extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
     })
