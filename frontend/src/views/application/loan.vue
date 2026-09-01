@@ -2004,6 +2004,28 @@ function hasCustomerIdentity(): boolean {
   return form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode)
 }
 
+/** 授信总额(万元)数值:存量=所选协议/手工补录额度,新增=手工录入总授信(与 applyTotalCreditText 同口径,§2026-09-01) */
+function creditTotalAmount(): number {
+  const src = form.businessType === 'EXISTING'
+    ? (selectedAgreement.value?.creditAmount ?? form.creditInfo.creditAmount)
+    : form.totalCredit
+  const n = Number(src)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+/** 分项申请金额合计与授信总额勾稽(§2026-09-01):非集团新增+存量严格相等,不等则拦;集团沿用后端成员额度勾稽不在此拦 */
+function validateGuaranteeTotal(): string | null {
+  if (form.customerScope === 'GROUP') return null
+  const total = creditTotalAmount()
+  if (total <= 0) return '请先录入总授信额度(存量:选择授信协议;新增:手工录入总授信额度)'
+  const sum = guaranteesTotalAmount.value
+  if (Math.abs(sum - total) > 0.01) {
+    const rs = Math.round(sum * 100) / 100
+    const rt = Math.round(total * 100) / 100
+    return `分项申请金额合计 ${rs} 万元与授信总额 ${rt} 万元不一致,请调整分项金额(合计须等于授信总额)`
+  }
+  return null
+}
+
 function validateStep(s: number): string | null {
   if (s === 0) {
     if (form.customerScope === 'GROUP') {
@@ -2017,9 +2039,18 @@ function validateStep(s: number): string | null {
       return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
     }
   }
-  // s===1 关联人员:可空,不做强制校验(证件号必填/判重等全量校验在提交 onSubmit 统一拦截,§2026-08-26)
+  // s===1 关联人员:可空,证件号必填等全量校验在提交 onSubmit 统一拦截;但已占用(绑定其他客户/集团)的关联人阻断进入下一步(§2026-09-01)
+  if (s === 1) {
+    const occ = occupiedRelations(relations.value)
+    if (occ.length) {
+      return occ.map((o) => `关联人「${o.name}」${o.by},需删除或更换后才能进入下一步`).join(';')
+    }
+  }
   // s===2 他行融资:不做任何校验(§2026-08-26 用户要求;概要/明细可自由填写,不再强制对应一致)
   if (s === 3) {
+    // 分项金额勾稽(§2026-09-01):非集团分项申请金额合计须等于授信总额,不等不能进入下一步
+    const gErr = validateGuaranteeTotal()
+    if (gErr) return gErr
     for (let i = 0; i < form.guarantees.length; i++) {
       const g = form.guarantees[i]
       if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
@@ -2481,6 +2512,12 @@ async function onSubmit() {
   const occ = occupiedRelations(relations.value)
   if (occ.length) {
     ElMessage.error(`关联人员「${occ.map((o) => o.name).join('、')}」${occ[0].by},无法重复绑定,请核对后移除或修改`)
+    return
+  }
+  // 分项金额勾稽(§2026-09-01):非集团分项申请金额合计须等于授信总额,否则不容许提交
+  const gErr = validateGuaranteeTotal()
+  if (gErr) {
+    ElMessage.error(gErr)
     return
   }
   if (!(await ensureDraft()) || !draft.id) return
