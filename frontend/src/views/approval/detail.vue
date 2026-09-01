@@ -211,37 +211,53 @@
       </el-collapse>
     </div>
 
-    <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用;仅贷款场景,存款无授信) -->
-    <!-- 授信信息为审批关键数据,默认展开直接展示客户所有存量授信(2026-09-01 需求) -->
+    <!-- 6c. 授信信息(集团:集团综合授信 dw_group_credit_snapshot;单户:存量授信协议 dw_credit_agreement_snapshot。仅贷款场景,存款无授信) -->
+    <!-- 授信信息为审批关键数据,默认展开直接展示;集团申请 customer_no 为空,授信信息按集团号展示集团综合授信 -->
     <div class="card" v-if="isLoan">
-      <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
-      <template v-if="creditAgreements.length">
-        <div v-if="fold.credit" class="empty-line">授信协议共 {{ creditAgreements.length }} 笔,已折叠 —— <button class="btn btn--text" @click="fold.credit = false">展开 ▾</button></div>
-        <div v-show="!fold.credit">
-          <table class="table">
-            <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th><th>历史审批</th></tr></thead>
-            <tbody>
-              <tr v-for="(a, i) in creditAgreements" :key="i">
-                <td>
-                  {{ a.agreementNo || '—' }}
-                  <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
-                </td>
-                <td>{{ agreementTypeText(a.agreementType) }}</td>
-                <td>{{ currencyText(a.currency || 'CNY') }}</td>
-                <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
-                <td>{{ a.startDate || '—' }}</td>
-                <td>{{ a.endDate || '—' }}</td>
-                <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
-                <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
-                <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
-                <td><button class="btn btn--text" :disabled="!a.agreementNo" @click="openAgreementHistory(a.agreementNo)">历史审批</button></td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="empty-line"><button class="btn btn--text" @click="fold.credit = true">收起 ▲</button></div>
-        </div>
+      <div class="card__head"><span>授信信息</span><span class="badge badge--info">{{ isGroup ? '集团综合授信' : '存量授信' }}</span></div>
+      <template v-if="isGroup">
+        <template v-if="groupCredit.length">
+          <div class="desc-grid desc-grid--3">
+            <div><div class="desc-item__label">批复总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].approvedTotalAmount) }}</div></div>
+            <div><div class="desc-item__label">已分配额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].allocatedAmount) }}</div></div>
+            <div><div class="desc-item__label">已用额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].usedAmount) }}</div></div>
+            <div><div class="desc-item__label">可用额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].availableAmount) }}</div></div>
+            <div><div class="desc-item__label">授信开始日期</div><div class="desc-item__value">{{ groupCredit[0].creditStart || '—' }}</div></div>
+            <div><div class="desc-item__label">授信到期日期</div><div class="desc-item__value">{{ groupCredit[0].creditEnd || '—' }}</div></div>
+            <div><div class="desc-item__label">授信状态</div><div class="desc-item__value"><span :class="creditStatusBadge(groupCredit[0].creditStatus)">{{ creditStatusText(groupCredit[0].creditStatus) }}</span></div></div>
+          </div>
+        </template>
+        <div v-else class="empty-line">暂无集团综合授信数据</div>
       </template>
-      <div v-else class="empty-line">暂无授信协议数据</div>
+      <template v-else>
+        <template v-if="creditAgreements.length">
+          <div v-if="fold.credit" class="empty-line">授信协议共 {{ creditAgreements.length }} 笔,已折叠 —— <button class="btn btn--text" @click="fold.credit = false">展开 ▾</button></div>
+          <div v-show="!fold.credit">
+            <table class="table">
+              <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th><th>历史审批</th></tr></thead>
+              <tbody>
+                <tr v-for="(a, i) in creditAgreements" :key="i">
+                  <td>
+                    {{ a.agreementNo || '—' }}
+                    <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
+                  </td>
+                  <td>{{ agreementTypeText(a.agreementType) }}</td>
+                  <td>{{ currencyText(a.currency || 'CNY') }}</td>
+                  <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+                  <td>{{ a.startDate || '—' }}</td>
+                  <td>{{ a.endDate || '—' }}</td>
+                  <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
+                  <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
+                  <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
+                  <td><button class="btn btn--text" :disabled="!a.agreementNo" @click="openAgreementHistory(a.agreementNo)">历史审批</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="empty-line"><button class="btn btn--text" @click="fold.credit = true">收起 ▲</button></div>
+          </div>
+        </template>
+        <div v-else class="empty-line">暂无授信协议数据</div>
+      </template>
     </div>
 
     <!-- 6b. 申请材料附件(仅贷款场景;存款无申请材料附件概念) -->
@@ -952,6 +968,8 @@ const agreementNos = computed(() => {
 })
 // 集团贡献度(数仓 GROUP 口径 TOTAL)
 const groupContribution = ref<any>(null)
+// 集团综合授信(dw_group_credit_snapshot 按集团号,审批详情「授信信息」集团场景展示;单户场景为空)
+const groupCredit = ref<any[]>([])
 const attachments = ref<any[]>([])
 const resolutions = ref<any[]>([])
 const resolutionExecutions = ref<any[]>([])
@@ -1379,6 +1397,16 @@ function voteText(r: any): string {
   return r ? `赞成 ${r.approveCount ?? 0} 票 / 反对 ${r.rejectCount ?? 0} 票` : '—'
 }
 
+// 集团综合授信状态(dw_group_credit_snapshot.credit_status:EFFECTIVE有效/EXPIRED到期/FROZEN冻结,与单户协议码值不同)
+function creditStatusText(code?: string): string {
+  const map: Record<string, string> = { EFFECTIVE: '有效', EXPIRED: '已到期', FROZEN: '冻结' }
+  return code ? (map[code] || code) : '—'
+}
+function creditStatusBadge(code?: string): string {
+  const map: Record<string, string> = { EFFECTIVE: 'badge badge--success', EXPIRED: 'badge badge--warning', FROZEN: 'badge badge--danger' }
+  return map[code || ''] || 'badge badge--neutral'
+}
+
 async function load() {
   loading.value = true
   loadError.value = false
@@ -1408,6 +1436,7 @@ async function load() {
     relatedPersons.value = data.relatedPersons || []
     rawCreditAgreements.value = data.creditAgreements || []
     groupContribution.value = data.groupContribution || null
+    groupCredit.value = data.groupCredit || []
     attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []
     resolutionExecutions.value = data.resolutionExecutions || []
