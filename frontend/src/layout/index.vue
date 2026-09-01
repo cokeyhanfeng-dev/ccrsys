@@ -321,10 +321,11 @@ function onCommand(cmd: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 左右 padding 与菜单项 margin(10px)对齐,logo 宽度与菜单栏保持一致 */
-  padding: 14px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, .08);
-  margin-bottom: 8px;
+  /* 白底胶囊承托 logo(深色侧栏上深色文字不可见,2026-08-29 修复) */
+  background: #fff;
+  border-radius: 8px;
+  margin: 12px 10px 8px;
+  padding: 10px;
 }
 .brand-logo-img {
   flex: none;
@@ -332,17 +333,20 @@ function onCommand(cmd: string) {
   width: 100%;
   height: auto;
 }
+/* 顶栏:AntD Pro 扁平白头条——通栏、吸顶、无圆角卡片感(负 margin 抵消 app-main 内边距) */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  height: 60px;
   padding: 0 20px;
-  margin-bottom: 20px;
+  margin: -16px -20px 20px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--color-border-light);
+  box-shadow: 0 1px 4px rgba(0, 21, 41, .06);
+  position: sticky;
+  top: 0;
+  z-index: 9;
 }
 .topbar__title {
   font-size: 15px;
@@ -351,19 +355,14 @@ function onCommand(cmd: string) {
   display: flex;
   align-items: center;
 }
-.topbar__title::before {
-  content: "";
-  display: inline-block;
-  width: 4px;
-  height: 15px;
-  margin-right: 8px;
-  border-radius: 2px;
-  background: var(--grad-primary);
-}
 .topbar__actions {
   display: inline-flex;
   align-items: center;
   gap: 18px;
+}
+/* 移动端:app-main 内边距变小,负 margin 同步(与 design-system 移动端 padding 对齐) */
+@media (max-width: 767px) {
+  .topbar { margin: -12px -16px 12px; }
 }
 .topbar__divider {
   width: 1px;

@@ -1,35 +1,35 @@
 // 全局样式:基础 token(--color-*/--space-*/--radius-* 等)单一来源见 design-system.css
-// (品牌蓝 #1890ff)。本文件负责 Element Plus 主题对齐、组件质感精修、滚动条与页面过渡。
+// (品牌蓝 #1677ff,Ant Design 5 校准 2026-08-28)。本文件负责 Element Plus 主题对齐、组件质感精修、滚动条与页面过渡。
 
 :root {
-  // Element Plus 主题变量对齐品牌蓝(P3 对齐 dist:主色 #1890ff/hover 亮/active 深)
-  --el-color-primary: #1890ff;
-  --el-color-primary-dark-2: #1682e6;
-  --el-color-primary-light-3: #69c0ff;
-  --el-color-primary-light-5: #92b1f5;
-  --el-color-primary-light-7: #bed0f9;
-  --el-color-primary-light-8: #d3e0fb;
-  --el-color-primary-light-9: #e9effd;
+  // Element Plus 主题变量对齐 Ant Design 5 色板(#1677ff 系)
+  --el-color-primary: #1677ff;
+  --el-color-primary-dark-2: #0958d9;
+  --el-color-primary-light-3: #69b1ff;
+  --el-color-primary-light-5: #91caff;
+  --el-color-primary-light-7: #bae0ff;
+  --el-color-primary-light-8: #d6e9ff;
+  --el-color-primary-light-9: #e6f4ff;
   --el-color-success: #10b981;
   --el-color-warning: #f59e0b;
   --el-color-danger: #ef4444;
   --el-color-error: #ef4444;
-  --el-border-radius-base: 4px;
+  --el-border-radius-base: 6px;
   --el-border-radius-small: 4px;
   --el-border-radius-round: 999px;
-  // P3 对齐 dist:默认控件 40px 高;紧凑版降至 36px(表单/查询栏整体变矮)
-  --el-component-size: 36px;
+  // AntD 对齐:默认控件 32px 高(AntD 标准密度)
+  --el-component-size: 32px;
   --el-font-size-base: 14px;
-  --el-text-color-primary: #1f2937;
-  --el-text-color-regular: #374151;
-  --el-border-color: #e5e7eb;
-  --el-border-color-light: #e9edf3;
-  --el-border-color-lighter: #eef1f5;
-  --el-fill-color-light: #f4f6f9;
-  // P3 对齐 dist:输入框边框 #dcdfe6 / hover #c0c4cc / placeholder #c0c4cc
-  --el-input-border-color: #dcdfe6;
-  --el-input-hover-border-color: #c0c4cc;
-  --el-text-color-placeholder: #c0c4cc;
+  --el-text-color-primary: rgba(0, 0, 0, .88);
+  --el-text-color-regular: rgba(0, 0, 0, .65);
+  --el-border-color: #d9d9d9;
+  --el-border-color-light: #f0f0f0;
+  --el-border-color-lighter: #f0f0f0;
+  --el-fill-color-light: #f5f5f5;
+  // AntD 对齐:输入框边框 #d9d9d9 / hover #4096ff / placeholder 25% 黑
+  --el-input-border-color: #d9d9d9;
+  --el-input-hover-border-color: #4096ff;
+  --el-text-color-placeholder: rgba(0, 0, 0, .25);
 }
 
 * {
@@ -110,15 +110,10 @@ button {
   }
 }
 .el-button--primary {
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
+  box-shadow: 0 2px 0 rgba(5, 145, 255, 0.1);
 
   &:not(.is-disabled):hover {
-    transform: translateY(-1px);
-    box-shadow: 0 5px 14px rgba(37, 99, 235, 0.3);
-  }
-
-  &:not(.is-disabled):active {
-    transform: translateY(0);
+    box-shadow: 0 2px 0 rgba(5, 145, 255, 0.1);
   }
 }
 .el-button.is-disabled,
@@ -157,11 +152,11 @@ input[type='number'] {
 
 // 表格(el-table 使用处统一表头与 hover 观感;P3 对齐 dist:表头 #f5f7fa/hover #f5f7fa/选中 #e8f4ff)
 .el-table {
-  --el-table-header-bg-color: #fafbfc;
-  --el-table-header-text-color: #6b7280;
-  --el-table-row-hover-bg-color: #f5f7fa;
-  --el-table-border-color: #eef1f5;
-  --el-table-text-color: #374151; // 正文对比度 4.8:1(默认 #606266 仅 3.8:1)
+  --el-table-header-bg-color: #fafafa;
+  --el-table-header-text-color: rgba(0, 0, 0, .88);
+  --el-table-row-hover-bg-color: #fafafa;
+  --el-table-border-color: #f0f0f0;
+  --el-table-text-color: rgba(0, 0, 0, .88);
   // 紧凑版:行高/单元格收紧(默认 12px 0)
   --el-table-cell-padding: 8px 0;
   --el-table-header-cell-padding: 8px 0;
@@ -173,20 +168,20 @@ input[type='number'] {
   }
 
   .el-table__row.current-row > td.el-table__cell {
-    background: #e8f4ff;
+    background: #e6f4ff;
   }
 }
 
 // 卡片(扁平化:去边框,浅投影区分)
 .el-card {
-  border-radius: 10px;
+  border-radius: 8px;
   border: none;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 
 // 弹窗 / 抽屉(P3 对齐 dist:圆角降至 4px)
 .el-dialog {
-  border-radius: 4px;
+  border-radius: 8px;
   box-shadow: 0 12px 32px rgba(15, 42, 92, 0.14);
 
   .el-dialog__title {
@@ -224,13 +219,13 @@ input[type='number'] {
   font-weight: 400;
 
   &.is-background .el-pager li.is-active {
-    background-color: #1890ff;
+    background-color: #1677ff;
     color: #fff;
   }
   &.is-background .btn-prev:not(:disabled):hover,
   &.is-background .btn-next:not(:disabled):hover,
   .el-pager li:not(.is-active):hover {
-    color: #1890ff;
+    color: #1677ff;
   }
 }
 
@@ -238,13 +233,13 @@ input[type='number'] {
 .el-tabs {
   .el-tabs__active-bar {
     height: 2px;
-    background-color: #1890ff;
+    background-color: #1677ff;
   }
   .el-tabs__item.is-active {
-    color: #1890ff;
+    color: #1677ff;
   }
   .el-tabs__item:hover {
-    color: #46a6ff;
+    color: #4096ff;
   }
 }
 
@@ -253,15 +248,15 @@ input[type='number'] {
   --el-tag-border-radius: 4px;
 
   &.el-tag--primary {
-    color: #0a5caf;
+    color: #0958d9;
   }
 }
 
 // 折叠面板
 .el-collapse {
   --el-collapse-header-height: 44px;
-  border-top-color: #eef1f5;
-  border-bottom-color: #eef1f5;
+  border-top-color: #f0f0f0;
+  border-bottom-color: #f0f0f0;
 }
 
 // 徽标
@@ -336,7 +331,7 @@ input[type='number'] {
 .page-card {
   background: var(--color-surface);
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 12px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
@@ -355,8 +350,8 @@ input[type='number'] {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 0 8px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
@@ -379,7 +374,7 @@ input[type='number'] {
 
   &.badge-primary {
     background: #eff6ff;
-    color: #0a5caf; // 白底 6:1,达标 WCAG AA(primary 蓝仅 3.1:1)
+    color: #0958d9; // AntD 深色阶,白底对比达标
   }
 
   &.badge-sub {

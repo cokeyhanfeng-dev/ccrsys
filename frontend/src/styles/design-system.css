@@ -1,23 +1,23 @@
 /* ============================================================
    客户贡献度管理与利率决策系统 · 设计系统样式
    依据 DESIGN.md v1.0 / PRD V2
-   品牌蓝 #1890ff · BEM 命名
+   品牌蓝 #1677ff(Ant Design 5 token 校准,2026-08-28) · BEM 命名
    ============================================================ */
 
 :root {
   /* ── 色彩 ── */
-  --color-primary: #1890ff;
-  --color-primary-hover: #46a6ff;
-  --color-primary-active: #1682e6;
-  --color-primary-light: #eff6ff;
-  --color-primary-softer: #f5f8ff;
-  --color-bg: #f4f6f9;
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-active: #0958d9;
+  --color-primary-light: #e6f4ff;
+  --color-primary-softer: #f0f7ff;
+  --color-bg: #f5f5f5;
   --color-surface: #ffffff;
-  --color-text-main: #1f2937;
-  --color-text-sub: #6b7280;
-  --color-text-light: #9ca3af;
-  --color-border: #e5e7eb;
-  --color-border-light: #eef1f5;
+  --color-text-main: rgba(0, 0, 0, .88);
+  --color-text-sub: rgba(0, 0, 0, .45);
+  --color-text-light: rgba(0, 0, 0, .35);
+  --color-border: #d9d9d9;
+  --color-border-light: #f0f0f0;
   /* 语义色与 index.scss 的 Element Plus 对齐保持单一来源(以 #10b981/#f59e0b/#ef4444 为准) */
   --color-success: #10b981;
   --color-success-light: #d1fae5;
@@ -36,11 +36,11 @@
   --sidebar-text: rgba(255, 255, 255, .68);
   --sidebar-text-active: #ffffff;
   --sidebar-hover-bg: rgba(255, 255, 255, .06);
-  --sidebar-active-bg: linear-gradient(90deg, rgba(24, 144, 255, .35), rgba(24, 144, 255, .12));
+  --sidebar-active-bg: #1677ff;
 
   /* ── 渐变 ── */
-  --grad-primary: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-  --grad-navy: linear-gradient(160deg, #263d52 0%, #1f2d3d 55%, #001528 100%);
+  --grad-primary: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+  --grad-navy: #001529;
 
   /* ── 字体 ── */
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -61,14 +61,14 @@
   --space-6: 32px;
 
   /* ── 圆角 / 阴影(层次化) ── */
-  --radius-sm: 4px;
-  --radius: 10px;
-  --radius-lg: 16px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 8px;
   --shadow-xs: 0 1px 2px rgba(15, 42, 92, .05);
   --shadow-sm: 0 1px 3px rgba(15, 42, 92, .07);
   --shadow: 0 1px 2px rgba(15, 42, 92, .04), 0 4px 14px rgba(15, 42, 92, .07);
   --shadow-lg: 0 12px 32px rgba(15, 42, 92, .14);
-  --shadow-primary: 0 4px 12px rgba(24, 144, 255, .28);
+  --shadow-primary: 0 2px 0 rgba(5, 145, 255, .1);
 
   /* ── 动效 ── */
   --ease: cubic-bezier(.22, .61, .36, 1);
@@ -101,7 +101,7 @@ body {
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: var(--space-1);
-  padding: 8px 14px;
+  padding: 4px 15px;
   font-size: var(--fs-body);
   font-weight: 500;
   border-radius: var(--radius-sm);
@@ -114,9 +114,9 @@ body {
 .btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .btn:disabled { background: var(--color-disabled); color: var(--color-text-light); cursor: not-allowed; box-shadow: none; transform: none; }
 
-.btn--primary { background: var(--grad-primary); color: #fff; box-shadow: var(--shadow-primary); }
-.btn--primary:hover { background: var(--color-primary-hover); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, .34); }
-.btn--primary:active { transform: translateY(0); box-shadow: var(--shadow-primary); }
+.btn--primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-primary); }
+.btn--primary:hover { background: var(--color-primary-hover); box-shadow: var(--shadow-primary); }
+.btn--primary:active { background: var(--color-primary-active); }
 .btn--primary.block { width: 100%; }
 /* dist 主按钮禁用态:浅蓝底白字 */
 .btn--primary:disabled, .btn--primary:disabled:hover { background: #8cc8ff; color: #fff; }
@@ -127,8 +127,8 @@ body {
 .btn--ghost { background: transparent; color: var(--color-primary); }
 .btn--ghost:hover { background: var(--color-primary-light); }
 
-.btn--danger { background: var(--color-danger); color: #fff; box-shadow: 0 4px 12px rgba(239, 68, 68, .25); }
-.btn--danger:hover { background: #dc2626; transform: translateY(-1px); }
+.btn--danger { background: var(--color-danger); color: #fff; box-shadow: 0 2px 0 rgba(255, 77, 79, .1); }
+.btn--danger:hover { background: #d9363e; }
 
 .btn--text { background: transparent; color: var(--color-primary); padding: 4px 8px; border-radius: var(--radius-sm); }
 .btn--text:hover { background: var(--color-primary-light); }
@@ -327,7 +327,7 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
    ============================================================ */
 .badge {
   display: inline-flex; align-items: center;
-  padding: 1px 8px; border-radius: 999px;
+  padding: 0 8px; border-radius: 4px;
   font-size: var(--fs-caption); font-weight: 500;
   line-height: 16px; white-space: nowrap;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .04);
@@ -394,16 +394,15 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
   font-size: 13px;
 }
 .table thead th {
-  background: #fafbfc; color: var(--color-text-sub);
+  background: #fafafa; color: var(--color-text-main);
   font-weight: 600; font-size: 12px;
   border-bottom: 1px solid #e9edf3;
   white-space: nowrap;
 }
 .table tbody tr { transition: background-color var(--duration); }
-.table tbody tr:nth-child(even) { background: #fafbfd; }
-.table tbody tr:hover { background: #f5f7fa; }
+.table tbody tr:hover { background: #fafafa; }
 /* dist 选中行(点击/当前行) */
-.table tbody tr.current-row { background: #e8f4ff; }
+.table tbody tr.current-row { background: #e6f4ff; }
 .table tbody tr:last-child td { border-bottom: none; }
 .table--num td:last-child, .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .table__calc--down { color: var(--color-primary); font-weight: 600; }
@@ -472,7 +471,6 @@ textarea.form-input { height: auto; min-height: 80px; padding: 8px 12px; resize:
 .app-sidebar__item--active {
   background: var(--sidebar-active-bg);
   color: var(--sidebar-text-active); font-weight: 600;
-  box-shadow: inset 3px 0 0 #60a5fa;
 }
 .app-main { flex: 1; min-width: 0; padding: 16px 20px; width: 100%; }
 

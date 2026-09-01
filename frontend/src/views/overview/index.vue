@@ -5,17 +5,31 @@
       <InfoTip :content="roleHint" />
     </div>
 
-    <!-- 欢迎区:问候语(按时段) + 姓名/角色/机构 + 日期 -->
+    <!-- 欢迎卡(AntD Pro 工作台):头像 + 问候语(按时段) + 副信息;右侧统计项 -->
     <div class="welcome-card">
       <div class="welcome-card__main">
-        <div class="welcome-card__greet">{{ greeting }}，{{ nickName }}</div>
-        <div class="welcome-card__meta">
-          {{ roleName }}<span v-if="orgId"> · 机构 {{ orgName || '#' + orgId }}</span>
+        <div class="welcome-card__avatar">{{ nickName.charAt(0) }}</div>
+        <div class="welcome-card__intro">
+          <div class="welcome-card__greet">{{ greeting }}，{{ nickName }}，开始你一天的工作吧</div>
+          <div class="welcome-card__meta">
+            {{ roleName }}<span v-if="orgId"> · {{ orgName || '机构 #' + orgId }}</span>
+            · 今日待办 {{ todoItems.length }} 项 · {{ dateText }}
+          </div>
         </div>
       </div>
-      <div class="welcome-card__date">
-        <div class="welcome-card__day">{{ dateDay }}</div>
-        <div class="welcome-card__date-text">{{ dateText }}</div>
+      <div class="welcome-card__stats">
+        <div class="ws-item">
+          <span class="ws-item__label">在途申请</span>
+          <b class="ws-item__num">{{ inProgressCount }}</b>
+        </div>
+        <div class="ws-item">
+          <span class="ws-item__label">今日已办</span>
+          <b class="ws-item__num">{{ doneToday }}</b>
+        </div>
+        <div class="ws-item">
+          <span class="ws-item__label">承诺达成率</span>
+          <b class="ws-item__num">{{ planTotal ? Math.round((trackStats.met / planTotal) * 100) + '%' : '—' }}</b>
+        </div>
       </div>
     </div>
 
@@ -44,7 +58,7 @@
       </div>
     </div>
 
-    <!-- 主区:左栏当前工作,右栏贡献度概况 -->
+    <!-- 主区:左栏工作区(我的申请动态/待我处理),右栏快捷操作 + 贡献度概况 -->
     <div class="workbench-grid">
       <!-- ============ 左栏 ============ -->
       <div class="workbench-grid__left">
@@ -53,9 +67,7 @@
           <div class="card-toolbar">
             <span class="card-toolbar__title">我的申请动态</span>
             <span class="card-toolbar__actions">
-              <button class="btn btn--primary btn-sm" @click="router.push('/application/loan')">
-                <el-icon><Plus /></el-icon>&nbsp;发起新申请
-              </button>
+              <button class="card-link" @click="router.push('/history')">全部 →</button>
             </span>
           </div>
           <table class="table" v-if="myApps.length">
@@ -116,12 +128,24 @@
 
       <!-- ============ 右栏 ============ -->
       <div class="workbench-grid__right">
+        <!-- 快捷操作(原「发起新申请」入口收敛于此,仍仅客户经理可见) -->
+        <div class="card workbench-card" v-if="role === 'customer_manager'">
+          <div class="card-toolbar">
+            <span class="card-toolbar__title">快捷操作</span>
+          </div>
+          <div class="quick-actions">
+            <button class="btn btn--primary" @click="router.push('/application/loan')">
+              <el-icon><Plus /></el-icon>&nbsp;发起新申请
+            </button>
+          </div>
+        </div>
+
         <!-- 贡献度跟踪概况 -->
         <div class="card workbench-card">
           <div class="card-toolbar">
             <span class="card-toolbar__title">贡献度跟踪概况</span>
             <span class="card-toolbar__actions">
-              <button class="btn btn--text" @click="router.push('/commitment')">查看全部</button>
+              <button class="card-link" @click="router.push('/commitment')">全部 →</button>
             </span>
           </div>
           <template v-if="planTotal">
@@ -479,27 +503,43 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 </script>
 
 <style scoped>
-/* ---------- 欢迎区 ---------- */
+/* ---------- 欢迎卡(AntD Pro 工作台:白卡 + 头像 + 问候 + 右侧统计项) ---------- */
 .welcome-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  background: var(--grad-navy, linear-gradient(135deg, #1e3a8a, #1d4ed8));
+  gap: 24px;
+  background: var(--color-surface);
   border-radius: var(--radius);
-  padding: 22px 24px;
-  color: #fff;
-  box-shadow: var(--shadow);
+  padding: 24px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 }
-.welcome-card__greet { font-size: 20px; font-weight: 600; }
-.welcome-card__meta { margin-top: 6px; font-size: 13px; opacity: .85; }
-.welcome-card__date { text-align: right; flex: none; }
-.welcome-card__day { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.welcome-card__date-text { margin-top: 4px; font-size: 12px; opacity: .8; }
-/* 窄屏欢迎区纵向堆叠,日期区回到左对齐 */
+.welcome-card__main { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.welcome-card__avatar {
+  flex: none; width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--grad-primary); color: #fff;
+  font-size: 22px; font-weight: 600; user-select: none;
+}
+.welcome-card__intro { min-width: 0; }
+.welcome-card__greet { font-size: 20px; font-weight: 600; color: var(--color-text-main); }
+.welcome-card__meta { margin-top: 6px; font-size: 13px; color: var(--color-text-sub); }
+/* 右侧统计项:label 灰小字 + 大数字,项间右分隔线 */
+.welcome-card__stats { display: flex; align-items: center; flex: none; }
+.ws-item { padding: 0 24px; text-align: right; }
+.ws-item + .ws-item { border-left: 1px solid var(--color-border-light); }
+.ws-item__label { font-size: 12px; color: var(--color-text-sub); }
+.ws-item__num {
+  display: block; margin-top: 4px;
+  font-size: 24px; font-weight: 600; line-height: 1.3;
+  font-variant-numeric: tabular-nums; color: var(--color-text-main);
+}
+/* 窄屏欢迎卡纵向堆叠,统计项回到左对齐 */
 @media (max-width: 768px) {
   .welcome-card { flex-direction: column; align-items: flex-start; }
-  .welcome-card__date { text-align: left; }
+  .welcome-card__stats { width: 100%; }
+  .ws-item { flex: 1; padding: 0 12px; text-align: left; }
+  .ws-item:first-child { padding-left: 0; }
 }
 
 /* ---------- KPI 卡可点击(键盘可达,§UI审查) ---------- */
@@ -510,18 +550,38 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 .stat-card__num--danger { color: var(--color-danger); }
 .stat-card__sub--danger { color: var(--color-danger); }
 
-/* ---------- 主区两栏(窄屏堆叠;客户经理工作台「存款承诺/我的申请」区块留出呼吸感) ---------- */
+/* ---------- 主区两栏(左 2fr 右 1fr,间距 16px;窄屏降单栏) ---------- */
 .workbench-grid {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
+  margin-top: 16px;
 }
 @media (max-width: 1100px) {
-  .workbench-grid { grid-template-columns: 1fr; gap: 20px; }
+  .workbench-grid { grid-template-columns: 1fr; }
 }
-.workbench-card { margin-bottom: 0; }
-.workbench-grid__right { display: flex; flex-direction: column; gap: 20px; }
+.workbench-grid__left { display: flex; flex-direction: column; gap: 16px; }
+.workbench-grid__right { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- 卡片规范:内边距 24px;卡头 16px 600 + 底部 1px #f0f0f0 分隔线 ---------- */
+.workbench-card { margin-bottom: 0; padding: 24px; }
+.workbench-card .card-toolbar {
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.workbench-card .card-toolbar__title { font-size: 16px; font-weight: 600; }
+/* 卡头右上「全部 →」链接 */
+.card-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 13px; color: var(--color-text-sub);
+  transition: color .15s;
+}
+.card-link:hover { color: var(--color-primary); }
+.card-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* 快捷操作按钮组 */
+.quick-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 
 /* 工作台内表格行高放宽(上下不再贴紧) */
 .workbench-card .table th,
@@ -530,7 +590,13 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 /* ---------- 待办列表 ---------- */
 .todo-list { display: flex; flex-direction: column; gap: 12px; }
 .todo-card__body { flex: 1; min-width: 0; }
-.todo-card__customer { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.todo-card__customer {
+  font-weight: 600; font-size: 15px;
+  display: flex; align-items: center; gap: 8px;
+  transition: color .15s;
+}
+/* 待办行 hover 时标题变品牌蓝 */
+.todo-card:hover .todo-card__customer { color: var(--color-primary); }
 .todo-card__sub { font-size: 13px; color: var(--color-text-sub); margin: 2px 0 10px; }
 .todo-card__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; }
 @media (max-width: 1100px) { .todo-card__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -549,12 +615,12 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
 .dist-row__label { flex: none; width: 60px; color: var(--color-text-sub); }
 .dist-row__bar {
   flex: 1; height: 8px; border-radius: 4px;
-  background: var(--color-disabled, #eef0f4); overflow: hidden;
+  background: var(--color-border-light); overflow: hidden;
 }
 .dist-row__bar i { display: block; height: 100%; border-radius: 4px; transition: width .3s var(--ease, ease); }
 .dist-row__num { flex: none; width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ---------- 有风险计划 ---------- */
+/* ---------- 待关注(未达标项比率用警示橙) ---------- */
 .risk-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); margin: 18px 0 10px; }
 .risk-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -562,7 +628,7 @@ onBeforeUnmount(() => { if (dateTimer) clearInterval(dateTimer) })
   cursor: pointer; transition: background .15s;
 }
 .risk-item + .risk-item { margin-top: 4px; }
-.risk-item:hover { background: var(--color-primary-light, #eff4ff); }
+.risk-item:hover { background: var(--color-primary-light); }
 .risk-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .risk-item__main { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .risk-item__main b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
