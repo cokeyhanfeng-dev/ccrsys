@@ -39,6 +39,7 @@ db/23_password_change_flag.sql
 db/24_plaintext_sensitive.sql
 db/publish_full.sql
 db/prod_full.sql
+db/prod_full_v3.0.0.sql
 
 # 增量发布包产物(大文件 jar/dist,不入库;由 scripts/incr-release.sh 生成)
 release/
