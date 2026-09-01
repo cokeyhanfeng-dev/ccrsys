@@ -5,27 +5,29 @@
   </div>
   <div v-else class="detail-wrap" :class="{ 'detail-wrap--action': actionable }" v-loading="loading">
   <div v-if="loaded">
-    <div class="section-head">
-      <div class="section-title">
-        <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
-        {{ isPresidentDecision ? '行长决策' : '审批详情' }}
-      </div>
-      <InfoTip :content="isPresidentDecision ? '六人小组表决已通过,请审阅完整申请内容与六人匿名审批意见后整单决策:同意利率或一票否决。' : isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
-    </div>
-
-    <!-- 吸顶摘要条(docs/29 §2.3):申请号/客户/金额/业务类型/当前节点 + 五段锚点导航,任何位置一键跳到操作区 -->
+    <!-- 页头(AntD Pro 高级详情页 PageContainer 风格,docs/29 §2.3 锚点导航保留):白色通栏吸顶区块——
+         标题行(返回 + 客户名 + 当前节点 Tag + 操作提示) + 描述行(申请号/业务类型/申请金额/申请时间) + 下划线 Tab 锚点导航 -->
     <div class="summary-bar">
-      <div class="summary-bar__item">申请号<strong>{{ application.applicationNo || '—' }}</strong></div>
-      <div class="summary-bar__item">客户<strong>{{ customerName }}</strong></div>
-      <div class="summary-bar__item">申请金额<strong>{{ fmtAmount(applyAmountTotal) }} 万元</strong></div>
-      <div class="summary-bar__item">业务类型<strong><span class="badge badge--info">{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span></strong></div>
-      <div class="summary-bar__item">当前节点<strong><span class="badge badge--processing">{{ nodeLabel(pi.current_node_code) }}</span></strong></div>
+      <div class="summary-bar__head">
+        <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
+        <h1 class="summary-bar__title">{{ customerName }}</h1>
+        <span class="summary-bar__kind">{{ isPresidentDecision ? '行长决策' : '审批详情' }}</span>
+        <span class="summary-bar__tag">{{ nodeLabel(pi.current_node_code) }}</span>
+        <InfoTip :content="isPresidentDecision ? '六人小组表决已通过,请审阅完整申请内容与六人匿名审批意见后整单决策:同意利率或一票否决。' : isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
+        <span v-if="actionable" class="summary-bar__hint">同意 / 否决请点击页面底部操作条按钮提交</span>
+      </div>
+      <div class="summary-bar__desc">
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请号</span>{{ application.applicationNo || '—' }}</span>
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">业务类型</span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请金额</span>{{ fmtAmount(applyAmountTotal) }} 万元</span>
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请时间</span>{{ fmtDate(application.submitTime) }}</span>
+      </div>
       <nav class="summary-bar__nav">
-        <a class="anchor-link" @click="scrollToSection('s-apply')">申请内容</a>
-        <a class="anchor-link" @click="scrollToSection('s-customer')">客户与集团</a>
-        <a class="anchor-link" @click="scrollToSection('s-contrib')">承诺与履约</a>
-        <a class="anchor-link" @click="scrollToSection('s-flow')">流程轨迹</a>
-        <a class="anchor-link" style="font-weight:700" @click="scrollToSection('s-decide')">审批决定 ⬇</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-apply' }" @click="scrollToSection('s-apply'); activeAnchor = 's-apply'">申请内容</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-customer' }" @click="scrollToSection('s-customer'); activeAnchor = 's-customer'">客户与集团</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-contrib' }" @click="scrollToSection('s-contrib'); activeAnchor = 's-contrib'">承诺与履约</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-flow' }" @click="scrollToSection('s-flow'); activeAnchor = 's-flow'">流程轨迹</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-decide' }" @click="scrollToSection('s-decide'); activeAnchor = 's-decide'">审批决定 ⬇</a>
       </nav>
     </div>
 
@@ -68,17 +70,23 @@
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
-      <!-- 分项表(docs/29 §2.3):12 列收敛为 7 主列,产品/原执行/测算/期限/部门归属收进「明细▸」展开行 -->
+      <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属收进「明细▸」展开行) -->
       <table class="table" style="margin-top:12px">
-        <thead><tr><th>定价分项</th><th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th><th>申请利率</th><th>当前节点</th><th>状态</th><th></th></tr></thead>
+        <thead><tr>
+          <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
+          <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
+          <th>当前节点</th><th>状态</th><th></th>
+        </tr></thead>
         <tbody>
           <template v-for="it in siblingItems" :key="it.id">
             <tr>
-              <td>{{ it.pricingItemNo || '—' }}</td>
               <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
               <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
               <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+              <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
               <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+              <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+              <td>{{ agreementNos.join('、') || '—' }}</td>
               <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
               <td>{{ itemStatusText(it.status) }}</td>
               <td><button class="btn btn--text" @click="toggleItemDetail(it.id)">{{ itemDetailOpen(it.id) ? '收起 ▲' : '明细 ▸' }}</button></td>
@@ -88,8 +96,6 @@
               <td :colspan="itemTableCols" style="padding: 4px 12px 10px; background: var(--color-fill, #f8f9fa)">
                 <div class="desc-grid desc-grid--3">
                   <div><div class="desc-item__label">产品</div><div class="desc-item__value">{{ productName(it.productCode) }}</div></div>
-                  <div><div class="desc-item__label">原执行利率</div><div class="desc-item__value">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</div></div>
-                  <div><div class="desc-item__label">测算利率</div><div class="desc-item__value desc-item__value--num">{{ fmtRate(it.calculatedRate) }}</div></div>
                   <div><div class="desc-item__label">期限</div><div class="desc-item__value">{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</div></div>
                   <div><div class="desc-item__label">部门归属</div><div class="desc-item__value">{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</div></div>
                 </div>
@@ -466,61 +472,27 @@
       <div v-else class="empty-line">该客户暂无历史承诺申请</div>
     </div>
 
-    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-01 展示机构名称/统计月份/平均达成率) -->
+    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-01 只展示概要卡:机构名称/统计月份/平均达成率,明细表按需求移除) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>机构达成</span><span class="badge badge--info">数仓</span></div>
-      <template v-if="orgPerformance.length">
-        <!-- 折叠态:一行摘要(机构名称/统计月份/平均达成率) -->
-        <div v-if="fold.orgPerf" class="org-perf org-perf--fold" @click="fold.orgPerf = false">
-          <div class="org-perf__line">
-            <span class="org-perf__name">{{ orgPerfRow?.orgName || orgPerfRow?.orgCode || '—' }}</span>
-            <span class="org-perf__month">{{ orgPerfRow?.statMonth || '—' }}</span>
-            <span class="org-perf__rate" :class="rateCls(orgPerfRow?.completionRate)">{{ fmtPct(orgPerfRow?.completionRate) }}</span>
-            <span class="org-perf__rate-label">平均达成率</span>
+      <div class="org-perf" v-if="orgPerfRow">
+        <div class="org-perf__main">
+          <div class="org-perf__title">
+            <span class="org-perf__name">{{ orgPerfRow.orgName || orgPerfRow.orgCode || '—' }}</span>
+            <span class="org-perf__month">{{ orgPerfRow.statMonth || '—' }}</span>
           </div>
-          <button class="btn btn--text" @click.stop="fold.orgPerf = false">展开 ▾</button>
+          <div class="org-perf__rate" :class="rateCls(orgPerfRow.completionRate)">{{ fmtPct(orgPerfRow.completionRate) }}</div>
+          <div class="org-perf__rate-label">平均达成率</div>
         </div>
-        <!-- 展开态:概要(名称/月份/平均达成率+进度条)+明细表 -->
-        <div v-show="!fold.orgPerf">
-          <div class="org-perf">
-            <div class="org-perf__main">
-              <div class="org-perf__title">
-                <span class="org-perf__name">{{ orgPerfRow?.orgName || orgPerfRow?.orgCode || '—' }}</span>
-                <span class="org-perf__month">{{ orgPerfRow?.statMonth || '—' }}</span>
-              </div>
-              <div class="org-perf__rate" :class="rateCls(orgPerfRow?.completionRate)">{{ fmtPct(orgPerfRow?.completionRate) }}</div>
-              <div class="org-perf__rate-label">平均达成率</div>
-            </div>
-            <div class="org-perf__bar">
-              <div class="org-perf__bar-inner" :class="rateCls(orgPerfRow?.completionRate)" :style="{ width: progressWidth(orgPerfRow?.completionRate) }"></div>
-            </div>
-            <div class="org-perf__meta">
-              <span>达成金额 <b>{{ fmtAmount(orgPerfRow?.achievedAmount) }}</b> 万元</span>
-              <span>目标金额 <b>{{ fmtAmount(orgPerfRow?.expectedAmount) }}</b> 万元</span>
-              <span v-if="orgPerfRow?.dataDt">数据日期 {{ orgPerfRow.dataDt }}</span>
-            </div>
-          </div>
-          <table class="table">
-            <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>平均达成率</th><th>数据日期</th></tr></thead>
-            <tbody>
-              <tr v-for="(o, i) in orgPerformance" :key="i">
-                <td>{{ o.orgName || o.orgCode || '—' }}</td>
-                <td>{{ o.statMonth || '—' }}</td>
-                <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
-                <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
-                <td class="num">
-                  <span v-if="o.completionRate != null" :class="rateCls(o.completionRate)">
-                    {{ o.completionRate }}%
-                  </span>
-                  <span v-else>暂无数据</span>
-                </td>
-                <td>{{ o.dataDt || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="empty-line"><button class="btn btn--text" @click="fold.orgPerf = true">收起 ▲</button></div>
+        <div class="org-perf__bar">
+          <div class="org-perf__bar-inner" :class="rateCls(orgPerfRow.completionRate)" :style="{ width: progressWidth(orgPerfRow.completionRate) }"></div>
         </div>
-      </template>
+        <div class="org-perf__meta">
+          <span>达成金额 <b>{{ fmtAmount(orgPerfRow.achievedAmount) }}</b> 万元</span>
+          <span>目标金额 <b>{{ fmtAmount(orgPerfRow.expectedAmount) }}</b> 万元</span>
+          <span v-if="orgPerfRow.dataDt">数据日期 {{ orgPerfRow.dataDt }}</span>
+        </div>
+      </div>
       <div v-else class="empty-line">暂无数据</div>
     </div>
     </div>
@@ -594,28 +566,35 @@
         <div class="flow-status__item"><span class="dg-label">执行状态</span><b>{{ flowStatusText }}</b></div>
         <div class="flow-status__item"><span class="dg-label">到达时间</span><b>{{ fmtDate(flowStatus.nodeReachTime) }}</b></div>
       </div>
-      <!-- 流程路由链:首节点→当前节点(高亮)→终审,已过=完成/当前=处理中/后续=待办(通用 .flow-node 胶囊) -->
+      <!-- 流程路由链(AntD Steps 横向步骤条观感):首节点→当前节点→终审;已完成=品牌蓝底白勾/当前=品牌蓝描边/未到=灰,节点间连接线,下方标题+一行小字 -->
       <div v-if="routeChain.length" class="flow-steps">
         <template v-for="(code, idx) in routeChain" :key="code">
-          <span class="flow-node" :class="{
-            'flow-node--done': idx < currentNodeIndex,
-            'flow-node--current': idx === currentNodeIndex,
-            'flow-node--todo': idx > currentNodeIndex
+          <div class="flow-step" :class="{
+            'flow-step--done': idx < currentNodeIndex,
+            'flow-step--current': idx === currentNodeIndex,
+            'flow-step--todo': idx > currentNodeIndex
           }">
-            {{ nodeLabel(code) }}
-            <span v-if="idx < currentNodeIndex" class="flow-node__tag">已经审批完成</span>
-            <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound" class="flow-node__tag">
-              <template v-if="voteRound.roundStatus === 'PASSED' || voteRound.roundStatus === 'FAILED'">
-                表决{{ voteRound.roundStatus === 'PASSED' ? '通过' : '未通过' }} · 赞成 {{ voteRound.approveCount }} / 反对 {{ voteRound.rejectCount }} (通过线 ≥{{ voteRound.requiredCount }})
-              </template>
-              <template v-else>
-                {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 通过线 ≥{{ voteRound.requiredCount }}
-              </template>
-            </span>
-            <span v-else-if="idx === currentNodeIndex" class="flow-node__tag">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
-            <span v-else class="flow-node__tag">待办</span>
-          </span>
-          <span v-if="idx < routeChain.length - 1" class="flow-node__arrow">→</span>
+            <div class="flow-step__head">
+              <span class="flow-step__icon">{{ idx < currentNodeIndex ? '✓' : idx + 1 }}</span>
+              <span v-if="idx < routeChain.length - 1" class="flow-step__line"></span>
+            </div>
+            <div class="flow-step__body">
+              <div class="flow-step__title">{{ nodeLabel(code) }}</div>
+              <div class="flow-step__desc">
+                <span v-if="idx < currentNodeIndex">已经审批完成</span>
+                <span v-else-if="idx === currentNodeIndex && code === 'SIX_PEOPLE_GROUP' && voteRound">
+                  <template v-if="voteRound.roundStatus === 'PASSED' || voteRound.roundStatus === 'FAILED'">
+                    表决{{ voteRound.roundStatus === 'PASSED' ? '通过' : '未通过' }} · 赞成 {{ voteRound.approveCount }} / 反对 {{ voteRound.rejectCount }} (通过线 ≥{{ voteRound.requiredCount }})
+                  </template>
+                  <template v-else>
+                    {{ voteRound.submittedCount }}/{{ voteRound.voterCount }} 人已投 · 通过线 ≥{{ voteRound.requiredCount }}
+                  </template>
+                </span>
+                <span v-else-if="idx === currentNodeIndex">{{ nodeHandled(code) ? '已经审批完成' : '审批中' }}</span>
+                <span v-else>待办</span>
+              </div>
+            </div>
+          </div>
         </template>
       </div>
       <!-- 轨迹从客户经理提交开始显示;每条含动作/节点/处理人/状态变迁/利率变化/时间 -->
@@ -709,8 +688,8 @@
         <el-input v-model="presidentOpinion" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="同意可填意见;一票否决必须填写意见" />
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <button class="btn btn--primary" :disabled="submitting" @click="doPresidentDecision('APPROVE')">同意利率</button>
-        <button class="btn btn--danger" :disabled="submitting" @click="doPresidentDecision('VETO')">一票否决</button>
+        <button class="btn btn--primary" :disabled="submitting" @click="doPresidentDecision('APPROVE')">同意</button>
+        <button class="btn btn--danger" :disabled="submitting" @click="doPresidentDecision('VETO')">否决</button>
       </div>
     </div>
 
@@ -788,12 +767,12 @@
           <span class="stat-card__sub" style="white-space:nowrap;align-self:center">
             已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
           </span>
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_APPROVE')">提交同意票(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_REJECT')">提交否决票(整单)</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_APPROVE')">同意</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_REJECT')">否决</button>
         </template>
         <template v-else>
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('APPROVE')">同意审批(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('REJECT')">否决(整单)</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('APPROVE')">同意</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('REJECT')">否决</button>
         </template>
         <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
       </div>
@@ -879,7 +858,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, backfillCustomerNo, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
@@ -970,6 +949,21 @@ const rawCreditAgreements = ref<any[]>([])
 /** 授信信息只展示存量已有授信(数仓);本次申请补录/新增授信不进"本行授信情况"(§用户要求) */
 const creditAgreements = computed(() =>
   (rawCreditAgreements.value || []).filter((a: any) => a.source !== 'APPLICATION'))
+// 申请内容分项表「授信协议」列(2026-09-01):数仓存量协议编号 + 申请补录协议号(credit_info_json.agreementNo),去重保序
+const agreementNos = computed(() => {
+  const nos: string[] = []
+  for (const a of creditAgreements.value || []) {
+    const n = a.agreementNo
+    if (n != null && String(n).trim() && !nos.includes(String(n))) nos.push(String(n))
+  }
+  try {
+    const raw = application.value.creditInfoJson
+    const ci = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+    const manualNo = ci?.agreementNo
+    if (manualNo != null && String(manualNo).trim() && !nos.includes(String(manualNo))) nos.push(String(manualNo))
+  } catch { /* creditInfoJson 解析失败则忽略补录协议号 */ }
+  return nos
+})
 // 集团贡献度(数仓 GROUP 口径 TOTAL)
 const groupContribution = ref<any>(null)
 const attachments = ref<any[]>([])
@@ -1016,8 +1010,23 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-// 低频只读资料卡默认折叠(docs/29 §2.3):授信/附件/他行融资/关联人/机构达成,v-show 切换
-const fold = ref({ credit: true, attach: true, otherLoan: true, related: true, orgPerf: true })
+// 页头 Tab 锚点激活态(纯展示,不影响任何业务逻辑):点击时置激活(见模板内联赋值);
+// 滚动时按视口内最近分区同步(页头吸顶高度约 200px,阈值取 210)
+const activeAnchor = ref('s-apply')
+const ANCHOR_SECTION_IDS = ['s-apply', 's-customer', 's-contrib', 's-flow', 's-decide']
+function syncActiveAnchor() {
+  let current = ANCHOR_SECTION_IDS[0]
+  for (const id of ANCHOR_SECTION_IDS) {
+    const el = document.getElementById(id)
+    if (el && el.getBoundingClientRect().top <= 210) current = id
+  }
+  activeAnchor.value = current
+}
+onMounted(() => window.addEventListener('scroll', syncActiveAnchor, { passive: true }))
+onUnmounted(() => window.removeEventListener('scroll', syncActiveAnchor))
+
+// 低频只读资料卡默认折叠(docs/29 §2.3):授信/附件/他行融资/关联人,v-show 切换
+const fold = ref({ credit: true, attach: true, otherLoan: true, related: true })
 
 // 分项表明细展开行(docs/29 §2.3):主列之外的字段收进展开行,按分项 id 记录展开状态
 const expandedItemIds = ref<Set<string>>(new Set())
@@ -1031,8 +1040,8 @@ function toggleItemDetail(id: any) {
   else next.add(k)
   expandedItemIds.value = next
 }
-// 分项表展开行 colspan:6 个固定主列 + 集团成员列 + 贷款担保方式列
-const itemTableCols = computed(() => 6 + (isGroup.value ? 1 : 0) + (isLoan.value ? 1 : 0))
+// 分项表展开行 colspan(2026-09-01 表结构调整:去定价分项列,主列=金额/原利率/申请利率/测算利率/授信协议/当前节点/状态/明细按钮,动态列=集团成员+贷款担保)
+const itemTableCols = computed(() => 8 + (isGroup.value ? 1 : 0) + (isLoan.value ? 1 : 0))
 
 // 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
@@ -1663,7 +1672,7 @@ onMounted(load)
   color: #92400e; background: var(--color-warning-light);
   border: 1px solid #f5d58a; border-radius: var(--radius-sm);
 }
-/* 返回列表按钮(section-title 内嵌,ghost 小按钮) */
+/* 返回列表按钮(页头标题行内嵌,ghost 小按钮) */
 .btn--back {
   margin-right: 10px;
   padding: 6px 12px;
@@ -1696,10 +1705,100 @@ onMounted(load)
 .op-item__empty-tip { margin-top: 8px; font-size: 12px; color: var(--color-text-sub); background: var(--color-bg); border-radius: 6px; padding: 8px 12px; }
 .op-item__actions { display: flex; gap: 8px; margin-top: 8px; }
 .op-item__passed-tip { margin-top: 8px; font-size: 12px; color: var(--color-text-sub); }
-/* 流程路由链节点内标签与箭头(节点胶囊用 design-system .flow-node,此处仅补标签/待办/箭头) */
-.flow-node__tag { margin-left: 6px; font-weight: 400; white-space: nowrap; }
-.flow-node--todo { opacity: .6; }
-.flow-node__arrow { color: var(--color-border); align-self: center; }
+/* ========== AntD Pro 高级详情页改造(2026-09-01):仅视觉形态,数据/逻辑不变 ========== */
+/* 页头:PageContainer 白色通栏区块(非浮卡)——负 margin 抵消 app-main 内边距,
+   底部细分割线 + 微阴影;吸顶保留,吸附在 layout 顶栏(60px)之下 */
+.summary-bar {
+  display: block;
+  margin: -16px -20px 16px;
+  padding: 16px 24px 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  border-radius: 0;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, .06);
+  top: 60px;
+}
+@media (max-width: 767px) {
+  .summary-bar { margin: -12px -16px 12px; padding: 12px 16px 0; }
+}
+/* 第一行:标题(客户名 20px 600) + 页面类型 + 当前节点 Tag + 右侧操作提示 */
+.summary-bar__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.summary-bar__title { font-size: 20px; font-weight: 600; color: var(--color-text-main); line-height: 1.4; }
+.summary-bar__kind { font-size: 13px; color: var(--color-text-sub); }
+.summary-bar__tag {
+  display: inline-block; padding: 1px 8px;
+  font-size: 12px; line-height: 20px;
+  color: var(--color-primary); background: var(--color-primary-light);
+  border: 1px solid var(--color-primary-light); border-radius: 4px;
+}
+.summary-bar__hint { margin-left: auto; font-size: 13px; color: var(--color-text-sub); }
+/* 第二行:描述行(label 灰 13px / value 黑 14px,项间距 32px) */
+.summary-bar__desc { display: flex; flex-wrap: wrap; gap: 6px 32px; margin-top: 10px; font-size: 14px; color: var(--color-text-main); }
+.summary-bar__desc-label { font-size: 13px; color: var(--color-text-sub); margin-right: 8px; }
+/* 第三行:AntD 下划线 Tab 锚点导航(激活项品牌蓝 + 2px 下划线,替代原胶囊链接) */
+.summary-bar__nav { display: flex; gap: 32px; flex-wrap: wrap; margin: 14px 0 0; }
+.anchor-link {
+  padding: 0 0 10px; border-radius: 0;
+  font-size: 14px; line-height: 22px; color: var(--color-text-main);
+  position: relative;
+}
+.anchor-link:hover { background: none; color: var(--color-primary); }
+.anchor-link--active { color: var(--color-primary); }
+.anchor-link--active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--color-primary);
+}
+@media (max-width: 767px) {
+  .summary-bar__nav { gap: 16px; }
+  .summary-bar__hint { display: none; }
+}
+/* 锚点定位补偿:页头(约 140px) + layout 顶栏(60px) */
+.anchor-section { scroll-margin-top: 210px; }
+/* 分区卡:AntD 卡头(16px 600 + 底部 1px #f0f0f0 分隔线 + 内边距 16px 24px,无背景色无竖条装饰);
+   负 margin 拉通卡头分隔线至卡片边缘;卡片间距 16px,圆角沿用 token(8px),无 hover 浮起 */
+.anchor-section .card { padding: 16px 24px; margin-bottom: 16px; }
+.anchor-section .card__head {
+  margin: -16px -24px 16px;
+  padding: 15px 24px;
+  font-size: 16px; font-weight: 600;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.anchor-section .card__head > span:first-child::before { display: none; }
+/* 描述列表:AntD Descriptions 观感(label 13px 灰 / value 14px 黑 / 行间距 12px) */
+.desc-grid { gap: 12px var(--space-5); }
+.desc-item__label { font-size: 13px; color: var(--color-text-sub); }
+.desc-item__value { font-size: 14px; color: var(--color-text-main); }
+/* 流程路由链:AntD Steps 横向步骤条观感(圆圈 + 连接线 + 下方标题与小字) */
+.flow-steps { display: flex; gap: 0; margin: 4px 0 8px; }
+.flow-step { flex: 1; min-width: 0; }
+.flow-step__head { display: flex; align-items: center; }
+.flow-step__icon {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1;
+}
+/* 连接线:当前步骤连向下一节点;已过节点后的线为品牌蓝,其余为边框灰 */
+.flow-step__line { flex: 1; height: 1px; margin: 0 8px 0 12px; background: var(--color-border); }
+.flow-step--done .flow-step__icon { background: var(--color-primary); color: #fff; }
+.flow-step--done .flow-step__line { background: var(--color-primary); }
+.flow-step--current .flow-step__icon {
+  background: var(--color-surface); color: var(--color-primary);
+  border: 1px solid var(--color-primary); font-weight: 600;
+}
+.flow-step--todo .flow-step__icon {
+  background: var(--color-border-light); color: var(--color-text-light);
+  border: 1px solid var(--color-border);
+}
+.flow-step__body { margin-top: 8px; padding-right: 16px; }
+.flow-step__title { font-size: 14px; font-weight: 500; color: var(--color-text-main); line-height: 1.5; }
+.flow-step--current .flow-step__title { font-weight: 600; color: var(--color-primary); }
+.flow-step--todo .flow-step__title { color: var(--color-text-light); }
+.flow-step__desc { margin-top: 2px; font-size: 12px; line-height: 1.6; color: var(--color-text-sub); }
+.flow-step--todo .flow-step__desc { color: var(--color-text-light); }
+@media (max-width: 767px) {
+  .flow-steps { flex-wrap: wrap; row-gap: 16px; }
+  .flow-step { flex: 1 1 40%; }
+}
 .warn-bar { background: var(--color-warning-light, #fef3c7); color: var(--color-warning); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 /* 借据链接与弹窗提示(借据仅作参考) */
 .link { color: var(--color-primary); cursor: pointer; text-decoration: underline; }
@@ -1716,12 +1815,6 @@ onMounted(load)
   padding: 12px 14px; border-radius: 8px;
   background: var(--color-bg, #f8f9fa); margin-bottom: 10px;
 }
-.org-perf--fold {
-  flex-direction: row; align-items: center; justify-content: space-between;
-  cursor: pointer; margin-bottom: 0;
-}
-.org-perf--fold:hover { background: var(--color-fill, #f0f2f5); }
-.org-perf__line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .org-perf__name { font-size: 15px; font-weight: 700; color: var(--color-text-main); }
 .org-perf__month { font-size: 13px; color: var(--color-text-sub); }
 .org-perf__rate { font-size: 18px; font-weight: 700; }
