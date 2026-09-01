@@ -242,7 +242,7 @@ public final class HistoryArchiveExporter {
             List<Map<String, Object>> orgPerformance = (List<Map<String, Object>>) archive.get("orgPerformance");
             if (orgPerformance != null && !orgPerformance.isEmpty()) {
                 writeTable(wb, "机构达成", watermark, orgPerformance, List.of(
-                        new Col("机构", "orgCode"),
+                        new Col("机构", "orgName", "orgCode"),
                         new Col("统计月份", "statMonth"),
                         new Col("达成金额(万元)", "achievedAmount"),
                         new Col("目标金额(万元)", "expectedAmount"),

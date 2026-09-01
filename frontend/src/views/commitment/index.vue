@@ -86,8 +86,8 @@
                     <tbody>
                       <tr v-for="r in g.metrics" :key="r.id">
                         <td>
-                          <div>{{ r.metricName || r.metricCode || '—' }}</div>
-                          <div v-if="r.metricName" class="section-tip">{{ r.metricCode }}</div>
+                          <div>{{ metricName(r.metricCode, r.metricName || r.metricCode || '—') }}</div>
+                          <div v-if="r.metricCode && r.metricName !== r.metricCode" class="section-tip">{{ r.metricCode }}</div>
                         </td>
                         <td>{{ targetTypeText(r.targetKind) }}</td>
                         <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></td>
@@ -128,7 +128,7 @@
               <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ detail.row.customerNo || '—' }}</div></div>
               <div><div class="desc-item__label">成员客户号</div><div class="desc-item__value">{{ detail.row.memberCustomerNo || '—' }}</div></div>
               <div><div class="desc-item__label">所属申请</div><div class="desc-item__value">{{ detail.row.applicationNo || '—' }}</div></div>
-              <div><div class="desc-item__label">承诺指标</div><div class="desc-item__value">{{ detail.row.metricName || detail.row.metricCode || '—' }}</div></div>
+              <div><div class="desc-item__label">承诺指标</div><div class="desc-item__value">{{ metricName(detail.row.metricCode, detail.row.metricName || detail.row.metricCode || '—') }}</div></div>
               <div><div class="desc-item__label">目标类型</div><div class="desc-item__value">{{ targetTypeText(detail.row.targetKind) }}</div></div>
               <div><div class="desc-item__label">目标值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.targetValue) }} {{ detail.row.unit || '' }}</div></div>
               <div><div class="desc-item__label">截止日期</div><div class="desc-item__value">{{ detail.row.endDate || '—' }}</div></div>
@@ -175,7 +175,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { listCommitmentTracks, getCommitmentTrackDetail } from '@/api/commitment'
-import { targetTypeText, appStatusText, appStatusBadge, businessTypeText } from '@/utils/dict'
+import { metricName, targetTypeText, appStatusText, appStatusBadge, businessTypeText } from '@/utils/dict'
+import { useMetricDict } from '@/store/metricDict'
 
 const rows = ref<any[]>([])
 const listLoading = ref(false)
@@ -229,7 +230,7 @@ const groups = computed<TrackGroup[]>(() => {
       customerNo: key,
       customerName: first?.customerName || '',
       metrics,
-      firstMetricName: metrics.length === 1 ? (first?.metricName || first?.metricCode || '') : '',
+      firstMetricName: metrics.length === 1 ? metricName(first?.metricCode, first?.metricName || first?.metricCode || '') : '',
       avgRatio,
       hasNoData: metrics.some(m => m.dataStatus === 'NO_DATA'),
       status,
@@ -322,7 +323,10 @@ function fmtTime(v: any): string {
   return String(v).replace('T', ' ').slice(0, 19)
 }
 
-onMounted(load)
+onMounted(() => {
+  useMetricDict().load()
+  load()
+})
 </script>
 
 <style scoped>

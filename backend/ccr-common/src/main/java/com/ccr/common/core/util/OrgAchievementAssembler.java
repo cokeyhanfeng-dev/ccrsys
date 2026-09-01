@@ -31,15 +31,15 @@ public final class OrgAchievementAssembler {
     private OrgAchievementAssembler() {
     }
 
-    /** 返回 0/1 条;字段:orgCode/statMonth/achievedAmount/expectedAmount/completionRate/dataDt */
+    /** 返回 0/1 条;字段:orgCode/orgName/statMonth/achievedAmount/expectedAmount/completionRate/dataDt */
     public static List<Map<String, Object>> assemble(JdbcTemplate jdbcTemplate, String orgCode) {
         List<Map<String, Object>> result = new ArrayList<>();
         if (orgCode == null || orgCode.isBlank()) {
             return result;
         }
-        // 分母:该机构(申请机构)已通过审批申请(承诺计划)指标 target_value 求和
+        // 分母:该机构(申请机构)已通过审批申请(承诺计划)指标 target_value 求和(顺带取机构名称)
         List<Map<String, Object>> denomRows = jdbcTemplate.queryForList(
-                "SELECT COALESCE(SUM(m.target_value), 0) expectedAmount "
+                "SELECT d.dept_name orgName, COALESCE(SUM(m.target_value), 0) expectedAmount "
                         + "FROM ccr_commitment_plan cp "
                         + "JOIN ccr_resolution r ON r.id = cp.resolution_id "
                         + "JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id "
@@ -92,6 +92,7 @@ public final class OrgAchievementAssembler {
         BigDecimal completionRate = achieved.divide(expected, 4, RoundingMode.HALF_UP);
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("orgCode", orgCode);
+        row.put("orgName", denomRows.get(0).get("orgName"));
         row.put("statMonth", LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM")));
         row.put("achievedAmount", achieved);
         row.put("expectedAmount", expected);

@@ -1391,4 +1391,10 @@ public class ApprovalController {
         applicationAccessService.requireView(applicationId);
         return R.ok(approvalService.historyDetail(applicationId));
     }
+
+    /** 授信协议历史审批申请(§2026-09-01 存量授信展示:审批详情授信信息卡片按协议查历史申请审批状态) */
+    @GetMapping("/agreement-history")
+    public R<List<Map<String, Object>>> agreementHistory(@RequestParam String agreementNo) {
+        return R.ok(approvalService.agreementHistory(agreementNo));
+    }
 }

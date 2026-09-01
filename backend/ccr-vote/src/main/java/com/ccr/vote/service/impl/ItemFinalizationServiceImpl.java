@@ -79,6 +79,8 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
     private CcrNotificationLogMapper notificationLogMapper;
     @Resource
     private OutboxService outboxService;
+    @Resource
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Override
     public void afterItemTerminal(Long pricingItemId, String decisionSource) {
@@ -283,6 +285,8 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             return;
         }
         List<CcrCommitmentTrack> tracks = new ArrayList<>();
+        // 指标中文名权威来源:ccr_metric_definition(与前端 useMetricDict 同源);未登记时回退 metric_code
+        Map<String, String> metricNameMap = loadMetricNameMap();
         for (ApplicationCommitmentRead row : rows) {
             String kind = mapTargetKind(row.getTargetType());
             if (kind == null) {
@@ -300,7 +304,7 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             track.setOrgId(application.getApplicantOrgId());
             track.setManagerId(application.getApplicantUserId());
             track.setMetricCode(row.getMetricCode());
-            track.setMetricName(row.getMetricCode());
+            track.setMetricName(metricNameMap.getOrDefault(row.getMetricCode(), row.getMetricCode()));
             track.setTargetKind(kind);
             track.setTargetValue(row.getTargetValue());
             track.setUnit(row.getUnit());
@@ -313,6 +317,24 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             return;
         }
         commitmentTrackService.createTracks(tracks);
+    }
+
+    /** 指标编码→中文名映射(ccr_metric_definition 权威字典,§9;承诺跟踪 metric_name 存中文,勿再存 metric_code) */
+    private Map<String, String> loadMetricNameMap() {
+        Map<String, String> map = new LinkedHashMap<>();
+        try {
+            List<Map<String, Object>> defs = jdbcTemplate.queryForList(
+                    "SELECT metric_code, metric_name FROM ccr_metric_definition WHERE del_flag = '0'");
+            for (Map<String, Object> def : defs) {
+                if (def.get("metric_code") != null && def.get("metric_name") != null) {
+                    map.put(def.get("metric_code").toString(), def.get("metric_name").toString());
+                }
+            }
+        } catch (Exception e) {
+            // 字典表缺失/未初始化时回退 metric_code,不影响建跟踪主流程
+            log.warn("加载指标字典 ccr_metric_definition 失败,metric_name 回退 metric_code: {}", e.getMessage());
+        }
+        return map;
     }
 
     /** 目标类型收敛映射:仅 BALANCE/COUNT/RATIO;TARGET_BALANCE→BALANCE;OTHER/INCREMENT/CUMULATIVE→null 跳过 */

@@ -226,7 +226,7 @@
         <div v-if="fold.credit" class="empty-line">授信协议共 {{ creditAgreements.length }} 笔,已折叠 —— <button class="btn btn--text" @click="fold.credit = false">展开 ▾</button></div>
         <div v-show="!fold.credit">
           <table class="table">
-            <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
+            <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th><th>历史审批</th></tr></thead>
             <tbody>
               <tr v-for="(a, i) in creditAgreements" :key="i">
                 <td>
@@ -241,6 +241,7 @@
                 <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
                 <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
                 <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
+                <td><button class="btn btn--text" :disabled="!a.agreementNo" @click="openAgreementHistory(a.agreementNo)">历史审批</button></td>
               </tr>
             </tbody>
           </table>
@@ -465,22 +466,50 @@
       <div v-else class="empty-line">该客户暂无历史承诺申请</div>
     </div>
 
-    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念) -->
+    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-01 展示机构名称/统计月份/平均达成率) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>机构达成</span><span class="badge badge--info">数仓</span></div>
       <template v-if="orgPerformance.length">
-        <div v-if="fold.orgPerf" class="empty-line">机构达成共 {{ orgPerformance.length }} 条,已折叠 —— <button class="btn btn--text" @click="fold.orgPerf = false">展开 ▾</button></div>
+        <!-- 折叠态:一行摘要(机构名称/统计月份/平均达成率) -->
+        <div v-if="fold.orgPerf" class="org-perf org-perf--fold" @click="fold.orgPerf = false">
+          <div class="org-perf__line">
+            <span class="org-perf__name">{{ orgPerfRow?.orgName || orgPerfRow?.orgCode || '—' }}</span>
+            <span class="org-perf__month">{{ orgPerfRow?.statMonth || '—' }}</span>
+            <span class="org-perf__rate" :class="rateCls(orgPerfRow?.completionRate)">{{ fmtPct(orgPerfRow?.completionRate) }}</span>
+            <span class="org-perf__rate-label">平均达成率</span>
+          </div>
+          <button class="btn btn--text" @click.stop="fold.orgPerf = false">展开 ▾</button>
+        </div>
+        <!-- 展开态:概要(名称/月份/平均达成率+进度条)+明细表 -->
         <div v-show="!fold.orgPerf">
+          <div class="org-perf">
+            <div class="org-perf__main">
+              <div class="org-perf__title">
+                <span class="org-perf__name">{{ orgPerfRow?.orgName || orgPerfRow?.orgCode || '—' }}</span>
+                <span class="org-perf__month">{{ orgPerfRow?.statMonth || '—' }}</span>
+              </div>
+              <div class="org-perf__rate" :class="rateCls(orgPerfRow?.completionRate)">{{ fmtPct(orgPerfRow?.completionRate) }}</div>
+              <div class="org-perf__rate-label">平均达成率</div>
+            </div>
+            <div class="org-perf__bar">
+              <div class="org-perf__bar-inner" :class="rateCls(orgPerfRow?.completionRate)" :style="{ width: progressWidth(orgPerfRow?.completionRate) }"></div>
+            </div>
+            <div class="org-perf__meta">
+              <span>达成金额 <b>{{ fmtAmount(orgPerfRow?.achievedAmount) }}</b> 万元</span>
+              <span>目标金额 <b>{{ fmtAmount(orgPerfRow?.expectedAmount) }}</b> 万元</span>
+              <span v-if="orgPerfRow?.dataDt">数据日期 {{ orgPerfRow.dataDt }}</span>
+            </div>
+          </div>
           <table class="table">
-            <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>达成率</th><th>数据日期</th></tr></thead>
+            <thead><tr><th>机构</th><th>统计月份</th><th>达成金额</th><th>目标金额</th><th>平均达成率</th><th>数据日期</th></tr></thead>
             <tbody>
               <tr v-for="(o, i) in orgPerformance" :key="i">
-                <td>{{ o.orgCode || '—' }}</td>
+                <td>{{ o.orgName || o.orgCode || '—' }}</td>
                 <td>{{ o.statMonth || '—' }}</td>
                 <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
                 <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
                 <td class="num">
-                  <span v-if="o.completionRate != null" :class="Number(o.completionRate) >= 100 ? 'rate-ok' : 'rate-bad'">
+                  <span v-if="o.completionRate != null" :class="rateCls(o.completionRate)">
                     {{ o.completionRate }}%
                   </span>
                   <span v-else>暂无数据</span>
@@ -737,19 +766,12 @@
       <div class="stat-card__sub" v-else-if="isSecretaryNode" style="margin-top:8px">
         贷审会秘书岗为审核岗:仅同意/否决,不调整利率;否决即整单拦截,流程终止。
       </div>
-      <!-- 整单操作(一次操作处理整单;小组为投整单票) -->
-      <div class="op-item__actions" style="margin-top:12px">
-        <template v-if="isCommitteeVoting">
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doVote('APPROVE')">提交同意票(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doVote('REJECT')">提交否决票(整单)</button>
-        </template>
-        <template v-else>
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doApprove">同意审批(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doReject">否决(整单)</button>
-        </template>
-      </div>
+      <!-- 审批按钮仅在页底吸底条(2026-09-01 需求:卡片内不再放同意/否决按钮,统一页底提交;提交前弹概要确认) -->
       <div class="op-item__passed-tip" v-if="wholeOrderActed" style="margin-top:8px">
         {{ isCommitteeVoting ? '本人已投整单票,提交后不可修改。' : '本申请当前节点已审批处理,无需重复操作。' }}
+      </div>
+      <div class="op-item__passed-tip" v-else style="margin-top:8px">
+        同意 / 否决请点击页面底部操作条按钮,提交前将弹出审批概要供确认。
       </div>
     </div>
     <div class="card" v-else-if="flowStatus?.currentStatus === 'ROUTING'">
@@ -757,7 +779,8 @@
     </div>
     </div>
 
-    <!-- 审批操作吸底(整单交付改造 2026-08-29):审批意见与整单通过/否决固定页底随手可及;一次操作处理整单 -->
+    <!-- 审批操作吸底(整单交付改造 2026-08-29):审批意见与整单通过/否决固定页底随手可及;一次操作处理整单;
+         2026-09-01 需求:点同意/否决先弹审批概要确认弹窗,确认后正式提交 -->
     <div class="approve-bar" v-if="actionable">
       <div class="approve-bar__inner">
         <el-input v-model="opComment" type="textarea" :rows="1" maxlength="500" placeholder="请输入审批意见(否决时建议说明原因)" style="flex:1" />
@@ -765,16 +788,51 @@
           <span class="stat-card__sub" style="white-space:nowrap;align-self:center">
             已投 {{ voteRound?.submittedCount ?? 0 }}/{{ voteRound?.voterCount ?? 6 }} · 通过线 ≥{{ voteRound?.requiredCount ?? 4 }}
           </span>
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doVote('APPROVE')">提交同意票(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doVote('REJECT')">提交否决票(整单)</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_APPROVE')">提交同意票(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('VOTE_REJECT')">提交否决票(整单)</button>
         </template>
         <template v-else>
-          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="doApprove">同意审批(整单)</button>
-          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="doReject">否决(整单)</button>
+          <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('APPROVE')">同意审批(整单)</button>
+          <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('REJECT')">否决(整单)</button>
         </template>
         <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
       </div>
     </div>
+
+    <!-- 审批概要确认弹窗(2026-09-01 需求):点同意/否决展示申请/客户/金额/整单利率/意见概要,确认后正式提交 -->
+    <el-dialog v-model="opConfirmVisible" :title="opConfirmTitle" width="600px">
+      <div class="op-confirm">
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">操作类型</span>
+          <span class="op-confirm__action" :class="opConfirmAction === 'APPROVE' || opConfirmAction === 'VOTE_APPROVE' ? 'is-ok' : 'is-danger'">
+            {{ opConfirmTitle }}
+          </span>
+        </div>
+        <div class="op-confirm__row"><span class="op-confirm__label">申请编号</span><span>{{ application.applicationNo || '—' }}</span></div>
+        <div class="op-confirm__row"><span class="op-confirm__label">客户</span><span>{{ customerName }}</span></div>
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">业务类型</span>
+          <span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
+        </div>
+        <div class="op-confirm__row"><span class="op-confirm__label">分项数</span><span>{{ siblingItems.length }} 个</span></div>
+        <div class="op-confirm__row"><span class="op-confirm__label">申请金额</span><span>{{ fmtAmount(applyAmountTotal) }} 万元</span></div>
+        <div class="op-confirm__row"><span class="op-confirm__label">审批后利率</span><span>{{ fmtRate(opConfirmRate) }}</span></div>
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">审批意见</span>
+          <span class="op-confirm__opinion">{{ opComment?.trim() || '—' }}</span>
+        </div>
+      </div>
+      <div class="dlg-tip" style="margin-top:12px">
+        {{ opConfirmAction === 'REJECT' || opConfirmAction === 'VOTE_REJECT'
+          ? '确认后该整单被否决,同申请全部分项一并退回,流程结束,不可撤销。'
+          : '确认后提交正式审批动作,整单推进至下一节点或终审,不可撤销。' }}
+      </div>
+      <template #footer>
+        <button class="btn btn--secondary" @click="opConfirmVisible = false">取消</button>
+        <button class="btn" :class="opConfirmAction === 'APPROVE' || opConfirmAction === 'VOTE_APPROVE' ? 'btn--primary' : 'btn--danger'"
+          :disabled="submitting" @click="confirmOpSubmit">确认提交</button>
+      </template>
+    </el-dialog>
 
     <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
     <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
@@ -792,6 +850,30 @@
         <button class="btn btn--primary" :disabled="backfilling" @click="doBackfill">确认回填</button>
       </div>
     </el-dialog>
+
+    <!-- 授信协议历史审批(§2026-09-01 存量授信展示:同协议历史申请审批状态) -->
+    <el-dialog v-model="agreementHistoryVisible" :title="`授信协议历史审批${agreementHistoryNo ? ' · ' + agreementHistoryNo : ''}`" width="760px">
+      <div v-loading="agreementHistoryLoading">
+        <table class="table" v-if="agreementHistoryRows.length">
+          <thead><tr><th>申请编号</th><th>业务类型</th><th>客户号</th><th>申请金额(万元)</th><th>状态</th><th>提交时间</th><th>定案时间</th></tr></thead>
+          <tbody>
+            <tr v-for="(h, i) in agreementHistoryRows" :key="i">
+              <td>{{ h.applicationNo || '—' }}</td>
+              <td>{{ h.businessType === 'DEPOSIT' ? '存款' : '贷款' }}</td>
+              <td>{{ h.customerNo || '—' }}</td>
+              <td class="num">{{ fmtAmount(h.applicationAmount) }}</td>
+              <td><span :class="appStatusBadge(h.status)">{{ appStatusText(h.status) }}</span></td>
+              <td>{{ fmtTimeStr(h.submitTime) }}</td>
+              <td>{{ fmtTimeStr(h.finalTime) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-line">该授信协议暂无历史审批申请</div>
+      </div>
+      <template #footer>
+        <button class="btn btn--secondary" @click="agreementHistoryVisible = false">关闭</button>
+      </template>
+    </el-dialog>
   </div>
   </div>
 </template>
@@ -802,7 +884,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, backfillCustomerNo, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
 import { submitBallot, submitPresidentDecision } from '@/api/vote'
-import { listRoundOpinions } from '@/api/approval2'
+import { listRoundOpinions, listAgreementHistory } from '@/api/approval2'
 import { download } from '@/api/request'
 import { useUserStore } from '@/store/user'
 import ContributionPanel from '@/components/ContributionPanel.vue'
@@ -817,7 +899,7 @@ import {
   roundStatusBadge, decisionBadge, voteChoiceBadge
 } from '@/utils/dict'
 // eslint-disable-next-line no-duplicate-imports
-import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge } from '@/utils/dict'
+import { inputModeText, relationTypeText, agreementTypeText, agreementStatusText, agreementStatusBadge, appStatusText, appStatusBadge } from '@/utils/dict'
 import { fmtAmount, fmtSize } from '@/utils/format'
 
 const route = useRoute()
@@ -858,6 +940,28 @@ const source = ref('')
 const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
 const orgPerformance = ref<any[]>([])
+// 机构达成概要行(后端至多 1 条:机构名称/统计月份/平均达成率,2026-09-01)
+const orgPerfRow = computed(() => orgPerformance.value[0] || null)
+// 达成率颜色:completionRate 为 0-1 比例(后端 achieved/expected,60/1000=0.06=6%),
+// ≥1(100%)绿 / ≥0.8(80%)黄 / 其余红
+function rateCls(r: any): string {
+  const v = Number(r)
+  if (!Number.isFinite(v)) return ''
+  if (v >= 1) return 'rate-ok'
+  if (v >= 0.8) return 'rate-warn'
+  return 'rate-bad'
+}
+// 达成率展示:0-1 比例 ×100 转百分比(修复既有「0.06%」展示错误)
+function fmtPct(r: any): string {
+  const v = Number(r)
+  if (!Number.isFinite(v)) return '暂无数据'
+  return `${Math.round(v * 10000) / 100}%`
+}
+function progressWidth(r: any): string {
+  const v = Number(r)
+  if (!Number.isFinite(v) || v <= 0) return '0%'
+  return `${Math.min(v * 100, 100)}%`
+}
 const otherLoanSummary = ref<any[]>([])
 const otherLoans = ref<any[]>([])
 const relations = ref<any[]>([])
@@ -1075,6 +1179,30 @@ const hasPlaceholderCustomer = computed(() =>
 const canBackfill = computed(() =>
   hasPlaceholderCustomer.value
   && (canOperate(anchorItem.value) || ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || '')))
+
+// 授信协议历史审批弹窗(§2026-09-01 存量授信:同协议历史申请审批状态)
+const agreementHistoryVisible = ref(false)
+const agreementHistoryLoading = ref(false)
+const agreementHistoryNo = ref('')
+const agreementHistoryRows = ref<any[]>([])
+async function openAgreementHistory(agreementNo?: string) {
+  if (!agreementNo) return
+  agreementHistoryNo.value = agreementNo
+  agreementHistoryVisible.value = true
+  agreementHistoryLoading.value = true
+  agreementHistoryRows.value = []
+  try {
+    agreementHistoryRows.value = await listAgreementHistory(agreementNo)
+  } catch {
+    // 拦截器已提示
+  } finally {
+    agreementHistoryLoading.value = false
+  }
+}
+/** 时间显示:2026-09-01T08:00:00 → 2026-09-01 08:00 */
+function fmtTimeStr(v: any): string {
+  return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
+}
 
 const backfillVisible = ref(false)
 const backfilling = ref(false)
@@ -1406,6 +1534,47 @@ function approveSuccessMsg(res?: ApprovalResult, nodeCode?: string): string {
   return `审批提交成功,已推进至「${nodeLabel(res.nextNodeCode)}」`
 }
 
+// 审批概要确认弹窗(2026-09-01 需求):点同意/否决先弹概要,确认后正式提交
+const opConfirmVisible = ref(false)
+const opConfirmAction = ref<'APPROVE' | 'REJECT' | 'VOTE_APPROVE' | 'VOTE_REJECT'>('APPROVE')
+const opConfirmTitle = computed(() => {
+  const t: Record<string, string> = {
+    APPROVE: '确认同意审批(整单)', REJECT: '确认否决(整单)',
+    VOTE_APPROVE: '确认提交同意票(整单)', VOTE_REJECT: '确认提交否决票(整单)'
+  }
+  return t[opConfirmAction.value]
+})
+// 确认弹窗展示的审批后利率:整单可调取用户填写值,否则定链分项当前审批利率
+const opConfirmRate = computed(() => {
+  if (opRate.value != null) return opRate.value
+  return anchorItem.value?.currentApprovalRate ?? anchorItem.value?.requestedRate
+})
+// 打开审批概要确认弹窗(前置校验:同意须有整单利率/否决须填意见/投票须有轮次)
+function openOpConfirm(action: 'APPROVE' | 'REJECT' | 'VOTE_APPROVE' | 'VOTE_REJECT') {
+  if (action === 'APPROVE' && isLoan.value && opRate.value == null) {
+    ElMessage.warning('请填写整单审批利率')
+    return
+  }
+  if (action === 'REJECT' && !opComment.value?.trim()) {
+    ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
+    return
+  }
+  if ((action === 'VOTE_APPROVE' || action === 'VOTE_REJECT') && !voteRound.value?.roundId) {
+    ElMessage.warning('未找到当前表决轮次,请刷新后重试')
+    return
+  }
+  opConfirmAction.value = action
+  opConfirmVisible.value = true
+}
+// 确认后正式提交(弹窗「确认提交」入口)
+async function confirmOpSubmit() {
+  const action = opConfirmAction.value
+  opConfirmVisible.value = false
+  if (action === 'APPROVE') return doApprove()
+  if (action === 'REJECT') return doReject()
+  return doVote(action === 'VOTE_APPROVE' ? 'APPROVE' : 'REJECT')
+}
+
 // 整单同意审批(2026-08-29):一次操作处理整单;调整利率统一应用到全部在途分项,不得越界
 async function doApprove() {
   if (isLoan.value && opRate.value == null) {
@@ -1441,15 +1610,6 @@ async function doVote(choice: string) {
     ElMessage.warning('未找到当前表决轮次,请刷新后重试')
     return
   }
-  if (choice === 'REJECT' && !opComment.value?.trim()) {
-    try {
-      await ElMessageBox.confirm('反对票未填写意见,建议补充以便后续环节参考,仍确认提交?', '反对意见缺失', {
-        type: 'warning', confirmButtonText: '仍提交', cancelButtonText: '返回补充'
-      })
-    } catch {
-      return
-    }
-  }
   submitting.value = true
   try {
     await submitBallot(roundId, {
@@ -1471,13 +1631,6 @@ async function doReject() {
   // P2-1:否决必填意见(否决后整单退回,客户经理凭意见了解否决原因)
   if (!opComment.value?.trim()) {
     ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
-    return
-  }
-  try {
-    await ElMessageBox.confirm('确认否决该整单?任一节点否决即整单否决,同申请全部分项一并退回,流程直接结束。', '否决整单', {
-      type: 'warning', confirmButtonText: '确认否决', cancelButtonText: '取消'
-    })
-  } catch {
     return
   }
   const nodeCode = currentNodeCode.value
@@ -1524,7 +1677,7 @@ onMounted(load)
 .detail-wrap { min-height: 200px; }
 /* 吸底审批操作条为 fixed 定位:审批人可操作时给页尾留出条高,避免遮挡内容 */
 .detail-wrap--action { padding-bottom: 96px; }
-.remark-text { font-size: 14px; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
+.remark-text { font-size: 14px; font-weight: 600; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
 .stat-card__sub { margin-top: 4px; }
@@ -1557,6 +1710,44 @@ onMounted(load)
 .rate-bad { color: var(--color-danger); font-weight: 600; }
 .rate-warn { color: var(--color-warning); font-weight: 600; }
 .muted { color: var(--color-text-secondary, #909399); }
+/* 机构达成概要卡(2026-09-01):名称/月份/平均达成率+进度条,折叠态一行摘要 */
+.org-perf {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: 8px;
+  background: var(--color-bg, #f8f9fa); margin-bottom: 10px;
+}
+.org-perf--fold {
+  flex-direction: row; align-items: center; justify-content: space-between;
+  cursor: pointer; margin-bottom: 0;
+}
+.org-perf--fold:hover { background: var(--color-fill, #f0f2f5); }
+.org-perf__line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.org-perf__name { font-size: 15px; font-weight: 700; color: var(--color-text-main); }
+.org-perf__month { font-size: 13px; color: var(--color-text-sub); }
+.org-perf__rate { font-size: 18px; font-weight: 700; }
+.org-perf__rate-label { font-size: 12px; color: var(--color-text-sub); }
+.org-perf__main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.org-perf__title { display: flex; align-items: baseline; gap: 10px; }
+.org-perf__bar { height: 6px; border-radius: 3px; background: var(--color-border-light, #e5e7eb); overflow: hidden; }
+.org-perf__bar-inner { height: 100%; border-radius: 3px; background: var(--color-primary); transition: width .3s ease; }
+.org-perf__bar-inner.rate-ok { background: var(--color-success); }
+.org-perf__bar-inner.rate-warn { background: var(--color-warning); }
+.org-perf__bar-inner.rate-bad { background: var(--color-danger); }
+.org-perf__meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--color-text-sub); }
+.org-perf__meta b { font-weight: 600; color: var(--color-text-main); }
+/* 审批概要确认弹窗(2026-09-01):键值列表式展示申请/客户/金额/利率/意见 */
+.op-confirm { display: flex; flex-direction: column; }
+.op-confirm__row {
+  display: flex; align-items: baseline; gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-light, #eef0f2);
+  font-size: 14px;
+}
+.op-confirm__row:last-child { border-bottom: none; }
+.op-confirm__label { width: 76px; flex: none; font-size: 13px; color: var(--color-text-sub); }
+.op-confirm__action { font-weight: 700; }
+.op-confirm__action.is-ok { color: var(--color-success); }
+.op-confirm__action.is-danger { color: var(--color-danger); }
+.op-confirm__opinion { color: var(--color-text-main); white-space: pre-wrap; word-break: break-word; }
 
 /* 历史履约:按申请聚合总览 */
 .overall { margin-bottom: 2px; }

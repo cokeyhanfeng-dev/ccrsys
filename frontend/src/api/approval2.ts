@@ -17,3 +17,8 @@ export function listRoundOpinions<T = any[]>(roundId: number | string): Promise<
 export function listProductLimits<T = any[]>(status?: string): Promise<T> {
   return get<T>('/ccr/products/rate-limits', status ? { status } : {})
 }
+
+/** 授信协议历史审批申请(§2026-09-01 存量授信展示:按 credit_info_json.agreementNo 查同协议历史申请审批状态) */
+export function listAgreementHistory<T = any[]>(agreementNo: string): Promise<T> {
+  return get<T>('/ccr/approval/agreement-history', { agreementNo })
+}

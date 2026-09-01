@@ -713,6 +713,24 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
     }
 
+    /** 授信协议历史审批申请(§2026-09-01 存量授信展示:按 credit_info_json.agreementNo 查同协议历史申请,返回审批状态/金额) */
+    @Override
+    public List<Map<String, Object>> agreementHistory(String agreementNo) {
+        if (StrUtil.isBlank(agreementNo)) {
+            return java.util.Collections.emptyList();
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT a.application_no applicationNo, a.business_type businessType,
+                       a.customer_no customerNo, a.status, a.submit_time submitTime,
+                       a.final_time finalTime,
+                       (SELECT COALESCE(SUM(p.pricing_amount), 0) FROM ccr_pricing_item p
+                        WHERE p.application_id = a.id AND p.del_flag = '0') applicationAmount
+                FROM ccr_application a
+                WHERE a.del_flag = '0' AND a.status <> 'DRAFT'
+                  AND JSON_UNQUOTE(JSON_EXTRACT(a.credit_info_json, '$.agreementNo')) = ?
+                ORDER BY a.submit_time DESC, a.id DESC""", agreementNo);
+    }
+
     @Override
     public Map<String, Object> historyDetail(Long applicationId) {
         SysUserRead user = currentLoginUser.requireCurrentUser();

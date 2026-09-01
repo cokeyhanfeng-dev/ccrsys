@@ -207,6 +207,15 @@ export interface ApplicationDetail {
     specialMentionBalance?: number
     externalGuaranteeBalance?: number
   }>
+  /** 他行融资明细(人工补录/Excel 导入/数仓带出均可编辑,随单持久化;草稿恢复以此为准) */
+  otherLoans?: Array<{
+    lenderName: string
+    creditAmount?: number
+    usedAmount?: number
+    balanceAmount?: number
+    annualRate?: number
+    inputMode?: string
+  }>
 }
 
 /** 路由预览(RoutePreviewResponse) */

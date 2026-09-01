@@ -69,6 +69,9 @@ public interface ApprovalService {
      */
     Map<String, Object> historyDetail(Long applicationId);
 
+    /** 授信协议历史审批申请(§2026-09-01 存量授信展示:按 credit_info_json.agreementNo 查同协议历史申请) */
+    List<Map<String, Object>> agreementHistory(String agreementNo);
+
     /**
      * 审批中客户号回填(2026-08-20 #017):新增客户提交时数仓未收录 → 占位号(NEW+证件后6位);
      * 审批中数仓已收录后,由申请人/审批人回填真实客户号。仅占用位号的分项可回填,

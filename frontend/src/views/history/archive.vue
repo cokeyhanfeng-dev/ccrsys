@@ -262,11 +262,11 @@
           <thead><tr><th>机构</th><th>统计月份</th><th>达成金额(万元)</th><th>目标金额(万元)</th><th>达成率</th><th>数据日期</th></tr></thead>
           <tbody>
             <tr v-for="o in orgPerformance" :key="o.orgCode">
-              <td>{{ o.orgCode || '—' }}</td>
+              <td>{{ o.orgName || o.orgCode || '—' }}</td>
               <td>{{ o.statMonth }}</td>
               <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
               <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
-              <td class="num">{{ o.completionRate != null ? `${o.completionRate}%` : '—' }}</td>
+              <td class="num">{{ rateRatioText(o.completionRate) }}</td>
               <td>{{ fmtDate(o.dataDt) }}</td>
             </tr>
           </tbody>
@@ -629,6 +629,13 @@ function fmtDate(t: any) {
 }
 function rateText(r: any) {
   return r !== null && r !== undefined && r !== '' && r !== '—' ? `${r}%` : '—'
+}
+// 机构达成率展示:completionRate 为 0-1 比例(60/1000=0.06=6%),×100 转百分比(2026-09-01 修复展示口径)
+function rateRatioText(r: any) {
+  if (r === null || r === undefined || r === '' || r === '—') return '—'
+  const v = Number(r)
+  if (!Number.isFinite(v)) return '—'
+  return `${Math.round(v * 10000) / 100}%`
 }
 function termText(p: any) {
   const v = val(p, 'term_value', 'termValue')

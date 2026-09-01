@@ -618,7 +618,7 @@
       <div v-for="({ g, idx }) in visibleGuarantees" :key="idx" class="mortgage-item guarantee-item item-card">
         <div class="mortgage-item__head">
           <span class="guarantee-item__title">
-            授信方案{{ cnOrdinal(idx + 1) }}
+            授信方案分项{{ cnOrdinal(idx + 1) }}
             <span v-if="isGroup && g.memberCustomerNo" class="guarantee-item__member">{{ memberNameOf(g.memberCustomerNo) }}</span>
             <span class="badge badge--info">{{ guaranteeTypeText(g.guaranteeType) }}</span>
             <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
@@ -1268,7 +1268,7 @@ const confirmRateText = computed(() => {
 /** 提交确认弹窗额度明细行(§2026-08-26;集团成员带 member 才展示成员列) */
 const confirmDetailRows = computed(() =>
   form.guarantees.map((g, i) => ({
-    itemNo: `授信方案${cnOrdinal(i + 1)}`,
+    itemNo: `授信方案分项${cnOrdinal(i + 1)}`,
     member: g.memberCustomerNo ? memberNameOf(g.memberCustomerNo) : undefined,
     guaranteeType: guaranteeTypeText(g.guaranteeType),
     term: termTextOf(g),
@@ -2680,6 +2680,23 @@ async function loadDraftIntoForm(id: number | string) {
     memberCustomerNo: c.memberCustomerNo || '',
     endDate: c.endDate ? String(c.endDate).slice(0, 10) : ''
   }))
+
+  // 他行融资以草稿/已保存数据为准(数仓实时值仅作新建带出;草稿恢复不得被数仓空值覆盖,§2026-09-01)
+  const savedLoans = d.otherLoans || []
+  if (savedLoans.length) {
+    otherLoans.value = savedLoans.map((loan: any) => ({
+      lenderName: loan.lenderName || '',
+      creditAmount: loan.creditAmount != null ? String(loan.creditAmount) : '',
+      usedAmount: loan.usedAmount != null ? String(loan.usedAmount) : '',
+      balanceAmount: loan.balanceAmount != null ? String(loan.balanceAmount) : '',
+      annualRate: loan.annualRate != null ? String(loan.annualRate) : '',
+      inputMode: loan.inputMode || 'MANUAL'
+    }))
+  }
+  const savedSummary = d.creditSummary?.[0]
+  if (savedSummary && Object.keys(savedSummary).length) {
+    otherSummary.value = { ...savedSummary }
+  }
 }
 </script>
 
@@ -2811,6 +2828,14 @@ async function loadDraftIntoForm(id: number | string) {
 .commitment-card__no { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
 .commitment-card__grid { margin-bottom: 0; }
 .commitment-card__grid .form-field { margin-bottom: 0; }
+/* 承诺卡 6 字段一行排(指标宽/单位窄,按比例;GROUP 追加成员字段时自然折行),中屏 3 列、小屏单列 */
+.commitment-card__grid { grid-template-columns: 1.5fr 1.1fr 0.9fr 1.1fr 1.2fr 0.8fr; }
+@media (max-width: 1200px) {
+  .commitment-card__grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .commitment-card__grid { grid-template-columns: 1fr; }
+}
 .commitment-static { min-height: 36px; display: flex; align-items: center; }
 
 /* 向导步骤条(沿用 design-system .stepper) */
