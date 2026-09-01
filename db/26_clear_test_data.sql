@@ -44,6 +44,7 @@ TRUNCATE TABLE ccr_resolution;
 TRUNCATE TABLE ccr_commitment_metric;
 TRUNCATE TABLE ccr_commitment_member_alloc;
 TRUNCATE TABLE ccr_commitment_plan;
+TRUNCATE TABLE ccr_commitment_track;
 TRUNCATE TABLE ccr_tracking_evaluation;
 
 -- 申请/分项/担保/合同/附件
