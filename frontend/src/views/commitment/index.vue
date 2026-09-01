@@ -90,9 +90,9 @@
                           <div v-if="r.metricCode && r.metricName !== r.metricCode" class="section-tip">{{ r.metricCode }}</div>
                         </td>
                         <td>{{ targetTypeText(r.targetKind) }}</td>
-                        <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></td>
+                        <td class="num">{{ fmtValue(r.targetValue) }}<span v-if="r.unit" class="cell-unit">{{ commitmentUnitText(r.unit) }}</span></td>
                         <td class="num">
-                          <span v-if="r.actualValue != null">{{ fmtValue(r.actualValue) }}<span v-if="r.unit" class="cell-unit">{{ r.unit }}</span></span>
+                          <span v-if="r.actualValue != null">{{ fmtValue(r.actualValue) }}<span v-if="r.unit" class="cell-unit">{{ commitmentUnitText(r.unit) }}</span></span>
                           <span v-else-if="r.dataStatus === 'NO_DATA'" class="section-tip">暂无数据</span>
                           <span v-else>—</span>
                         </td>
@@ -130,14 +130,14 @@
               <div><div class="desc-item__label">所属申请</div><div class="desc-item__value">{{ detail.row.applicationNo || '—' }}</div></div>
               <div><div class="desc-item__label">承诺指标</div><div class="desc-item__value">{{ metricName(detail.row.metricCode, detail.row.metricName || detail.row.metricCode || '—') }}</div></div>
               <div><div class="desc-item__label">目标类型</div><div class="desc-item__value">{{ targetTypeText(detail.row.targetKind) }}</div></div>
-              <div><div class="desc-item__label">目标值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.targetValue) }} {{ detail.row.unit || '' }}</div></div>
+              <div><div class="desc-item__label">目标值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.targetValue) }} {{ detail.row.unit ? commitmentUnitText(detail.row.unit) : '' }}</div></div>
               <div><div class="desc-item__label">截止日期</div><div class="desc-item__value">{{ detail.row.endDate || '—' }}</div></div>
               <div><div class="desc-item__label">状态</div><div class="desc-item__value"><span :class="trackStatusBadge(detail.row.status)">{{ trackStatusText(detail.row.status) }}</span></div></div>
             </div>
 
             <div class="form-group-title" style="margin-top:16px">完成情况</div>
             <div class="desc-grid desc-grid--3">
-              <div><div class="desc-item__label">当前值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.actualValue) }} {{ detail.row.unit || '' }}</div></div>
+              <div><div class="desc-item__label">当前值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.actualValue) }} {{ detail.row.unit ? commitmentUnitText(detail.row.unit) : '' }}</div></div>
               <div>
                 <div class="desc-item__label">完成比例</div>
                 <div class="desc-item__value desc-item__value--num">
@@ -147,7 +147,7 @@
                 </div>
               </div>
               <div><div class="desc-item__label">数仓数据日期</div><div class="desc-item__value">{{ detail.row.dataDt || '—' }}</div></div>
-              <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.finalActual) }} {{ detail.row.unit || '' }}</div></div>
+              <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案值</div><div class="desc-item__value desc-item__value--num">{{ fmtValue(detail.row.finalActual) }} {{ detail.row.unit ? commitmentUnitText(detail.row.unit) : '' }}</div></div>
               <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案比例</div><div class="desc-item__value desc-item__value--num">{{ detail.row.finalRatio != null ? pct(detail.row.finalRatio) + '%' : '—' }}</div></div>
               <div v-if="detail.row.status !== 'TRACKING'"><div class="desc-item__label">定案时间</div><div class="desc-item__value">{{ fmtTime(detail.row.finishTime) }}</div></div>
             </div>
@@ -175,7 +175,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { listCommitmentTracks, getCommitmentTrackDetail } from '@/api/commitment'
-import { metricName, targetTypeText, appStatusText, appStatusBadge, businessTypeText } from '@/utils/dict'
+import { metricName, targetTypeText, appStatusText, appStatusBadge, businessTypeText, commitmentUnitText } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 
 const rows = ref<any[]>([])

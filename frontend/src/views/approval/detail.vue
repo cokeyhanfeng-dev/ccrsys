@@ -70,38 +70,25 @@
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
-      <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属收进「明细▸」展开行) -->
+      <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示) -->
       <table class="table" style="margin-top:12px">
         <thead><tr>
           <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
           <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
-          <th>当前节点</th><th>状态</th><th></th>
+          <th>当前节点</th><th>状态</th>
         </tr></thead>
         <tbody>
-          <template v-for="it in siblingItems" :key="it.id">
-            <tr>
-              <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
-              <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
-              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-              <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
-              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-              <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
-              <td>{{ agreementNos.join('、') || '—' }}</td>
-              <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
-              <td>{{ itemStatusText(it.status) }}</td>
-              <td><button class="btn btn--text" @click="toggleItemDetail(it.id)">{{ itemDetailOpen(it.id) ? '收起 ▲' : '明细 ▸' }}</button></td>
-            </tr>
-            <!-- 明细展开行:主列之外的字段以描述列表呈现 -->
-            <tr v-if="itemDetailOpen(it.id)">
-              <td :colspan="itemTableCols" style="padding: 4px 12px 10px; background: var(--color-fill, #f8f9fa)">
-                <div class="desc-grid desc-grid--3">
-                  <div><div class="desc-item__label">产品</div><div class="desc-item__value">{{ productName(it.productCode) }}</div></div>
-                  <div><div class="desc-item__label">期限</div><div class="desc-item__value">{{ it.termValue != null ? `${it.termValue}${termUnitText(it.termUnit)}` : '—' }}</div></div>
-                  <div><div class="desc-item__label">部门归属</div><div class="desc-item__value">{{ it.routeCode === 'SIX_PEOPLE_GROUP' ? '上会表决' : deptText(it.deptCode) }}</div></div>
-                </div>
-              </td>
-            </tr>
-          </template>
+          <tr v-for="it in siblingItems" :key="it.id">
+            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+            <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
+            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+            <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
+            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+            <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+            <td>{{ agreementNos.join('、') || '—' }}</td>
+            <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
+            <td>{{ itemStatusText(it.status) }}</td>
+          </tr>
         </tbody>
       </table>
       <div class="remark-text" style="margin-top:12px" v-if="application.applicationRemark">{{ application.applicationRemark }}</div>
@@ -225,7 +212,7 @@
     </div>
 
     <!-- 6c. 授信信息(授信协议:编号/类型/币种/状态/起止/额度/已用/可用;仅贷款场景,存款无授信) -->
-    <!-- 低频只读资料(docs/29 §2.3):默认折叠为一行轻提示,点击展开查看 -->
+    <!-- 授信信息为审批关键数据,默认展开直接展示客户所有存量授信(2026-09-01 需求) -->
     <div class="card" v-if="isLoan">
       <div class="card__head"><span>授信信息</span><span class="badge badge--info">存量授信</span></div>
       <template v-if="creditAgreements.length">
@@ -1025,23 +1012,8 @@ function syncActiveAnchor() {
 onMounted(() => window.addEventListener('scroll', syncActiveAnchor, { passive: true }))
 onUnmounted(() => window.removeEventListener('scroll', syncActiveAnchor))
 
-// 低频只读资料卡默认折叠(docs/29 §2.3):授信/附件/他行融资/关联人,v-show 切换
-const fold = ref({ credit: true, attach: true, otherLoan: true, related: true })
-
-// 分项表明细展开行(docs/29 §2.3):主列之外的字段收进展开行,按分项 id 记录展开状态
-const expandedItemIds = ref<Set<string>>(new Set())
-function itemDetailOpen(id: any): boolean {
-  return expandedItemIds.value.has(String(id))
-}
-function toggleItemDetail(id: any) {
-  const k = String(id)
-  const next = new Set(expandedItemIds.value)
-  if (next.has(k)) next.delete(k)
-  else next.add(k)
-  expandedItemIds.value = next
-}
-// 分项表展开行 colspan(2026-09-01 表结构调整:去定价分项列,主列=金额/原利率/申请利率/测算利率/授信协议/当前节点/状态/明细按钮,动态列=集团成员+贷款担保)
-const itemTableCols = computed(() => 8 + (isGroup.value ? 1 : 0) + (isLoan.value ? 1 : 0))
+// 低频只读资料卡折叠(docs/29 §2.3):附件/他行融资/关联人默认折叠;授信信息为审批关键数据默认展开(2026-09-01)
+const fold = ref({ credit: false, attach: true, otherLoan: true, related: true })
 
 // 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
