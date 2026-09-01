@@ -316,16 +316,17 @@ function exceedOf(d: DepositItemRow): boolean {
 }
 
 // 存款期限按产品类型下拉(需求:不手输直接选):对公定期=3/6月·1/2/3年;通知存款=1天/7天;协定存款无固定期限
+// 期限文案统一用阿拉伯数字(2026-08-29 用户要求:一天/7天/一年 混用不一致,统一为数字格式)
 const DEPOSIT_TERM_OPTIONS: Record<string, { value: string; label: string; tv: string; tu: string }[]> = {
   CORP_TIME_DEPOSIT: [
     { value: '3:MONTH', label: '3个月', tv: '3', tu: 'MONTH' },
     { value: '6:MONTH', label: '6个月', tv: '6', tu: 'MONTH' },
-    { value: '1:YEAR', label: '一年', tv: '1', tu: 'YEAR' },
-    { value: '2:YEAR', label: '两年', tv: '2', tu: 'YEAR' },
-    { value: '3:YEAR', label: '三年', tv: '3', tu: 'YEAR' },
+    { value: '1:YEAR', label: '1年', tv: '1', tu: 'YEAR' },
+    { value: '2:YEAR', label: '2年', tv: '2', tu: 'YEAR' },
+    { value: '3:YEAR', label: '3年', tv: '3', tu: 'YEAR' },
   ],
   NOTICE_DEPOSIT: [
-    { value: '1:DAY', label: '一天通知', tv: '1', tu: 'DAY' },
+    { value: '1:DAY', label: '1天通知', tv: '1', tu: 'DAY' },
     { value: '7:DAY', label: '7天通知', tv: '7', tu: 'DAY' },
   ],
 }

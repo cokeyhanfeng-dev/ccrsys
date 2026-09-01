@@ -321,20 +321,16 @@ function onCommand(cmd: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 白底胶囊承托 logo(深色侧栏上深色文字不可见);图片按高度缩放完整收纳,防文字溢出边界 */
+  /* 方形白底通栏承托 logo(深色侧栏上深色文字不可见);logo 350×41 超宽比例按宽度等比缩放 */
   background: #fff;
-  border-radius: 8px;
-  margin: 12px 10px 8px;
-  padding: 8px 10px;
-  overflow: hidden;
+  margin: 0 0 8px;
+  padding: 8px 12px;
 }
 .brand-logo-img {
   flex: none;
   display: block;
-  height: 28px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
+  width: 100%;
+  height: auto;
 }
 /* 顶栏:AntD Pro 扁平白头条——通栏、吸顶、无圆角卡片感(负 margin 抵消 app-main 内边距) */
 .topbar {
