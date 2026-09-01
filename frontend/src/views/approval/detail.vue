@@ -27,7 +27,7 @@
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-customer' }" @click="scrollToSection('s-customer'); activeAnchor = 's-customer'">客户与集团</a>
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-contrib' }" @click="scrollToSection('s-contrib'); activeAnchor = 's-contrib'">承诺与履约</a>
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-flow' }" @click="scrollToSection('s-flow'); activeAnchor = 's-flow'">流程轨迹</a>
-        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-decide' }" @click="scrollToSection('s-decide'); activeAnchor = 's-decide'">审批决定 ⬇</a>
+        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-decide' }" @click="scrollToSection('s-decide'); activeAnchor = 's-decide'">利率审批 ⬇</a>
       </nav>
     </div>
 
@@ -608,7 +608,7 @@
     </div>
     </div>
 
-    <!-- 第五段:审批决定(行长整单决策/按担保分项逐项审批 + 吸底操作条) -->
+    <!-- 第五段:利率审批(行长整单决策/按担保分项逐项审批 + 吸底操作条) -->
     <div class="anchor-section" id="s-decide">
     <!-- 11d. 行长决策(整单,§7.5):六人小组表决通过后待总行行长决策;与申请/审批页一致不拆分为项,
          行长统一「同意利率/一票否决」,并在本区查看六人小组匿名审批意见(§12.7) -->
@@ -680,11 +680,11 @@
       </div>
     </div>
 
-    <!-- 12. 审批决定(整单交付改造 2026-08-29:整单一次审批,不逐分项点同意/否决;
-         分项明细只读,贷款按利率最低分项定流程,整单统一利率/操作) -->
+    <!-- 12. 利率审批(整单交付改造 2026-08-29:整单一次审批,不逐分项点同意/否决;
+         分项明细,贷款按利率最低分项定流程,整单统一利率/操作) -->
     <div class="card" v-if="actionable">
       <div class="card__head">
-        <span>审批决定(整单)</span>
+        <span>利率审批</span>
         <span class="badge badge--processing">当前节点:{{ nodeLabel(currentNodeCode) }} · 整单一次审批</span>
       </div>
       <div class="stat-card__sub" style="margin-bottom:10px">
@@ -692,15 +692,14 @@
           ? `本申请共 ${siblingItems.length} 个分项,按利率最低分项定整单流程,一次审批处理整单(任一节点否决即整单否决)。`
           : `本申请共 ${siblingItems.length} 个分项,按原流程整单审批,一次处理整单。` }}
       </div>
-      <!-- 分项明细只读(整单统一决策,分项不再独立审批) -->
-      <div class="op-item__subhead">分项明细(只读)</div>
+      <!-- 分项明细(整单统一决策,分项不再独立审批) -->
+      <div class="op-item__subhead">分项明细</div>
       <table class="table">
         <thead><tr>
-          <th>分项编号</th><th>成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
+          <th>成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
         </tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
-            <td>{{ it.pricingItemNo || it.id }}</td>
             <td>{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
             <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
             <td>{{ fmtTerm(it) }}</td>
@@ -761,7 +760,7 @@
           <button class="btn btn--primary" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('APPROVE')">同意</button>
           <button class="btn btn--danger" :disabled="submitting || wholeOrderActed" @click="openOpConfirm('REJECT')">否决</button>
         </template>
-        <button class="btn btn--secondary" @click="goBack">返回待办列表</button>
+        <button class="btn btn--text" @click="goBack">返回待办列表</button>
       </div>
     </div>
 

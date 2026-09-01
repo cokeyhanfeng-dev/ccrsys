@@ -46,47 +46,11 @@
           </div>
         </div>
         <div class="todo-card__action">
-          <button class="btn btn--secondary" @click.stop="openCheck(c)">核验资料</button>
           <button class="btn btn--primary" @click.stop="goDetail(c)">进入完整审批</button>
         </div>
       </div>
       <div class="empty" v-if="!loading && !todoCards.length">暂无待审批任务</div>
       </template>
-    </div>
-
-
-    <!-- 核验资料弹层(§12.8:6 格摘要 + 进入完整审批) -->
-    <div class="modal" v-if="check.show">
-      <div class="modal__card">
-        <div class="modal__title">核验资料 · {{ check.customer }}</div>
-        <div class="modal__body" v-if="check.loaded">
-          <div class="desc-grid desc-grid--2">
-            <div class="desc-item"><div class="desc-item__label">客户</div><div class="desc-item__value">{{ check.customer }}</div></div>
-            <div class="desc-item"><div class="desc-item__label">金额</div><div class="desc-item__value">{{ check.amount }}</div></div>
-            <div class="desc-item"><div class="desc-item__label">申请利率</div><div class="desc-item__value">{{ check.rate }}</div></div>
-            <div class="desc-item"><div class="desc-item__label">原利率</div><div class="desc-item__value">{{ check.originalRate }}</div></div>
-            <div class="desc-item"><div class="desc-item__label">快照数据日期</div><div class="desc-item__value">{{ check.dataDt }}</div></div>
-          </div>
-        </div>
-        <div class="modal__body" v-else-if="check.error">
-          <div class="empty">
-            {{ check.error }}
-            <div style="margin-top:12px">
-              <button class="btn btn--secondary" @click="openCheck(check)">重试</button>
-            </div>
-          </div>
-        </div>
-        <div class="modal__body" v-else>
-          <div class="check-loading">
-            <el-icon class="is-loading" style="font-size:22px"><Loading /></el-icon>
-            <span>核验资料加载中...</span>
-          </div>
-        </div>
-        <div class="modal__actions">
-          <button class="btn btn--secondary" @click="check.show = false">关闭</button>
-          <button class="btn btn--primary" @click="goDetail(check)">进入完整审批</button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -94,7 +58,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listApprovalTasks, getApprovalDetail } from '@/api/approval'
+import { listApprovalTasks } from '@/api/approval'
 import { listVoteTodo, listPresidentTodo } from '@/api/vote'
 import { useUserStore } from '@/store/user'
 import { nodeLabel, itemStatusText, actionText, productName } from '@/utils/dict'
@@ -112,11 +76,6 @@ const isApprovalRole = computed(() => (userStore.userInfo?.roles || [])
   .some((r) => ['branch_manager', 'dept_gm', 'vice_president'].includes(r)))
 // 行长(总行):待决策分项走行长决策接口(表决通过/行长决议状态),在利率审批页一并展示
 const isPresident = computed(() => (userStore.userInfo?.roles || []).includes('president'))
-
-const check = ref<any>({
-  show: false, loaded: false, id: null,
-  customer: '', amount: '', rate: '', originalRate: '', dataDt: '', error: ''
-})
 
 function statusText(s?: string) {
   return itemStatusText(s)
@@ -164,7 +123,8 @@ async function load() {
         itemCount: items.length,
         single,
         pricingItemNo: single ? (first.pricingItemNo || keyId) : `${items.length} 个担保分项`,
-        customer: first.pricingCustomerNo || first.customerNo || '-',
+        // 客户显示名优先(listTodo 已补 customerName,§2026-09-01),回退客户号
+        customer: first.customerName || first.pricingCustomerNo || first.customerNo || '-',
         amount: single ? (first.pricingAmount ?? '-') : items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0),
         rate: single ? (first.requestedRate ?? '-') : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}` : '-'),
         // 原执行利率按全部分项收集:有值显区间、全空显「新增业务」,不再只取第一个分项
@@ -193,30 +153,7 @@ async function load() {
 }
 
 
-// 核验资料(§12.8):取审批详情的摘要信息(整单化传 applicationId)
-async function openCheck(c: any) {
-  check.value = {
-    show: true, loaded: false, id: c.applicationId, applicationId: c.applicationId,
-    customer: c.customer, amount: `${fmtAmount(c.amount)} 万元`, rate: `${c.rate}%`,
-    originalRate: c.originalRate, qualityOverall: '', dataDt: '—', error: ''
-  }
-  try {
-    const d = await getApprovalDetail(c.applicationId)
-    const pi = d.pricingItem || {}
-    const customer = d.customer?.[0] || {}
-    check.value.customer = customer.customerName || pi.pricing_customer_no || c.customer
-    check.value.amount = pi.pricing_amount != null ? `${fmtAmount(pi.pricing_amount)} 万元` : `${fmtAmount(c.amount)} 万元`
-    check.value.rate = pi.requested_rate != null ? `${pi.requested_rate}%` : `${c.rate}%`
-    check.value.originalRate = pi.original_rate != null ? `${pi.original_rate}%` : '新增业务'
-    check.value.dataDt = d.source === 'SNAPSHOT' ? (d.snapshotInfo?.dataDt || '—') : '实时取数(未冻结快照)'
-    check.value.loaded = true
-  } catch {
-    check.value.error = '核验资料加载失败,请重试或进入完整审批查看'
-  }
-}
-
 function goDetail(c: any) {
-  check.value.show = false
   // 整单详情入口用 applicationId(后端 /ccr/approval/{applicationId}/detail)
   router.push(`/approval/${c.applicationId}`)
 }
@@ -235,7 +172,6 @@ onMounted(load)
 .tc-item-row { display: flex; gap: 18px; align-items: center; }
 .tc-item-row__no { font-weight: 600; min-width: 140px; }
 .todo-card__action { display: flex; align-items: center; gap: 8px; }
-.check-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 80px; color: var(--color-text-sub); }
 /* 768px 断点:操作区换到卡片下方,避免挤压摘要内容 */
 @media (max-width: 767px) {
   .todo-card { flex-direction: column; align-items: stretch; gap: 10px; }

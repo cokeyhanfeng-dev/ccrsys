@@ -1,5 +1,6 @@
 package com.ccr.application.domain;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.ccr.common.core.domain.BaseEntity;
 import lombok.Data;
@@ -27,6 +28,10 @@ public class CcrPricingItem extends BaseEntity {
 
     /** 集团成员客户号(集团场景必填) */
     private String memberCustomerNo;
+
+    /** 客户/集团显示名称(非表字段;待办卡片展示,listTodo 从申请快照解析填充;§2026-09-01) */
+    @TableField(exist = false)
+    private String customerName;
 
     /** LOAN_CONTRACT / DEPOSIT_ACCOUNT */
     private String pricingCarrierType;

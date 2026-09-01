@@ -260,7 +260,8 @@ const todoItems = computed(() => {
     const rates = ps.map((x) => Number(x.requestedRate) || 0)
     items.push({
       key: `task-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
-      title: first.pricingCustomerNo || '—',
+      // 客户显示名优先(listTodo 已按申请补 customerName,§2026-09-01),回退客户号
+      title: first.customerName || first.pricingCustomerNo || '—',
       itemNo: single ? (first.pricingItemNo || first.id) : `${ps.length} 个担保分项`,
       nodeText: nodeLabel(first.currentNodeCode),
       amount: single
@@ -289,7 +290,8 @@ const todoItems = computed(() => {
     items.push({
       // §委员工作台:表决条目并入审批待办展示(用户口径:无「表决」概念),kind/badge/按钮与审批待办一致
       key: `vote-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
-      title: first.pricingCustomerNo || first.customerNo || '—',
+      // 客户显示名优先(listVoteTodo 同 listTodo 口径带 customerName),回退客户号
+      title: first.customerName || first.pricingCustomerNo || first.customerNo || '—',
       itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个担保分项`,
       nodeText: nodeLabel(first.currentNodeCode),
       amount: single

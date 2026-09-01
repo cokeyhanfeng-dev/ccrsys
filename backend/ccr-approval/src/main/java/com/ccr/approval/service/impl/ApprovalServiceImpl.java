@@ -68,6 +68,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 普通节点审批实现(§7.2 贷款 / §7.3 存款)
@@ -138,37 +139,84 @@ public class ApprovalServiceImpl implements ApprovalService {
         LambdaQueryWrapper<CcrPricingItem> wrapper = new LambdaQueryWrapper<CcrPricingItem>()
                 .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
                 .orderByAsc(CcrPricingItem::getCreateTime);
+        List<CcrPricingItem> result;
         if (CurrentLoginUser.ROLE_ADMIN.equals(user.getRoleCode())) {
-            return pricingItemMapper.selectList(wrapper);
+            result = pricingItemMapper.selectList(wrapper);
+        } else {
+            String nodeCode = currentLoginUser.nodeOfRole(user.getRoleCode());
+            List<CcrPricingItem> merged = new ArrayList<>();
+            // 主角色节点待办;无节点角色(客户经理)或小组节点(走表决待办) → 跳过
+            if (nodeCode != null && !RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
+                // 支行行长(含网点)只见本支行及下辖网点客户经理的申请(§5.4 DEPT 级:apply_branch_code 前缀匹配)
+                if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(user.getRoleCode())) {
+                    String branchPrefix = branchCodeOf(user.getOrgId());
+                    if (branchPrefix != null) {
+                        wrapper.inSql(CcrPricingItem::getApplicationId,
+                                "SELECT id FROM ccr_application WHERE del_flag = '0' AND apply_branch_code LIKE '" + branchPrefix + "%'");
+                    }
+                }
+                merged.addAll(filterByNodeAssignee(
+                        pricingItemMapper.selectList(
+                                wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode)),
+                        nodeCode, user.getId()));
+            }
+            // 秘书岗兼岗(§需求四:贷审会秘书由计划财务部总经理兼任,主角色 dept_gm 映射不到 SECRETARY 节点):
+            // 在 SECRETARY 节点指派内的用户额外查该节点 ROUTING 待办
+            if (nodeAssigneeResolver.isUserInAssignees("SECRETARY", user.getId())) {
+                merged.addAll(filterByNodeAssignee(
+                        pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                                .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                                .eq(CcrPricingItem::getCurrentNodeCode, "SECRETARY")
+                                .orderByAsc(CcrPricingItem::getCreateTime)),
+                        "SECRETARY", user.getId()));
+            }
+            result = merged;
         }
-        String nodeCode = currentLoginUser.nodeOfRole(user.getRoleCode());
-        List<CcrPricingItem> merged = new ArrayList<>();
-        // 主角色节点待办;无节点角色(客户经理)或小组节点(走表决待办) → 跳过
-        if (nodeCode != null && !RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
-            // 支行行长(含网点)只见本支行及下辖网点客户经理的申请(§5.4 DEPT 级:apply_branch_code 前缀匹配)
-            if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(user.getRoleCode())) {
-                String branchPrefix = branchCodeOf(user.getOrgId());
-                if (branchPrefix != null) {
-                    wrapper.inSql(CcrPricingItem::getApplicationId,
-                            "SELECT id FROM ccr_application WHERE del_flag = '0' AND apply_branch_code LIKE '" + branchPrefix + "%'");
+        // 待办卡片客户显示名(§2026-09-01):工作台「待审批」卡片主标题显示客户名称而非客户号,按申请批量反查快照
+        fillTodoCustomerName(result);
+        return result;
+    }
+
+    /** 待办分项客户/集团显示名称:按 applicationId 批量取申请,复用历史列表快照解析口径(客户快照 customerName,集团回退 groupName;§2026-09-01) */
+    private void fillTodoCustomerName(List<CcrPricingItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        Set<Long> appIds = items.stream().map(CcrPricingItem::getApplicationId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (appIds.isEmpty()) {
+            return;
+        }
+        List<CcrApplication> apps = applicationMapper.selectList(new LambdaQueryWrapper<CcrApplication>()
+                .in(CcrApplication::getId, appIds));
+        fillDisplayCustomerName(apps);
+        // 集团申请快照缺 groupName(仅存 groupNo)时回退手工集团表名称(§2026-09-01)
+        Map<Long, String> groupFallback = new HashMap<>();
+        for (CcrApplication a : apps) {
+            if (StrUtil.isBlank(a.getCustomerName()) && StrUtil.isNotBlank(a.getGroupInfoJson())) {
+                String groupNo = extractJsonName(a.getGroupInfoJson(), "groupNo");
+                if (StrUtil.isNotBlank(groupNo)) {
+                    // queryForList 而非 queryForObject:查无记录不抛 EmptyResultDataAccessException
+                    List<String> names = jdbcTemplate.queryForList(
+                            "SELECT group_name FROM ccr_group WHERE group_no = ? AND del_flag = '0' LIMIT 1",
+                            String.class, groupNo);
+                    if (!names.isEmpty() && StrUtil.isNotBlank(names.get(0))) {
+                        groupFallback.put(a.getId(), names.get(0));
+                    }
                 }
             }
-            merged.addAll(filterByNodeAssignee(
-                    pricingItemMapper.selectList(
-                            wrapper.eq(CcrPricingItem::getCurrentNodeCode, nodeCode)),
-                    nodeCode, user.getId()));
         }
-        // 秘书岗兼岗(§需求四:贷审会秘书由计划财务部总经理兼任,主角色 dept_gm 映射不到 SECRETARY 节点):
-        // 在 SECRETARY 节点指派内的用户额外查该节点 ROUTING 待办
-        if (nodeAssigneeResolver.isUserInAssignees("SECRETARY", user.getId())) {
-            merged.addAll(filterByNodeAssignee(
-                    pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
-                            .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
-                            .eq(CcrPricingItem::getCurrentNodeCode, "SECRETARY")
-                            .orderByAsc(CcrPricingItem::getCreateTime)),
-                    "SECRETARY", user.getId()));
+        // 手动循环而非 Collectors.toMap:toMap 对 null value(未解析到名称)抛 NPE
+        Map<Long, String> nameByApp = new HashMap<>();
+        for (CcrApplication a : apps) {
+            nameByApp.put(a.getId(),
+                    StrUtil.isNotBlank(a.getCustomerName()) ? a.getCustomerName() : groupFallback.get(a.getId()));
         }
-        return merged;
+        for (CcrPricingItem item : items) {
+            if (item.getApplicationId() != null) {
+                item.setCustomerName(nameByApp.get(item.getApplicationId()));
+            }
+        }
     }
 
     /** 支行编码(机构 org_id → ccr_sys_dept.branch_code;网点用户上溯所属支行) */
@@ -670,19 +718,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
     }
 
-    /** 从 JSON 快照提取指定 key 的字符串值(快照为系统序列化,格式稳定: "\"key\":\"value\"") */
+    /** 从 JSON 快照提取指定 key 的字符串值(兼容紧凑/带空格两种序列化: "key":"value" 或 "key": "value";§2026-09-01 兼容) */
     private String extractJsonName(String json, String key) {
         if (StrUtil.isBlank(json)) {
             return null;
         }
-        String marker = "\"" + key + "\":\"";
-        int from = json.indexOf(marker);
-        if (from < 0) {
-            return null;
-        }
-        int start = from + marker.length();
-        int end = json.indexOf('"', start);
-        return end < 0 ? null : json.substring(start, end);
+        // key 为内部固定值(customerName/groupName),无注入风险
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"")
+                .matcher(json);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     /** 批量标记申请是否有已签发决议(一次 IN 查询避免 N+1) */
