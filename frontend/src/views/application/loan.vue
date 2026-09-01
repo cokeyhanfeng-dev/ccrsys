@@ -1,19 +1,22 @@
 <template>
   <div class="wizard-page form-compact">
-    <div class="section-head">
-      <div class="section-title">贷款利率申请</div>
-    </div>
+    <!-- 页头:AntD Pro PageContainer 白色通栏(标题 + 步骤条收进页头区;通栏样式见 .wizard-header,不吸顶) -->
+    <div class="wizard-header">
+      <div class="section-head">
+        <div class="section-title">贷款利率申请</div>
+      </div>
 
-    <!-- 步骤条(§14.1) -->
-    <div class="stepper wizard-stepper">
-      <div
-        v-for="(s, i) in steps" :key="s"
-        class="stepper__step"
-        :class="{ 'stepper__step--active': i === step, 'stepper__step--done': i < step }"
-        @click="goStep(i)"
-      >
-        <span class="stepper__dot">{{ i + 1 }}</span>
-        <div>{{ s }}</div>
+      <!-- 步骤条(§14.1) -->
+      <div class="stepper wizard-stepper">
+        <div
+          v-for="(s, i) in steps" :key="s"
+          class="stepper__step"
+          :class="{ 'stepper__step--active': i === step, 'stepper__step--done': i < step }"
+          @click="goStep(i)"
+        >
+          <span class="stepper__dot">{{ i + 1 }}</span>
+          <div>{{ s }}</div>
+        </div>
       </div>
     </div>
 
@@ -282,7 +285,7 @@
           </div>
         </div>
         <!-- 集团成员(§docs/29 §2.2):工具条 = 标题 + 已选徽标 + 勾选语义说明 + 手工补录入口;表格补「来源」「操作」列,手工成员可删除 -->
-        <div v-if="groupMembers.length" class="member-block" style="margin-top:12px">
+        <div v-if="groupMembers.length" class="member-block" style="margin-top:16px">
           <div class="card-toolbar">
             <span class="card-toolbar__title">集团成员</span>
             <span class="badge badge--neutral">已选 {{ selectedMembers.length }}/{{ groupMembers.length }}</span>
@@ -481,7 +484,7 @@
 
     <!-- 第三步:利率申请(按成员×合同切分,逐担保方式;执行利率集中在分项录入) -->
     <div v-if="step === 3" class="form-card">
-      <div class="card-toolbar">
+      <div class="card-toolbar form-card__title">
         <span class="card-toolbar__title">利率申请</span>
         <span class="card-toolbar__sub">按担保方式拆分分项,逐分项独立路由、独立表决</span>
         <div class="card-toolbar__actions" v-if="isGroup">
@@ -934,7 +937,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { fmtSize } from '@/utils/format' // §UI审查:附件大小自适应 B/KB/MB
 import { listEnabledProducts } from '@/api/system'
@@ -1299,7 +1302,30 @@ async function selectCustomer(item: any) {
   form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
   // 换客户重新自动判断业务类型(名下有合同默认存量;客户经理手动选定后保持其选择)
   userPickedBusinessType.value = false
-  await loadCustomerDetail()
+  const detail = await loadCustomerDetail()
+  // 集团成员单户阻断(2026-09-01):对公客户属于集团不能以单户方式发起利率申请,提示并引导走集团申请
+  const bg = detail?.basic?.groupNo ? { groupNo: detail.basic.groupNo, groupName: detail.basic.groupName || '' } : null
+  if (bg) {
+    try {
+      await ElMessageBox.confirm(
+        `客户「${form.customerName}」属于集团「${bg.groupName}（${bg.groupNo}）」，不能以单户方式发起利率申请。请走集团客户申请流程。`,
+        '集团客户',
+        { confirmButtonText: '去集团申请', cancelButtonText: '取消', type: 'warning' }
+      )
+      // 去集团申请:切集团类型并带出集团号,触发集团信息加载
+      form.customerScope = 'GROUP'
+      form.customerNo = ''
+      form.customerName = ''
+      form.groupNo = bg.groupNo
+      form.groupName = bg.groupName
+      await queryGroup()
+    } catch {
+      // 取消:留在单户页,清空客户主体选择,避免带病提交(提交校验 customerNo 必填兜底)
+      form.customerNo = ''
+      form.customerName = ''
+      ElMessage.warning('已取消该客户的选择，该客户为集团客户，请改走集团客户申请流程')
+    }
+  }
 }
 
 async function loadCustomerDetail() {
@@ -1351,6 +1377,7 @@ async function loadCustomerDetail() {
     otherSummary.value = { ...(detail.creditSummary?.[0] || {}) }
     otherLoans.value = (detail.creditDetail || []).map((d: any) => ({ ...d, inputMode: 'DW' }))
     ElMessage.success(`已带出客户 ${form.customerName || form.customerNo} 信息`)
+    return detail
   } catch {
     // 数仓无该客户记录(新增客户手工填写)按新户判定;其余错误由拦截器提示
   }
@@ -2701,16 +2728,30 @@ async function loadDraftIntoForm(id: number | string) {
 </script>
 
 <style scoped>
-/* 开户机构下拉(el-select)与 .form-input 对齐(36px 高度/边框/圆角一致,跟随全局紧凑值) */
+/* 开户机构下拉(el-select)与 .form-input 对齐(32px 高度/AntD 边框色/圆角一致,跟随全局紧凑值) */
 .open-org-select.el-select { width: 100%; }
 .open-org-select.el-select :deep(.el-select__wrapper) {
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px #dcdfe6 inset;
+  box-shadow: 0 0 0 1px var(--color-border) inset;
 }
 .open-org-select.el-select :deep(.el-select__placeholder) { color: #c0c4cc; }
-.section-head { margin-bottom: 10px; }
+/* 页头:AntD Pro PageContainer 白色通栏区块(页面标题 + 步骤条收进页头)——负 margin 抵消 app-main
+   16px/20px 内边距,底部 1px #f0f0f0 细分割线;不吸顶,页头随内容滚动 */
+.wizard-header {
+  background: var(--color-surface);
+  margin: -16px -20px 16px;
+  padding: 16px 24px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+@media (max-width: 767px) {
+  .wizard-header { margin: -12px -16px 16px; padding: 12px 16px 0; }
+}
+.wizard-header .section-head { margin-bottom: 0; }
+/* AntD Pro 页头标题:20px 600 纯文字,去掉渐变竖条装饰 */
+.wizard-header .section-title { font-size: 20px; }
+.wizard-header .section-title::before { display: none; }
 .section-tip { font-size: 13px; color: var(--color-text-sub); }
 /* 表单字段纵向布局:label 全页统一置上(§docs/29 §2.2),输入框全宽 */
 .form-field { display: block; }
@@ -2740,30 +2781,48 @@ async function loadDraftIntoForm(id: number | string) {
 .form-field :deep(.el-select__placeholder) {
   color: #9ca3af;
 }
-/* 表单卡与全局 .card 观感一致(去边框+浅投影,紧凑内边距) */
+/* 表单卡与全局 .card 观感一致(去边框+浅投影);卡片间距统一 16px、卡片内边距 24px(AntD Pro 高级表单节奏) */
 .form-card {
   background: var(--color-surface);
   border: none;
   border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-bottom: 10px;
+  padding: 24px;
+  margin-bottom: 16px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.form-card__title { font-size: var(--fs-h3); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-/* 4 列网格:文本框随列收窄;label 同行后列宽紧凑,跨列字段降至 span 2 */
-.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 10px; }
+/* AntD 卡头:标题 16px 600 + 卡头底部 1px #f0f0f0 分隔线拉通卡片边距(负 margin 抵消卡片 24px 内边距),
+   卡头内边距 16px 24px;纯标题无渐变竖条等装饰 */
+.form-card__title {
+  font-size: var(--fs-h3); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+  margin: -24px -24px 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+/* 第三步「利率申请」以 card-toolbar 作卡头(标题 + 说明 + 右侧操作):主标题字号对齐卡头 16px */
+.form-card__title .card-toolbar__title { font-size: var(--fs-h3); }
+/* 4 列等宽网格:文本框随列收窄;行列间距统一 16px(8 的倍数,清掉 10/12/14 混用) */
+.form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.form-compact .form-grid { gap: 16px; }
 .table { border-radius: var(--radius); overflow-x: auto; }
 .table--nested { margin-top: 8px; }
-.guarantee-item { margin-bottom: 10px; }
+/* 分项卡(利率申请):白底 + #f0f0f0 细边框,间距统一 16px,与外层卡片节奏一致 */
+.guarantee-item {
+  margin-bottom: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  padding: 16px;
+}
 .guarantee-item__title { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
-.guarantee-detail-block { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
+.mortgage-item__head { margin-bottom: 16px; }
+.guarantee-detail-block { margin-top: 16px; border-top: 1px dashed var(--color-border); padding-top: 16px; }
 
 /* 授信概览条(利率申请步骤):固定 3 列,存量/新增/GROUP 项按列对齐,协议表占整行 */
 .credit-overview {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 12px;
+  gap: 16px;
   background: var(--color-primary-light); border-radius: var(--radius-sm);
-  padding: 8px 12px; margin-bottom: 10px;
+  padding: 12px 16px; margin-bottom: 16px;
 }
 .credit-overview__item span.req { color: var(--color-danger); }
 .credit-overview__item {
@@ -2781,15 +2840,15 @@ async function loadDraftIntoForm(id: number | string) {
 .credit-overview-warning {
   background: #fef2f2; color: var(--color-danger);
   border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
-  padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
+  padding: 8px 12px; font-size: 13px; margin-bottom: 16px;
 }
 /* 存量授信协议区块(独立卡片,替代原塞在 credit-overview 内的整行区;每份协议独立申请,选中即展示该协议内容) */
 .agreement-block {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-bottom: 10px;
+  padding: 16px 24px;
+  margin-bottom: 16px;
 }
 .agreement-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .agreement-pick__label { font-size: 13px; font-weight: 600; }
@@ -2798,33 +2857,33 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-detail {
   display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px 28px;
   background: #f8fafc; border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px;
+  border-radius: var(--radius-sm); padding: 12px 16px; margin-top: 16px;
 }
 .agreement-detail__item { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
 .agreement-detail__label { font-size: 12px; color: var(--color-text-sub); }
 .agreement-detail__item b { font-size: 14px; font-weight: 600; color: var(--color-text-main); font-variant-numeric: tabular-nums; }
 .agreement-detail__item--amount b { font-size: 18px; color: var(--color-primary); }
-.agreement-detail-empty { margin-top: 10px; }
+.agreement-detail-empty { margin-top: 16px; }
 /* 存量授信协议折叠面板:标题条可点(默认收起减少空白),展开区承载下拉选/手工补录(§2026-08-26) */
 .agreement-pick--head { cursor: pointer; user-select: none; }
 .agreement-pick--head:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .agreement-pick__state { font-size: 12px; color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
 .agreement-pick__arrow { margin-left: auto; color: var(--color-text-light); font-size: 12px; }
-.agreement-pick__body { margin-top: 10px; }
-.agreement-manual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px; margin-top: 10px; }
+.agreement-pick__body { margin-top: 16px; }
+.agreement-manual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
 .agreement-manual .form-field { margin-bottom: 0; }
 .detail-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); display: flex; align-items: center; justify-content: space-between; }
 .req { color: var(--color-danger); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }
 
 /* 拟达成承诺卡片(替代横向表格:承诺字段多,表格列宽超容器被横向滚动截断,卡片 3 列网格完整展示) */
-.commitment-list { display: flex; flex-direction: column; gap: 12px; }
+.commitment-list { display: flex; flex-direction: column; gap: 16px; }
 .commitment-card {
   border: none; border-radius: var(--radius-sm);
-  padding: 10px 12px; background: var(--color-surface);
+  padding: 16px; background: var(--color-surface);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.commitment-card__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.commitment-card__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .commitment-card__no { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
 .commitment-card__grid { margin-bottom: 0; }
 .commitment-card__grid .form-field { margin-bottom: 0; }
@@ -2838,16 +2897,28 @@ async function loadDraftIntoForm(id: number | string) {
 }
 .commitment-static { min-height: 36px; display: flex; align-items: center; }
 
-/* 向导步骤条(沿用 design-system .stepper) */
+/* 向导步骤条(沿用 design-system .stepper):融入白色页头区(去浮卡背景/投影/外边距) */
 .wizard-stepper {
-  background: var(--color-surface);
+  background: transparent;
   border: none;
-  border-radius: var(--radius);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: 10px;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  border-radius: 0;
+  padding: 12px 0 16px;
+  margin-bottom: 0;
+  box-shadow: none;
 }
 .wizard-stepper .stepper__step { cursor: pointer; }
+/* AntD Steps 观感:已完成节点品牌蓝勾(白底蓝圈蓝 ✓)、当前节点品牌蓝实心圈(全局已有)、未到灰色;
+   已过连接线品牌蓝;步骤可点击跳步保留 */
+.wizard-stepper .stepper__step--done { color: var(--color-text-main); }
+.wizard-stepper .stepper__step--done .stepper__dot {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  font-size: 0;
+  box-shadow: none;
+}
+.wizard-stepper .stepper__step--done .stepper__dot::after { content: '✓'; font-size: 12px; line-height: 1; }
+.wizard-stepper .stepper__step--done:not(:last-child)::after { background: var(--color-primary); }
 /* §UI审查:7 步步骤条窄屏下每步定宽,容器横向滚动避免文字挤压 */
 @media (max-width: 900px) {
   .wizard-stepper { overflow-x: auto; }
@@ -2855,6 +2926,10 @@ async function loadDraftIntoForm(id: number | string) {
 }
 /* 吸底操作条占位:页面底部留白,避免固定 .page-action-bar 遮挡末步内容 */
 .wizard-page { padding-bottom: 64px; }
+
+/* 吸底操作条:AntD Pro FooterToolbar 观感——左「存草稿」,右侧「上一步/下一步/提交申请」(主按钮最右) */
+.page-action-bar { justify-content: flex-end; }
+.page-action-bar .btn--ghost { margin-right: auto; }
 
 /* 草稿横幅 */
 .draft-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-sub); }
@@ -2869,46 +2944,43 @@ async function loadDraftIntoForm(id: number | string) {
 .member-row--checked td { background: var(--color-primary-light); }
 /* 集团档案/补录区块:在 form-grid 内跨满整行(§docs/29 §2.2) */
 .group-archive, .group-supplement-block { grid-column: 1 / -1; margin-top: 4px; }
-.group-archive { background: var(--color-bg); border-radius: var(--radius-sm); padding: 10px 14px; }
-.group-supplement-block { border-top: 1px dashed var(--color-border); padding-top: 10px; }
+.group-archive { background: var(--color-bg); border-radius: var(--radius-sm); padding: 16px; }
+.group-supplement-block { border-top: 1px dashed var(--color-border); padding-top: 16px; }
 /* 分项卡头成员名(§docs/29 §2.2:成员名 + 担保方式徽标) */
 .guarantee-item__member { color: var(--color-primary); }
 /* 手工成员补录弹窗:表单字段多,弹窗加宽并内部滚动 */
 .member-modal__card { max-width: 960px; }
-.member-modal__row + .member-modal__row { border-top: 1px dashed var(--color-border); margin-top: 12px; padding-top: 4px; }
+.member-modal__row + .member-modal__row { border-top: 1px dashed var(--color-border); margin-top: 16px; padding-top: 4px; }
 .member-modal__row .btn { margin-bottom: 10px; }
 
-/* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄) */
-.mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px 10px !important; }
+/* 利率申请分项卡片网格(4 列等宽对齐全局,minmax 防内容溢出;文本框随列收窄;间距统一 16px) */
+.mortgage-item__grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 16px !important; }
 .mortgage-item__grid .form-input, .mortgage-item__grid .form-select { width: 100%; }
-@media (max-width: 1100px) { .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-/* §UI审查:他行融资概要字段网格(5 列,窄屏降 2 列) */
+/* §UI审查:他行融资概要字段网格(4 列与其他表单区节奏一致,间距 16px) */
 .other-summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
   margin-top: 8px;
 }
 .other-summary-grid .form-field { margin-bottom: 0; }
-@media (max-width: 1100px) { .other-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* 贷款分项基础字段(§2026-08-26 整体优化):label 置上+输入框全宽——避免 108px 定宽 label 挤窄输入框致期限文字截断;
-   auto-fit 等宽列 + 统一 10px 间距保证栏位平衡;字段尽量排一行,窄屏自动降列 */
-.loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; gap: 10px !important; }
+   auto-fit 等宽列 + 统一 16px 间距保证栏位平衡;字段尽量排一行,窄屏自动降列 */
+.loan-basic-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; gap: 16px !important; }
 /* 防止 select 选中长文本(如集团成员名)撑宽单列,保证各栏位列宽均等 */
 .loan-basic-grid > .form-field { min-width: 0; }
 @media (max-width: 800px) { .loan-basic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 /* 抵押物子项:不再嵌套全局 .mortgage-item 浅灰卡,避免双层卡视觉乱 */
-.mortgage-sub { margin-bottom: 10px; }
+.mortgage-sub { margin-bottom: 16px; }
 .mortgage-sub .mortgage-item__head { margin-bottom: 8px; }
 /* 明细表格(质押/保证金/存单/保证人)内输入框与表单字段字号统一 13px */
 .table .form-input { font-size: 13px; }
-/* 授信概览条窄屏降 2 列 */
-@media (max-width: 1100px) { .credit-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* 向导内容铺满主区(2026-08-21:移除 1360px 限宽,宽屏下页面整体占满不留右侧留白) */
 
-/* 中间断点:中等宽度下 4 列网格降为 2 列(页面自适应增强) */
-@media (max-width: 1100px) {
-  .form-grid, .credit-overview { grid-template-columns: repeat(2, 1fr); }
+/* 中间断点:≤1200px 各表单区 4 列网格统一降为 2 列(页面自适应增强) */
+@media (max-width: 1200px) {
+  .form-grid, .credit-overview, .other-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .mortgage-item__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 /* 768px 单列断点(§docs/29 §2.2:窄屏可用,移动端单列需求另行立项) */
 @media (max-width: 768px) {

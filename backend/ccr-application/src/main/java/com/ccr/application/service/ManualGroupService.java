@@ -10,6 +10,7 @@ import com.ccr.application.mapper.CcrGroupMemberMapper;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,9 @@ public class ManualGroupService {
 
     @Resource
     private DataWarehouseService dataWarehouseService;
+
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     // ---------- 管理 CRUD ----------
 
@@ -190,5 +194,17 @@ public class ManualGroupService {
                 .eq(CcrGroupMember::getGroupNo, groupNo)
                 .eq(CcrGroupMember::getMemberCustomerNo, memberCustomerNo)
                 .last("limit 1"));
+    }
+
+    /** 客户所属手工集团(未删且在团;无则 null)——集团成员单户申请判定(2026-09-01) */
+    public Map<String, Object> groupOfCustomer(String customerNo) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT g.group_no AS groupNo, g.group_name AS groupName
+                FROM ccr_group_member m
+                JOIN ccr_group g ON g.group_no = m.group_no AND g.del_flag = '0'
+                WHERE m.member_customer_no = ? AND m.del_flag = '0'
+                  AND (m.relation_end IS NULL OR m.relation_end >= CURDATE())
+                LIMIT 1""", customerNo);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 }

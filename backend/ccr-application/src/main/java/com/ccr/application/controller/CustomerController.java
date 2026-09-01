@@ -3,6 +3,7 @@ package com.ccr.application.controller;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.ContributionMerger;
@@ -36,6 +37,9 @@ public class CustomerController {
 
     @Resource
     private DataWarehouseService dataWarehouseService;
+
+    @Resource
+    private ManualGroupService manualGroupService;
 
     @Resource
     private AppLoginUser appLoginUser;
@@ -117,7 +121,17 @@ public class CustomerController {
                 WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no) LIMIT 1""", customerNo);
         if (!corp.isEmpty()) {
             assertManagerPermitted(corp.get(0));
-            result.put("basic", corp.get(0));
+            Map<String, Object> basic = corp.get(0);
+            // 集团成员单户判定(2026-09-01):数仓优先,手工集团回退;命中带出集团归属,前端阻断单户申请
+            Map<String, Object> groupOf = dataWarehouseService.groupOfCustomer(customerNo);
+            if (groupOf == null) {
+                groupOf = manualGroupService.groupOfCustomer(customerNo);
+            }
+            if (groupOf != null) {
+                basic.put("groupNo", groupOf.get("groupNo"));
+                basic.put("groupName", groupOf.get("groupName"));
+            }
+            result.put("basic", basic);
             result.put("custType", "CORP");
         } else {
             List<Map<String, Object>> indv = jdbcTemplate.queryForList("""

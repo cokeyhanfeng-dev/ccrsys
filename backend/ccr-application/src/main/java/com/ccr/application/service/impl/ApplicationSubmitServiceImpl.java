@@ -354,9 +354,21 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 }
             }
         } else {
-            Map<String, Object> basic = "INDIVIDUAL".equals(app.getCustomerScope())
+            boolean individual = "INDIVIDUAL".equals(app.getCustomerScope());
+            Map<String, Object> basic = individual
                     ? dataWarehouseService.findIndvCustomer(app.getCustomerNo())
                     : dataWarehouseService.findCorpCustomer(app.getCustomerNo());
+            // 集团成员单户阻断(2026-09-01):客户属于集团不能以单户申请利率,须走集团客户申请流程(数仓优先,手工集团回退)
+            if (!individual) {
+                Map<String, Object> groupOf = dataWarehouseService.groupOfCustomer(app.getCustomerNo());
+                if (groupOf == null) {
+                    groupOf = manualGroupService.groupOfCustomer(app.getCustomerNo());
+                }
+                if (groupOf != null) {
+                    items.add(precheckItem("GROUP_MEMBER_SINGLE", "BLOCK", app.getCustomerNo(),
+                            "该客户属于集团[" + groupOf.get("groupName") + "]，不能以单户方式申请利率，请走集团客户申请流程"));
+                }
+            }
             if (basic == null) {
                 // 新增客户:后台数仓拉不出主数据时,客户经理手工填写(customer_info_json 非空)即视为人工确权,降为 WARN 放行
                 boolean manualProvided = StrUtil.isNotBlank(app.getCustomerInfoJson());

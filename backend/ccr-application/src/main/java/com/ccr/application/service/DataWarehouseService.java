@@ -141,6 +141,19 @@ public class DataWarehouseService {
                 groupNo, memberCustomerNo);
     }
 
+    /** 客户所属数仓集团(最新批次,在团;无则 null)——集团成员单户申请判定(2026-09-01) */
+    public Map<String, Object> groupOfCustomer(String customerNo) {
+        return queryOne("""
+                SELECT g.group_no AS groupNo, g.group_name AS groupName
+                FROM dw_customer_group_member_snapshot m
+                JOIN dw_customer_group_snapshot g ON g.group_no = m.group_no
+                  AND g.data_dt = (SELECT MAX(g2.data_dt) FROM dw_customer_group_snapshot g2)
+                WHERE m.member_customer_no = ?
+                  AND m.data_dt = (SELECT MAX(m2.data_dt) FROM dw_customer_group_member_snapshot m2)
+                  AND (m.relation_end IS NULL OR m.relation_end >= CURDATE())
+                LIMIT 1""", customerNo);
+    }
+
     /** 集团授信(最新批次,有效优先) */
     public Map<String, Object> findGroupCredit(String groupNo) {
         return queryOne("""
