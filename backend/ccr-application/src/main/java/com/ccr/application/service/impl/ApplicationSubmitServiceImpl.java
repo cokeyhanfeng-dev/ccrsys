@@ -401,24 +401,29 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
      *  集团沿用成员额度勾稽不进此;快照缺省回退分项金额(无明确总额)时跳过,前端已拦 */
     private List<SubmitCheckResponse.QualityPrecheckItem> guaranteeTotalPrecheck(CcrApplication app, List<CcrPricingItem> items) {
         List<SubmitCheckResponse.QualityPrecheckItem> result = new ArrayList<>();
-        if ("GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getCreditInfoJson())) {
-            return result;
-        }
-        try {
-            BigDecimal totalCredit = JSONUtil.parseObj(app.getCreditInfoJson()).getBigDecimal("totalCredit");
-            if (totalCredit == null || totalCredit.signum() <= 0) {
+        BigDecimal totalCredit;
+        if ("GROUP".equals(app.getCustomerScope())) {
+            totalCredit = applyAmountOf(app);
+        } else {
+            if (StrUtil.isBlank(app.getCreditInfoJson())) {
                 return result;
             }
-            BigDecimal itemSum = items.stream()
-                    .map(CcrPricingItem::getPricingAmount)
-                    .filter(java.util.Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (itemSum.subtract(totalCredit).abs().compareTo(new BigDecimal("0.01")) > 0) {
-                result.add(precheckItem("ITEM_TOTAL_CREDIT", "BLOCK", app.getCustomerNo(),
-                        "分项申请金额合计 " + itemSum + " 万元与授信总额 " + totalCredit + " 万元不一致,请调整分项金额(合计须等于授信总额)"));
+            try {
+                totalCredit = JSONUtil.parseObj(app.getCreditInfoJson()).getBigDecimal("totalCredit");
+            } catch (Exception ignored) {
+                return result; // 快照解析失败跳过勾稽(前端已拦,后端不强堵)
             }
-        } catch (Exception ignored) {
-            // 快照解析失败跳过勾稽(前端已拦,后端不强堵)
+        }
+        if (totalCredit == null || totalCredit.signum() <= 0) {
+            return result;
+        }
+        BigDecimal itemSum = items.stream()
+                .map(CcrPricingItem::getPricingAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (itemSum.subtract(totalCredit).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            result.add(precheckItem("ITEM_TOTAL_CREDIT", "BLOCK", app.getCustomerNo(),
+                    "分项申请金额合计 " + itemSum + " 万元与授信总额 " + totalCredit + " 万元不一致,请调整分项金额(合计须等于授信总额)"));
         }
         return result;
     }
@@ -1473,20 +1478,28 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * 分项金额勾稽硬校验(2026-09-01 用户拍板):非集团分项申请金额合计须等于授信总额(credit_info_json.totalCredit 快照值)
-     * 才能提交——分项申请金额是实际执行额度,授信总额是客户可用额度,两者不一致说明分项拆分错误。
-     * 集团场景沿用成员额度勾稽(checkGroupConstraints),不进此;快照缺省回退分项金额(无明确总额)时跳过(前端已拦)。
+     * 分项金额勾稽硬校验(2026-09-01 用户拍板):分项申请金额合计须等于授信总额才能提交——
+     * 分项申请金额是实际执行额度,授信总额是客户可用额度,两者不一致说明分项拆分错误。
+     * 单户授信总额=credit_info_json.totalCredit(存量=数仓授信协议金额合计自动带出,新增=手工录入);
+     * 集团授信总额=group_info_json.applyAmount(前端按集团批复授信额度优先回退手工录入总授信落库,
+     * 与勾稽条/序列化/路由定档同口径:存量集团=集团当前授信协议批复总额,新增集团=新增授信总额)。
+     * 集团同时沿用成员额度勾稽(checkGroupConstraints,成员申请金额合计≤申请额度)并存。
+     * 快照缺省回退分项金额(无明确总额)时跳过(前端已拦)。
      * 与 submitCheck 预校验 guaranteeTotalPrecheck 同口径双拦截,失败整单回滚。
      */
     private void checkGuaranteeTotal(CcrApplication app, List<CcrPricingItem> items) {
-        if ("GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getCreditInfoJson())) {
-            return;
-        }
         BigDecimal totalCredit;
-        try {
-            totalCredit = JSONUtil.parseObj(app.getCreditInfoJson()).getBigDecimal("totalCredit");
-        } catch (Exception ignored) {
-            return; // 快照解析失败跳过勾稽(前端已拦)
+        if ("GROUP".equals(app.getCustomerScope())) {
+            totalCredit = applyAmountOf(app);
+        } else {
+            if (StrUtil.isBlank(app.getCreditInfoJson())) {
+                return;
+            }
+            try {
+                totalCredit = JSONUtil.parseObj(app.getCreditInfoJson()).getBigDecimal("totalCredit");
+            } catch (Exception ignored) {
+                return; // 快照解析失败跳过勾稽(前端已拦)
+            }
         }
         if (totalCredit == null || totalCredit.signum() <= 0) {
             return;

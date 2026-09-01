@@ -584,9 +584,6 @@
         </div>
       </div>
 
-      <div v-if="overGroupAvailable" class="credit-overview-warning">
-        分项金额合计已超过集团可用额度,请调整分项金额;是否超授以服务端提交校验为准。
-      </div>
       <div v-if="overAgreementCredit" class="credit-overview-warning">
         分项金额合计已超过所选授信协议额度({{ selectedAgreement?.agreementNo || '—' }})，请按协议额度向下拆分；是否超授以服务端提交校验为准。
       </div>
@@ -827,7 +824,8 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">截止日期 <span class="req">*</span></label>
-              <input type="date" class="form-input" v-model="c.endDate" placeholder="承诺截止" />
+              <input type="date" class="form-input" v-model="c.endDate" placeholder="承诺截止" :min="commitmentDateRange.min" :max="commitmentDateRange.max" @change="clampCommitmentEndDate(c)" />
+              <div class="section-tip">限 12 个月内（{{ commitmentDateRange.min }} ~ {{ commitmentDateRange.max }}）</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">单位</label>
@@ -1601,14 +1599,6 @@ function cnOrdinal(n: number): string {
 }
 
 
-const overGroupAvailable = computed(() => {
-  if (form.customerScope !== 'GROUP') return false
-  const avail = groupCredit.value?.availableAmount
-  if (avail === null || avail === undefined || avail === '') return false
-  const n = Number(avail)
-  return Number.isFinite(n) && guaranteesTotalAmount.value > n
-})
-
 // ---------- 集团成员 Tab 与额度勾稽(§docs/29 §2.2,仅展示层分组,数据模型不变) ----------
 /** 成员 Tab 页签:每个已勾选成员一个页签,角标=该成员分项数;悬空分项由 repairOrphanGuarantees 自动归并,不设「待分配成员」页签 */
 const memberTabs = computed(() =>
@@ -1657,10 +1647,9 @@ const groupApplyAmount = computed(() => {
   return form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
 })
 const groupApplyAmountText = computed(() => (groupApplyAmount.value > 0 ? String(Math.round(groupApplyAmount.value * 100) / 100) : '—'))
-/** 勾稽条超额状态:集团可用额度超限(与既有预警同口径)或合计超本次申请额度 */
+/** 勾稽条超额状态:仅按合计超本次申请额度判断(2026-09-01 用户明确:集团不管可用额度,勾稽只对授信总额度) */
 const overGroupQuota = computed(() => {
   if (form.customerScope !== 'GROUP') return false
-  if (overGroupAvailable.value) return true
   return groupApplyAmount.value > 0 && guaranteesTotalAmount.value > groupApplyAmount.value
 })
 /** 页签内添加分项:沿用 addGuarantee,新分项成员预设为当前页签成员 */
@@ -1921,6 +1910,27 @@ function addCommitment() {
     memberCustomerNo: '', endDate: ''
   })
 }
+/** 承诺截止日期可选项:今天 ~ 今天+12个月(2026-09-01 用户要求:拟达成目标截止日期只能在12个月内) */
+const commitmentDateRange = (() => {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const min = fmt(now)
+  // 今天+12个月(先置1再进月,避免 31 日溢出;目标月不足当天时取月末)
+  const end = new Date(now)
+  end.setDate(1)
+  end.setMonth(end.getMonth() + 12)
+  end.setDate(Math.min(now.getDate(), new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate()))
+  return { min, max: fmt(end) }
+})()
+/** 截止日期选择兜底:超范围截断回边界并提示(原生 date input 手输可绕过 min/max,§2026-09-01) */
+function clampCommitmentEndDate(c: CommitmentRow) {
+  if (!c.endDate) return
+  if (c.endDate < commitmentDateRange.min || c.endDate > commitmentDateRange.max) {
+    c.endDate = c.endDate > commitmentDateRange.max ? commitmentDateRange.max : commitmentDateRange.min
+    ElMessage.warning('截止日期须在12个月内')
+  }
+}
 
 // ---------- 他行融资 ----------
 function addOtherLoan() {
@@ -2012,11 +2022,21 @@ function creditTotalAmount(): number {
   const n = Number(src)
   return Number.isFinite(n) && n > 0 ? n : 0
 }
-/** 分项申请金额合计与授信总额勾稽(§2026-09-01):非集团新增+存量严格相等,不等则拦;集团沿用后端成员额度勾稽不在此拦 */
+/** 分项申请金额合计与授信总额勾稽(§2026-09-01):分项申请金额合计须等于授信总额,不等则拦。
+ *  单户授信总额=存量所选协议额度/新增手工录入总授信(creditTotalAmount);
+ *  集团授信总额=集团批复授信额度优先(存量集团数仓带出),回退手工录入总授信(新增集团),
+ *  与勾稽条 groupApplyAmount/serializeGroupInfo/路由定档同口径;两者皆无则提示先补录。 */
 function validateGuaranteeTotal(): string | null {
-  if (form.customerScope === 'GROUP') return null
-  const total = creditTotalAmount()
-  if (total <= 0) return '请先录入总授信额度(存量:选择授信协议;新增:手工录入总授信额度)'
+  let total: number
+  if (form.customerScope === 'GROUP') {
+    const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
+    const manualTotal = Number(form.totalCredit)
+    total = groupCreditTotal > 0 ? groupCreditTotal : manualTotal > 0 ? manualTotal : 0
+    if (total <= 0) return '请先录入集团授信总额(存量集团:等待集团批复授信额度带出;新增集团:录入总授信额度)'
+  } else {
+    total = creditTotalAmount()
+    if (total <= 0) return '请先录入总授信额度(存量:选择授信协议;新增:手工录入总授信额度)'
+  }
   const sum = guaranteesTotalAmount.value
   if (Math.abs(sum - total) > 0.01) {
     const rs = Math.round(sum * 100) / 100
@@ -2048,7 +2068,7 @@ function validateStep(s: number): string | null {
   }
   // s===2 他行融资:不做任何校验(§2026-08-26 用户要求;概要/明细可自由填写,不再强制对应一致)
   if (s === 3) {
-    // 分项金额勾稽(§2026-09-01):非集团分项申请金额合计须等于授信总额,不等不能进入下一步
+    // 分项金额勾稽(§2026-09-01):单户/集团分项申请金额合计均须等于授信总额,不等不能进入下一步
     const gErr = validateGuaranteeTotal()
     if (gErr) return gErr
     for (let i = 0; i < form.guarantees.length; i++) {
@@ -2097,6 +2117,10 @@ function validateStep(s: number): string | null {
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
       if (c.metricCode === 'OTHER' ? isBlank(c.commitmentDesc) : isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入目标`
       if (isBlank(c.endDate)) return `第 ${i + 1} 条承诺未录入截止日期`
+      // 截止日期须在今天与今天+12个月之内(2026-09-01 用户要求,与 input min/max 同口径)
+      if (c.endDate < commitmentDateRange.min || c.endDate > commitmentDateRange.max) {
+        return `第 ${i + 1} 条承诺截止日期须在12个月内(今天~今天+12个月)`
+      }
       // 承诺数值非负(基准值可空,目标值必填;负数/越界在此拦截,§2026-08-25)
       if (c.metricCode !== 'OTHER') {
         const bv = Number(c.baselineValue)
