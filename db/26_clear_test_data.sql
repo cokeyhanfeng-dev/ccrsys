@@ -2,7 +2,8 @@
 -- 清除测试数据(2026-08-20,配合交付验收 / 回归前清理)
 -- 范围:
 --   ① 业务表:全部 TRUNCATE(申请/分项/担保/审批/表决/决议/快照/承诺/通知/审计/导出/outbox/
---      变更日志/手工集团) + Warm-Flow 运行数据(flow_instance/task/his_task/skip)
+--      变更日志/手工集团) + Warm-Flow 运行数据(flow_instance/task/his_task/flow_user)
+--      + Warm-Flow 流程定义(flow_definition/flow_node/flow_skip,后端启动自动重建)
 --   ② 数仓测试虚拟客户:按客户编号 DELETE(caps_*/dw_* 中 CUST001-004/101、CUSTP001/002、
 --      MEMBER_A/B、REL001、GROUP001 等测试编号)
 -- 保留:
@@ -11,7 +12,8 @@
 --     dept_vp/product*/lpr*/rule*/cache_config/dataset*/field*/metric_definition/
 --     source_mapping/validation_rule/display_schema/notification_rule*/tracking_policy*)
 --   - 数仓真实机构维度 dw_org_dim / dw_org_performance_snapshot(宜兴农商行真实机构,保留)
---   - Warm-Flow 流程定义(flow_definition/flow_node/flow_user,审批流程定义必须保留)
+--   - (Warm-Flow 流程定义不保留:flow_definition/flow_node/flow_skip 一并清理,
+--     后端启动 StandardFlowInitializer→ensureFlow 检测无发布定义→createFlow 自动重建)
 -- 幂等:业务表 TRUNCATE 可重复执行;数仓 DELETE 按测试编号精确删除,重复执行结果一致。
 -- 安全:TRUNCATE 隐式提交,执行前已 SET FOREIGN_KEY_CHECKS=0。
 -- 执行:docker exec -i ccr-mysql mysql -uroot -proot123 --default-character-set=utf8mb4 ccr_rate < db/26_clear_test_data.sql
@@ -24,8 +26,14 @@ USE `ccr_rate`;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- Warm-Flow 运行数据(流程定义 flow_definition/flow_node/flow_user 保留)
+-- Warm-Flow 流程定义(flow_skip 属定义非运行数据;definition/node/skip 三表一体,
+-- 不可单独清 skip,否则定义残缺且后端不重建;清后重启自动重建)
 TRUNCATE TABLE flow_skip;
+TRUNCATE TABLE flow_node;
+TRUNCATE TABLE flow_definition;
+
+-- Warm-Flow 运行数据(运行时办理人/实例/任务;定义已清,在途实例须一并清空)
+TRUNCATE TABLE flow_user;
 TRUNCATE TABLE flow_task;
 TRUNCATE TABLE flow_his_task;
 TRUNCATE TABLE flow_instance;
