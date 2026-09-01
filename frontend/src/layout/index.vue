@@ -306,7 +306,7 @@ function onCommand(cmd: string) {
 .app-sidebar__foot {
   padding: 16px 20px 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, .6); /* §UI审查:透明度 .32→.6,深色底对比达标 */
+  color: rgba(255, 255, 255, .6);
   letter-spacing: .5px;
 }
 .app-main {
@@ -321,17 +321,20 @@ function onCommand(cmd: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 白底胶囊承托 logo(深色侧栏上深色文字不可见,2026-08-29 修复) */
+  /* 白底胶囊承托 logo(深色侧栏上深色文字不可见);图片按高度缩放完整收纳,防文字溢出边界 */
   background: #fff;
   border-radius: 8px;
   margin: 12px 10px 8px;
-  padding: 10px;
+  padding: 8px 10px;
+  overflow: hidden;
 }
 .brand-logo-img {
   flex: none;
   display: block;
-  width: 100%;
-  height: auto;
+  height: 28px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 /* 顶栏:AntD Pro 扁平白头条——通栏、吸顶、无圆角卡片感(负 margin 抵消 app-main 内边距) */
 .topbar {
@@ -349,9 +352,9 @@ function onCommand(cmd: string) {
   z-index: 9;
 }
 .topbar__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-sub); /* 弱化顶栏标题,层级让给页内 PageContainer 页头 */
   display: flex;
   align-items: center;
 }
