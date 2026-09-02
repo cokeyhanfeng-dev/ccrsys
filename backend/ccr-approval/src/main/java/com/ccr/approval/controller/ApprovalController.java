@@ -499,6 +499,17 @@ public class ApprovalController {
             result.put("siblingItems", List.of());
         }
 
+        // 集团综合授信(集团申请 customer_no 为空,creditAgreements 无数据;按集团号查 dw_group_credit_snapshot 最新批次,§12.7)
+        if (groupScene) {
+            result.put("groupCredit", jdbcTemplate.queryForList(
+                    "SELECT approved_total_amount approvedTotalAmount, allocated_amount allocatedAmount, used_amount usedAmount,"
+                            + " available_amount availableAmount, currency, credit_start creditStart, credit_end creditEnd,"
+                            + " revolving_flag revolvingFlag, credit_status creditStatus"
+                            + " FROM dw_group_credit_snapshot WHERE group_no = ?"
+                            + " AND data_dt = (SELECT MAX(data_dt) FROM dw_group_credit_snapshot WHERE group_no = ?)",
+                    groupNoStr, groupNoStr));
+        }
+
         // 授信协议(§12.7:授信协议编号/类型/起止/额度/已用,数仓最新批次)
         result.put("creditAgreements", jdbcTemplate.queryForList(
                 "SELECT agreement_no agreementNo, agreement_type agreementType, credit_amount creditAmount, used_amount usedAmount, available_amount availableAmount, currency, start_date startDate, end_date endDate, agreement_status agreementStatus FROM dw_credit_agreement_snapshot WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_agreement_snapshot WHERE customer_no = ?) ORDER BY agreement_no", custNo, custNo));
