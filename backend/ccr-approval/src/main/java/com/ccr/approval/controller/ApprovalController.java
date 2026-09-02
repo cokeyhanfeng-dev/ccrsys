@@ -9,6 +9,7 @@ import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.approval.dto.ApprovalResult;
+import com.ccr.approval.dto.AutoBackfillResult;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.service.FlowMonitorService;
 import com.ccr.approval.support.RouteChains;
@@ -1398,6 +1399,17 @@ public class ApprovalController {
         }
         approvalService.backfillCustomerNo(pricingItemId, customerNo, certNo);
         return R.ok();
+    }
+
+    /**
+     * §2026-09-02 节点进入自动回填(决策二):单户占位申请进入审批详情时自动触发——
+     * 按 customer_info_json 证件号反查数仓,命中即整单占位→真实并级联(主单/分项/快照/关联人绑定/
+     * 关联人自身客户号);未命中不写库、不阻塞流程(仍保留页面人工「回填客户号」兜底)。
+     */
+    @PostMapping("/{applicationId}/auto-backfill-customer-no")
+    public R<AutoBackfillResult> autoBackfillCustomerNo(@PathVariable Long applicationId) {
+        applicationAccessService.requireView(applicationId);
+        return R.ok(approvalService.autoBackfillCustomerNo(applicationId));
     }
 
     /** 已办:当前登录人办理过的任务列表(§11.4) */

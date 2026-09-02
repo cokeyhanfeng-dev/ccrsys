@@ -2,6 +2,7 @@ package com.ccr.approval.service;
 
 import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.approval.dto.ApprovalResult;
+import com.ccr.approval.dto.AutoBackfillResult;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -83,4 +84,16 @@ public interface ApprovalService {
      * @param certNo        证件号(按证件号反查数仓真实客户号)
      */
     void backfillCustomerNo(Long pricingItemId, String customerNo, String certNo);
+
+    /**
+     * §2026-09-02 节点进入自动回填(决策二):单户占位申请(主单为空或 NEW 占位)进入审批详情时,
+     * 按 customer_info_json 证件号反查数仓主档,命中即整单占位→真实并级联(主单 customer_no、
+     * 分项 pricing_customer_no、快照 subject_id/core_json.cust_no、ccr_relation 绑定主体、
+     * ccr_application_related_person.related_customer_no);未命中不写库、不阻塞流程。
+     * 幂等:主单已是真实号直接返回。
+     *
+     * @param applicationId 申请主键
+     * @return 自动回填结果(applicable/backfilled/customerNo)
+     */
+    AutoBackfillResult autoBackfillCustomerNo(Long applicationId);
 }

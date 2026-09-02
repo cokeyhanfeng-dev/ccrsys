@@ -3,8 +3,10 @@ package com.ccr.application.controller;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.application.domain.CcrApplication;
+import com.ccr.application.domain.CcrPricingItem;
 import com.ccr.application.domain.CcrRelation;
 import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.mapper.CcrRelationMapper;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
@@ -48,6 +50,9 @@ public class RelationController {
     private CcrApplicationMapper applicationMapper;
 
     @Resource
+    private CcrPricingItemMapper pricingItemMapper;
+
+    @Resource
     private AppLoginUser appLoginUser;
 
     @Resource
@@ -77,11 +82,9 @@ public class RelationController {
         validateCert(certType, certNo);
 
         // 绑定对象只允许从客户经理本人草稿解析，禁止直接指定任意客户号或集团号。
-        Object appId = body.get("applicationId");
-        if (!(appId instanceof Number)) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "关联人绑定必须提供申请ID(applicationId)");
-        }
-        Long applicationId = ((Number) appId).longValue();
+        // §2026-09-02:雪花 id 后端 Long 序列化为字符串返回(防 JS 精度丢失),前端原样回传,须兼容字符串/数字两种类型;
+        // 原 !(appId instanceof Number) 对字符串 applicationId 恒 400,导致前端录入关联人一律「校验失败」
+        Long applicationId = parseId(body.get("applicationId"));
         applicationAccessService.requireDraftOwner(applicationId);
         CcrApplication app = applicationMapper.selectById(applicationId);
         if (app == null || "1".equals(app.getDelFlag())) {
@@ -92,7 +95,14 @@ public class RelationController {
         String customerNo = "GROUP".equals(app.getCustomerScope()) ? null : app.getCustomerNo();
         String groupNo = "GROUP".equals(app.getCustomerScope()) ? app.getGroupNo() : null;
         if (StrUtil.isBlank(customerNo) && StrUtil.isBlank(groupNo)) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "申请缺少可绑定的客户号或集团号");
+            // §2026-09-02 无客户号新增客户:建档起主单已落占位号;主单仍空仅存量老草稿,
+            // 兜底用该申请首个定价分项号(草稿期必为占位号)作绑定主体,保证无号单也能录入/绑定关联人
+            String fallbackNo = firstPricingCustomerNo(applicationId);
+            if (StrUtil.isBlank(fallbackNo)) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "客户号尚未生成,请先保存申请草稿后再录入关联人");
+            }
+            customerNo = fallbackNo;
         }
 
         CcrRelation exist = findByCert(certType, certNo);
@@ -162,6 +172,16 @@ public class RelationController {
 
     // ---------- 私有 ----------
 
+    /** 该申请首个定价分项客户号(草稿期无号单户必为占位号),作为空号主单的绑定主体兜底 */
+    private String firstPricingCustomerNo(Long applicationId) {
+        return pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getApplicationId, applicationId)
+                        .eq(CcrPricingItem::getDelFlag, "0")
+                        .orderByAsc(CcrPricingItem::getId)
+                        .last("LIMIT 1"))
+                .stream().findFirst().map(CcrPricingItem::getPricingCustomerNo).orElse(null);
+    }
+
     private void validateCert(String certType, String certNo) {
         if (StrUtil.isBlank(certType) || !CERT_TYPES.contains(certType)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "证件类型仅支持 USCC(对公)/ID_CARD(对私)");
@@ -198,5 +218,17 @@ public class RelationController {
 
     private String str(Object o) {
         return o == null ? null : o.toString();
+    }
+
+    /** 兼容数字/字符串两种 id(雪花 id 后端序列化为字符串返回,前端原样回传;解析失败视为缺少合法 applicationId) */
+    private Long parseId(Object value) {
+        if (value == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "关联人绑定必须提供申请ID(applicationId)");
+        }
+        try {
+            return Long.valueOf(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "关联人绑定必须提供申请ID(applicationId)");
+        }
     }
 }

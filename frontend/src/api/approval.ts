@@ -55,12 +55,19 @@ export function pageApprovalHistory<T = any>(pageNum = 1, pageSize = 10): Promis
   return get<T>('/ccr/approval/history', { pageNum, pageSize })
 }
 
-/** 审批中客户号回填(2026-08-20 #017):占位号→真实号;body 传 customerNo 或 certNo 二选一 */
-export function backfillCustomerNo(pricingItemId: number | string, body: { customerNo?: string; certNo?: string }): Promise<void> {
-  return request<void>({
-    url: `/ccr/approval/${pricingItemId}/backfill-customer-no`,
-    method: 'post',
-    data: body
+/** 节点进入自动回填结果(§2026-09-02 #460):applicable=是否适用单户通道;backfilled=本次是否实际回填;customerNo=回填后真实号 */
+export interface AutoBackfillResult {
+  applicable?: boolean
+  backfilled?: boolean
+  customerNo?: string | null
+}
+
+/** 节点进入审批页面自动回填(§2026-09-02 决策二):单户占位申请按证件号反查数仓主档,
+ *  命中即整单占位→真实并级联(客户号+客户其他信息+关联人);未命中不写库不阻塞。幂等(主单已真实直接返回)。 */
+export function autoBackfillCustomerNo<T = AutoBackfillResult>(applicationId: number | string): Promise<T> {
+  return request<T>({
+    url: `/ccr/approval/${applicationId}/auto-backfill-customer-no`,
+    method: 'post'
   })
 }
 

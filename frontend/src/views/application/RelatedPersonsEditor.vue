@@ -12,6 +12,11 @@
       </div>
     </div>
 
+    <!-- 占位主体绑定提示(§2026-09-02 #458):主客户尚无真实客户号,关联人绑定至占位客户 -->
+    <div v-if="bindToPlaceholder" class="rel-hint">
+      主客户为新增客户(客户号待数仓回填):关联人将绑定至占位客户,数仓回填真实客户号后自动转入该客户,无需重复操作。
+    </div>
+
     <!-- 已绑定关联人历史(申请已建档时展示,§11.2 application/{id}/relations) -->
     <div class="history-block" v-if="history.length">
       <div class="form-group-title" style="font-size:13px">已绑定关联人(历史,同一证件号复用幂等)</div>
@@ -22,7 +27,7 @@
             <td>{{ h.relationName || h.certNo || '—' }}</td>
             <td>{{ h.certNo || '—' }}</td>
             <td>{{ relationTypeText(h.relationType) }}</td>
-            <td>{{ h.groupNo ? `集团 ${h.groupNo}` : (h.customerNo || '—') }}</td>
+            <td>{{ h.groupNo ? `集团 ${h.groupNo}` : customerNoText(h.customerNo) }}</td>
             <td>{{ h.bindTime ? String(h.bindTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
           </tr>
         </tbody>
@@ -68,7 +73,7 @@
             <span v-else-if="r.checkStatus === 'available'" class="rel-badge rel-badge--ok">可绑定</span>
             <span v-else-if="r.checkStatus === 'occupied'" class="rel-badge rel-badge--bad rel-badge--occupied" :title="r.occupiedBy || '已占用'">{{ r.occupiedBy || '已占用' }}</span>
             <span v-else-if="r.checkStatus === 'checking'" class="rel-badge rel-badge--warn">校验中…</span>
-            <span v-else-if="r.checkStatus === 'error'" class="rel-badge rel-badge--bad">校验失败</span>
+            <span v-else-if="r.checkStatus === 'error'" class="rel-badge rel-badge--bad" :title="r.occupiedBy || '校验失败'">校验失败</span>
             <span v-else class="rel-badge rel-badge--muted">未校验</span>
           </td>
           <td><button class="btn btn--text" @click="removeRow(i)">删除</button></td>
@@ -176,11 +181,11 @@ export function parseRelations(remark?: string): [RelatedPersonRow[], string] {
 </script>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { searchCustomers, searchCustomerByCert } from '@/api/application'
 import { checkRelation, bindRelation, listApplicationRelations } from '@/api/relation'
-import { relationTypeText } from '@/utils/dict'
+import { relationTypeText, isPlaceholderCustomerNo, customerNoText } from '@/utils/dict'
 
 const props = withDefaults(defineProps<{
   /** 申请主客户号(绑定对象,§10.3.21) */
@@ -193,6 +198,13 @@ const props = withDefaults(defineProps<{
 
 const rows = defineModel<RelatedPersonRow[]>({ required: true })
 const history = ref<any[]>([])
+
+// 绑定对象是否为占位客户(§2026-09-02 #458):单户 + 已建档 + 主客户号未生成/为占位号
+// (占位主体贯穿后建档即落占位号;申请页占位回显按 A.4 清空 customerNo,故空值同样命中;
+// 真实号单户必有 customerNo,自然不显示)
+const bindToPlaceholder = computed(() =>
+  !!props.applicationId && !props.groupNo
+  && (!props.customerNo || isPlaceholderCustomerNo(props.customerNo)))
 
 function addRow() {
   rows.value.push({ name: '', certType: 'ID_CARD', certNo: '', relationType: 'SPOUSE', customerNo: '' })
@@ -254,8 +266,11 @@ async function onCertBlur(r: RelatedPersonRow, index: number) {
       mark(r, 'occupied', res.boundGroupNo ? `已绑定集团 ${res.boundGroupNo}` : `已绑定客户 ${res.boundCustomerNo}`)
     }
     await doBind(r)
-  } catch {
-    mark(r, 'error')
+  } catch (e: any) {
+    // §2026-09-02:校验失败不再静默——带出具体原因(如非客户经理角色 403 仅客户经理可维护利率申请),避免用户只见「校验失败」不知缘由
+    const msg = e?.msg || e?.message || '关联人校验失败'
+    mark(r, 'error', msg)
+    ElMessage.warning(msg)
   }
 }
 
@@ -281,7 +296,8 @@ async function doBind(r: RelatedPersonRow) {
       mark(r, 'occupied', msg)
       ElMessage.warning(msg)
     } else {
-      mark(r, 'error')
+      // 非占用类失败(如角色 403/无权维护该申请):标记失败并带出原因,供徽标 title 悬停查看
+      mark(r, 'error', msg || '')
     }
   }
 }
@@ -320,6 +336,8 @@ onMounted(loadHistory)
 .table { border-radius: var(--radius); overflow-x: auto; }
 .req { color: var(--color-danger); }
 .history-block { background: var(--color-bg); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+/* 占位主体绑定提示(§2026-09-02 #458):紧凑浅底信息条,不打断录入 */
+.rel-hint { font-size: 12px; color: var(--color-primary); background: var(--color-primary-light, #e6f4ff); border-radius: 4px; padding: 6px 10px; margin-bottom: 10px; line-height: 1.5; }
 .table--sm th, .table--sm td { font-size: 12px; padding: 6px 8px; }
 .rel-badge { display: inline-block; font-size: 12px; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
 .rel-badge--ok { background: var(--color-success-light, #f0fdf4); color: var(--color-success); }

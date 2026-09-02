@@ -45,6 +45,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.application.support.CustomerNoUtil;
+import com.ccr.common.core.util.WarehouseCustomerSync;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.enums.ErrorCode;
@@ -460,6 +461,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         // b0-集团) 集团成员占位号回填(§2026-08-20 #017,与单户对称):补录成员按 ucrCode 反查数仓回填真实号,
         //     未命中保留占位号(memberValid 对 NEW 前缀放行);须在 persistGroupSupplement 之前,落手工表用真实号
         resolveGroupMemberPlaceholder(app, items);
+        // b0-绑定对齐) 单户:提交时把本申请产生的关联人绑定(ccr_relation)主体对齐最终主单客户号
+        //     (resolvePlaceholderCustomerNo 已把主单占位/空定稿为真实号或占位号,§2026-09-02 无号客户流程)
+        syncRelationBindCustomerNo(app);
         // b) 完整性校验
         checkCompleteness(app, items);
         // b1) 提交时落表(§docs/19 §4.6):解析 group_info_json 补录数据落 ccr_group/ccr_group_member(幂等、数仓优先、最新覆盖)
@@ -578,8 +582,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
      * 集团场景成员客户号必填,无此问题。补号在 checkCompleteness 之前,使"单户场景客户号必填"校验自然通过。
      */
     private void resolvePlaceholderCustomerNo(CcrApplication app, List<CcrPricingItem> items) {
-        if ("GROUP".equals(app.getCustomerScope()) || StrUtil.isNotBlank(app.getCustomerNo())) {
-            return; // 集团(成员号必填)或已有客户号,无需占位处理
+        if ("GROUP".equals(app.getCustomerScope())) {
+            return; // 集团(成员号必填),占位处理走 resolveGroupMemberPlaceholder
+        }
+        // §2026-09-02 占位主体贯穿:建档起主单即占位号(NEW 前缀),提交时仍须按证件号反查替换真实号;
+        // 已有真实客户号则无需处理。
+        String currentNo = app.getCustomerNo();
+        if (StrUtil.isNotBlank(currentNo) && !CustomerNoUtil.isPlaceholder(currentNo)) {
+            return;
         }
         String certNo = CustomerNoUtil.certNoFromInfoJson(app.getCustomerInfoJson(), app.getCustomerScope());
         if (StrUtil.isBlank(certNo)) {
@@ -605,18 +615,47 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             }
         }
 
-        // 同步人工快照 JSON 的 customerNo(审批详情 overwriteCustomer 仅非空覆盖,保证展示真实号/占位号)
+        // 同步人工快照 JSON 的 customerNo(审批详情 overwriteCustomer 仅非空覆盖,保证展示真实号/占位号);
+        // §2026-09-02 #460 数仓命中时以数仓主档行为权威,一并覆盖其余可查出的客户字段(名称/性质/行业/评级等)
         if (StrUtil.isNotBlank(app.getCustomerInfoJson())) {
             try {
                 JSONObject json = JSONUtil.parseObj(app.getCustomerInfoJson());
                 json.set("customerNo", resolvedNo);
+                if (dw != null) {
+                    WarehouseCustomerSync.applyCustomerInfo(json, dw, "INDIVIDUAL".equals(app.getCustomerScope()));
+                }
                 app.setCustomerInfoJson(json.toString());
                 applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
                         .eq(CcrApplication::getId, app.getId())
                         .set(CcrApplication::getCustomerInfoJson, json.toString()));
             } catch (Exception e) {
-                log.warn("回填 customer_info_json.customerNo 失败,忽略:{}", e.getMessage());
+                log.warn("回填 customer_info_json 客户信息失败,忽略:{}", e.getMessage());
             }
+        }
+    }
+
+    /**
+     * §2026-09-02 无客户号单户:提交定稿主单客户号(真实或占位)后,把本申请在草稿期产生的
+     * 关联人绑定({@code ccr_relation})主体 customer_no 对齐主单最终号。
+     *
+     * <p>关联人 bind 在录入即落库,绑定主体取主单当时占位号;提交 resolve 命中数仓后主单已是真实号,
+     * 此处把该申请绑定的占位/空主体一并对齐,避免残留占位主体(否则审批详情自动回填因主单已真实不触发)。
+     * 集团场景绑定对象是 group_no,不涉及。失败不阻断提交(审批回填可补)。</p>
+     */
+    private void syncRelationBindCustomerNo(CcrApplication app) {
+        if ("GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getCustomerNo())) {
+            return;
+        }
+        try {
+            jdbcTemplate.update("""
+                    UPDATE ccr_relation
+                    SET customer_no = ?
+                    WHERE bind_application_no = ? AND del_flag = '0' AND group_no IS NULL
+                      AND (customer_no IS NULL OR customer_no LIKE 'NEW%' OR customer_no <> ?)""",
+                    app.getCustomerNo(), app.getApplicationNo(), app.getCustomerNo());
+        } catch (Exception e) {
+            log.warn("同步关联人绑定主体失败,忽略(审批自动回填可补):申请 {} 原因:{}",
+                    app.getId(), e.getMessage());
         }
     }
 
@@ -803,8 +842,18 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             if (applicationMembers(app.getId()).isEmpty()) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "集团场景涉及成员不能为空");
             }
-        } else if (StrUtil.isBlank(app.getCustomerNo())) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景客户号必填");
+        } else {
+            if (StrUtil.isBlank(app.getCustomerNo())) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "单户场景客户号必填");
+            }
+            // §2026-09-02 用户拍板:单户主客户证件号码必填(对公=统一社会信用代码,对私=身份证号)。
+            // 手动回填已取消,占位→真实的自动回填唯一通道按证件号反查数仓;无证件号则永远无法回填,
+            // 故真实号/占位号一律要求 customer_info_json 内证件号非空。集团场景走 group_no,不适用。
+            String mainCert = CustomerNoUtil.certNoFromInfoJson(app.getCustomerInfoJson(), app.getCustomerScope());
+            if (StrUtil.isBlank(mainCert)) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "单户主客户证件号码必填(对公:统一社会信用代码;对私:身份证号)");
+            }
         }
         for (CcrPricingItem item : items) {
             // 存款无期限产品(2026-08-26 修复):协定存款与银票/信用证保证金无固定期限,期限可空;

@@ -26,6 +26,7 @@ import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
 import com.ccr.approval.domain.DwLoanNoteSnapshot;
 import com.ccr.approval.dto.ApprovalResult;
+import com.ccr.approval.dto.AutoBackfillResult;
 import com.ccr.approval.mapper.CcrApprovalActionMapper;
 import com.ccr.approval.mapper.CcrRateAdjustmentMapper;
 import com.ccr.approval.mapper.DwLoanNoteReadMapper;
@@ -35,6 +36,7 @@ import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.core.util.OrgAchievementAssembler;
 import com.ccr.common.core.util.RelatedCustomerResolver;
+import com.ccr.common.core.util.WarehouseCustomerSync;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.rule.domain.CcrNodePermission;
@@ -619,9 +621,173 @@ public class ApprovalServiceImpl implements ApprovalService {
                     SET subject_id = ?
                     WHERE bundle_id = ? AND subject_id = ?""", resolved, application.getSnapshotBundleId(), currentNo);
         }
+        // 4) 关联人绑定主体同步(单户,§2026-09-02 无客户号流程):本申请产生的 ccr_relation 绑定
+        //    占位/空主体 → 真实号。按 bind_application_no 定位(占位号 NEW+后6位 可能跨申请撞号,
+        //    绝不裸按 customer_no 替换);uk_relation_cert(cert_type,cert_no,del_flag) 不含主体,
+        //    UPDATE 无唯一键风险;「同证件已属他人主体」在 bind 期 findByCert 已拦截,此处不存在。
+        if (!groupScope) {
+            jdbcTemplate.update("""
+                    UPDATE ccr_relation
+                    SET customer_no = ?
+                    WHERE bind_application_no = ? AND del_flag = '0' AND group_no IS NULL AND customer_no = ?""",
+                    resolved, application.getApplicationNo(), currentNo);
+            // 兜底:该申请仍为空/其它占位号的绑定行一律对齐(证件号变更/撞号遗留收敛)
+            jdbcTemplate.update("""
+                    UPDATE ccr_relation
+                    SET customer_no = ?
+                    WHERE bind_application_no = ? AND del_flag = '0' AND group_no IS NULL
+                      AND (customer_no IS NULL OR customer_no LIKE 'NEW%')""",
+                    resolved, application.getApplicationNo());
+        }
+        // 5) 申请关联人自身客户号补全(related_customer_no 空 → 按本人证件号反查数仓,复用
+        //    RelatedCustomerResolver 同款 SQL;未命中保持空,读取期 resolveBatch 继续兜底展示)
+        try {
+            List<Map<String, Object>> pending = jdbcTemplate.queryForList("""
+                    SELECT id, cert_type AS certType, cert_no AS certNo
+                    FROM ccr_application_related_person
+                    WHERE application_id = ? AND del_flag = '0'
+                      AND (related_customer_no IS NULL OR related_customer_no = '')
+                      AND cert_no IS NOT NULL AND cert_no <> ''""", application.getId());
+            for (Map<String, Object> rp : pending) {
+                Object ct = rp.get("certType");
+                Object cn = rp.get("certNo");
+                if (cn == null) {
+                    continue;
+                }
+                String rc = RelatedCustomerResolver.resolve(jdbcTemplate,
+                        ct == null ? null : ct.toString(), cn.toString());
+                if (rc != null) {
+                    jdbcTemplate.update(
+                            "UPDATE ccr_application_related_person SET related_customer_no = ? WHERE id = ?",
+                            rc, rp.get("id"));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("关联人自身客户号补全失败,忽略:申请 {} 原因:{}", application.getId(), e.getMessage());
+        }
+        // 6) 客户主档权威刷新(§2026-09-02 #460):单户占位命中数仓后,凡数仓主档行可查出的客户其他信息
+        //    (名称/企业性质/规模/行业/评级/地址/开户机构等)以数仓为权威整体覆盖 customer_info_json 与
+        //    快照客户行 core_json(退出 MANUAL 纯人工快照,使审批详情展示数仓宽字段);集团成员场景不适用
+        if (!groupScope) {
+            refreshWarehouseCustomerInfo(application.getId(),
+                    "INDIVIDUAL".equals(application.getCustomerScope()), resolved,
+                    application.getSnapshotBundleId());
+        }
         log.info("审批中回填客户号:分项 {} 申请 {} 场景{} 占位号 {} → 真实号 {}, 操作人 {}",
                 pricingItemId, application.getId(), groupScope ? "集团成员" : "单户", currentNo, resolved,
                 currentLoginUser.requireLoginId());
+    }
+
+    /**
+     * §2026-09-02 节点进入自动回填(决策二):单户占位申请进入审批详情时,按 customer_info_json 证件号
+     * 反查数仓主档,命中即走 {@link #backfillCustomerNo} 整单占位→真实并级联(主单/分项/快照/关联人绑定/
+     * 关联人自身客户号);未命中不写库、不阻塞流程。幂等:主单已真实号直接返回;并发重复触发最终值一致安全。
+     *
+     * @param applicationId 申请主键
+     * @return applicable=是否适用单户自动回填;backfilled=本次是否实际回填;customerNo=回填后的真实客户号(未命中为 null)
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AutoBackfillResult autoBackfillCustomerNo(Long applicationId) {
+        applicationAccessService.requireView(applicationId);
+        CcrApplication application = applicationMapper.selectById(applicationId);
+        if (application == null || "1".equals(application.getDelFlag())) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在");
+        }
+        if ("GROUP".equals(application.getCustomerScope())) {
+            return new AutoBackfillResult(false, false, null); // 集团成员回填走提交/人工,自动通道仅单户
+        }
+        String mainNo = application.getCustomerNo();
+        boolean placeholder = StrUtil.isBlank(mainNo) || CustomerNoUtil.isPlaceholder(mainNo);
+        if (!placeholder) {
+            return new AutoBackfillResult(true, false, null); // 已真实号,无需回填
+        }
+        String certNo = CustomerNoUtil.certNoFromInfoJson(application.getCustomerInfoJson(), application.getCustomerScope());
+        if (StrUtil.isBlank(certNo)) {
+            return new AutoBackfillResult(true, false, null); // 无证件号无法反查
+        }
+        Map<String, Object> dw = "INDIVIDUAL".equals(application.getCustomerScope())
+                ? dataWarehouseService.findIndvByCertNo(certNo)
+                : dataWarehouseService.findCorpByCertNo(certNo);
+        if (dw == null || dw.get("cust_no") == null) {
+            return new AutoBackfillResult(true, false, null); // 数仓未收录:不写库、不阻塞
+        }
+        String resolved = String.valueOf(dw.get("cust_no"));
+        if (CustomerNoUtil.isPlaceholder(resolved)) {
+            return new AutoBackfillResult(true, false, null);
+        }
+        // 取一个占位分项作锚定(人工回填口径:占位分项方可替换整单;无占位分项视为异常态不触发)
+        CcrPricingItem anchor = pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getApplicationId, application.getId())
+                        .likeRight(CcrPricingItem::getPricingCustomerNo, CustomerNoUtil.PREFIX)
+                        .last("LIMIT 1"))
+                .stream().findFirst().orElse(null);
+        if (anchor == null) {
+            return new AutoBackfillResult(true, false, null);
+        }
+        // 走人工回填同一级联(其内 requirePricingItemView 顺带校验对象级查看权限)
+        backfillCustomerNo(anchor.getId(), resolved, null);
+        log.info("节点进入自动回填客户号:申请 {} {} → 真实号 {}", application.getId(),
+                application.getApplicationNo(), resolved);
+        return new AutoBackfillResult(true, true, resolved);
+    }
+
+    /**
+     * §2026-09-02 #460 客户主档权威刷新(用户拍板:以数仓为权威整体覆盖,非仅补空缺)。
+     *
+     * <p>单户占位申请命中数仓真实客户号后调用:以数仓主档行(按 cust_no 查最新批次)为权威,
+     * 刷新两处客户信息载体——① {@code ccr_application.customer_info_json} 人工快照层(审批详情
+     * 人工覆盖/申请页回显源):数仓列可映射的键(名称/企业性质/行业/评级/开户机构/账户等)整体覆盖;
+     * ② 快照客户行 {@code ccr_snapshot_record.core_json}:整行数据源替换为数仓行(宽字段如企业规模/
+     * 员工数/总资产/地址等人工快照没有的列),并移除 {@code data_source=MANUAL} 标记——否则审批详情
+     * manualOnly 分支仍按纯人工快照渲染,数仓宽字段显示不出来。数仓查不出该客户(dw=null)时跳过,
+     * 保持人工值不写库(「凡是能查出来的都回填」)。集团场景由 backfill 第 6 步跳过,不走此方法。</p>
+     */
+    private void refreshWarehouseCustomerInfo(Long applicationId, boolean indv, String resolved, Long snapshotBundleId) {
+        Map<String, Object> dw = indv
+                ? dataWarehouseService.findIndvCustomer(resolved)
+                : dataWarehouseService.findCorpCustomer(resolved);
+        if (dw == null) {
+            return; // 数仓查不出该客户:仅回填客户号,其余保持人工
+        }
+        // ① customer_info_json 权威覆盖(仅数仓非空键;customerNo 已由调用方写好,此处补齐其余可查字段)
+        try {
+            CcrApplication cur = applicationMapper.selectById(applicationId);
+            if (cur != null && StrUtil.isNotBlank(cur.getCustomerInfoJson())) {
+                JSONObject json = JSONUtil.parseObj(cur.getCustomerInfoJson());
+                WarehouseCustomerSync.applyCustomerInfo(json, dw, indv);
+                applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
+                        .eq(CcrApplication::getId, applicationId)
+                        .set(CcrApplication::getCustomerInfoJson, json.toString()));
+            }
+        } catch (Exception e) {
+            log.warn("回填 customer_info_json 客户其他信息失败,忽略:申请 {} 原因:{}", applicationId, e.getMessage());
+        }
+        // ② 快照客户行 core_json 整行数据源刷新(退出 MANUAL,审批详情快照路径展示数仓宽字段)
+        if (snapshotBundleId != null) {
+            try {
+                List<Map<String, Object>> snapshotRows = jdbcTemplate.queryForList("""
+                        SELECT id, core_json AS coreJson FROM ccr_snapshot_record
+                        WHERE bundle_id = ? AND subject_type = ? AND subject_id = ?
+                          AND del_flag = '0'""",
+                        snapshotBundleId, indv ? "INDIVIDUAL" : "CORPORATE", resolved);
+                for (Map<String, Object> snap : snapshotRows) {
+                    Object coreObj = snap.get("coreJson");
+                    JSONObject core;
+                    try {
+                        core = coreObj instanceof JSONObject j ? j : JSONUtil.parseObj(String.valueOf(coreObj));
+                    } catch (Exception e) {
+                        core = new JSONObject();
+                    }
+                    WarehouseCustomerSync.applyWarehouseRow(core, dw);
+                    core.remove("data_source"); // 占位人工快照标记 → 数仓主档口径
+                    jdbcTemplate.update("UPDATE ccr_snapshot_record SET core_json = ? WHERE id = ?",
+                            core.toString(), snap.get("id"));
+                }
+            } catch (Exception e) {
+                log.warn("刷新快照客户行数据源失败,忽略:申请 {} 原因:{}", applicationId, e.getMessage());
+            }
+        }
     }
 
     // ---------- 已办(§11.4) ----------

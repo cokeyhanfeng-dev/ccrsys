@@ -147,6 +147,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (entity.getVersionNo() == null) {
             entity.setVersionNo(1); // 与 DB DEFAULT 一致,保证返回体携带版本号供后续 PUT 乐观锁
         }
+        ensureSingleDraftPlaceholder(entity);
         applicationMapper.insert(entity);
 
         // 集团场景:写入涉及成员(逐成员真实金额/币种/角色,成员额度从数仓回填)
@@ -164,6 +165,29 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         // 关联人(§12.4④,按客户经理实际录入保存并展示)
         saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         return entity;
+    }
+
+    /**
+     * §2026-09-02 无客户号新增客户:占位主体贯穿——单户建档/存草稿即把占位号前移主单 customer_no,
+     * 与分项 pricing_customer_no 一致,使关联人 bind 有绑定主体;数仓回填时整单替换真实号。
+     * 真实客户号绝不覆盖;占位号随证件号变更刷新;无证件号保持原样(newPricingItem 抛错兜底)。
+     */
+    private void ensureSingleDraftPlaceholder(CcrApplication entity) {
+        if ("GROUP".equals(entity.getCustomerScope())) {
+            return; // 集团 groupNo 必填(成员真实号),不涉及
+        }
+        String certNo = CustomerNoUtil.certNoFromInfoJson(entity.getCustomerInfoJson(), entity.getCustomerScope());
+        String current = entity.getCustomerNo();
+        if (StrUtil.isBlank(current)) {
+            if (StrUtil.isNotBlank(certNo)) {
+                entity.setCustomerNo(CustomerNoUtil.placeholderCustomerNo(certNo));
+            }
+            return;
+        }
+        if (CustomerNoUtil.isPlaceholder(current) && StrUtil.isNotBlank(certNo)) {
+            // 证件号被改:占位 = NEW+证件后6位,刷新使主单与分项/后续反查一致
+            entity.setCustomerNo(CustomerNoUtil.placeholderCustomerNo(certNo));
+        }
     }
 
     /**
@@ -663,6 +687,8 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                     "数据已被他人修改,请刷新后重试(版本 " + request.getVersionNo() + "→" + exist.getVersionNo() + ")");
         }
         copyForUpdate(exist, request);
+        // §2026-09-02 占位主体贯穿:存量空号草稿在此补占位、证件号变更时刷新占位(真实客户号不受影响)
+        ensureSingleDraftPlaceholder(exist);
         int updated = applicationMapper.updateById(exist);
         if (updated == 0) {
             throw new ServiceException(ErrorCode.DATA_VERSION_CONFLICT.getCode(), "数据已被他人修改,请刷新后重试");
