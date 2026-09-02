@@ -33,6 +33,8 @@ import java.util.Set;
  * 承诺跟踪服务实现(v2·无定时任务版,docs/28)
  * 在途行不存当前值(实时取数仓);终态行固化 final_* 定案字段。数仓取数 CONTRIBUTION_AMOUNT 行优先、
  * 无则取最新 data_dt 批次全行合计(与 CommitmentServiceImpl.fetchActual 同口径)。
+ * 关联人归并(2026-09-02 用户拍板):主客户行完成度分子=主客户+该申请有效关联人同码值合计,
+ * RATIO 型目标与集团成员行不归并(详见 mergedActual)。
  */
 @Slf4j
 @Service
@@ -134,9 +136,9 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         return settled;
     }
 
-    /** 单行到期定案:按 data_dt<=end_date 最近批次取数;条件更新 WHERE status='TRACKING' 幂等 */
+    /** 单行到期定案:按 data_dt<=end_date 最近批次取数(含关联人归并);条件更新 WHERE status='TRACKING' 幂等 */
     private void settleOne(CcrCommitmentTrack t) {
-        WarehouseData data = fetchLatest(t.getCustomerNo(), t.getMemberCustomerNo(), t.getMetricCode(), t.getEndDate());
+        WarehouseData data = mergedActual(t, t.getEndDate());
         boolean met;
         String remark = null;
         if (data.actual() == null) {
@@ -269,8 +271,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         view.put("finishTime", t.getFinishTime());
         view.put("remark", t.getRemark());
         if (STATUS_TRACKING.equals(t.getStatus())) {
-            // 实时完成度:数仓最新批次(不限 end_date,当前口径),无批次 → 暂无数据
-            WarehouseData cur = fetchLatest(t.getCustomerNo(), t.getMemberCustomerNo(), t.getMetricCode(), null);
+            // 实时完成度:数仓最新批次(不限 end_date,当前口径,含关联人归并),无批次 → 暂无数据
+            WarehouseData cur = mergedActual(t, null);
             if (cur.actual() == null) {
                 view.put("actualValue", null);
                 view.put("ratio", null);
@@ -336,6 +338,43 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
                 .map(r -> r.getMetricValue() == null ? BigDecimal.ZERO : r.getMetricValue())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new WarehouseData(total, latestDt);
+    }
+
+    /**
+     * 数仓取数(含关联人归并,2026-09-02 用户拍板):主客户(或成员)值 + 该申请有效关联人同码值合计。
+     * 口径与 ContributionMerger 一致:同码才并、每客户最近批次、折算行优先;RATIO 型目标(存贷款比)不归并;
+     * 集团成员行(member_customer_no 非空)不归并——关联人归属主客户,成员行只算成员本人,避免重复计数。
+     * 无关联人/无同码数据时与 fetchLatest 原样一致。
+     */
+    private WarehouseData mergedActual(CcrCommitmentTrack t, LocalDate upTo) {
+        WarehouseData base = fetchLatest(t.getCustomerNo(), t.getMemberCustomerNo(), t.getMetricCode(), upTo);
+        if ("RATIO".equals(t.getTargetKind()) || StrUtil.isNotBlank(t.getMemberCustomerNo())
+                || t.getApplicationId() == null) {
+            return base;
+        }
+        BigDecimal sum = base.actual() == null ? BigDecimal.ZERO : base.actual();
+        boolean merged = false;
+        for (String relNo : relatedNosOf(t.getApplicationId())) {
+            WarehouseData rel = fetchLatest(relNo, null, t.getMetricCode(), upTo);
+            if (rel.actual() != null) {
+                sum = sum.add(rel.actual());
+                merged = true;
+            }
+        }
+        if (!merged) {
+            return base;
+        }
+        return new WarehouseData(sum, base.dataDt());
+    }
+
+    /** 该申请前台录入的有效关联人客户号(台账 021 口径:仅 ccr_application_related_person,不用数仓关系表) */
+    private List<String> relatedNosOf(Long applicationId) {
+        List<String> nos = jdbcTemplate.queryForList(
+                "SELECT DISTINCT related_customer_no FROM ccr_application_related_person"
+                        + " WHERE application_id = ? AND del_flag = '0'"
+                        + " AND related_customer_no IS NOT NULL AND related_customer_no <> ''",
+                String.class, applicationId);
+        return nos == null ? List.of() : nos;
     }
 
     /** 客户名批查:对公/个人主数据最新批次(按客户自身最新 data_dt) */

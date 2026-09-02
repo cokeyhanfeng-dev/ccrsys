@@ -60,6 +60,9 @@ public final class ContributionMerger {
                 }
             }
         }
+        // ①b 同指标多 value_type 行收敛为一行(2026-09-02 用户拍板"只展示一行"):
+        //    折算(CONTRIBUTION_AMOUNT)行优先,其次余额行,其余取最新批次;归并在收敛后执行不受影响
+        dedupByMetricCode(contribution);
         if (contribution.isEmpty() || relatedCustomerNos == null || relatedCustomerNos.isEmpty()) {
             return;
         }
@@ -157,6 +160,38 @@ public final class ContributionMerger {
 
     private static String keyOf(String custNo, String metricCode) {
         return custNo + '|' + metricCode;
+    }
+
+    /** 同 metric_code 多行(不同 value_type/批次)收敛为一行:折算行优先 → 余额行 → 最新批次 */
+    private static void dedupByMetricCode(List<Map<String, Object>> contribution) {
+        Map<String, Map<String, Object>> best = new HashMap<>();
+        for (Map<String, Object> row : contribution) {
+            Object code = row.get("metricCode");
+            if (code == null) {
+                continue;
+            }
+            String key = code.toString();
+            Map<String, Object> cur = best.get(key);
+            if (cur == null || rank(row) < rank(cur)
+                    || (rank(row) == rank(cur) && dataDt(row).compareTo(dataDt(cur)) > 0)) {
+                best.put(key, row);
+            }
+        }
+        contribution.removeIf(row -> row.get("metricCode") != null
+                && best.get(row.get("metricCode").toString()) != row);
+    }
+
+    /** 行优先级:0=折算 CONTRIBUTION_AMOUNT,1=余额 AVG_BALANCE,2=其他 */
+    private static int rank(Map<String, Object> row) {
+        String vt = String.valueOf(row.get("valueType"));
+        if ("CONTRIBUTION_AMOUNT".equals(vt)) return 0;
+        if ("AVG_BALANCE".equals(vt)) return 1;
+        return 2;
+    }
+
+    private static String dataDt(Map<String, Object> row) {
+        Object dt = row.get("dataDt") != null ? row.get("dataDt") : row.get("data_dt");
+        return dt == null ? "" : dt.toString();
     }
 
     /** IN 子句(单引号转义防注入;值来自数仓客户号/字典码,与承诺跟踪 inClause 同款) */
