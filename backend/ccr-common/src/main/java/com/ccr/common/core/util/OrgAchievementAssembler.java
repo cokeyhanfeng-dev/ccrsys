@@ -38,12 +38,13 @@ public final class OrgAchievementAssembler {
             return result;
         }
         // 分母:该机构(申请机构)已通过审批申请(承诺计划)指标 target_value 求和(顺带取机构名称)
+        // 整单化后决议按申请维度落库、无分项关联;LEFT JOIN + COALESCE 双键兼容(2026-09-02)
         List<Map<String, Object>> denomRows = jdbcTemplate.queryForList(
                 "SELECT d.dept_name orgName, COALESCE(SUM(m.target_value), 0) expectedAmount "
                         + "FROM ccr_commitment_plan cp "
                         + "JOIN ccr_resolution r ON r.id = cp.resolution_id "
-                        + "JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id "
-                        + "JOIN ccr_application a ON a.id = pi.application_id "
+                        + "LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id "
+                        + "JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id) "
                         + "JOIN ccr_sys_dept d ON d.id = a.applicant_org_id "
                         + "LEFT JOIN ccr_commitment_metric m ON m.plan_id = cp.id AND m.del_flag = '0' "
                         + "WHERE cp.del_flag = '0' AND d.del_flag = '0' AND d.org_code = ? "
@@ -53,13 +54,13 @@ public final class OrgAchievementAssembler {
             // 该机构无承诺计划 → 与原数仓表空行行为一致,返回空列表
             return result;
         }
-        // 客户集合:该机构承诺计划客户
+        // 客户集合:该机构承诺计划客户(整单化后决议无分项关联,LEFT JOIN + COALESCE 双键兼容)
         List<Map<String, Object>> custRows = jdbcTemplate.queryForList(
                 "SELECT cp.customer_no customerNo, cp.member_customer_no memberCustomerNo "
                         + "FROM ccr_commitment_plan cp "
                         + "JOIN ccr_resolution r ON r.id = cp.resolution_id "
-                        + "JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id "
-                        + "JOIN ccr_application a ON a.id = pi.application_id "
+                        + "LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id "
+                        + "JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id) "
                         + "JOIN ccr_sys_dept d ON d.id = a.applicant_org_id "
                         + "WHERE cp.del_flag = '0' AND d.del_flag = '0' AND d.org_code = ?", orgCode);
         Set<String> customers = new LinkedHashSet<>();

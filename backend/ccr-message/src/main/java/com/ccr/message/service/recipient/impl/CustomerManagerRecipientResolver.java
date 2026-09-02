@@ -31,12 +31,13 @@ public class CustomerManagerRecipientResolver implements RecipientResolver {
         if (context.getResolutionId() == null) {
             return Collections.emptyList();
         }
+        // 整单化后决议按申请维度落库、无分项关联;LEFT JOIN + COALESCE 双键兼容(2026-09-02)
         List<String> ids = jdbcTemplate.queryForList(
                 """
                 SELECT DISTINCT a.applicant_user_id
                 FROM ccr_resolution r
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                JOIN ccr_application a ON a.id = pi.application_id
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id)
                 WHERE r.id = ? AND a.applicant_user_id IS NOT NULL
                 """,
                 String.class, context.getResolutionId());

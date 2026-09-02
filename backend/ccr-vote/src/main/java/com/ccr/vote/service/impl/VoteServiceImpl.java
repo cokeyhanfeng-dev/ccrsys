@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -504,12 +505,16 @@ public class VoteServiceImpl implements VoteService {
             List<Map<String, Object>> opinions = new ArrayList<>();
             for (CcrBallot ballot : itemBallots) {
                 Map<String, Object> opinion = new LinkedHashMap<>();
-                opinion.put("anonymNo", hashToAnonym.get(ballot.getVoterUserHash()));
+                String no = hashToAnonym.get(ballot.getVoterUserHash());
+                opinion.put("anonymNo", no);
+                opinion.put("seq", anonymSeq(no));
                 opinion.put("voteChoice", ballot.getVoteChoice());
                 opinion.put("voteComment", ballot.getVoteComment());
                 opinion.put("submitTime", ballot.getSubmitTime());
                 opinions.add(opinion);
             }
+            // 行长决策页固定按小组成员序号 1..6 顺序展示(存贷款利率审批小组成员 N),不受提交先后影响
+            opinions.sort(Comparator.comparingInt(o -> (Integer) o.get("seq")));
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("pricingItemId", pricingItemId);
             row.put("opinions", opinions);
@@ -519,6 +524,13 @@ public class VoteServiceImpl implements VoteService {
     }
 
     // ---------- 私有 ----------
+
+    /** 匿名代号 A-F → 小组成员序号 1-6(行长决策页「存贷款利率审批小组成员 N」固定顺序;未知代号归末尾) */
+    private int anonymSeq(String no) {
+        if (no == null || no.isEmpty()) return 99;
+        char c = no.charAt(0);
+        return (c >= 'A' && c <= 'F') ? (c - 'A' + 1) : 99;
+    }
 
     /** 建批:批次+分项+6 人委员名单(冻结),入批分项置 VOTING */
     private CcrVoteRound doCreateRound(Long applicationId, List<Long> pricingItemIds, List<SysUserRead> members) {

@@ -275,6 +275,8 @@ public class ResolutionServiceImpl implements ResolutionService {
     public List<Map<String, Object>> listResolutions() {
         Long loginId = StpUtil.getLoginIdAsLong();
         String roleCode = currentRoleCode(loginId);
+        // 整单化后决议按申请维度落库、无分项关联(application_id 直存,2026-08-29 起);
+        // 旧数据逐分项签发(pricing_item_id,经 pi 关联);LEFT JOIN + COALESCE 双键兼容(2026-09-02)
         String sql = """
                 SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId,
                        r.pricing_carrier_type carrierType, r.pricing_carrier_business_key carrierBusinessKey,
@@ -283,8 +285,8 @@ public class ResolutionServiceImpl implements ResolutionService {
                        pi.pricing_item_no pricingItemNo, pi.pricing_customer_no customerNo,
                        a.id applicationId, a.application_no applicationNo, a.business_type businessType
                 FROM ccr_resolution r
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                JOIN ccr_application a ON a.id = pi.application_id
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id)
                 WHERE r.del_flag = '0'
                 """;
         if (isFullViewRole(roleCode)) {
@@ -305,9 +307,9 @@ public class ResolutionServiceImpl implements ResolutionService {
         Long loginId = StpUtil.getLoginIdAsLong();
         String roleCode = currentRoleCode(loginId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT r.*, pi.application_id appId, a.applicant_user_id applicantUserId"
-                        + " FROM ccr_resolution r JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
-                        + " JOIN ccr_application a ON a.id = pi.application_id"
+                "SELECT r.*, COALESCE(pi.application_id, r.application_id) appId, a.applicant_user_id applicantUserId"
+                        + " FROM ccr_resolution r LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " JOIN ccr_application a ON a.id = COALESCE(pi.application_id, r.application_id)"
                         + " WHERE r.id = ? AND r.del_flag = '0'", resolutionId);
         if (rows.isEmpty()) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "决议不存在");

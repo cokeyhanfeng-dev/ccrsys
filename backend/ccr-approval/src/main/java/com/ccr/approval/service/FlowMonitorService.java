@@ -202,7 +202,8 @@ public class FlowMonitorService {
      */
     public Map<String, Object> buildNodes(Long applicationId) {
         List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                "SELECT id, application_no applicationNo, business_type businessType, status, submit_time submitTime"
+                "SELECT id, application_no applicationNo, business_type businessType, status, submit_time submitTime,"
+                        + " route_chain routeChain"
                         + " FROM ccr_application WHERE id = ? AND del_flag = '0'", applicationId);
         if (apps.isEmpty()) {
             throw new ServiceException(404, "申请不存在");
@@ -212,14 +213,25 @@ public class FlowMonitorService {
                 "SELECT id, pricing_item_no pricingItemNo, route_chain routeChain, current_node_code currentNodeCode, status"
                         + " FROM ccr_pricing_item WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
 
-        // 链路并集(保持冻结顺序;多分项链路不一致时取并集)
+        // 链路:整单化后权威链路在申请单 route_chain(含秘书岗/行长等追加或截断节点,2026-08-29 起);
+        // 优先申请单整单链,回退分项 route_chain 并集(旧数据逐分项冻结链),再按规范节点顺序重排
         List<String> chain = new ArrayList<>();
-        for (Map<String, Object> it : items) {
-            Object rc = it.get("routeChain");
-            if (rc != null && StrUtil.isNotBlank(rc.toString())) {
-                for (String n : JSONUtil.parseArray(rc.toString()).toList(String.class)) {
-                    if (!chain.contains(n)) {
-                        chain.add(n);
+        Object appChain = app.get("routeChain");
+        if (appChain != null && StrUtil.isNotBlank(appChain.toString())) {
+            for (String n : JSONUtil.parseArray(appChain.toString()).toList(String.class)) {
+                if (!chain.contains(n)) {
+                    chain.add(n);
+                }
+            }
+        }
+        if (chain.isEmpty()) {
+            for (Map<String, Object> it : items) {
+                Object rc = it.get("routeChain");
+                if (rc != null && StrUtil.isNotBlank(rc.toString())) {
+                    for (String n : JSONUtil.parseArray(rc.toString()).toList(String.class)) {
+                        if (!chain.contains(n)) {
+                            chain.add(n);
+                        }
                     }
                 }
             }

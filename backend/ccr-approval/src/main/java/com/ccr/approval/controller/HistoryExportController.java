@@ -98,8 +98,28 @@ public class HistoryExportController {
         byte[] bytes = ResolutionPdfExporter.build(archive);
         Object appNo = archive.get("application") instanceof Map<?, ?> app
                 ? app.get("application_no") : null;
-        String filename = "利率定价决议书_" + (appNo == null ? applicationId : appNo) + "_"
-                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + ".pdf";
+        // 决议书文件名 = 客户名称_决议签发日期_申请号(2026-09-02 用户要求;原「利率定价决议书_申请号_时间」废弃)
+        String custName = "";
+        Object customerObj = archive.get("customer");
+        if (customerObj instanceof List<?> custList && !custList.isEmpty() && custList.get(0) instanceof Map<?, ?> c) {
+            Object cn = c.get("customerName");
+            if (cn == null) {
+                cn = c.get("cust_nm");
+            }
+            if (cn != null) {
+                custName = cn.toString();
+            }
+        }
+        String issueDay = "";
+        if (!resolutions.isEmpty() && resolutions.get(0) instanceof Map<?, ?> r) {
+            Object it = r.get("issueTime");
+            if (it != null && it.toString().length() >= 10) {
+                issueDay = it.toString().substring(0, 10).replace("-", "");
+            }
+        }
+        String filename = (custName.isEmpty() ? "利率定价决议书" : custName) + "_"
+                + (issueDay.isEmpty() ? LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")) : issueDay) + "_"
+                + (appNo == null ? applicationId : appNo) + ".pdf";
         String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)

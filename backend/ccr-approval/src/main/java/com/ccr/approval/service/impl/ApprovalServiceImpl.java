@@ -742,10 +742,13 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
             in.append(r.getId());
         }
+        // 整单化后决议按申请维度落库(application_id 直存,2026-08-29 起);旧数据逐分项(pricing_item_id,经 pi 关联);
+        // 双键兼容:COALESCE(r.application_id, pi.application_id) 取申请 id,LEFT JOIN 适配整单决议无分项关联(2026-09-02)
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT pi.application_id applicationId FROM ccr_resolution r"
-                        + " JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
-                        + " WHERE pi.application_id IN (" + in + ") AND r.del_flag = '0' GROUP BY pi.application_id");
+                "SELECT COALESCE(r.application_id, pi.application_id) applicationId FROM ccr_resolution r"
+                        + " LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " WHERE (r.application_id IN (" + in + ") OR pi.application_id IN (" + in + "))"
+                        + " AND r.del_flag = '0' GROUP BY applicationId");
         Set<Long> hasResolution = new LinkedHashSet<>();
         for (Map<String, Object> row : rows) {
             Object v = row.get("applicationId");
@@ -852,17 +855,17 @@ public class ApprovalServiceImpl implements ApprovalService {
             result.put("presidentDecisions", List.of());
         }
 
-        // 决议 + 执行核验
+        // 决议 + 执行核验(整单化后决议按申请维度落库、无分项关联,LEFT JOIN + application_id/pricing_item_id 双键兼容,2026-09-02)
         result.put("resolutions", jdbcTemplate.queryForList(
-                "SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId, r.final_rate finalRate, r.effective_from effectiveFrom, r.effective_to effectiveTo, r.decision_source decisionSource, r.status, r.issue_time issueTime FROM ccr_resolution r JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND r.del_flag = '0'", applicationId));
+                "SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId, r.final_rate finalRate, r.effective_from effectiveFrom, r.effective_to effectiveTo, r.decision_source decisionSource, r.status, r.issue_time issueTime FROM ccr_resolution r LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE (r.application_id = ? OR pi.application_id = ?) AND r.del_flag = '0'", applicationId, applicationId));
         result.put("resolutionExecutions", jdbcTemplate.queryForList(
-                "SELECT re.resolution_id resolutionId, re.loan_contract_no loanContractNo, re.supplement_agreement_no supplementAgreementNo, re.execution_rate executionRate, re.execution_status executionStatus, re.reconcile_result reconcileResult, re.reconcile_time reconcileTime FROM ccr_resolution_execution re JOIN ccr_resolution r ON r.id = re.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND re.del_flag = '0'", applicationId));
+                "SELECT re.resolution_id resolutionId, re.loan_contract_no loanContractNo, re.supplement_agreement_no supplementAgreementNo, re.execution_rate executionRate, re.execution_status executionStatus, re.reconcile_result reconcileResult, re.reconcile_time reconcileTime FROM ccr_resolution_execution re JOIN ccr_resolution r ON r.id = re.resolution_id LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE (r.application_id = ? OR pi.application_id = ?) AND re.del_flag = '0'", applicationId, applicationId));
 
-        // 承诺计划 + 指标
+        // 承诺计划 + 指标(整单化后承诺按申请关联决议,LEFT JOIN + 双键兼容)
         result.put("commitmentPlans", jdbcTemplate.queryForList(
-                "SELECT cp.id, cp.plan_no planNo, cp.resolution_id resolutionId, cp.scope_type scopeType, cp.status, cp.start_date startDate, cp.end_date endDate FROM ccr_commitment_plan cp JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cp.del_flag = '0'", applicationId));
+                "SELECT cp.id, cp.plan_no planNo, cp.resolution_id resolutionId, cp.scope_type scopeType, cp.status, cp.start_date startDate, cp.end_date endDate FROM ccr_commitment_plan cp JOIN ccr_resolution r ON r.id = cp.resolution_id LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE (r.application_id = ? OR pi.application_id = ?) AND cp.del_flag = '0'", applicationId, applicationId));
         result.put("commitmentMetrics", jdbcTemplate.queryForList(
-                "SELECT cm.plan_id planId, cm.metric_code metricCode, cm.target_type targetType, cm.baseline_value baselineValue, cm.target_value targetValue, cm.unit, cm.metric_scope metricScope FROM ccr_commitment_metric cm JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id JOIN ccr_resolution r ON r.id = cp.resolution_id JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE pi.application_id = ? AND cm.del_flag = '0'", applicationId));
+                "SELECT cm.plan_id planId, cm.metric_code metricCode, cm.target_type targetType, cm.baseline_value baselineValue, cm.target_value targetValue, cm.unit, cm.metric_scope metricScope FROM ccr_commitment_metric cm JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id JOIN ccr_resolution r ON r.id = cp.resolution_id LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id WHERE (r.application_id = ? OR pi.application_id = ?) AND cm.del_flag = '0'", applicationId, applicationId));
         // 承诺逐期履约评估(按指标期次:实际值/达成率/风险/结果;档案页展示"每一期指标完成情况")
         result.put("commitmentEvaluations", jdbcTemplate.queryForList(
                 "SELECT te.plan_id planId, te.metric_id metricId, cm.metric_code metricCode,"
@@ -872,9 +875,9 @@ public class ApprovalServiceImpl implements ApprovalService {
                         + " JOIN ccr_commitment_metric cm ON cm.id = te.metric_id"
                         + " JOIN ccr_commitment_plan cp ON cp.id = cm.plan_id"
                         + " JOIN ccr_resolution r ON r.id = cp.resolution_id"
-                        + " JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
-                        + " WHERE pi.application_id = ? AND te.del_flag = '0'"
-                        + " ORDER BY cm.id, te.data_dt", applicationId));
+                        + " LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " WHERE (r.application_id = ? OR pi.application_id = ?) AND te.del_flag = '0'"
+                        + " ORDER BY cm.id, te.data_dt", applicationId, applicationId));
 
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
         List<Map<String, Object>> relatedPersons = jdbcTemplate.queryForList(
@@ -1535,13 +1538,15 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /** 担保分项明细:同申请全部分项的担保包与措施,按 pricing_item_id 聚合 */
     private Map<Object, List<Map<String, Object>>> guaranteesByItem(Long applicationId) {
+        // gm.del_flag='0' 必须放 JOIN ON 而非 WHERE:担保包必有主担保方式(main_guarantee_type),
+        // 措施表可能为空(有包无措施),WHERE 过滤会整行丢失导致决议书/档案担保方式为空(2026-09-02 修复,与审批详情担保查询口径一致)
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT gp.pricing_item_id pricingItemId, gp.main_guarantee_type guaranteeType, gp.package_version packageVersion,"
                         + " gm.measure_no measureNo, gm.measure_type measureType, gm.guarantee_amount guaranteeAmount, gm.ext_json extJson"
                         + " FROM ccr_guarantee_package gp"
-                        + " LEFT JOIN ccr_guarantee_measure gm ON gm.package_id = gp.id"
+                        + " LEFT JOIN ccr_guarantee_measure gm ON gm.package_id = gp.id AND gm.del_flag = '0'"
                         + " JOIN ccr_pricing_item pi ON pi.id = gp.pricing_item_id"
-                        + " WHERE pi.application_id = ? AND gp.del_flag = '0' AND gm.del_flag = '0' ORDER BY gp.id, gm.measure_no", applicationId);
+                        + " WHERE pi.application_id = ? AND gp.del_flag = '0' ORDER BY gp.id, gm.measure_no", applicationId);
         Map<Object, List<Map<String, Object>>> byItem = new HashMap<>();
         for (Map<String, Object> row : rows) {
             byItem.computeIfAbsent(row.get("pricingItemId"), k -> new ArrayList<>()).add(row);

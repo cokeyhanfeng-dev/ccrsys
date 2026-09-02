@@ -351,8 +351,8 @@ public class ApprovalController {
                        a.application_no applicationNo, a.submit_time submitTime
                 FROM ccr_commitment_plan cp
                 JOIN ccr_resolution r ON r.id = cp.resolution_id
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                JOIN ccr_application a ON a.id = pi.application_id
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id)
                 WHERE cp.del_flag = '0' AND (cp.customer_no = ? OR cp.member_customer_no = ?)
                 ORDER BY a.submit_time DESC
                 """, custNo, custNo);
@@ -607,16 +607,19 @@ public class ApprovalController {
         }
 
         // 决议与执行核验(§12.7 ⑪:审批终态后签发;决议日期=issue_time,无有效期周期)
+        // 整单化后决议按申请维度一份(application_id 有值、pricing_item_id 为 NULL,2026-08-29 起),
+        // 旧数据逐分项签发(application_id 为 NULL、pricing_item_id 有值,2026-08-28 及之前);
+        // 故按 application_id 或 pricing_item_id 双键兼容查询(2026-09-02 修复决议书不显示)
         result.put("resolutions", jdbcTemplate.queryForList(
-                "SELECT r.id, r.resolution_no resolutionNo, r.pricing_item_id pricingItemId, r.final_rate finalRate,"
+                "SELECT r.id, r.resolution_no resolutionNo, r.application_id applicationId, r.pricing_item_id pricingItemId, r.final_rate finalRate,"
                         + " r.effective_from effectiveFrom, r.effective_to effectiveTo, r.decision_source decisionSource,"
                         + " r.status, r.issue_time issueTime"
-                        + " FROM ccr_resolution r WHERE r.pricing_item_id = ? AND r.del_flag = '0' ORDER BY r.issue_time", pricingItemId));
+                        + " FROM ccr_resolution r WHERE (r.application_id = ? OR r.pricing_item_id = ?) AND r.del_flag = '0' ORDER BY r.issue_time", applicationId, pricingItemId));
         result.put("resolutionExecutions", jdbcTemplate.queryForList(
                 "SELECT re.resolution_id resolutionId, re.loan_contract_no loanContractNo, re.supplement_agreement_no supplementAgreementNo,"
                         + " re.execution_rate executionRate, re.execution_status executionStatus, re.reconcile_result reconcileResult, re.reconcile_time reconcileTime"
                         + " FROM ccr_resolution_execution re JOIN ccr_resolution r ON r.id = re.resolution_id"
-                        + " WHERE r.pricing_item_id = ? AND re.del_flag = '0'", pricingItemId));
+                        + " WHERE (r.application_id = ? OR r.pricing_item_id = ?) AND re.del_flag = '0'", applicationId, pricingItemId));
 
         // 六人小组节点:返回当前表决轮次匿名汇总 + 登录人本人票(审批页内联同意/否决 + 链路进度)
         result.put("voteRound", buildVoteRound(pricingItemId));

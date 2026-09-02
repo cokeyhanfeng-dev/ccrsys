@@ -29,12 +29,16 @@ public class OriginalApproverRecipientResolver implements RecipientResolver {
         if (context.getResolutionId() == null) {
             return Collections.emptyList();
         }
+        // 整单化后决议按申请维度落库、无分项关联(pricing_item_id 为 NULL,2026-08-29 起);
+        // 原审批人/表决委员按申请维度查全部分项,兼容旧逐分项决议(2026-09-02)
         if ("ORIGINAL_APPROVER".equals(recipientType)) {
             List<String> ids = jdbcTemplate.queryForList(
                     """
                     SELECT DISTINCT aa.operator_id
                     FROM ccr_resolution r
-                    JOIN ccr_approval_action aa ON aa.pricing_item_id = r.pricing_item_id AND aa.del_flag = '0'
+                    LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                    JOIN ccr_pricing_item p2 ON p2.application_id = COALESCE(r.application_id, pi.application_id)
+                    JOIN ccr_approval_action aa ON aa.pricing_item_id = p2.id AND aa.del_flag = '0'
                     WHERE r.id = ?
                     """,
                     String.class, context.getResolutionId());
@@ -44,8 +48,8 @@ public class OriginalApproverRecipientResolver implements RecipientResolver {
                 """
                 SELECT DISTINCT va.voter_user_id
                 FROM ccr_resolution r
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
-                JOIN ccr_vote_round vr ON vr.application_id = pi.application_id AND vr.del_flag = '0'
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_vote_round vr ON vr.application_id = COALESCE(r.application_id, pi.application_id) AND vr.del_flag = '0'
                 JOIN ccr_vote_assignment va ON va.round_id = vr.id AND va.del_flag = '0'
                 WHERE r.id = ?
                 """,

@@ -210,12 +210,13 @@ public class ApplicationAccessService {
     }
 
     private boolean hasResolution(Long applicationId) {
+        // 整单化后决议按申请维度落库、无分项关联;LEFT JOIN + 双键兼容(2026-09-02)
         return exists("""
                 SELECT COUNT(*)
                 FROM ccr_resolution r
-                JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id AND pi.del_flag = '0'
-                WHERE pi.application_id = ? AND r.del_flag = '0'
-                """, applicationId);
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id AND pi.del_flag = '0'
+                WHERE (r.application_id = ? OR pi.application_id = ?) AND r.del_flag = '0'
+                """, applicationId, applicationId);
     }
 
     private boolean exists(String sql, Object... args) {
