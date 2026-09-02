@@ -56,7 +56,7 @@
           </td>
           <td><input class="form-input" v-model="r.certNo" placeholder="必填,失焦自动带出并判重" aria-label="证件号" @input="onCertChange(r)" @blur="onCertBlur(r, i)" /></td>
           <td>
-            <input class="form-input" v-model="r.name" placeholder="证件号带出或手工录入" aria-label="关联人姓名" @blur="matchCustomer(r)" />
+            <input class="form-input" v-model="r.name" placeholder="证件号带出或手工录入" aria-label="关联人姓名" />
           </td>
           <td>
             <select class="form-select" v-model="r.relationType">
@@ -183,7 +183,7 @@ export function parseRelations(remark?: string): [RelatedPersonRow[], string] {
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { searchCustomers, searchCustomerByCert } from '@/api/application'
+import { searchCustomerByCert } from '@/api/application'
 import { checkRelation, bindRelation, listApplicationRelations } from '@/api/relation'
 import { relationTypeText, isPlaceholderCustomerNo, customerNoText } from '@/utils/dict'
 
@@ -299,23 +299,6 @@ async function doBind(r: RelatedPersonRow) {
       // 非占用类失败(如角色 403/无权维护该申请):标记失败并带出原因,供徽标 title 悬停查看
       mark(r, 'error', msg || '')
     }
-  }
-}
-
-// 行内自动匹配客户号:姓名精确匹配数仓客户
-async function matchCustomer(r: RelatedPersonRow) {
-  const name = r.name?.trim()
-  if (!name || r.customerNo) return
-  try {
-    const cands = await searchCustomers(name)
-    const exact = (cands || []).find((c: any) => c.customerName === name)
-    if (exact) {
-      r.customerNo = exact.customerNo
-    } else if (cands?.length) {
-      ElMessage.info(`关联人「${name}」未精确匹配到客户号,可手工补录`)
-    }
-  } catch {
-    // 匹配失败不阻断录入
   }
 }
 
