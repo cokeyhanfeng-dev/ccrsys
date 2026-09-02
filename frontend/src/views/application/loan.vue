@@ -146,9 +146,9 @@
               </select>
             </div>
             <div class="form-field">
-              <label class="form-field__label">统一社会信用代码</label>
+              <label class="form-field__label">统一社会信用代码 <span class="req">*</span></label>
               <input class="form-input" v-model="form.ucrCode" />
-              <div class="form-hint">数仓带出,可修改</div>
+              <div class="form-hint">必填:数仓带出可修改,新增客户手工录入(自动回填按此反查)</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">五级分类</label>
@@ -175,9 +175,9 @@
           </template>
           <template v-else>
             <div class="form-field">
-              <label class="form-field__label">证件号码</label>
+              <label class="form-field__label">身份证号码 <span class="req">*</span></label>
               <input class="form-input" v-model="form.idNo" />
-              <div class="form-hint">数仓带出,可修改</div>
+              <div class="form-hint">必填:数仓带出可修改,新增客户手工录入(自动回填按此反查)</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">职业</label>
@@ -449,7 +449,7 @@
           <input class="form-input form-input--amount" v-model="otherSummary.externalGuaranteeBalance" type="number" min="0" max="999999999.99" step="0.0001" placeholder="如 0" @keydown="onNumKeydown" />
         </div>
         <div class="form-field">
-          <label class="form-field__label">报告日期(征信)</label>
+          <label class="form-field__label">报告日期</label>
           <input class="form-input" type="date" v-model="otherSummary.reportDate" />
           <div class="form-hint">数仓带出,可修改</div>
         </div>
@@ -612,7 +612,11 @@
         <div v-else class="empty-line">请先在「客户信息」步勾选本次申请涉及的集团成员,再按成员录入分项</div>
       </template>
 
-      <!-- 需求:存量不再自动拉入拆分项,分项由业务人员按担保方式手工录入 -->
+      <!-- 需求(2026-09-01 用户拍板):存量调息自动带入数仓拆分项(全部有效拆分项渲染为分项卡,可删除/改利率/不调息);新增仍手工录入 -->
+      <div v-if="form.businessType === 'EXISTING' && creditSplits.length" class="split-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="stat-card__sub">数仓存有效拆分项 {{ creditSplits.length }} 项</span>
+        <button type="button" class="btn btn--text" @click="selectAllSplits">全部带入拆分项</button>
+      </div>
       <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
 
       <div v-for="({ g, idx }) in visibleGuarantees" :key="idx" class="mortgage-item guarantee-item item-card">
@@ -776,7 +780,7 @@
           <div class="form-hint" style="margin-top:6px">成员由当前页签决定,无需再选;同成员可挂多个不同担保方式的分项</div>
         </div>
       </template>
-      <button v-else class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加担保分项</button>
+      <button v-else class="btn btn--secondary" style="margin-top:12px" @click="addGuarantee">＋ 添加授信分项</button>
     </div>
 
     <!-- 第四步:承诺与材料(§docs/29 §2.2:材料附件并入本步,7 步合并为 6 步;贡献承诺随申请提交 commitments) -->
@@ -916,7 +920,7 @@
       <button class="btn btn--ghost" :disabled="saving || submitted" @click="onSaveDraft">存草稿</button>
       <button class="btn btn--secondary" :disabled="step === 0" @click="step = step - 1">上一步</button>
       <button v-if="step < steps.length - 1" class="btn btn--primary" @click="goNext(step + 1)">下一步:{{ steps[step + 1] }}</button>
-      <button v-else class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : '提交申请' }}</button>
+      <button v-else class="btn btn--primary" :disabled="saving || submitting || submitted" @click="onSubmit">{{ submitted ? '已提交' : saving ? '保存中…' : submitting ? '校验提交中…' : '提交申请' }}</button>
     </div>
 
     <!-- 提交前校验确认弹窗 -->
@@ -967,7 +971,8 @@ import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel,
   inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, maritalStatusCode,
-  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo
+  FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo,
+  isPlaceholderCustomerNo
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -1362,13 +1367,15 @@ async function loadCustomerDetail() {
       const contractRows = view.contracts || []
       const totalContractAmt = contractRows.reduce((s, c: any) => s + (Number(c.contractAmount) || 0), 0)
       if (totalContractAmt > 0) form.amountTier = totalContractAmt >= 5000 ? 'GE_5000' : 'LT_5000'
-      // 需求:存量不再自动拉入数仓拆分项,仅默认进入存量模式;分项与利率由业务人员手工录入
+      // 需求(2026-09-01 用户拍板):存量调息自动带入数仓授信拆分项——全部有效拆分项渲染为分项卡
+      // (担保方式/金额/原利率/措施带出,可删可不调息),不再手工逐条录入
       if (creditSplits.value.length && !userPickedBusinessType.value) {
         if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
         ensureGuaranteeRows()
         selectedAgreementNo.value = ''
         autoSelectAgreement()
         syncTotalCredit()
+        selectAllSplits()
       }
     } catch { /* 忽略 */ }
     contributionCurrent.value = detail.contribution || []
@@ -1687,7 +1694,7 @@ function onBusinessTypeChange() {
     form.creditAgreementNo = ''
     form.creditInfo = initialCreditInfo()
     selectedAgreementNo.value = ''
-    // 需求:存量不再自动拉入拆分项,已录入分项保留,仅当无分项时补一条空白(§2026-08-26 不再清空避免分项丢失)
+    // 需求(2026-09-01 用户拍板):存量自动带入数仓授信拆分项,已录入分项保留(selectAllSplits 按 sourceSplitNo 去重),不再手工逐条录入
     ensureGuaranteeRows()
     if (form.customerNo) {
       getCustomerBusinessView(form.customerNo)
@@ -1696,10 +1703,11 @@ function onBusinessTypeChange() {
           creditAgreements.value = view.creditAgreements || []
           autoSelectAgreement()
           syncTotalCredit()
+          selectAllSplits()
         })
         .catch(() => {})
     }
-    ElMessage.info('存量调息:请选择本次申请对应的授信协议(默认已选第一条有效协议),授信总金额按所选协议额度带出,分项与利率请手工录入')
+    ElMessage.info('存量调息:已自动带入数仓拆分项与担保措施,可调整利率或删除不需要的分项')
   } else {
     // 新增授信:已录入分项保留,仅当无分项时补一条空白(§2026-08-26 不再清空避免分项丢失)
     form.creditAgreementNo = ''
@@ -2008,9 +2016,10 @@ function onNumKeydown(e: KeyboardEvent) {
 }
 
 // ---------- 分步校验(点击下一步/跳步时提示当前必填项) ----------
-// 单户场景客户身份:已查客户或有证件号(新增客户无客户号,允许先录证件号,提交时后端反查数仓/占位,2026-08-20 #017)
+// 单户场景主客户证件号码必填(§2026-09-02 用户拍板:取消手动回填后,占位号生成与审批自动回填全依赖
+// 证件号反查数仓,故所有单户申请证件号必输——对公=统一社会信用代码,对私=身份证号;
+// 已选存量客户由数仓带出,新增无号客户必须手工录入)
 function hasCustomerIdentity(): boolean {
-  if (!isBlank(form.customerNo)) return true
   return form.customerScope === 'INDIVIDUAL' ? !isBlank(form.idNo) : !isBlank(form.ucrCode)
 }
 
@@ -2056,7 +2065,7 @@ function validateStep(s: number): string | null {
       // 有有效成员时必须先选择本次申请涉及的成员(§2026-08-25 恢复勾选)
       if (groupMembers.value.length && !selectedMembers.value.length) return '请至少选择一名涉及成员'
     } else if (!hasCustomerIdentity()) {
-      return '请查询并选择客户,或录入证件号(新增客户可先录证件号)'
+      return '请录入主客户证件号码(对私:身份证号;对公:统一社会信用代码)'
     }
   }
   // s===1 关联人员:可空,证件号必填等全量校验在提交 onSubmit 统一拦截;但已占用(绑定其他客户/集团)的关联人阻断进入下一步(§2026-09-01)
@@ -2170,7 +2179,7 @@ function validateForDraft(): string | null {
     if (isBlank(form.groupNo)) return '请填写集团客户编号'
     if (groupMembers.value.length && !selectedMembers.value.length) return '请至少选择一名涉及成员'
   } else if (!hasCustomerIdentity()) {
-    return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
+    return '请录入主客户证件号码(对私:身份证号;对公:统一社会信用代码)'
   }
   // 存量须选/录授信协议(数仓有协议→下拉选择;无协议含集团→手工补录编号;§2026-08-26 集团协议块已可见)
   if (form.businessType === 'EXISTING' && !selectedAgreementNo.value && !form.creditInfo.agreementNo) {
@@ -2527,6 +2536,7 @@ async function onRoutePreview() {
 }
 
 async function onSubmit() {
+  if (submitting.value || saving.value) return // 防重入:校验/上传耗时段按钮已置灰,双保险拦截连点
   const missingRel = validateRelations(relations.value)
   if (missingRel.length) {
     ElMessage.error(`关联人员「${missingRel.join('、')}」未填写证件号,请补全后再提交`)
@@ -2545,14 +2555,21 @@ async function onSubmit() {
     return
   }
   if (!(await ensureDraft()) || !draft.id) return
-  await uploadPendingAttachments()
-  // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
-  try { routeResult.value = await routePreview(draft.id) } catch { routeResult.value = null }
+  // 提交校验耗时段(附件上传/路由预览/提交校验)置 submitting 锁,按钮置灰防误点重复提交(§2026-09-02)
+  submitting.value = true
   try {
-    checkResult.value = await submitCheck(draft.id)
-    checkDialogVisible.value = true
-  } catch {
-    checkResult.value = null
+    await uploadPendingAttachments()
+    // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+    try { routeResult.value = await routePreview(draft.id) } catch { routeResult.value = null }
+    try {
+      checkResult.value = await submitCheck(draft.id)
+      checkDialogVisible.value = true
+    } catch {
+      checkResult.value = null
+    }
+  } finally {
+    // 校验完成(弹窗已展示)后释放,用户可在确认弹窗点正式提交
+    submitting.value = false
   }
 }
 
@@ -2612,7 +2629,8 @@ async function loadDraftIntoForm(id: number | string) {
   // 同步数据版本号:保存草稿(PUT)必须携带 versionNo(乐观锁),缺失会导致"保存草稿必须携带数据版本号"报错
   draft.versionNo = app.versionNo != null ? app.versionNo : (draft.versionNo ?? 1)
   form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : app.customerScope === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'CORPORATE'
-  form.customerNo = app.customerNo || ''
+  // 占位号(NEW+证件后6)视为"尚未生成真实号",不落入输入框(避免后续按占位号反查数仓报错);回填真实号后自然显示
+  form.customerNo = app.customerNo && !isPlaceholderCustomerNo(app.customerNo) ? app.customerNo : ''
   form.groupNo = app.groupNo || ''
   // 客户信息人工快照回填(继续编辑/重提):数仓重查可能缺客户名称等字段,以提交时快照为准(§客户信息快照语义)
   const custInfo = parseExtJson(app.customerInfoJson)
@@ -2669,7 +2687,7 @@ async function loadDraftIntoForm(id: number | string) {
         groupMembers.value.push({ ...sm, source: 'MANUAL', creditLimit: null })
       }
     }
-  } else if (app.customerNo) {
+  } else if (app.customerNo && !isPlaceholderCustomerNo(app.customerNo)) {
     await loadCustomerDetail()
   }
 

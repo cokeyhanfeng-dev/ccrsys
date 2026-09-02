@@ -56,10 +56,10 @@
             <div class="form-static">{{ form.groupNo || '查询后带出' }}</div></div>
         </template>
 
-        <!-- 统一社会信用代码并入客户查询同一网格,不再单列一整行(数仓带出,可修改) -->
+        <!-- 统一社会信用代码并入客户查询同一网格(单户必填:数仓带出可修改,新增客户手工录入,自动回填按此反查) -->
         <div class="form-field">
-          <label class="form-field__label">统一社会信用代码</label>
-          <input class="form-input" v-model="form.ucrCode" :placeholder="form.customerScope === 'GROUP' ? '数仓无,请手工填写' : '数仓带出,可修改'" />
+          <label class="form-field__label">统一社会信用代码 <span class="req" v-if="form.customerScope !== 'GROUP'">*</span></label>
+          <input class="form-input" v-model="form.ucrCode" :placeholder="form.customerScope === 'GROUP' ? '数仓无,请手工填写' : '数仓带出,可修改(新增客户必填)'" />
         </div>
       </div>
     </div>
@@ -208,7 +208,7 @@ import {
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import { listProductLimits } from '@/api/approval2'
 import { listEnabledProducts } from '@/api/system'
-import { nodeLabel, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass } from '@/utils/dict'
+import { nodeLabel, DEPOSIT_PRODUCTS, certTypeText, normalizeFiveLevelClass, isPlaceholderCustomerNo } from '@/utils/dict'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -655,9 +655,8 @@ function validateForDraft(): string | null {
   if (form.customerScope === 'GROUP') {
     if (isBlank(form.groupNo) || !groupQueried.value) return '请录入集团编号并查询加载集团信息'
   } else {
-    // 新增客户无客户号:允许先录证件号(对公 ucrCode),提交时后端反查数仓/占位(2026-08-20 #017)
-    const hasIdentity = !isBlank(form.customerNo) || !isBlank(form.ucrCode)
-    if (!hasIdentity) return '请先查询并选择客户,或录入证件号(新增客户可先录证件号)'
+    // 主客户证件号码必填(§2026-09-02 用户拍板:取消手动回填后自动回填全依赖证件号反查,对公=统一社会信用代码)
+    if (isBlank(form.ucrCode)) return '请录入主客户统一社会信用代码(必填:新增客户录入后占位/自动回填按此反查)'
   }
   if (!items.value.length) return '请至少录入一条存款分项'
   for (let i = 0; i < items.value.length; i++) {
@@ -806,14 +805,22 @@ async function onRoutePreview() {
 
 async function onSubmit() {
   // 存款申请无关联人录入,不存在关联人校验(勿从 loan.vue 拷入 missingRel 校验,该变量未定义会抛 ReferenceError)
+  if (submitting.value || saving.value) return // 防重入:校验耗时段按钮已置灰,双保险拦截连点(§2026-09-02)
   if (!(await ensureDraft()) || !draft.id) return
-  // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
-  await onRoutePreview()
+  // 路由预览/提交校验耗时段置 submitting 锁,按钮置灰防误点重复提交(§2026-09-02)
+  submitting.value = true
   try {
-    checkResult.value = await submitCheck(draft.id)
-    checkDialogVisible.value = true
-  } catch {
-    checkResult.value = null
+    // 提交前刷新路由预览:保证弹窗「审批路由预览」基于最新路由(§2026-08-26 修复弹窗审批人为空)
+    await onRoutePreview()
+    try {
+      checkResult.value = await submitCheck(draft.id)
+      checkDialogVisible.value = true
+    } catch {
+      checkResult.value = null
+    }
+  } finally {
+    // 校验完成(弹窗已展示)后释放,用户可在确认弹窗点正式提交
+    submitting.value = false
   }
 }
 
@@ -878,7 +885,8 @@ async function loadDraftIntoForm(id: number | string) {
   // 同步数据版本号:保存草稿(PUT)必须携带 versionNo(乐观锁),缺失会导致"保存草稿必须携带数据版本号"报错
   draft.versionNo = app.versionNo != null ? app.versionNo : (draft.versionNo ?? 1)
   form.customerScope = app.customerScope === 'GROUP' ? 'GROUP' : 'CORPORATE'
-  form.customerNo = app.customerNo || ''
+  // 占位号(NEW+证件后6)视为"尚未生成真实号",不落入输入框(避免后续按占位号反查数仓报错);回填真实号后自然显示
+  form.customerNo = app.customerNo && !isPlaceholderCustomerNo(app.customerNo) ? app.customerNo : ''
   form.groupNo = app.groupNo || ''
   form.applicationRemark = app.applicationRemark || ''
   // 客户信息人工快照回填(继续编辑/重提):数仓重查可能缺客户名称等字段,以提交时快照为准
@@ -898,7 +906,7 @@ async function loadDraftIntoForm(id: number | string) {
         form.groupName = gi.groupName
       }
     } catch { /* 快照解析失败忽略 */ }
-  } else if (app.customerNo) {
+  } else if (app.customerNo && !isPlaceholderCustomerNo(app.customerNo)) {
     await loadCustomerDetail()
   }
   const editable = (d.pricingItems || []).filter((p) => p.inheritFlag !== 'Y')

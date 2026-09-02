@@ -63,10 +63,7 @@
         <div><div class="desc-item__label">申请号</div><div class="desc-item__value">{{ application.applicationNo || '—' }}</div></div>
         <div><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText }}</div></div>
         <div><div class="desc-item__label">申请类型</div><div class="desc-item__value">{{ applyBizTypeText }}</div></div>
-        <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}
-          <button v-if="isPlaceholderCustomerNo(application.customerNo || pi.pricing_customer_no) && canBackfill"
-                  class="btn btn--primary" @click="openBackfillDlg">回填客户号</button>
-        </div></div>
+        <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}</div></div>
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
@@ -95,7 +92,7 @@
     </div>
     </div>
 
-    <!-- 第二段:客户与集团(客户基本信息/集团成员/授信/附件/他行融资/关联人,低频只读资料默认折叠) -->
+    <!-- 第二段:客户与集团(客户基本信息/集团成员/授信/附件/他行融资/关联人;附件/他行融资默认展开,关联人默认折叠) -->
     <div class="anchor-section" id="s-customer">
     <!-- 5. 客户基本信息 -->
     <div class="card">
@@ -179,10 +176,7 @@
         <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
           <div class="desc-grid desc-grid--3">
             <div v-if="m.memberName"><div class="desc-item__label">成员名称</div><div class="desc-item__value">{{ m.memberName }}</div></div>
-            <div><div class="desc-item__label">成员客户号</div><div class="desc-item__value">{{ customerNoText(m.memberCustomerNo) }}
-              <button v-if="isPlaceholderCustomerNo(m.memberCustomerNo) && canBackfill"
-                      class="btn btn--primary" @click="openMemberBackfillDlg(m.memberCustomerNo)">回填客户号</button>
-            </div></div>
+            <div><div class="desc-item__label">成员客户号</div><div class="desc-item__value">{{ customerNoText(m.memberCustomerNo) }}</div></div>
             <div><div class="desc-item__label">成员角色</div><div class="desc-item__value">{{ memberRoleText(m.memberRole) }}</div></div>
             <div><div class="desc-item__label">申请金额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(m.requestAmount) }}</div></div>
             <div v-if="m.certNo"><div class="desc-item__label">统一社会信用代码</div><div class="desc-item__value">{{ m.certNo }}</div></div>
@@ -299,7 +293,7 @@
             <div><div class="desc-item__label">不良余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].nplBalance) }} 万元</div></div>
             <div><div class="desc-item__label">关注类余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].specialMentionBalance) }} 万元</div></div>
             <div><div class="desc-item__label">对外担保余额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(otherLoanSummary[0].externalGuaranteeBalance) }} 万元</div></div>
-            <div><div class="desc-item__label">报告日期(征信)</div><div class="desc-item__value">{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div></div>
+            <div><div class="desc-item__label">报告日期</div><div class="desc-item__value">{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div></div>
           </div>
           <table class="table" v-if="otherLoans.length" style="margin-top:8px">
             <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>
@@ -672,7 +666,7 @@
             <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
             <tbody>
               <tr v-for="(o, i) in (presidentOpinions[it.id] || [])" :key="i">
-                <td>{{ o.anonymNo || '—' }}</td>
+                <td>{{ o.seq ? '存贷款利率审批小组成员 ' + o.seq : (o.anonymNo || '—') }}</td>
                 <td>
                   <span :class="voteChoiceBadge(o.voteChoice)">
                     {{ voteChoiceText(o.voteChoice) }}
@@ -708,38 +702,40 @@
           ? `本申请共 ${siblingItems.length} 个分项,按利率最低分项定整单流程,一次审批处理整单(任一节点否决即整单否决)。`
           : `本申请共 ${siblingItems.length} 个分项,按原流程整单审批,一次处理整单。` }}
       </div>
-      <!-- 分项明细(整单统一决策,分项不再独立审批) -->
+      <!-- 分项明细(整单统一决策,分项不再独立审批;2026-09-02 逐分项利率:非集团不展示成员列,审批利率列可逐项编辑) -->
       <div class="op-item__subhead">分项明细</div>
       <table class="table">
         <thead><tr>
-          <th>成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
+          <th v-if="isGroup">成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
         </tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
-            <td>{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
             <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
             <td>{{ fmtTerm(it) }}</td>
             <td>{{ productName(it.productCode) }}</td>
             <td>{{ guaranteesText(it.guarantees) }}</td>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
             <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
-            <td class="num">{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</td>
+            <td class="num">
+              <el-input-number v-if="canAdjustWholeOrderRate" v-model="itemRates[String(it.id)]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:120px" />
+              <template v-else>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</template>
+            </td>
             <td><span v-if="isAnchorItem(it)" class="badge badge--info">定链分项</span><span v-else class="dg-label">—</span></td>
           </tr>
         </tbody>
       </table>
-      <!-- 整单利率(贷款非小组/非秘书岗可调:整单统一审批利率,后端应用到全部在途分项;存款/审核岗只读) -->
-      <div class="rate-compare" style="margin-top:12px">
-        <span class="rate-compare__item">申请利率<strong>{{ fmtRate(anchorRate) }}</strong></span>
-        <span class="rate-compare__arrow">→</span>
-        <span class="rate-compare__item">审批后利率(整单)
-          <el-input-number v-if="canAdjustWholeOrderRate" v-model="opRate" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:140px" />
-          <template v-else><strong>{{ fmtRate(opRate) }}</strong></template>
-        </span>
-        <span class="rate-compare__item">测算利率<strong>{{ fmtRate(anchorCalculatedRate) }}</strong></span>
-      </div>
+      <!-- 调价来源提示(2026-09-02):有分项被调过利率时提示当前审批人,并定位具体调价节点/操作人(后端 detail 按分项带出) -->
+      <el-alert v-if="adjustedItems.length" type="warning" :closable="false" show-icon style="margin-top:10px">
+        <template #title>
+          <div>以下分项利率已在审批过程中被调整(原申请利率 → 现审批利率),请在下表「审批利率」中审阅确认或继续调整:</div>
+          <div v-for="it in adjustedItems" :key="it.id" style="margin-top:2px">
+            {{ productName(it.productCode) }} · {{ fmtAmount(it.pricingAmount) }} 万元:{{ fmtRate(it.requestedRate) }} → {{ fmtRate(it.currentApprovalRate) }}({{ adjustNodeText(it) }})
+          </div>
+        </template>
+      </el-alert>
       <div class="stat-card__sub" v-if="canAdjustWholeOrderRate" style="margin-top:8px">
-        {{ isLoan ? '整单审批利率统一应用到全部在途分项;不得突破本节点权限边界与产品硬边界,低于下限保留利率随整单上送下一节点。' : '' }}
+        {{ isLoan ? '各分项审批利率可逐项调整(点击上表各分项「审批利率」列);调整后系统按新利率重新判定审批链路并沿新链推进,低于本节点下限将上送更高层级节点重新审批。' : '' }}
       </div>
       <div class="stat-card__sub" v-else-if="isCommitteeVoting" style="margin-top:8px">
         委员仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决整单。
@@ -754,9 +750,6 @@
       <div class="op-item__passed-tip" v-else style="margin-top:8px">
         同意 / 否决请点击页面底部操作条按钮,提交前将弹出审批概要供确认。
       </div>
-    </div>
-    <div class="card" v-else-if="flowStatus?.currentStatus === 'ROUTING'">
-      <div class="empty-line">该申请当前节点为「{{ nodeLabel(currentNodeCode) }}」,不在本人审批范围,仅可查看。</div>
     </div>
     </div>
 
@@ -811,25 +804,8 @@
       <template #footer>
         <button class="btn btn--secondary" @click="opConfirmVisible = false">取消</button>
         <button class="btn" :class="opConfirmAction === 'APPROVE' || opConfirmAction === 'VOTE_APPROVE' ? 'btn--primary' : 'btn--danger'"
-          :disabled="submitting" @click="confirmOpSubmit">确认提交</button>
+          :disabled="submitting" @click="confirmOpSubmit">{{ submitting ? '提交中…' : '确认提交' }}</button>
       </template>
-    </el-dialog>
-
-    <!-- 审批中客户号回填弹窗(2026-08-20 #017):新增客户占位号→真实号,支持直接给号或证件号反查 -->
-    <el-dialog v-model="backfillVisible" title="回填客户号" width="520px">
-      <div class="dlg-tip">该申请为客户经理登记的新增客户,提交时数仓尚未收录客户号。数仓生成客户号后请在此回填真实客户号,系统将同步申请/分项/快照与后续承诺数据;也可输入证件号自动反查数仓。</div>
-      <div class="form-field">
-        <label class="form-field__label">真实客户号</label>
-        <input class="form-input" v-model="backfillForm.customerNo" placeholder="数仓生成的客户号(优先)" />
-      </div>
-      <div class="form-field" style="margin-top:10px">
-        <label class="form-field__label">证件号(或)</label>
-        <input class="form-input" v-model="backfillForm.certNo" placeholder="统一社会信用代码 / 身份证号,自动反查数仓客户号" />
-      </div>
-      <div class="dlg-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-        <button class="btn btn--secondary" @click="backfillVisible = false">取消</button>
-        <button class="btn btn--primary" :disabled="backfilling" @click="doBackfill">确认回填</button>
-      </div>
     </el-dialog>
 
     <!-- 授信协议历史审批(§2026-09-01 存量授信展示:同协议历史申请审批状态) -->
@@ -863,7 +839,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getApprovalDetail, approveTask, rejectTask, backfillCustomerNo, newIdempotencyKey, type ApprovalResult } from '@/api/approval'
+import { getApprovalDetail, approveTask, rejectTask, autoBackfillCustomerNo, newIdempotencyKey, type ApprovalResult, type AutoBackfillResult } from '@/api/approval'
 import { submitBallot, submitPresidentDecision } from '@/api/vote'
 import { listRoundOpinions, listAgreementHistory } from '@/api/approval2'
 import { download } from '@/api/request'
@@ -1029,8 +1005,8 @@ function syncActiveAnchor() {
 onMounted(() => window.addEventListener('scroll', syncActiveAnchor, { passive: true }))
 onUnmounted(() => window.removeEventListener('scroll', syncActiveAnchor))
 
-// 低频只读资料卡折叠(docs/29 §2.3):附件/他行融资/关联人默认折叠;授信信息为审批关键数据默认展开(2026-09-01)
-const fold = ref({ credit: false, attach: true, otherLoan: true, related: true })
+// 低频只读资料卡折叠(docs/29 §2.3):申请材料附件/他行融资默认展开(2026-09-02 用户要求不折叠);关联人默认折叠;授信信息为审批关键数据默认展开(2026-09-01)
+const fold = ref({ credit: false, attach: false, otherLoan: false, related: true })
 
 // 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
@@ -1125,15 +1101,40 @@ function pickAnchorItem(items: any[]): any {
   return items[0]
 }
 const anchorItem = computed(() => pickAnchorItem(siblingItems.value))
-// 定链分项申请/测算利率(整单区只读展示)
-const anchorRate = computed(() => anchorItem.value?.requestedRate)
-const anchorCalculatedRate = computed(() => anchorItem.value?.calculatedRate)
-// 整单统一审批利率(后端 adjustRate 应用到全部在途分项)
-const opRate = ref<number | null>(null)
-// 整单利率相对定链分项基线是否变化(决定是否传 adjustRate)
-function wholeOrderRateChanged(): boolean {
-  const base = anchorItem.value?.currentApprovalRate ?? anchorItem.value?.requestedRate
-  return opRate.value != null && base != null && Number(opRate.value) !== Number(base)
+// 逐分项审批利率(分项id→利率,仅贷款非小组/秘书岗可调;预填当前审批利率回退申请利率)
+const itemRates = ref<Record<string, number | null>>({})
+// 定链分项当前审批利率(审批概要确认弹窗展示;逐分项编辑在分项明细表中进行)
+const opRate = computed(() => {
+  const it = anchorItem.value
+  if (!it || it.id == null) return null
+  return itemRates.value[String(it.id)] ?? null
+})
+// 分项利率相对该分项基线(currentApprovalRate 回退 requestedRate)是否变化
+function rateChangedFor(it: any): boolean {
+  const id = String(it.id)
+  const v = itemRates.value[id]
+  if (v == null) return false
+  const base = it.currentApprovalRate ?? it.requestedRate
+  return base != null && Number(v) !== Number(base)
+}
+// 收集有变化分项的调价(分项id→调整后利率,后端逐项应用),无变化返回 null
+function collectRateAdjustments(): Record<string, number | string> | null {
+  const map: Record<string, number | string> = {}
+  for (const it of siblingItems.value) {
+    if (it.id == null || !rateChangedFor(it)) continue
+    map[String(it.id)] = itemRates.value[String(it.id)] as number
+  }
+  return Object.keys(map).length ? map : null
+}
+// 上一节点已调价的分项(当前在途审批利率≠原始申请利率,说明流程中某节点调过价;「利率审批」块提示用)
+const adjustedItems = computed(() => siblingItems.value.filter((it: any) =>
+  it.currentApprovalRate != null && it.requestedRate != null
+  && Number(it.currentApprovalRate) !== Number(it.requestedRate)))
+// 调价来源文案:定位到具体调价节点(后端 detail 按分项带出 adjustNodeCode/OperatorName),无则兜底「上一节点」
+function adjustNodeText(it: any): string {
+  if (!it.adjustNodeCode) return '上一节点已调整'
+  const node = nodeLabel(it.adjustNodeCode)
+  return it.adjustOperatorName ? `${node}·${it.adjustOperatorName} 调整` : `${node} 已调整`
 }
 // 整单是否已处理:委员=本人已投整单票;普通节点=该节点已有审批动作(通过/上送/否决)
 const wholeOrderActed = computed(() => {
@@ -1178,6 +1179,25 @@ const canBackfill = computed(() =>
   hasPlaceholderCustomer.value
   && (canOperate(anchorItem.value) || ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || '')))
 
+// 节点进入自动回填(§2026-09-02 决策二/#457/#460):单户占位单每次进入审批详情自动按证件号
+// 反查数仓主档——命中即整单占位→真实并级联(客户号+客户其他信息+快照+关联人绑定),未命中不阻塞。
+// 手动「回填客户号」按钮已取消(§2026-09-02),本函数为唯一回填通道。
+// 组件级 autoBackfillTried 保证本次进入只触发一次(防反复请求)。
+const autoBackfillTried = ref(false)
+async function maybeAutoBackfill() {
+  if (autoBackfillTried.value || isGroup.value || !canBackfill.value) return // 集团占位走提交通道反查,自动回填仅单户
+  autoBackfillTried.value = true
+  try {
+    const res = await autoBackfillCustomerNo<AutoBackfillResult>(applicationId.value)
+    if (res?.backfilled) {
+      ElMessage.success('已自动匹配真实客户号,客户信息已按主档刷新')
+      await load()
+    }
+  } catch {
+    // 回填失败不阻塞审批(数仓加工时点不可控);已置位不退回,避免本页反复请求
+  }
+}
+
 // 授信协议历史审批弹窗(§2026-09-01 存量授信:同协议历史申请审批状态)
 const agreementHistoryVisible = ref(false)
 const agreementHistoryLoading = ref(false)
@@ -1200,49 +1220,6 @@ async function openAgreementHistory(agreementNo?: string) {
 /** 时间显示:2026-09-01T08:00:00 → 2026-09-01 08:00 */
 function fmtTimeStr(v: any): string {
   return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
-}
-
-const backfillVisible = ref(false)
-const backfilling = ref(false)
-const backfillForm = ref<{ customerNo: string; certNo: string }>({ customerNo: '', certNo: '' })
-const backfillTargetId = ref<number | string>('') // 回填目标分项(集团按成员定位分项)
-function openBackfillDlg() {
-  // 整单回填以锚定分项为落点(后端按申请整单替换,任一分项即可)
-  backfillTargetId.value = anchorItem.value?.id ?? ''
-  backfillForm.value = { customerNo: '', certNo: '' }
-  backfillVisible.value = true
-}
-/** 集团成员回填:定位该成员对应分项(后端按申请+占位号整单替换,任一分项即可) */
-function openMemberBackfillDlg(memberNo: string) {
-  const target = siblingItems.value.find((it) => (it.memberCustomerNo || it.member_customer_no) === memberNo)
-  if (!target) {
-    ElMessage.warning('未找到该成员的定价分项,无法回填')
-    return
-  }
-  backfillTargetId.value = target.id
-  backfillForm.value = { customerNo: '', certNo: '' }
-  backfillVisible.value = true
-}
-async function doBackfill() {
-  const { customerNo, certNo } = backfillForm.value
-  if (!customerNo.trim() && !certNo.trim()) {
-    ElMessage.warning('请输入真实客户号或证件号(二选一)')
-    return
-  }
-  backfilling.value = true
-  try {
-    await backfillCustomerNo(backfillTargetId.value, {
-      customerNo: customerNo.trim() || undefined,
-      certNo: certNo.trim() || undefined
-    })
-    ElMessage.success('客户号回填成功')
-    backfillVisible.value = false
-    await load()
-  } catch (e: any) {
-    ElMessage.error(e?.message || '回填失败')
-  } finally {
-    backfilling.value = false
-  }
 }
 
 // 整单交付改造(2026-08-29):已无逐分项审批,itemApproved/itemRejected/myBallotChoice/isVotableItem 移除,
@@ -1269,8 +1246,8 @@ function memberLabel(memberNo?: string): string {
   return customerNoText(memberNo)
 }
 
-// 整单交付改造(2026-08-29):整单统一 adjustRate(应用到全部在途分项),逐分项 rateChanged/collectRateAdjustments 移除,
-// 由 wholeOrderRateChanged 替代(定链分项利率相对基线变化)
+// 整单交付改造(2026-08-29):整单统一 adjustRate 一次应用;2026-09-02 逐分项利率:
+// 改为分项明细逐项编辑,提交时以 rateAdjustments(分项id→利率)逐项应用,整单 adjustRate 恒 null
 
 
 const groupTotalAmount = computed(() =>
@@ -1447,15 +1424,21 @@ async function load() {
     voteRound.value = data.voteRound || null
     // 分项审批决定区:同申请分项摘要(后端未返回时回退为当前分项单元素),每分项预填审批利率
     siblingItems.value = (data.siblingItems && data.siblingItems.length) ? data.siblingItems : [data.pricingItem || {}]
-    // 整单统一审批利率:预填定链分项当前审批利率(审批人可调,后端应用到全部在途分项)
-    const anchor = pickAnchorItem(siblingItems.value)
-    const baseRate = anchor?.currentApprovalRate ?? anchor?.requestedRate
-    opRate.value = baseRate != null ? Number(baseRate) : null
+    // 逐分项审批利率:预填各分项当前在途审批利率(=上一个节点审批后的利率,与分项明细「申请利率」列一致;
+    // 审批人如需改利率在分项明细表中逐项手动调整)
+    const rates: Record<string, number | null> = {}
+    for (const it of siblingItems.value) {
+      const base = it.currentApprovalRate ?? it.requestedRate
+      rates[String(it.id)] = base != null ? Number(base) : null
+    }
+    itemRates.value = rates
     // 行长/审计视角:加载六人小组匿名审批意见(§12.7,按轮次查询按分项归组)
     if (canViewVote.value) {
       await loadPresidentOpinions()
     }
     loaded.value = true
+    // 节点进入自动回填:详情已就绪后发起(不 await,命中回填成功会二次 load 刷新展示;未命中零副作用)
+    maybeAutoBackfill()
   } catch {
     ElMessage.error('审批详情加载失败')
     loadError.value = true
@@ -1553,16 +1536,19 @@ const opConfirmTitle = computed(() => {
   }
   return t[opConfirmAction.value]
 })
-// 确认弹窗展示的审批后利率:整单可调取用户填写值,否则定链分项当前审批利率
+// 确认弹窗展示的审批后利率:取定链分项当前审批利率(逐分项编辑时展示定链分项值)
 const opConfirmRate = computed(() => {
   if (opRate.value != null) return opRate.value
   return anchorItem.value?.currentApprovalRate ?? anchorItem.value?.requestedRate
 })
 // 打开审批概要确认弹窗(前置校验:同意须有整单利率/否决须填意见/投票须有轮次)
 function openOpConfirm(action: 'APPROVE' | 'REJECT' | 'VOTE_APPROVE' | 'VOTE_REJECT') {
-  if (action === 'APPROVE' && isLoan.value && opRate.value == null) {
-    ElMessage.warning('请填写整单审批利率')
-    return
+  if (action === 'APPROVE' && isLoan.value) {
+    const blank = siblingItems.value.find(it => itemRates.value[String(it.id)] == null)
+    if (blank) {
+      ElMessage.warning('请填写各分项审批利率')
+      return
+    }
   }
   if (action === 'REJECT' && !opComment.value?.trim()) {
     ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
@@ -1577,18 +1563,28 @@ function openOpConfirm(action: 'APPROVE' | 'REJECT' | 'VOTE_APPROVE' | 'VOTE_REJ
 }
 // 确认后正式提交(弹窗「确认提交」入口)
 async function confirmOpSubmit() {
+  if (submitting.value) return // 防重入:提交中再次点击/双击确认直接忽略(§2026-09-02 防误点重复提交)
   const action = opConfirmAction.value
-  opConfirmVisible.value = false
-  if (action === 'APPROVE') return doApprove()
-  if (action === 'REJECT') return doReject()
-  return doVote(action === 'VOTE_APPROVE' ? 'APPROVE' : 'REJECT')
+  try {
+    // 弹窗不提前关闭:提交期间按钮显示「提交中…」置灰,响应返回后再关闭(§2026-09-02 防误点)
+    if (action === 'APPROVE') await doApprove()
+    else if (action === 'REJECT') await doReject()
+    else await doVote(action === 'VOTE_APPROVE' ? 'APPROVE' : 'REJECT')
+  } finally {
+    opConfirmVisible.value = false
+  }
 }
 
-// 整单同意审批(2026-08-29):一次操作处理整单;调整利率统一应用到全部在途分项,不得越界
+// 整单同意审批(2026-09-02 逐分项利率):一次操作处理整单;利率在分项明细中逐项调整,
+// 提交时以 rateAdjustments(分项id→利率)逐项应用,未变化分项沿用原利率,调整后按新利率重判链路
 async function doApprove() {
-  if (isLoan.value && opRate.value == null) {
-    ElMessage.warning('请填写整单审批利率')
-    return
+  if (submitting.value) return // 防重入(§2026-09-02)
+  if (isLoan.value) {
+    const blank = siblingItems.value.find(it => itemRates.value[String(it.id)] == null)
+    if (blank) {
+      ElMessage.warning('请填写各分项审批利率')
+      return
+    }
   }
   const nodeCode = currentNodeCode.value
   if (!nodeCode) return
@@ -1597,12 +1593,13 @@ async function doApprove() {
     const res = await approveTask({
       applicationId: applicationId.value, // 雪花 id 传字符串,避免 JS 精度丢失
       nodeCode,
-      adjustRate: wholeOrderRateChanged() ? opRate.value : null,
+      adjustRate: null,
+      rateAdjustments: collectRateAdjustments() ?? undefined,
       comment: opComment.value || undefined,
       versionNo: application.value.versionNo
     }, newIdempotencyKey())
     ElMessage.success(approveSuccessMsg(res, nodeCode))
-    goBack()
+    router.push('/overview') // 2026-09-02:提交成功后回工作台
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态
   } finally {
@@ -1614,6 +1611,7 @@ async function doApprove() {
 
 // 委员整单投票(2026-08-29):一批=一申请=整单票,投一次即整单票;一人一票投后不可改
 async function doVote(choice: string) {
+  if (submitting.value) return // 防重入(§2026-09-02)
   const roundId = voteRound.value?.roundId
   if (!roundId) {
     ElMessage.warning('未找到当前表决轮次,请刷新后重试')
@@ -1627,7 +1625,7 @@ async function doVote(choice: string) {
       comment: opComment.value || undefined
     }, newIdempotencyKey())
     ElMessage.success(choice === 'APPROVE' ? '已提交同意票(整单)' : '已提交否决票(整单)')
-    await load() // 刷新本人票与匿名汇总
+    router.push('/overview') // 2026-09-02:提交成功后回工作台
   } catch {
     load() // 已投/轮次关闭等:刷新最新状态
   } finally {
@@ -1637,6 +1635,7 @@ async function doVote(choice: string) {
 
 // 整单否决(2026-08-29):任一节点否决即整单否决,同申请全部分项一并退回;否决必填意见
 async function doReject() {
+  if (submitting.value) return // 防重入(§2026-09-02)
   // P2-1:否决必填意见(否决后整单退回,客户经理凭意见了解否决原因)
   if (!opComment.value?.trim()) {
     ElMessage.warning('否决必须填写审批意见,以便客户经理了解否决原因')
@@ -1653,7 +1652,7 @@ async function doReject() {
       versionNo: application.value.versionNo
     }, newIdempotencyKey())
     ElMessage.warning('已否决,整单退回')
-    goBack()
+    router.push('/overview') // 2026-09-02:提交成功后回工作台
   } catch {
     load() // 版本冲突/已处理等:刷新最新状态
   } finally {
