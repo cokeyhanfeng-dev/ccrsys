@@ -907,9 +907,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * 贷款重复申请校验(需求②):存量调息带数仓拆分项编号(source_split_no)时按拆分项精确防重
-     * (同一拆分项已有在途调息申请即阻断);拆分项为空(新增授信/存量手工补录)回退「客户+担保方式」兜底
-     * (同一客户同一担保方式非信用类已有进行中申请阻断)。拟签订(planned='Y' 或无正式合同号)不构成重复;
+     * 贷款重复申请校验:存量调息带数仓拆分项编号(source_split_no)时按拆分项精确防重
+     * (同一拆分项已有在途调息申请即阻断)。2026-09-01 用户拍板:不同申请(总额等条件可能不同)
+     * 允许并行提交,取消「客户+担保方式」进行中申请兜底拦截。拟签订(planned='Y' 或无正式合同号)不构成重复;
      * 重提 reapply 源申请已终态,天然豁免。进行中 = 状态不在终态集(DRAFT 未提交/FINAL/VETOED/REJECTED/CLOSED)。
      */
     private void checkDuplicateContractApplication(CcrApplication app, CcrPricingItem item) {
@@ -931,37 +931,6 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 throw new ServiceException(ErrorCode.DUPLICATE_APPLICATION.getCode(),
                         "拆分项[" + item.getSourceSplitNo() + "]已有进行中调息申请(" + inAppNo + "),请勿重复申请");
             }
-            return;
-        }
-        String customerNo = StrUtil.blankToDefault(item.getMemberCustomerNo(), app.getCustomerNo());
-        if (StrUtil.isBlank(customerNo)) {
-            return;
-        }
-        // 担保措施:分项担保组合主担保类型;信用类无担保措施,不参与防重
-        CcrGuaranteePackage pkg = item.getGuaranteePackageId() == null ? null
-                : guaranteePackageMapper.selectById(item.getGuaranteePackageId());
-        if (pkg == null || StrUtil.isBlank(pkg.getMainGuaranteeType()) || "CREDIT".equals(pkg.getMainGuaranteeType())) {
-            return;
-        }
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                """
-                SELECT a.application_no
-                FROM ccr_guarantee_package gp
-                JOIN ccr_pricing_item pi ON pi.id = gp.pricing_item_id
-                JOIN ccr_application a ON a.id = pi.application_id
-                WHERE (a.customer_no = ? OR pi.member_customer_no = ?)
-                  AND gp.main_guarantee_type = ?
-                  AND a.id != ?
-                  AND a.del_flag = '0' AND pi.del_flag = '0'
-                  AND a.status NOT IN ('DRAFT','FINAL','VETOED','REJECTED','CLOSED')
-                """,
-                customerNo, customerNo, pkg.getMainGuaranteeType(), app.getId());
-        if (!rows.isEmpty()) {
-            String inAppNo = rows.get(0).get("application_no") == null ? ""
-                    : rows.get(0).get("application_no").toString();
-            throw new ServiceException(ErrorCode.DUPLICATE_APPLICATION.getCode(),
-                    "客户[" + customerNo + "]的「" + pkg.getMainGuaranteeType() + "」担保措施已有进行中申请("
-                            + inAppNo + "),请勿重复申请");
         }
     }
 
