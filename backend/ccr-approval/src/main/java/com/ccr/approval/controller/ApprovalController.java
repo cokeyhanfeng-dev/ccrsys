@@ -483,11 +483,28 @@ public class ApprovalController {
                                 + " WHERE gp.pricing_item_id IN (" + gInSb + ") AND gp.del_flag = '0' ORDER BY gp.id")) {
                     guaranteeByItem.computeIfAbsent(g.get("pricingItemId"), k -> new ArrayList<>()).add(g);
                 }
+                // 逐分项调价来源(2026-09-02):最近一次调价动作(before≠after)的节点/操作人/时间,
+                // 审批页「利率审批」调价提示定位具体节点用;flowTrace 仅锚定分项轨迹,多分项须按分项单独查
+                Map<Object, Map<String, Object>> adjustByItem = new HashMap<>();
+                for (Map<String, Object> a : jdbcTemplate.queryForList(
+                        "SELECT a.pricing_item_id pricingItemId, a.node_code adjustNodeCode, u.nick_name adjustOperatorName, a.operation_time adjustTime"
+                                + " FROM ccr_approval_action a LEFT JOIN ccr_sys_user u ON u.id = a.operator_id"
+                                + " WHERE a.pricing_item_id IN (" + gInSb + ") AND a.del_flag = '0'"
+                                + " AND a.before_rate IS NOT NULL AND a.after_rate IS NOT NULL AND a.before_rate != a.after_rate"
+                                + " ORDER BY a.operation_time DESC")) {
+                    adjustByItem.putIfAbsent(a.get("pricingItemId"), a);
+                }
                 for (Map<String, Object> s : siblings) {
                     s.put("agreed", agreed.contains(s.get("id")));
                     s.put("rejected", rejected.contains(s.get("id")));
                     s.put("passed", passed.contains(s.get("id")));
                     s.put("guarantees", guaranteeByItem.getOrDefault(s.get("id"), Collections.emptyList()));
+                    Map<String, Object> adj = adjustByItem.get(s.get("id"));
+                    if (adj != null) {
+                        s.put("adjustNodeCode", adj.get("adjustNodeCode"));
+                        s.put("adjustOperatorName", adj.get("adjustOperatorName"));
+                        s.put("adjustTime", adj.get("adjustTime"));
+                    }
                     // 六人小组节点:分项挂轮次时附加委员本人票状态(审批页内联同意/否决,一人一票)
                     if (RouteChains.SIX_PEOPLE_GROUP.equals(nodeCode)) {
                         attachMyBallot(s);

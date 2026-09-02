@@ -293,8 +293,11 @@ public class ApprovalServiceImpl implements ApprovalService {
             throw new ServiceException(ErrorCode.TASK_PROCESSED.getCode(), "申请本节点已处理,请勿重复操作");
         }
 
-        // B07 调价边界:整单统一调整利率(adjustRate 优先,rateAdjustments 逐分项覆盖兼容旧前端),
-        // 应用到全部在途分项;不得突破本节点权限边界与产品硬边界(越界抛 HARD_BOUNDARY)
+        // B07 调价(2026-09-02 逐分项利率为主路径):rateAdjustments(分项id→利率,仅收录变化分项)逐项应用,
+        // adjustRate 整单统一兼容旧前端(二者传一,adjustRate 优先);未收录分项沿用原 currentApprovalRate。
+        // 利率可任意调整——低于本节点下限不再拦截,调价后按新利率重算审批链路
+        // (recalcRoute 沿新链推进,需更高权限时整单带新利率上送更高层级节点重新审批);
+        // 产品硬边界仅返回展示值不拦截(§用户要求取消硬边界,RuleEngineImpl.checkHardBoundary 不再抛错)
         Map<Long, BigDecimal> effectiveRates = new LinkedHashMap<>();
         for (CcrPricingItem i : routingItems) {
             BigDecimal rate = adjustRate != null ? adjustRate
@@ -303,19 +306,9 @@ public class ApprovalServiceImpl implements ApprovalService {
                 rate = i.getCurrentApprovalRate();
             }
             effectiveRates.put(i.getId(), rate);
-            boolean itemAdjusted = adjustRate != null
-                    && (i.getCurrentApprovalRate() == null
-                        || adjustRate.compareTo(i.getCurrentApprovalRate()) != 0);
-            if (!itemAdjusted) {
-                continue;
-            }
-            if (!inNodePermission(businessType, rate, perm)) {
-                throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
-                        "调价突破本节点权限边界:节点[" + nodeCode + "] 调价利率 " + rate);
-            }
             ruleEngine.checkHardBoundary(businessType, i.getProductCode(), rate);
         }
-        boolean adjusted = adjustRate != null;
+        boolean adjusted = adjustRate != null || rateAdjustments != null;
 
         // 整单链锚定:贷款=当前在途分项中有效利率最低者;存款=原流程(首个分项)。
         // 调价后或历史申请整单链为空 → 按锚定分项要素重算并刷新申请单冻结字段(§8.6 重锚定)
@@ -348,15 +341,6 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
 
         // ===== 整单流转口径(整单交付改造 2026-08-29):一次动作即整单推进/终审,无逐分项齐套 =====
-        // 权限内判定:贷款 审批利率≥节点下限;存款/保证金 审批利率≤期限上限(冻结 boundary_rate,含等于)
-        boolean withinPermission;
-        if (deposit) {
-            BigDecimal upper = anchor.getBoundaryRate();
-            BigDecimal anchorEff = effectiveRates.get(anchor.getId());
-            withinPermission = upper != null && anchorEff != null && anchorEff.compareTo(upper) <= 0;
-        } else {
-            withinPermission = inNodePermission(businessType, effectiveRates.get(anchor.getId()), perm);
-        }
         // 下一节点:存款链支行过手后直上小组;贷款沿整单链推进(矩阵驱动,可跳过无权限节点如GM)。
         // 终点判定:当前节点 == 整单链终审岗位(route_code)才具备整单终审资格;链路中间节点
         // (强制上会场景的支行/部门总/分管)即使利率在权限内也只有过手权,须沿链上送,不就地终审
@@ -377,7 +361,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             for (CcrPricingItem i : routingItems) {
                 BigDecimal eff = effectiveRates.get(i.getId());
                 insertAction(buildAction(i.getId(), "APPROVE", nodeCode, operator.getId(),
-                        comment, i.getCurrentApprovalRate(), eff, idempotencyKey,
+                        comment, i.getCurrentApprovalRate(), eff, itemIdempotencyKey(i, routingItems, idempotencyKey),
                         PricingItemStatus.ROUTING.getCode(), PricingItemStatus.APPROVED_LEVEL.getCode()));
                 if (eff != null && (i.getCurrentApprovalRate() == null || eff.compareTo(i.getCurrentApprovalRate()) != 0)) {
                     saveAdjustment(i, nodeCode, operator.getId(), i.getCurrentApprovalRate(), eff, perm);
@@ -402,7 +386,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         for (CcrPricingItem i : routingItems) {
             BigDecimal eff = effectiveRates.get(i.getId());
             insertAction(buildAction(i.getId(), "ESCALATE", nodeCode, operator.getId(),
-                    comment, i.getCurrentApprovalRate(), eff, idempotencyKey,
+                    comment, i.getCurrentApprovalRate(), eff, itemIdempotencyKey(i, routingItems, idempotencyKey),
                     PricingItemStatus.ROUTING.getCode(),
                     toGroup ? PricingItemStatus.VOTING.getCode() : PricingItemStatus.ROUTING.getCode()));
             if (eff != null && (i.getCurrentApprovalRate() == null || eff.compareTo(i.getCurrentApprovalRate()) != 0)) {
@@ -496,7 +480,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 null, null, comment);
         for (CcrPricingItem i : routingItems) {
             insertAction(buildAction(i.getId(), "REJECT", nodeCode, operator.getId(),
-                    comment, i.getCurrentApprovalRate(), i.getCurrentApprovalRate(), idempotencyKey,
+                    comment, i.getCurrentApprovalRate(), i.getCurrentApprovalRate(), itemIdempotencyKey(i, routingItems, idempotencyKey),
                     PricingItemStatus.ROUTING.getCode(), PricingItemStatus.REJECTED.getCode()));
         }
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
@@ -2097,6 +2081,18 @@ public class ApprovalServiceImpl implements ApprovalService {
         adj.setOperationChannel("PC");
         adj.setOperationTime(LocalDateTime.now());
         rateAdjustmentMapper.insert(adj);
+    }
+
+    /** 整单多分项幂等键:首个分项落原始请求键(guardIdempotency 请求级重放拦截),其余分项按 id 派生,
+     * 避免整单推进多分项时各分项 insertAction 撞 ccr_approval_action.uk_action_idem 唯一键(2026-09-02 修复) */
+    private String itemIdempotencyKey(CcrPricingItem item, List<CcrPricingItem> routingItems, String requestKey) {
+        if (requestKey == null) {
+            return null;
+        }
+        if (routingItems.isEmpty() || routingItems.get(0).getId().equals(item.getId())) {
+            return requestKey;
+        }
+        return requestKey + ":" + item.getId();
     }
 
     private void insertAction(CcrApprovalAction action) {

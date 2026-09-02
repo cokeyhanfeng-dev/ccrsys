@@ -327,6 +327,24 @@ class ApprovalServiceImplTest {
     }
 
     @Test
+    void approve_loan_multiItem_sameRequestKey_derivesPerItemKey() {
+        // 2026-09-02 修复:整单多分项共用一个请求幂等键时,各分项 insertAction 撞 uk_action_idem 唯一键 → 1013。
+        // 现在首个分项落原始 key(guardIdempotency 请求级重放拦截),其余分项按 id 派生 key。
+        stubBranchManagerLoanPerm();
+        CcrPricingItem item2 = siblingItem(11L, "PI002", "3.500000");
+        application.setRouteCode("BRANCH_MANAGER");
+        application.setRouteChain("[\"BRANCH_MANAGER\"]");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item, item2));
+
+        approvalService.approve(30L, "BRANCH_MANAGER", null, "同意", 3, "K-MULTI", null);
+
+        // 首个分项(10)落原始 key,第二个分项(11)派生为 key:id,互不冲突
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "K-MULTI".equals(a.getIdempotencyKey())));
+        verify(approvalActionMapper).insert(argThat((CcrApprovalAction a) -> "K-MULTI:11".equals(a.getIdempotencyKey())));
+        verify(approvalActionMapper, times(2)).insert(any(CcrApprovalAction.class));
+    }
+
+    @Test
     void approve_loan_finalNode_wholeOrderFinalizes_ignoresPermissionAtEndpoint() {
         // 当前节点=整单链终审岗位(routeCode)→整单一起终审交付(到终点一起交付);
         // 即使利率低于节点矩阵下界也不中途截停,终点即终审
@@ -373,14 +391,20 @@ class ApprovalServiceImplTest {
     // ---------- 调价边界(B07)与调价重算整单链 ----------
 
     @Test
-    void approve_adjustRate_beyondNodePermission_rejected() {
+    void approve_adjustRate_belowNodePermission_reroutesAndEscalates() {
+        // 2026-09-01 用户拍板:调价可低于本节点下限(不再报错),按新利率重算整单链沿新链上送更高层级节点重新审批
         stubBranchManagerLoan();
-        // 调价到 2.5 低于支行下限 3.0:主动调价不得越权
-        ServiceException e = assertThrows(ServiceException.class,
-                () -> approvalService.approve(30L, "BRANCH_MANAGER", new BigDecimal("2.500000"), null, 3, null, null));
-        assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
-        verify(ruleEngine, never()).checkHardBoundary(any(), any(), any());
-        verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
+        RouteResult rr = new RouteResult();
+        rr.setFinalNodeCode("DEPT_GENERAL_MANAGER");
+        rr.setRouteChain(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER"));
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(rr);
+
+        ApprovalResult res = approvalService.approve(30L, "BRANCH_MANAGER", new BigDecimal("2.500000"), null, 3, "K-1", null);
+
+        // 调价 2.5(低于支行下限 3.0)不拦截,沿新链上送部门总经理;调价记录落库
+        assertEquals("DEPT_GENERAL_MANAGER", res.getNextNodeCode());
+        verify(rateAdjustmentMapper).insert(argThat((CcrRateAdjustment adj) ->
+                adj.getAfterRate().compareTo(new BigDecimal("2.500000")) == 0));
     }
 
     @Test
