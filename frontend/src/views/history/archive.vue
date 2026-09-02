@@ -174,7 +174,7 @@
           <div class="desc-item"><div class="desc-item__label">不良余额(万元)</div><div class="desc-item__value">{{ fmtAmount(otherLoanSummary[0].nplBalance) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">关注类余额(万元)</div><div class="desc-item__value">{{ fmtAmount(otherLoanSummary[0].specialMentionBalance) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">对外担保余额(万元)</div><div class="desc-item__value">{{ fmtAmount(otherLoanSummary[0].externalGuaranteeBalance) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">报告日期(征信)</div><div class="desc-item__value">{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div></div>
+          <div class="desc-item"><div class="desc-item__label">报告日期</div><div class="desc-item__value">{{ otherLoanSummary[0].reportDate ? String(otherLoanSummary[0].reportDate).slice(0, 10) : '—' }}</div></div>
         </div>
         <table class="table" v-if="otherLoans.length" style="margin-top:8px">
           <thead><tr><th>融资机构</th><th>授信额(万元)</th><th>已用额(万元)</th><th>余额(万元)</th><th>年化利率(%)</th><th>数据日期</th><th>来源</th></tr></thead>

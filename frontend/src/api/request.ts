@@ -88,12 +88,26 @@ export async function download(url: string): Promise<void> {
     }
     const dispo: string = resp.headers['content-disposition'] || ''
     const match = dispo.match(/filename\*=UTF-8''([^;]+)/)
-    const filename = match ? decodeURIComponent(match[1]) : 'export.xlsx'
+    let filename = match ? safeDecode(match[1]) : ''
+    if (!filename) {
+      // 无 Content-Disposition/解码失败:按内容类型给默认名,保证有可保存的文件(2026-09-02 决议书下载丢文件修复)
+      const ext = blob.type.includes('pdf') ? 'pdf'
+        : blob.type.includes('openxmlformats-spreadsheet') ? 'xlsx'
+          : blob.type.includes('openxmlformats-word') ? 'docx'
+            : blob.type.includes('plain') ? 'txt' : 'bin'
+      filename = `download.${ext}`
+    }
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = filename
+    // §2026-09-02:link 需挂载 DOM(Firefox 要求)且 revokeObjectURL 须延迟到下载开始后
+    // (立即 revoke 会让部分浏览器异步下载中断 → 提示已下载但文件夹无文件)
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(link.href)
+    setTimeout(() => {
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    }, 1500)
   } catch (e: any) {
     const data = e?.response?.data
     if (data instanceof Blob && data.type.includes('application/json')) {
@@ -105,6 +119,15 @@ export async function download(url: string): Promise<void> {
       ElMessage.error(e.response?.status === 403 ? '无导出权限' : '导出失败')
     }
     return Promise.reject(e)
+  }
+}
+
+/** 安全解码 Content-Disposition 文件名;非法百分号序列抛 URIError 时回退原串,保证有文件可下载 */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s.replace(/\+/g, ' ')
   }
 }
 
