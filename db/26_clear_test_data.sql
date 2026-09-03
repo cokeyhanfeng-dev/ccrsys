@@ -145,7 +145,6 @@ DELETE FROM dw_customer_group_member_snapshot WHERE group_no IN ('GROUP001') OR 
   ('MEMBER_A','MEMBER_B','CUST001','CUST002','CUST003','CUST004');
 DELETE FROM dw_group_credit_snapshot WHERE group_no IN ('GROUP001');
 DELETE FROM dw_member_credit_limit_snapshot WHERE member_customer_no IN ('MEMBER_A','MEMBER_B');
-DELETE FROM dw_credit_tranche_snapshot WHERE member_customer_no IN ('MEMBER_A','MEMBER_B');
 
 -- 注:dw_org_dim / dw_org_performance_snapshot 为真实机构维度,不在清理范围。
 

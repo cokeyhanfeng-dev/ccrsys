@@ -1,0 +1,5 @@
+FROM mysql:8.0.44
+
+# 保持为不可执行文件，使 MySQL 官方 entrypoint 在当前 shell 中 source，
+# 从而复用 docker_process_sql/mysql_note 等官方初始化函数。
+COPY --chmod=0644 mysql-init.sh /docker-entrypoint-initdb.d/00_ccrsys_init.sh

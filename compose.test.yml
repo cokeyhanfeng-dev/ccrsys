@@ -2,7 +2,10 @@ name: ccrsys-test
 
 services:
   mysql:
-    image: mysql:8.0.44
+    image: ccrsys-test-mysql:8.0.44
+    build:
+      context: ./scripts/dev
+      dockerfile: mysql/Dockerfile.test
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: ccr_rate
@@ -16,9 +19,9 @@ services:
       - "127.0.0.1:23306:3306"
     volumes:
       - mysql-test-data:/var/lib/mysql
-      - ./db:/docker-entrypoint-initdb.d:ro
+      - ./db:/opt/ccrsys/db:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123", "--silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
       interval: 5s
       timeout: 5s
       retries: 60

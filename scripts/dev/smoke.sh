@@ -21,8 +21,8 @@ ccr_require_command curl
 ccr_compose ps --status running
 
 echo "[1/6] MySQL"
-ccr_compose exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot123 --silent
-table_count="$(ccr_compose exec -T mysql mysql -N -uroot -proot123 -e \
+ccr_compose exec -T -e MYSQL_PWD=root123 mysql mysqladmin ping -h 127.0.0.1 -uroot --silent
+table_count="$(ccr_compose exec -T -e MYSQL_PWD=root123 mysql mysql -N -uroot -e \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ccr_rate';" | tr -d '\r')"
 [[ "${table_count}" =~ ^[0-9]+$ && "${table_count}" -ge 90 ]] \
   || ccr_die "数据库表数量异常: ${table_count}"
@@ -39,9 +39,10 @@ grep -q '"status":"UP"' "${health_file}" || ccr_die "后端健康响应异常"
 
 echo "[4/6] 登录与数据库链路"
 login_file="${CCR_CACHE_DIR}/smoke-login.json"
-curl -fsS -X POST "http://127.0.0.1:18080/auth/login" \
+login_password="${CCR_SMOKE_PASSWORD:-Yxnsh@1a3s}"
+printf '{"username":"admin","password":"%s"}' "${login_password}" | curl -fsS -X POST "http://127.0.0.1:18080/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"123456"}' \
+  --data-binary @- \
   -o "${login_file}"
 grep -q '"token"' "${login_file}" || ccr_die "登录冒烟失败"
 
