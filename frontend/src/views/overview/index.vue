@@ -262,7 +262,7 @@ const todoItems = computed(() => {
       key: `task-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
       // 客户显示名优先(listTodo 已按申请补 customerName,§2026-09-01),回退客户号
       title: first.customerName || first.pricingCustomerNo || '—',
-      itemNo: single ? (first.pricingItemNo || first.id) : `${ps.length} 个担保分项`,
+      itemNo: single ? (first.pricingItemNo || first.id) : `${ps.length} 个授信分项`,
       nodeText: nodeLabel(first.currentNodeCode),
       amount: single
         ? (first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—')
@@ -273,7 +273,7 @@ const todoItems = computed(() => {
       product: productName(first.productCode),
       // 整单详情入口用申请 id(后端 /ccr/approval/{applicationId}/detail);待办项带 applicationId,勿传分项 id 否则 404
       time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.id}`, actionText: '去审批',
-      extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
+      extra: single ? null : { label: '授信分项', value: `${ps.length} 个` }
     })
   }
   // 委员待表决:同样按申请聚合(六人小组按整单表决,与普通审批一致的卡片形态)
@@ -292,7 +292,7 @@ const todoItems = computed(() => {
       key: `vote-${appId}`, kindText: '待审批', kindBadge: 'badge--processing',
       // 客户显示名优先(listVoteTodo 同 listTodo 口径带 customerName),回退客户号
       title: first.customerName || first.pricingCustomerNo || first.customerNo || '—',
-      itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个担保分项`,
+      itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个授信分项`,
       nodeText: nodeLabel(first.currentNodeCode),
       amount: single
         ? (first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—')
@@ -304,21 +304,33 @@ const todoItems = computed(() => {
       // 委员待办:同样用申请 id 进整单详情(分项 id 会导致 404)
       time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.pricingItemId}`, actionText: '去审批',
       sub: `申请 ${first.applicationNo || '—'} · ${nodeLabel(first.currentNodeCode)}`,
-      extra: single ? null : { label: '担保分项', value: `${ps.length} 个` }
+      extra: single ? null : { label: '授信分项', value: `${ps.length} 个` }
     })
   }
   for (const p of presidentTodos.value) {
-    // 后端按申请聚合:申请级字段在顶层,分项级(利率/计票/编号)在 items[0]——取首待决策分项展示(§行长待我处理字段修复)
-    const first = (p.items || [])[0] || {}
+    // 后端按申请聚合:申请级字段在顶层(含 customerName/submitTime,§2026-09-02),分项级(利率/计票/编号)在 items[]
+    // 行长待办与审批/委员同构:整单粒度展示(多分项金额求和/利率区间/待决策分项数),点卡直达整单详情,外层锚点页签与审批一致
+    const ps = p.items || []
+    const first = ps[0] || {}
+    const single = ps.length === 1
+    const rates = ps.map((x) => Number(x.requestedRate) || 0)
     items.push({
       key: `president-${p.applicationId || first.pricingItemId || 'x'}`,
       kindText: '待决策', kindBadge: 'badge--info',
-      title: p.customerNo || '—',
-      itemNo: first.pricingItemNo || first.pricingItemId, nodeText: nodeLabel('PRESIDENT'),
-      amount: first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—',
-      rate: first.requestedRate != null ? `${first.requestedRate}%` : '—',
+      // 客户/集团显示名(与审批待办同口径:快照 customerName/集团 groupName),回退客户号
+      title: p.customerName || p.customerNo || '—',
+      itemNo: single ? (first.pricingItemNo || first.pricingItemId) : `${ps.length} 个待决策分项`,
+      nodeText: nodeLabel('PRESIDENT'),
+      amount: single
+        ? (first.pricingAmount != null ? `${first.pricingAmount} 万元` : '—')
+        : `${ps.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0)} 万元`,
+      rate: single
+        ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
+        : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
-      time: '', to: '/president', actionText: '去决策',
+      time: p.submitTime ? fmtTime(p.submitTime) : '',
+      // §2026-09-02 行长整单审批与审批/委员同链:直达整单详情(外层锚点页签一致),行长决策卡在详情内按角色渲染;/president 行长工作台保留为返回地
+      to: `/approval/${p.applicationId || first.pricingItemId || ''}`, actionText: '去决策',
       extra: { label: '表决结果', value: `赞成 ${first.approveCount ?? 0} / 反对 ${first.rejectCount ?? 0}` }
     })
   }

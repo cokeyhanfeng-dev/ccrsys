@@ -25,14 +25,19 @@
       <template v-else>
       <div class="todo-card" v-for="c in cards" :key="c.applicationId">
         <div class="todo-card__body">
-          <div class="todo-card__customer">{{ c.customer }}</div>
-          <div class="todo-card__summary">
-            六人审批结果:{{ c.votesText }} · 申请利率 {{ c.rate }}%
-            <template v-if="c.itemCount > 1"> · 共 {{ c.itemCount }} 个分项</template>
+          <div class="todo-card__customer">
+            {{ c.customer }}
+            <span class="badge badge--info" v-if="c.itemCount > 1">{{ c.itemCount }} 个待决策分项</span>
           </div>
-          <div class="todo-card__meta">
-            <span class="badge badge--success">六人审批已通过</span>
-            <span class="badge badge--info">{{ c.applicationNo }}</span>
+          <div class="todo-card__summary">
+            申请 {{ c.applicationNo }} · 六人审批已通过{{ c.time ? ` · ${c.time}` : '' }}
+          </div>
+          <!-- 整单摘要(与利率审批工作台卡同款 desc-grid;§2026-09-02 行长卡对齐审批人) -->
+          <div class="desc-grid desc-grid--3">
+            <div class="desc-item"><div class="desc-item__label">申请金额(万元)</div><div class="desc-item__value">{{ c.amount }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">申请利率</div><div class="desc-item__value">{{ c.rate }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">原执行利率</div><div class="desc-item__value">{{ c.originalRate }}</div></div>
+            <div class="desc-item"><div class="desc-item__label">六人表决</div><div class="desc-item__value">{{ c.votesText }}</div></div>
           </div>
         </div>
         <div class="todo-card__action">
@@ -64,15 +69,29 @@ async function load() {
     cards.value = (data || []).map((p) => {
       const items: any[] = p.items || []
       const first = items[0] || {}
+      const single = items.length === 1
+      const rates = items.map((x) => Number(x.requestedRate) || 0)
+      const ors = items.map((x) => x.originalRate).filter((v) => v != null && v !== '').map(Number)
       return {
         applicationId: p.applicationId,
         applicationNo: p.applicationNo || '-',
-        customer: p.customerNo || '-',
+        // 客户/集团显示名(与审批待办同口径),回退客户号
+        customer: p.customerName || p.customerNo || '-',
         itemCount: items.length || 1,
+        // 整单粒度摘要:多分项金额求和、利率区间;与利率审批工作台卡同款(§2026-09-02)
+        amount: single
+          ? (first.pricingAmount != null ? `${first.pricingAmount}` : '—')
+          : `${items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0)}`,
+        rate: single
+          ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
+          : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
+        originalRate: ors.length
+          ? (ors.length === 1 ? `${ors[0]}%` : `${Math.min(...ors)} ~ ${Math.max(...ors)}%`)
+          : '新增业务',
         votesText: first.approveCount != null
-          ? `赞成 ${first.approveCount} 票 / 反对 ${first.rejectCount ?? 0} 票`
+          ? `赞成 ${first.approveCount} / 反对 ${first.rejectCount ?? 0}`
           : '—',
-        rate: first.requestedRate ?? '-'
+        time: p.submitTime ? String(p.submitTime).replace('T', ' ').slice(0, 16) : ''
       }
     })
   } catch {

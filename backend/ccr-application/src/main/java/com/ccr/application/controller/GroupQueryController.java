@@ -63,6 +63,10 @@ public class GroupQueryController {
         result.put("group", camel(group));
         Map<String, Object> credit = mergedCredit(groupNo);
         result.put("groupCredit", credit == null ? null : camel(credit));
+        // 集团协议下拉源(§2026-09-03 集团存量调息协议必选):该集团全部数仓授信行 dw_group_credit_snapshot,
+        // 每行 group_credit_no 即一份「授信协议」;手工集团(数仓无授信)补录批复不构造协议——groupCredits 空,
+        // 前端 EXISTING 渲染阻断提示(存量调息必须以数仓集团授信协议为依托)
+        result.put("groupCredits", camelRows(dataWarehouseService.findGroupCredits(groupNo)));
         if (credit != null) {
             List<Map<String, Object>> limits = dataWarehouseService.memberLimitsByGroup(
                     credit.get("group_credit_no") == null ? null : String.valueOf(credit.get("group_credit_no")));

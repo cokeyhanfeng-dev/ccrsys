@@ -1312,7 +1312,7 @@ public class ApprovalServiceImpl implements ApprovalService {
      */
     private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
                                                       Map<String, Object> application) {
-        String groupName = null, groupType = null, groupStatus = null;
+        String groupName = null, groupType = null, groupStatus = null, groupUcrCode = null;
         for (Map<String, Object> record : snapshotRecords) {
             if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
                 continue;
@@ -1321,6 +1321,7 @@ public class ApprovalServiceImpl implements ApprovalService {
             groupName = jsonSafe(core.get("group_name")) == null ? null : String.valueOf(core.get("group_name"));
             groupType = jsonSafe(core.get("group_type")) == null ? null : String.valueOf(core.get("group_type"));
             groupStatus = jsonSafe(core.get("group_status")) == null ? null : String.valueOf(core.get("group_status"));
+            groupUcrCode = jsonSafe(core.get("ucr_code")) == null ? null : String.valueOf(core.get("ucr_code"));
             break;
         }
         if (groupName == null) {
@@ -1329,6 +1330,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 groupName = dw.get("group_name") == null ? null : String.valueOf(dw.get("group_name"));
                 groupType = dw.get("group_type") == null ? null : String.valueOf(dw.get("group_type"));
                 groupStatus = dw.get("group_status") == null ? null : String.valueOf(dw.get("group_status"));
+                groupUcrCode = dw.get("ucr_code") == null ? null : String.valueOf(dw.get("ucr_code"));
             }
         }
         cn.hutool.json.JSONObject gi = null;
@@ -1350,8 +1352,12 @@ public class ApprovalServiceImpl implements ApprovalService {
         row.put("customerNo", groupNo);
         row.put("customerName", groupName);
         row.put("certType", "USCC");
+        // 集团统一社会信用代码:补录(新增集团/人工)值优先,存量集团回退快照/数仓 ucr_code(2026-09-03 修复「申请页有/审批无」)
+        String certNo = groupUcrCode;
         if (gi != null) {
-            row.put("certNo", gi.getStr("ucrCode"));
+            if (StrUtil.isNotBlank(gi.getStr("ucrCode"))) {
+                certNo = gi.getStr("ucrCode");
+            }
             row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
             row.put("creditLevel", gi.getStr("creditLevel"));
             row.put("industry", gi.getStr("industry"));
@@ -1367,6 +1373,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         row.put("groupType", groupType == null ? "INDUSTRY_GROUP" : groupType);
         row.put("groupStatus", groupStatus);
         row.put("custType", "CORP");
+        if (certNo != null) {
+            row.put("certNo", certNo);
+        }
         return List.of(row);
     }
 
@@ -2213,10 +2222,23 @@ public class ApprovalServiceImpl implements ApprovalService {
         return pkg == null ? null : pkg.getMainGuaranteeType();
     }
 
-    /** 集团批复总额度(§B18 路由金额定档基准;非集团或无授信快照返回 null,calcRoute 回退本笔金额) */
+    /** 集团定档金额(§B18 路由金额定档基准;非集团返回 null,calcRoute 回退本笔金额):
+     *  优先取本次申请额度 group_info_json.applyAmount(集团 NEW=手工录入授信总额/EXISTING=所选授信协议额度,
+     *  由申请 serializeGroupInfo 写入)——与提交定档 loadGroupCreditTotal 同口径,保证审批调价重算(recalcRoute)
+     *  与申请预览/勾稽一致;空则回退数仓批复总额度(兼容旧申请/草稿) */
     private BigDecimal routeGroupCreditTotal(CcrApplication app) {
         if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupNo())) {
             return null;
+        }
+        if (StrUtil.isNotBlank(app.getGroupInfoJson())) {
+            try {
+                BigDecimal applyAmount = JSONUtil.parseObj(app.getGroupInfoJson()).getBigDecimal("applyAmount");
+                if (applyAmount != null) {
+                    return applyAmount;
+                }
+            } catch (Exception ignore) {
+                // 快照解析失败回退数仓批复
+            }
         }
         Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
         return credit == null ? null : Convert.toBigDecimal(credit.get("approved_total_amount"));

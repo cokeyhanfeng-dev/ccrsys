@@ -430,6 +430,10 @@ async function selectCustomer(item: any) {
   form.customerNo = c.customerNo
   form.customerName = c.customerName
   form.customerScope = 'CORPORATE'
+  // 换客户主体:清空上一客户已录入/反查的存款分项与账户下拉,由新客户重新录入,
+  // 避免上一客户的调息账户残留串到新客户(§2026-09-03 与贷款客户切换同型联动修复)
+  items.value = [newItem()]
+  accountOptions.value = []
   await loadCustomerDetail()
 }
 
@@ -936,6 +940,9 @@ async function loadDraftIntoForm(id: number | string) {
 <style scoped>
 /* 为吸底操作条预留空间,避免尾部内容被遮挡 */
 .deposit-page { padding-bottom: 64px; }
+/* 吸底操作条与贷款申请一致(AntD Pro FooterToolbar):存草稿靠左、提交主按钮贴右;全局默认居中故需覆盖(§2026-09-02) */
+.page-action-bar { justify-content: flex-end; }
+.page-action-bar .btn--secondary { margin-right: auto; }
 .section-head { margin-bottom: 10px; }
 /* 表单字段 label 统一置上(与贷款申请一致) */
 .form-field { display: block; min-width: 0; }

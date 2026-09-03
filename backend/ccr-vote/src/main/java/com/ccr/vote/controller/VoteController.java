@@ -55,6 +55,12 @@ public class VoteController {
         String sql = """
                 SELECT pi.application_id applicationId, a.application_no applicationNo,
                        a.business_type businessType, pi.pricing_customer_no customerNo,
+                       a.submit_time submitTime,
+                       -- 客户/集团显示名称(与审批待办同口径:客户快照 customerName,集团回退 groupName;§2026-09-02)
+                       COALESCE(
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')), ''),
+                         pi.pricing_customer_no) customerName,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.requested_rate requestedRate, pi.current_approval_rate approvalRate,
                        pi.original_rate originalRate,
@@ -79,6 +85,8 @@ public class VoteController {
                 m.put("applicationNo", row.get("applicationNo"));
                 m.put("businessType", row.get("businessType"));
                 m.put("customerNo", row.get("customerNo"));
+                m.put("customerName", row.get("customerName"));
+                m.put("submitTime", row.get("submitTime"));
                 m.put("applicantOrgId", row.get("applicantOrgId"));
                 m.put("items", new ArrayList<Map<String, Object>>());
                 return m;

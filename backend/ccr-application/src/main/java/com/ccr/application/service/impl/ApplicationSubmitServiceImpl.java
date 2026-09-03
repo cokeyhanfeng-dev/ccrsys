@@ -950,6 +950,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     "集团[" + app.getGroupNo() + "]主数据缺失(请先补录集团信息)");
         }
         boolean newGroup = dataWarehouseService.findGroup(app.getGroupNo()) == null;
+        // §2026-09-03 集团存量调息协议必选(后端防护,防绕过前端直提):EXISTING 须已选数仓集团授信协议
+        checkGroupExistingAgreement(app);
         BigDecimal applyAmount = applyAmountOf(app);
         if (applyAmount == null) {
             throw new ServiceException(ErrorCode.LIMIT_INCONSISTENT.getCode(),
@@ -974,6 +976,28 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     "成员申请金额合计 " + allocatedSum + " 超过本次申请额度 " + applyAmount);
         }
         return applyAmount;
+    }
+
+    /** §2026-09-03 集团存量调息协议必选(提交防护):EXISTING 集团申请 credit_info_json.agreementNo 为空即拒绝——
+     *  存量调息=以所选数仓集团授信协议为依托(授信总额=该协议批复额度),无协议不算有批复/授信总额存量;
+     *  快照解析失败或非存量调息不拦截(兼容新增/旧单) */
+    private void checkGroupExistingAgreement(CcrApplication app) {
+        if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getCreditInfoJson())) {
+            return;
+        }
+        String businessType = null;
+        String agreementNo = null;
+        try {
+            cn.hutool.json.JSONObject ci = JSONUtil.parseObj(app.getCreditInfoJson());
+            businessType = ci.getStr("businessType");
+            agreementNo = ci.getStr("agreementNo");
+        } catch (Exception ignore) {
+            // 快照解析失败视为非存量调息,不拦截
+        }
+        if ("EXISTING".equals(businessType) && StrUtil.isBlank(agreementNo)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "集团存量调息须选择存量授信协议(集团授信协议编号),请返回申请页选择后重新提交");
+        }
     }
 
     /** d) 一合同/一账户一有效分项:同载体存在非终态分项则阻断(跨申请) */
@@ -1564,10 +1588,17 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return "INDIVIDUAL".equals(app.getCustomerScope()) ? "LOAN_PERSONAL" : "LOAN_PUBLIC";
     }
 
-    /** 集团批复总额度(§B18 路由金额定档基准;非集团或无授信快照返回 null) */
+    /** 集团定档金额(§B18 路由金额定档基准;非集团返回 null):
+     *  优先取本次申请额度 group_info_json.applyAmount(集团 NEW=本次手工录入授信总额/EXISTING=所选授信协议额度,
+     *  均由前端 serializeGroupInfo 写入)——与提交勾稽 checkGroupConstraints→applyAmountOf 同口径;
+     *  空则回退数仓批复总额度(兼容旧申请/草稿,其 group_info_json 未落 applyAmount) */
     private BigDecimal loadGroupCreditTotal(CcrApplication app) {
         if (!"GROUP".equals(app.getCustomerScope()) || StrUtil.isBlank(app.getGroupNo())) {
             return null;
+        }
+        BigDecimal applyAmount = applyAmountOf(app);
+        if (applyAmount != null) {
+            return applyAmount;
         }
         Map<String, Object> credit = dataWarehouseService.findGroupCredit(app.getGroupNo());
         return credit == null ? null : toBigDecimal(credit.get("approved_total_amount"));

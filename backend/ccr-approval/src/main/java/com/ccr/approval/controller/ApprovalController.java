@@ -1061,7 +1061,7 @@ public class ApprovalController {
      */
     private List<Map<String, Object>> groupCustomerOf(String groupNo, List<Map<String, Object>> snapshotRecords,
                                                       Map<String, Object> application) {
-        String groupName = null, groupType = null, groupStatus = null, groupStateOwned = null;
+        String groupName = null, groupType = null, groupStatus = null, groupStateOwned = null, groupUcrCode = null;
         for (Map<String, Object> record : snapshotRecords) {
             if (!groupNo.equals(record.get("subjectId")) || !"GROUP".equals(record.get("subjectType"))) {
                 continue;
@@ -1071,11 +1071,12 @@ public class ApprovalController {
             groupType = jsonSafe(core.get("group_type")) == null ? null : String.valueOf(core.get("group_type"));
             groupStatus = jsonSafe(core.get("group_status")) == null ? null : String.valueOf(core.get("group_status"));
             groupStateOwned = jsonSafe(core.get("state_owned_flag")) == null ? null : String.valueOf(core.get("state_owned_flag"));
+            groupUcrCode = jsonSafe(core.get("ucr_code")) == null ? null : String.valueOf(core.get("ucr_code"));
             break;
         }
         if (groupName == null) {
             List<Map<String, Object>> dw = jdbcTemplate.queryForList(
-                    "SELECT group_name, group_type, group_status, state_owned_flag FROM dw_customer_group_snapshot"
+                    "SELECT group_name, group_type, group_status, state_owned_flag, ucr_code FROM dw_customer_group_snapshot"
                             + " WHERE group_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
                     groupNo, groupNo);
             if (!dw.isEmpty() && dw.get(0).get("group_name") != null) {
@@ -1083,6 +1084,7 @@ public class ApprovalController {
                 groupType = dw.get(0).get("group_type") == null ? null : String.valueOf(dw.get(0).get("group_type"));
                 groupStatus = dw.get(0).get("group_status") == null ? null : String.valueOf(dw.get(0).get("group_status"));
                 groupStateOwned = dw.get(0).get("state_owned_flag") == null ? null : String.valueOf(dw.get(0).get("state_owned_flag"));
+                groupUcrCode = dw.get(0).get("ucr_code") == null ? null : String.valueOf(dw.get(0).get("ucr_code"));
             }
         }
         cn.hutool.json.JSONObject gi = null;
@@ -1104,8 +1106,12 @@ public class ApprovalController {
         row.put("customerNo", groupNo);
         row.put("customerName", groupName);
         row.put("certType", "USCC");
+        // 集团统一社会信用代码:补录(新增集团/人工)值优先,存量集团回退快照/数仓 ucr_code(2026-09-03 修复「申请页有/审批无」)
+        String certNo = groupUcrCode;
         if (gi != null) {
-            row.put("certNo", gi.getStr("ucrCode"));
+            if (StrUtil.isNotBlank(gi.getStr("ucrCode"))) {
+                certNo = gi.getStr("ucrCode");
+            }
             row.put("fiveLevelClass", gi.getStr("fiveLevelClass"));
             row.put("creditLevel", gi.getStr("creditLevel"));
             row.put("industry", gi.getStr("industry"));
@@ -1122,6 +1128,9 @@ public class ApprovalController {
         row.put("groupStatus", groupStatus);
         row.put("stateOwnedFlag", groupStateOwned);
         row.put("custType", "CORP");
+        if (certNo != null) {
+            row.put("certNo", certNo);
+        }
         return List.of(row);
     }
 

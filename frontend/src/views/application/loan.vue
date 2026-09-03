@@ -116,8 +116,9 @@
           </div>
         </div>
 
-        <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮) -->
-        <template v-else>
+        <!-- 单户:客户名称输入联想下拉选择(数仓模糊查询,取消独立查询按钮;显式非集团,勿用 v-else 挂档案卡——
+             集团模式数仓未命中(groupInfo 空/新增集团)时否则会误渲染单户区,出现客户要素串排+五级分类重复,2026-09-03 修复) -->
+        <template v-if="form.customerScope !== 'GROUP'">
           <div class="form-field">
             <label class="form-field__label">客户名称 <span class="req">*</span></label>
             <el-autocomplete
@@ -518,52 +519,49 @@
         </template>
       </div>
 
-      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;折叠面板默认收起减少空白,点标题展开选/录;数仓有协议→下拉选+详情展示编号/总额/日期,无(含集团,集团查询不带协议)→手工补录三字段;§2026-08-26 集团协议块可见) -->
-      <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
-        <!-- §UI审查:折叠标题补键盘可达 -->
-        <div
-          class="agreement-pick agreement-pick--head"
-          @click="agreementExpanded = !agreementExpanded"
-          tabindex="0"
-          role="button"
-          :aria-expanded="agreementExpanded"
-          @keydown.enter="agreementExpanded = !agreementExpanded"
-        >
-          <span class="agreement-pick__label">授信协议 <span class="req">*</span></span>
-          <span class="agreement-pick__state">{{ agreementPickState }}</span>
-          <span class="agreement-pick__arrow">{{ agreementExpanded ? '▾' : '▸' }}</span>
+      <!-- 新增授信(NEW)申请综合利率(§2026-09-03 用户要求:存量协议区已展示原/申请综合;NEW 无原执行利率,仅展示本次申请的加权综合利率,随分项金额/利率实时联动;总额=手工录入授信总额,未录显示 —) -->
+      <div v-if="form.businessType === 'NEW'" class="agreement-blend">
+        <div class="agreement-blend__label">申请综合利率 <span class="agreement-blend__formula" title="综合利率 = (分项1金额×分项1申请利率 + 分项2金额×分项2申请利率 + …) ÷ 本次总授信额度">按分项加权</span></div>
+        <div class="agreement-blend__rates">
+          <span>申请综合 <b>{{ blendRequestedRateText }}</b></span>
         </div>
-        <div v-if="agreementExpanded" class="agreement-pick__body">
-          <template v-if="creditAgreements.length">
-            <div class="agreement-pick">
-              <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange">
-                <option value="" disabled>请选择本次申请对应的授信协议</option>
-                <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">
-                  {{ a.agreementNo }}（授信 {{ a.creditAmount ?? '—' }} 万）
-                </option>
-              </select>
-              <span class="agreement-pick__hint">每份协议独立申请,不可合并;授信总金额按所选协议额度带出,分项合计原则上不超过协议额度</span>
-            </div>
-            <div v-if="selectedAgreement" class="agreement-detail">
-              <div class="agreement-detail__item">
-                <span class="agreement-detail__label">授信协议编号</span><b>{{ selectedAgreement.agreementNo || '—' }}</b>
-              </div>
-              <div class="agreement-detail__item agreement-detail__item--amount">
-                <span class="agreement-detail__label">授信协议总额</span><b>{{ selectedAgreement.creditAmount ?? '—' }} 万</b>
-              </div>
-              <div class="agreement-detail__item">
-                <span class="agreement-detail__label">授信协议日期</span><b>{{ selectedAgreement.startDate || '—' }}</b>
-              </div>
-              <div class="agreement-detail__item">
-                <span class="agreement-detail__label">授信状态</span>
-                <span class="badge" :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span>
-              </div>
-              <div class="agreement-detail__item">
-                <span class="agreement-detail__label">到期日期</span><b>{{ selectedAgreement.endDate || '—' }}</b>
-              </div>
-            </div>
-            <div v-else class="empty agreement-detail-empty">请选择本次申请对应的授信协议</div>
-          </template>
+        <div class="agreement-blend__basis">Σ(分项金额×利率) ÷ 本次总授信额度 {{ applyTotalCreditText }} 万</div>
+      </div>
+
+      <!-- 存量授信协议(需求六:每份协议独立申请不可合并;2026-09-03 用户确认版式:表内选择——选择框嵌在「授信协议编号」列,选中后同行带出总额/日期/状态/到期,选项只放协议号;数仓无协议(含集团,集团查询不带协议)→手工补录三字段;综合利率块保留原位) -->
+      <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
+        <template v-if="creditAgreements.length">
+          <div class="agreement-table">
+            <table>
+              <thead>
+                <tr><th>授信协议编号 <span class="req">*</span></th><th>授信协议总额</th><th>授信协议日期</th><th>授信状态</th><th>到期日期</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <select class="form-select" :value="selectedAgreementNo" @change="onAgreementChange" aria-label="选择授信协议号">
+                      <option value="" disabled>请选择协议号</option>
+                      <option v-for="a in creditAgreements" :key="a.agreementNo" :value="a.agreementNo">{{ a.agreementNo }}</option>
+                    </select>
+                  </td>
+                  <td class="agreement-table__amt">{{ selectedAgreement ? (selectedAgreement.creditAmount ?? '—') + ' 万' : '—' }}</td>
+                  <td>{{ selectedAgreement ? selectedAgreement.startDate || '—' : '—' }}</td>
+                  <td>
+                    <span v-if="selectedAgreement" class="badge" :class="agreementStatusBadge(selectedAgreement.agreementStatus)">{{ agreementStatusText(selectedAgreement.agreementStatus) }}</span>
+                    <span v-else class="agreement-table__ph">—</span>
+                  </td>
+                  <td>{{ selectedAgreement ? selectedAgreement.endDate || '—' : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="form-hint" style="margin-top:6px">每份协议独立申请,不可合并;授信总金额按所选协议额度带出,分项合计原则上不超过协议额度</div>
+        </template>
+        <!-- 单户无数仓协议 → 手工补录三字段;集团(§2026-09-03)无数仓集团授信行 = 无存量授信协议,直接阻断不允许走存量,不提供单户式手工补录 -->
+        <template v-else>
+          <div v-if="form.customerScope === 'GROUP'" class="agreement-pick__hint agreement-pick__hint--warn">
+            该集团无存量授信协议(数仓未推送该集团授信快照),不能按存量调息申请;请切换「新增授信」业务类型。
+          </div>
           <template v-else>
             <div class="agreement-pick__hint">数仓暂无该客户授信协议,请按现有授信协议手工录入编号/总额/日期</div>
             <div class="agreement-manual">
@@ -581,6 +579,15 @@
               </div>
             </div>
           </template>
+        </template>
+        <!-- 综合利率(§2026-09-03 用户要求:协议区展示原/申请加权综合利率;依据客户经理所填分项金额×利率 ÷ 当前授信总额自动计算,实时联动) -->
+        <div class="agreement-blend">
+          <div class="agreement-blend__label">综合利率 <span class="agreement-blend__formula" title="综合利率 = (分项1金额×分项1利率 + 分项2金额×分项2利率 + …) ÷ 当前授信总额(协议额度)">按分项加权</span></div>
+          <div class="agreement-blend__rates">
+            <span>原执行综合 <b>{{ blendOriginalRateText }}</b></span>
+            <span>申请综合 <b>{{ blendRequestedRateText }}</b></span>
+          </div>
+          <div class="agreement-blend__basis">Σ(分项金额×利率) ÷ 当前授信总额 {{ creditTotalText }} 万</div>
         </div>
       </div>
 
@@ -614,10 +621,10 @@
 
       <!-- 需求(2026-09-01 用户拍板):存量调息自动带入数仓拆分项(全部有效拆分项渲染为分项卡,可删除/改利率/不调息);新增仍手工录入 -->
       <div v-if="form.businessType === 'EXISTING' && creditSplits.length" class="split-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="stat-card__sub">数仓存有效拆分项 {{ creditSplits.length }} 项</span>
-        <button type="button" class="btn btn--text" @click="selectAllSplits">全部带入拆分项</button>
+        <span class="stat-card__sub">数仓拆分项共 {{ creditSplits.length }} 项，当前协议「{{ currentAgreementNo || '未选' }}」名下 {{ agreementSplits.length }} 项</span>
+        <button type="button" class="btn btn--text" :disabled="!agreementSplits.length" @click="selectAllSplits">带入当前协议拆分项</button>
       </div>
-      <!-- 担保分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
+      <!-- 授信分项卡片:同一 form.guarantees 行承载担保方式/措施明细 + 产品/期限/金额/利率 -->
 
       <div v-for="({ g, idx }) in visibleGuarantees" :key="idx" class="mortgage-item guarantee-item item-card">
         <div class="mortgage-item__head">
@@ -912,6 +919,11 @@
       <div class="form-field">
         <label class="form-field__label">申请备注(客户经理手工描述,展示在审批界面)</label>
         <textarea class="form-input" v-model="form.applicationRemark" rows="3" placeholder="可描述申请背景、特殊情况等" style="width:100%;resize:vertical"></textarea>
+        <div class="form-field__hint" :style="{ color: remarkFullLen > REMARK_MAX ? '#f56c6c' : '#909399' }">
+          <span v-if="remarkRelBlockLen > 0">正文 {{ (form.applicationRemark || '').length }} 字,自动附带关联人员信息 {{ remarkRelBlockLen }} 字;</span>
+          <span v-else>正文 {{ (form.applicationRemark || '').length }} 字;</span>
+          备注合计 {{ remarkFullLen }}/{{ REMARK_MAX }} 字{{ remarkFullLen > REMARK_MAX ? ' — 已超限,保存/提交将被拦截,请精简正文' : '' }}
+        </div>
       </div>
     </div>
 
@@ -1303,9 +1315,23 @@ async function selectCustomer(item: any) {
   form.customerNo = c.customerNo
   form.customerName = c.customerName
   form.customerScope = c.custType === 'INDV' ? 'INDIVIDUAL' : 'CORPORATE'
+  // 换客户主体:清空上一客户残留的单户自动带入态(存量拆分项/授信协议/担保措施/自筹融资)。
+  // §2026-09-03 同型联动修复——与「存量→新增」切换同构:上一客户带出的拆分项不替换会串到新客户,
+  // 由 loadCustomerDetail 按新客户重新自动带入;无自动带入时下方补一条空白行作录入起点
+  form.guarantees = []
+  creditSplits.value = []
+  creditAgreements.value = []
+  creditContracts.value = []
+  relatedGuarantees.value = { mortgages: [], guarantors: [] }
+  ownFinancing.value = []
+  selectedAgreementNo.value = ''
+  form.creditAgreementNo = ''
+  form.creditInfo = initialCreditInfo()
+  form.totalCredit = ''
   // 换客户重新自动判断业务类型(名下有合同默认存量;客户经理手动选定后保持其选择)
   userPickedBusinessType.value = false
   const detail = await loadCustomerDetail()
+  if (form.customerScope !== 'GROUP' && !form.guarantees.length) form.guarantees = [newGuarantee()]
   // 集团成员单户阻断(2026-09-01):对公客户属于集团不能以单户方式发起利率申请,提示并引导走集团申请
   const bg = detail?.basic?.groupNo ? { groupNo: detail.basic.groupNo, groupName: detail.basic.groupName || '' } : null
   if (bg) {
@@ -1426,6 +1452,10 @@ async function queryGroup() {
     groupInfo.value = g.group || null
     groupCredit.value = g.groupCredit || null
     groupAllocatedTotal.value = g.allocatedTotal ?? null
+    // 集团存量授信协议(dw_group_credit_snapshot 该集团全部授信行映射,§2026-09-03 集团存量调息协议必选):
+    // 注入 creditAgreements 供 EXISTING 下拉选择,选中后授信总金额/勾稽/综合利率按所选协议批复总额走
+    creditAgreements.value = groupCreditsToAgreements(g.groupCredits || [])
+    selectedAgreementNo.value = ''
     // 集团名称带出(autocomplete 显示,§2026-08-25 名称框/编号框对齐对公)
     if (g.group?.groupName) form.groupName = g.group.groupName
     // 统一社会信用代码(数仓有则带出,无则留空手填;集团区块原「集团状态」展示已替换,§2026-08-26)
@@ -1439,6 +1469,8 @@ async function queryGroup() {
     groupInfo.value = null
     groupCredit.value = null
     groupAllocatedTotal.value = null
+    creditAgreements.value = []
+    selectedAgreementNo.value = ''
     form.fiveLevelClass = ''
     form.stateOwnedFlag = ''
     form.ucrCode = ''
@@ -1546,8 +1578,8 @@ const selectedAgreementNo = ref('')
 const selectedAgreement = computed(() =>
   creditAgreements.value.find((a) => a.agreementNo === selectedAgreementNo.value) || null
 )
-/** 存量授信协议折叠面板:默认收起(减少整页空白),点标题展开选/录(§2026-08-26) */
-const agreementExpanded = ref(false)
+/** 存量授信协议折叠面板:默认展开(2026-09-03 用户要求授信协议不要隐藏,直接展示选/录与综合利率),点标题可收起 */
+const agreementExpanded = ref(true)
 /** 折叠标题条状态:已选协议号 / 已手工录入编号 / 未选择 */
 const agreementPickState = computed(() => {
   if (selectedAgreementNo.value) return `已选 ${selectedAgreementNo.value}`
@@ -1567,6 +1599,45 @@ const applyTotalCreditText = computed(() => {
   const n = Number(form.totalCredit)
   return n > 0 ? String(n) : '—'
 })
+/** 加权综合利率 = Σ(分项金额×分项利率) ÷ 当前授信总额(协议额度;§2026-09-03 用户拍板分母=当前授信总额,非分项合计)。
+ *  仅统计已填金额>0 且对应利率>0 的分项;无有效分项或总额为空返回 null。原执行综合走 originalRate,申请综合走 requestedRate */
+function blendRateOf(rateKey: 'originalRate' | 'requestedRate'): number | null {
+  const denom = Number(applyTotalCreditText.value)
+  if (!(denom > 0)) return null
+  let num = 0
+  let has = false
+  for (const g of form.guarantees) {
+    const amt = Number(g.amount)
+    const rate = Number(g[rateKey])
+    if (Number.isFinite(amt) && amt > 0 && Number.isFinite(rate) && rate > 0) {
+      num += amt * rate
+      has = true
+    }
+  }
+  return has ? num / denom : null
+}
+/** 综合利率展示(百分比保留 4 位,去尾零;不可算显示 —) */
+function fmtBlendRate(v: number | null): string {
+  return v == null ? '—' : `${(Math.round(v * 10000) / 10000)}%`
+}
+const blendOriginalRateText = computed(() => fmtBlendRate(blendRateOf('originalRate')))
+const blendRequestedRateText = computed(() => fmtBlendRate(blendRateOf('requestedRate')))
+/** 集团数仓授信行(dw_group_credit_snapshot)→ 协议对象(与单户协议同构):group_credit_no 作协议号、
+ *  approved_total_amount 作协议额度(批复总额)、credit_start/end、credit_status 透传;
+ *  §2026-09-03 集团存量调息协议必选——直接把集团授信行当「授信协议」供下拉选择 */
+function groupCreditsToAgreements(rows: any[]): any[] {
+  return (rows || []).map((c) => ({
+    agreementNo: c.groupCreditNo,
+    agreementType: c.revolvingFlag === 'Y' ? 'REVOLVING' : 'COMPREHENSIVE',
+    currency: c.currency || 'CNY',
+    agreementStatus: c.creditStatus, // EFFECTIVE/EXPIRED/FROZEN(码值与单户协议同域)
+    creditAmount: c.approvedTotalAmount,
+    usedAmount: c.usedAmount,
+    availableAmount: c.availableAmount,
+    startDate: c.creditStart,
+    endDate: c.creditEnd
+  }))
+}
 /** 下拉选择授信协议(需求六:选到哪份就展示哪份的内容) */
 function onAgreementChange(e: any) {
   const no = e?.target?.value
@@ -1585,6 +1656,11 @@ function selectCreditAgreement(a: any) {
     startDate: a.startDate || '', endDate: a.endDate || ''
   }
   syncTotalCredit()
+  // 换授信协议 → 拆分项随协议切分(#473):移除上一协议自动带入的拆分项行(sourceSplitNo 行),
+  // 保留客户经理手工录入行,再带入新协议名下拆分项;若在 load 初期调用(无上一协议行)则 filter 无副作用
+  form.guarantees = form.guarantees.filter((g) => !g.sourceSplitNo)
+  selectAllSplits()
+  ensureGuaranteeRows()
 }
 /** 自动默认选中第一条有效协议(仅存量为选中态;未显式选择时减少操作) */
 function autoSelectAgreement() {
@@ -1647,10 +1723,8 @@ const visibleGuarantees = computed(() => {
 })
 /** 本次申请额度(万元,勾稽条分母):集团批复授信额度优先,回退手工录入总授信/分项合计(与 serializeGroupInfo 同口径) */
 const groupApplyAmount = computed(() => {
-  const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
-  const totalCredit = Number(form.totalCredit)
-  if (groupCreditTotal > 0) return groupCreditTotal
-  if (totalCredit > 0) return totalCredit
+  const total = groupApplyTotalAmount()
+  if (total > 0) return total
   return form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
 })
 const groupApplyAmountText = computed(() => (groupApplyAmount.value > 0 ? String(Math.round(groupApplyAmount.value * 100) / 100) : '—'))
@@ -1706,10 +1780,18 @@ function onBusinessTypeChange() {
           selectAllSplits()
         })
         .catch(() => {})
+    } else if (form.customerScope === 'GROUP') {
+      // 集团存量调息(§2026-09-03 协议必选):协议已由 queryGroup 注入(dw_group_credit_snapshot 集团授信行),
+      // 切到存量时自动选第一条有效协议并同步总额;无数仓集团授信行 → creditAgreements 空,由校验/提示拦截
+      autoSelectAgreement()
+      syncTotalCredit()
     }
     ElMessage.info('存量调息:已自动带入数仓拆分项与担保措施,可调整利率或删除不需要的分项')
   } else {
-    // 新增授信:已录入分项保留,仅当无分项时补一条空白(§2026-08-26 不再清空避免分项丢失)
+    // 新增授信:移除「存量自动带入的数仓拆分项」行(sourceSplitNo 非空,存量的拆分来源不应残留到新增),
+    // 保留客户经理手工录入行(无 sourceSplitNo);仅当无分项时补一条空白。
+    // (§2026-09-02 bug:原「已录入分项保留」连存量自动拆分项一并保留,先选存量带出、再切新增时不替换)
+    form.guarantees = form.guarantees.filter((g) => !g.sourceSplitNo)
     form.creditAgreementNo = ''
     form.totalCredit = ''
     form.creditInfo = initialCreditInfo()
@@ -1815,9 +1897,20 @@ function splitToGuarantee(sp: any): GuaranteeRow {
   return g
 }
 
-/** 存量自动渲染:将数仓全部拆分项生成为分项卡片(进入存量调息时调用) */
+/** 当前授信协议(下拉选中或手工补录协议号;拆分项归属以 credit_no=协议号 为准,#473) */
+const currentAgreementNo = computed(() => selectedAgreementNo.value || form.creditInfo.agreementNo || '')
+/** 当前协议名下的数仓拆分项(切协议/录入协议号后联动的过滤集,credit_no=agreement_no) */
+const agreementSplits = computed(() => {
+  const agr = currentAgreementNo.value
+  if (!agr) return []
+  return creditSplits.value.filter((sp) => sp.creditNo === agr)
+})
+
+/** 存量自动渲染:将「所选授信协议名下」的数仓拆分项生成为分项卡(进入存量调息时调用)。
+ *  §2026-09-03 #473 授信协议切分联动:拆分项 credit_no=协议号,只带当前协议名下;
+ *  未选/未录协议时不自动带拆分(纯手工录入,防跨协议混入) */
 function selectAllSplits() {
-  for (const sp of creditSplits.value) {
+  for (const sp of agreementSplits.value) {
     if (isSplitSelected(sp.splitNo)) continue
     const g = splitToGuarantee(sp)
     const blankIdx = form.guarantees.findIndex((x) => !x.sourceSplitNo && !x.requestedRate && !x.amount)
@@ -1842,7 +1935,15 @@ function finGuaranteeType(contractNo: string): string {
 
 function ensureGuaranteeRows() {
   // 切换业务类型/重选客户时保留已录入分项,仅当无分项时补一条空白(§2026-08-26 修复分项被静默清空)
-  if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+  if (!form.guarantees.length) {
+    const g = newGuarantee()
+    // §2026-09-03 集团已勾选成员:占位行归属当前/首个成员页签——成员 Tab 展示按 memberCustomerNo 过滤,
+    // 「无成员空行」会 UI 不可见却被孤儿分项校验计为「第 1 条未选涉及成员」,造成已选成员的提交误报
+    if (form.customerScope === 'GROUP') {
+      g.memberCustomerNo = activeMemberTab.value || selectedMembers.value[0]?.memberCustomerNo || ''
+    }
+    form.guarantees = [g]
+  }
 }
 function addGuarantee() {
   // 需求②:存量与新增一致,按担保项拆分,直接追加空白担保行(可参考合同带出预填)
@@ -1867,7 +1968,18 @@ function addCd(g: GuaranteeRow) {
   g.cds.push({ cdNo: '', amount: '', maturityDate: '' })
 }
 function onCustomerScopeChange() {
-  if (form.customerScope !== 'GROUP') {
+  const isGroupMode = form.customerScope === 'GROUP'
+  // 切主体模式(单户/个人/集团):自动带入态(拆分项/协议/额度)随模式重置;
+  // 分项行仅保留与新模式结构匹配者,不匹配的跨模式残留自动剔除,由新模式入口重新生成。
+  // §2026-09-03 同型联动修复——单户存量拆分项切到集团不替换、集团成员行切回单户残留,与业务类型切换同构
+  form.guarantees = form.guarantees.filter((g) => (isGroupMode ? g.memberCustomerNo : !g.memberCustomerNo))
+  creditSplits.value = []
+  creditAgreements.value = []
+  selectedAgreementNo.value = ''
+  form.creditAgreementNo = ''
+  form.creditInfo = initialCreditInfo()
+  form.totalCredit = ''
+  if (!isGroupMode) {
     form.groupNo = ''
     form.groupName = ''
     groupInfo.value = null
@@ -1889,6 +2001,11 @@ function onCustomerScopeChange() {
     groupSupplement.basicAccount = ''
     showSupplementMember.value = false
     supplementMembers.value = []
+    // 单户/个人:清空后无残留行则补一条空白分项作录入起点
+    if (!form.guarantees.length) form.guarantees = [newGuarantee()]
+  } else {
+    // 切到集团:清空上一集团成员页签残留(选中集团后由成员勾选重新生成分项)
+    activeMemberTabRaw.value = ''
   }
   // 贷款产品默认值跟随客户类型:仅补未选择产品的分项(已选产品不覆盖)
   const defaultProduct = defaultProductByScope(form.customerScope)
@@ -1902,12 +2019,20 @@ function currentOf(code: string) {
   const m = contributionCurrent.value.find((x) => x.metricCode === code)
   return m?.metricValue ?? '暂无数据'
 }
-/** 选择承诺指标时,自动把当前贡献度值带出到基线值(可手工改) */
+/**
+ * 选择承诺指标时,自动把当前贡献度值带出到基线值(可手工改)。
+ * 切到无带出指标/「其它」时须清空上一指标残留的基线值,否则旧指标基限误导当前指标(2026-09-02 bug)。
+ */
 function onMetricChange(c: CommitmentRow) {
-  if (c.metricCode === 'OTHER') return
   const v = currentOf(c.metricCode)
-  if (v !== '暂无数据' && v != null && v !== '') {
+  if (c.metricCode !== 'OTHER' && v !== '暂无数据' && v != null && v !== '') {
     c.baselineValue = String(v)
+  } else {
+    c.baselineValue = ''
+  }
+  // 「其它」无数值目标(提交以 commitmentDesc 为准,targetValue 序列化置 undefined),残留量化目标一并清空
+  if (c.metricCode === 'OTHER' && c.targetValue !== '') {
+    c.targetValue = ''
   }
 }
 function addCommitment() {
@@ -2031,17 +2156,42 @@ function creditTotalAmount(): number {
   const n = Number(src)
   return Number.isFinite(n) && n > 0 ? n : 0
 }
+/** 集团本次申请额度(万元):新增授信(NEW)=本次手工录入的授信总额(form.totalCredit)优先(§2026-09-03 用户拍板:
+ *  新增授信直接按本次填的授信走,不走数仓既有批复,GROUP001 手工 3000 不得被批复 10000 顶掉);
+ *  存量调息(EXISTING)=所选集团授信协议额度优先(协议必选,§2026-09-03:协议=数仓 dw_group_credit_snapshot 集团授信行,
+ *  creditAmount=该行批复总额;选中后授信总额=所选协议额度,与单户一致),回退既有批复总额/手工录入(兼容旧草稿);
+ *  勾稽条 groupApplyAmount / 提交勾稽 validateGuaranteeTotal / 落库 serializeGroupInfo 三处同口径。 */
+function groupApplyTotalAmount(): number {
+  const approved = Number(groupCredit.value?.approvedTotalAmount)
+  const manual = Number(form.totalCredit)
+  if (form.businessType === 'NEW') return manual > 0 ? manual : approved > 0 ? approved : 0
+  // EXISTING:所选集团授信协议额度优先(creditAmount=该协议批复总额)
+  const sel = Number(selectedAgreement.value?.creditAmount)
+  return sel > 0 ? sel : approved > 0 ? approved : manual > 0 ? manual : 0
+}
+
 /** 分项申请金额合计与授信总额勾稽(§2026-09-01):分项申请金额合计须等于授信总额,不等则拦。
  *  单户授信总额=存量所选协议额度/新增手工录入总授信(creditTotalAmount);
- *  集团授信总额=集团批复授信额度优先(存量集团数仓带出),回退手工录入总授信(新增集团),
- *  与勾稽条 groupApplyAmount/serializeGroupInfo/路由定档同口径;两者皆无则提示先补录。 */
+ *  集团授信总额=groupApplyTotalAmount()(新增按手工录入,存量按批复,与勾稽条/落库同口径);
+ *  集团孤儿分项(未选涉及成员)在 GROUP 分支一并强校验(§2026-09-03:草稿已放开,提交/进入下一步才拦)。 */
 function validateGuaranteeTotal(): string | null {
   let total: number
   if (form.customerScope === 'GROUP') {
-    const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
-    const manualTotal = Number(form.totalCredit)
-    total = groupCreditTotal > 0 ? groupCreditTotal : manualTotal > 0 ? manualTotal : 0
-    if (total <= 0) return '请先录入集团授信总额(存量集团:等待集团批复授信额度带出;新增集团:录入总授信额度)'
+    // §2026-09-03 提交/下一步前先归并悬空分项到首个已选成员(与 step=3 watch 同款):
+    // 选协议/切业务类型/旧草稿可能遗留「无成员空行」,UI 按成员页签过滤不可见,却在此被误判为孤儿分项
+    // (用户明明已选成员仍报「第 1 条…」);归并后空行落到可见页签,孤儿校验只拦真正未归属的行
+    repairOrphanGuarantees()
+    for (let i = 0; i < form.guarantees.length; i++) {
+      if (isBlank(form.guarantees[i].memberCustomerNo)) return `第 ${i + 1} 条授信分项未选择涉及成员`
+    }
+    // 集团存量调息(EXISTING)协议必选(§2026-09-03 对齐单户):协议=数仓 dw_group_credit_snapshot 集团授信行,
+    // 无集团授信行 → 不算有存量授信,不能走存量;有行但未选择 → 提示先选
+    if (form.businessType === 'EXISTING') {
+      if (!creditAgreements.value.length) return '该集团无存量授信协议(数仓未推送集团授信),不能按存量调息申请,请改选「新增授信」'
+      if (isBlank(selectedAgreementNo.value)) return '请选择存量授信协议(集团授信协议编号)'
+    }
+    total = groupApplyTotalAmount()
+    if (total <= 0) return '请先录入集团授信总额(存量集团:选择授信协议带出协议额度;新增集团:录入本次总授信额度)'
   } else {
     total = creditTotalAmount()
     if (total <= 0) return '请先录入总授信额度(存量:选择授信协议;新增:手工录入总授信额度)'
@@ -2082,8 +2232,7 @@ function validateStep(s: number): string | null {
     if (gErr) return gErr
     for (let i = 0; i < form.guarantees.length; i++) {
       const g = form.guarantees[i]
-      if (form.customerScope === 'GROUP' && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择集团成员`
-      if (isBlank(g.guaranteeType)) return `第 ${i + 1} 条担保分项未选择担保方式`
+      if (isBlank(g.guaranteeType)) return `第 ${i + 1} 条授信分项未选择担保方式`
       // 需求:担保/抵质押物不再强制录入——无论信用还是抵押/质押等,均可不登记担保措施直接提交
       if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品`
       if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限`
@@ -2175,40 +2324,34 @@ async function goStep(i: number) {
 
 function validateForDraft(): string | null {
   const isGroup = form.customerScope === 'GROUP'
+  // 主体识别:草稿必须能定位到是哪个客户/集团(否则草稿无从编辑),以下不再强校验业务完整性——
+  // §2026-09-03 用户拍板「草稿只存不强校验」:未选涉及成员/空金额分项/缺协议/承诺未填等均可先存草稿,稍后从历史申请继续编辑;
+  // 孤儿分项(未选涉及成员)等强校验已移入 validateGuaranteeTotal(提交/进入下一步才拦)
   if (isGroup) {
     if (isBlank(form.groupNo)) return '请填写集团客户编号'
-    if (groupMembers.value.length && !selectedMembers.value.length) return '请至少选择一名涉及成员'
   } else if (!hasCustomerIdentity()) {
     return '请录入主客户证件号码(对私:身份证号;对公:统一社会信用代码)'
   }
-  // 存量须选/录授信协议(数仓有协议→下拉选择;无协议含集团→手工补录编号;§2026-08-26 集团协议块已可见)
-  if (form.businessType === 'EXISTING' && !selectedAgreementNo.value && !form.creditInfo.agreementNo) {
-    return '存量调息请选择或录入本次申请对应的授信协议(授信协议编号必填)'
-  }
-  if (!form.guarantees.length) return '请至少录入一条担保分项'
+  // 落库守卫:分项值未填不拦(草稿),填了但非法则提示——避免坏数据落库后 MySQL out of range / Data too long
   for (let i = 0; i < form.guarantees.length; i++) {
     const g = form.guarantees[i]
-    if (isGroup && isBlank(g.memberCustomerNo)) return `第 ${i + 1} 条担保分项未选择涉及成员`
-    if (isBlank(g.productCode)) return `第 ${i + 1} 条分项未选择产品(利率申请步骤)`
-    if (isBlank(g.termValue)) return `第 ${i + 1} 条分项未录入期限(利率申请步骤)`
-    if (isBlank(g.amount)) return `第 ${i + 1} 条分项未录入授信金额(利率申请步骤)`
-    if (isBlank(g.requestedRate)) return `第 ${i + 1} 条分项未录入申请利率(利率申请步骤)`
-    // 申请利率范围兜底(同上,草稿/提交共用)
     const rate = Number(g.requestedRate)
-    if (!(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
-    // 期限正整数 + 授信金额范围(草稿暂存共用,§2026-08-25)
+    if (!isBlank(g.requestedRate) && !(rate > 0 && rate <= 100)) return `第 ${i + 1} 条分项申请利率须在 0~100 之间(当前 ${g.requestedRate})`
     const tv = Number(g.termValue)
-    if (!Number.isInteger(tv) || tv < 1) return `第 ${i + 1} 条分项期限须为正整数(当前 ${g.termValue})`
+    if (!isBlank(g.termValue) && (!Number.isInteger(tv) || tv < 1)) return `第 ${i + 1} 条分项期限须为正整数(当前 ${g.termValue})`
     const amt = Number(g.amount)
-    if (!(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条分项授信金额须在 0~999999999.99 万元之间(当前 ${g.amount})`
-  }
-  for (let i = 0; i < commitments.value.length; i++) {
-    const c = commitments.value[i]
-    if (c.metricCode === 'OTHER') {
-      if (isBlank(c.commitmentDesc)) return `第 ${i + 1} 条承诺(其它)未录入目标描述`
-    } else if (isBlank(c.targetValue)) {
-      return `第 ${i + 1} 条承诺未录入拟达成目标`
+    if (!isBlank(g.amount) && !(amt > 0 && amt <= 999999999.99)) return `第 ${i + 1} 条分项授信金额须在 0~999999999.99 万元之间(当前 ${g.amount})`
+    for (const mm of g.mortgages) if (Number(mm.value) < 0) return `第 ${i + 1} 条分项抵押物评估价值不能为负(当前 ${mm.value})`
+    for (const mm of g.pledges) if (Number(mm.value) < 0) return `第 ${i + 1} 条分项质押物估值不能为负(当前 ${mm.value})`
+    for (const gt of g.guarantors) {
+      if (Number(gt.amount) < 0) return `第 ${i + 1} 条分项保证人担保金额不能为负(当前 ${gt.amount})`
+      if (Number(gt.balance) < 0) return `第 ${i + 1} 条分项保证人账户余额不能为负(当前 ${gt.balance})`
     }
+    for (const mm of g.margins) {
+      if (Number(mm.amount) < 0) return `第 ${i + 1} 条分项保证金金额不能为负(当前 ${mm.amount})`
+      if (Number(mm.ratio) < 0) return `第 ${i + 1} 条分项保证金比例不能为负(当前 ${mm.ratio})`
+    }
+    for (const cdd of g.cds) if (Number(cdd.amount) < 0) return `第 ${i + 1} 条分项存单金额不能为负(当前 ${cdd.amount})`
   }
   return null
 }
@@ -2261,6 +2404,38 @@ function buildMeasures(g: GuaranteeRow): GuaranteeMeasureInput[] {
     })
   }
   return list
+}
+
+// ---------- 申请备注长度上限(§2026-09-02:超长拦截提示,防后台 Data too long) ----------
+// 落库列 application_remark VARCHAR(1000)(db/03a_business.sql)。提交/存草稿的备注内容 =
+// 手工备注正文 + 自动附带的【关联人员】块(见 buildPayload),正文含中文按字符计。
+// 两处拼接超长时后端严格模式抛 Data too long → 选择"超长提示用户精简"而非静默截断:
+// 截断会破坏关联人员块结构(parseRelations 无法还原)且丢正文,提示更安全。
+const REMARK_MAX = 1000
+
+/** 最终将落库的备注全文(与 buildPayload applicationRemark 同一拼装口径) */
+function fullRemarkText(): string {
+  return ((form.applicationRemark || '') + serializeRelations(relations.value)).trim()
+}
+
+const remarkFullLen = computed(() => fullRemarkText().length)
+
+/** 正文中自动附带的关联人员块字符数(纯展示参考) */
+const remarkRelBlockLen = computed(() => fullRemarkText().length - (form.applicationRemark || '').trim().length)
+
+/** 备注超长文案;未超长返回 null */
+function remarkTooLongTip(): string | null {
+  const full = fullRemarkText()
+  if (full.length <= REMARK_MAX) return null
+  const body = (form.applicationRemark || '').trim().length
+  return `申请备注超长:正文 ${body} 字 + 自动附带的关联人员信息 ${full.length - body} 字 = ${full.length} 字,已超过 ${REMARK_MAX} 字上限,请精简正文后再保存/提交`
+}
+
+/** 保存/提交前置拦截:超长已提示并返回 true */
+function blockIfRemarkTooLong(): boolean {
+  const tip = remarkTooLongTip()
+  if (tip) ElMessage.error(tip)
+  return !!tip
 }
 
 function buildPayload(): ApplicationPayload {
@@ -2337,8 +2512,8 @@ function buildPayload(): ApplicationPayload {
     applicantUserId: userStore.userInfo?.userId,
     applicantOrgId: userStore.userInfo?.orgId,
     orgId: userStore.userInfo?.orgId,
-    // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④)
-    applicationRemark: ((form.applicationRemark || '') + serializeRelations(relations.value)).trim() || undefined,
+    // 关联人员随备注结构附带(后端申请单无独立接收字段,§12.4④);超长在 ensureDraft/autoSaveDraft 前置拦截
+    applicationRemark: fullRemarkText() || undefined,
     // 客户信息人工修正快照(数仓带出后人工调整,新增客户后台拉不出时手工填写;审批详情优先展示)
     customerInfoJson: isGroup ? null : JSON.stringify({
       customerNo: form.customerNo,
@@ -2431,17 +2606,11 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
   if (!isNewGroup.value && form.fiveLevelClass) out.fiveLevelClass = form.fiveLevelClass
   // 集团属性(存量集团数仓带出可下拉修改,§2026-08-25)
   if (!isNewGroup.value && form.stateOwnedFlag) out.stateOwnedFlag = form.stateOwnedFlag
-  // 本次申请额度(原独立录入字段已取消展示,§2026-08-25):集团流程按集团授信额度定档走,优先取集团批复授信额度;
-  // 数仓未收录的新集团无批复额度,回退申请页手工录入的总授信额度(form.totalCredit,§2026-08-28 修复:原直接回退担保金额合计,担保瞎填的数会顶掉真实额度,与后端 credit_info_json.totalCredit 定档口径错位),
-  // 再回退担保金额合计兜底;保证与后端 totalCreditOf/routeTotalCredit 的 credit_info_json.totalCredit 口径一致
+  // 本次申请额度(§2026-09-03 口径修正):新增授信(NEW)按本次手工录入的授信总额(不再被数仓既有批复顶掉),存量调息按集团批复总额;
+  // 与勾稽条 groupApplyAmount / 提交勾稽 validateGuaranteeTotal 同口径;全无时回退担保金额合计兜底
   const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
-  const groupCreditTotal = Number(groupCredit.value?.approvedTotalAmount)
-  const totalCredit = Number(form.totalCredit)
-  const applyAmount = groupCreditTotal > 0
-    ? groupCreditTotal
-    : totalCredit > 0
-      ? totalCredit
-      : guaranteeSum
+  let applyAmount = groupApplyTotalAmount()
+  if (!(applyAmount > 0)) applyAmount = guaranteeSum
   if (applyAmount > 0) out.applyAmount = applyAmount
   // 手工补录成员(对公客户申请要素 + 成员要素,不含授信;数仓已有成员不在此列)
   const manualMembers = groupMembers.value.filter((m) => m.source === 'MANUAL')
@@ -2469,6 +2638,8 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
 
 /** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
 async function ensureDraft(): Promise<boolean> {
+  // 备注超长不落库(application_remark VARCHAR(1000),超长后端 Data too long):提示精简后再保存
+  if (blockIfRemarkTooLong()) return false
   const err = validateForDraft()
   if (err) {
     ElMessage.error(err)
@@ -2500,6 +2671,8 @@ async function ensureDraft(): Promise<boolean> {
  *  失败静默不打断下一步(用户仍可手动点"存草稿"或提交时严格校验)。 */
 async function autoSaveDraft() {
   if (saving.value || submitted.value) return
+  // 备注超长时自动暂存跳过(落库必失败):静默不打断下一步,手动存草稿/提交处会明确提示精简
+  if (remarkTooLongTip()) return
   saving.value = true
   try {
     const payload = buildPayload()
@@ -2775,6 +2948,31 @@ async function loadDraftIntoForm(id: number | string) {
     }
   } catch { /* 忽略 */ }
   form.businessType = hasPlanned ? 'NEW' : 'EXISTING'
+  // 集团存量草稿协议态回显(§2026-09-03 协议必选):queryGroup 已把 dw_group_credit_snapshot 集团授信行注入
+  // creditAgreements,按保存快照的协议号恢复选中态并重填 creditInfo,否则协议必选校验在草稿重提时误拦
+  if (form.customerScope === 'GROUP' && form.businessType === 'EXISTING') {
+    const ci = parseExtJson(app.creditInfoJson)
+    const savedNo = ci?.agreementNo || ''
+    if (savedNo) {
+      const hit = creditAgreements.value.find((a) => a.agreementNo === savedNo)
+      if (hit) {
+        selectCreditAgreement(hit)
+      } else {
+        // 数仓授信快照变化(保存时的协议行已不在最新批次)→ 保留快照协议字段供重提/展示,仍按协议必选约束由客户经理处理
+        selectedAgreementNo.value = ''
+        form.creditInfo = {
+          ...initialCreditInfo(),
+          agreementNo: savedNo,
+          creditAmount: ci?.creditAmount != null ? String(ci.creditAmount) : '',
+          startDate: ci?.startDate || '',
+          endDate: ci?.endDate || '',
+          agreementStatus: ci?.agreementStatus || '',
+          agreementType: ci?.agreementType || ''
+        }
+        if (ci?.totalCredit) form.totalCredit = String(ci.totalCredit)
+      }
+    }
+  }
 
   commitments.value = (d.commitments || []).map((c) => ({
     metricCode: c.metricCode,
@@ -2843,6 +3041,8 @@ async function loadDraftIntoForm(id: number | string) {
   width: 100%;
   min-width: 0;
 }
+/* 申请备注字数提示小字(§2026-09-02:实时计数,超 1000 变红提示) */
+.form-field__hint { width: 100%; min-width: 0; font-size: 12px; line-height: 1.5; margin-top: 4px; }
 /* 文本框内字体优化:字号与页面正文一致(14px)+字体族统一+数字等宽对齐+占位提示可读(原生控件与 Element 控件一致) */
 .form-field .form-input,
 .form-field .form-select,
@@ -2933,6 +3133,7 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-pick__label { font-size: 13px; font-weight: 600; }
 .agreement-pick .form-select { max-width: 380px; }
 .agreement-pick__hint { font-size: 12px; color: var(--color-text-sub); }
+.agreement-pick__hint--warn { color: var(--color-danger, #f56c6c); background: rgba(245, 108, 108, 0.06); padding: 8px 10px; border-radius: var(--radius-sm); margin-top: 6px; }
 .agreement-detail {
   display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px 28px;
   background: #f8fafc; border: 1px solid var(--color-border);
@@ -2949,8 +3150,29 @@ async function loadDraftIntoForm(id: number | string) {
 .agreement-pick__state { font-size: 12px; color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
 .agreement-pick__arrow { margin-left: auto; color: var(--color-text-light); font-size: 12px; }
 .agreement-pick__body { margin-top: 16px; }
+/* 授信协议·表内选择版(2026-09-03 用户确认):选择框嵌「授信协议编号」列,选中同行带出 */
+.agreement-table { overflow-x: auto; }
+.agreement-table table { width: 100%; border-collapse: collapse; }
+.agreement-table th {
+  text-align: left; font-size: 12px; font-weight: 500; color: var(--color-text-light);
+  padding: 6px 12px 4px; border-bottom: 1px solid var(--color-border-light); white-space: nowrap;
+}
+.agreement-table td {
+  font-size: 14px; font-weight: 600; color: var(--color-text-main);
+  padding: 10px 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.agreement-table td .form-select { min-width: 220px; }
+.agreement-table__amt { color: var(--color-primary); }
+.agreement-table__ph { color: var(--color-text-light); font-weight: 400; }
 .agreement-manual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
 .agreement-manual .form-field { margin-bottom: 0; }
+/* 综合利率(§2026-09-03 用户要求:协议区展示原/申请加权综合利率;公式=Σ(分项金额×利率)÷当前授信总额,随分项录入实时联动) */
+.agreement-blend { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--color-border); display: flex; align-items: baseline; gap: 8px 22px; flex-wrap: wrap; }
+.agreement-blend__label { font-size: 13px; font-weight: 600; }
+.agreement-blend__formula { font-size: 12px; font-weight: 400; color: var(--color-text-sub); border-bottom: 1px dashed var(--color-border); cursor: help; }
+.agreement-blend__rates { display: flex; gap: 18px; font-size: 13px; color: var(--color-text-sub); }
+.agreement-blend__rates b { margin-left: 4px; font-size: 16px; font-weight: 600; color: var(--color-primary); font-variant-numeric: tabular-nums; }
+.agreement-blend__basis { font-size: 12px; color: var(--color-text-light); }
 .detail-title { font-size: 13px; font-weight: 600; color: var(--color-text-sub); display: flex; align-items: center; justify-content: space-between; }
 .req { color: var(--color-danger); }
 .sub-title { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--color-text-main); display: flex; align-items: center; gap: 8px; }

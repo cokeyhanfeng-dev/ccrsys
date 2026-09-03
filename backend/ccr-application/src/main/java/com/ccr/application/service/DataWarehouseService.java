@@ -163,6 +163,15 @@ public class DataWarehouseService {
                 LIMIT 1""", groupNo);
     }
 
+    /** 集团全部授信行(最新批次,有效优先,§2026-09-03 集团存量调息协议必选):一集团可多份 group_credit_no,
+     *  每行即一份「集团授信协议」供申请页 EXISTING 下拉选择;无行返回空列表(前端阻断走新增) */
+    public List<Map<String, Object>> findGroupCredits(String groupNo) {
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_group_credit_snapshot
+                WHERE group_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_group_credit_snapshot)
+                ORDER BY CASE credit_status WHEN 'EFFECTIVE' THEN 0 ELSE 1 END, group_credit_no""", groupNo);
+    }
+
     /** 集团下全部成员额度(最新批次) */
     public List<Map<String, Object>> memberLimitsByGroup(String groupCreditNo) {
         return jdbcTemplate.queryForList("""

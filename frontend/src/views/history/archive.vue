@@ -225,9 +225,9 @@
         <div v-else class="empty-line">暂无数据</div>
       </div>
 
-      <!-- 5a. 担保分项明细(申请录入,按分项挂载;含担保措施扩展明细) -->
+      <!-- 5a. 授信分项明细(申请录入,按分项挂载;含担保措施扩展明细) -->
       <div class="card" v-if="hasGuarantees">
-        <div class="card__head"><span>担保分项</span></div>
+        <div class="card__head"><span>授信分项</span></div>
         <div v-for="(p, pi) in archive.pricingItems" :key="val(p, 'id')">
           <div v-if="guaranteesOf(p).length" class="plan-block" :style="pi ? 'margin-top:12px' : ''">
             <div class="plan-block__head">
@@ -547,7 +547,7 @@ const groupContributionText = computed(() => {
   if (!g || g.metricValue == null) return '暂无数据'
   return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
 })
-// 担保分项明细(后端按 pricing_item_id 聚合)
+// 授信分项明细(后端按 pricing_item_id 聚合)
 const hasGuarantees = computed(() => {
   const map = archive.value.guaranteesByItem || {}
   return Object.values(map).some((list: any) => list && list.length)

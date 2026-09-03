@@ -88,6 +88,13 @@
           </tr>
         </tbody>
       </table>
+      <!-- 综合利率(§2026-09-03 用户要求:与申请页同口径展示于审批界面;综合利率=Σ(分项金额×分项利率)÷授信总额,原执行/申请两口径) -->
+      <div v-if="isLoan" class="detail-blend">
+        <span class="detail-blend__label">综合利率 <span class="detail-blend__formula" title="综合利率 = (分项1金额×分项1利率 + 分项2金额×分项2利率 + …) ÷ 授信总额">按分项加权</span></span>
+        <span class="detail-blend__rate">原执行综合 <b>{{ detailBlendOriginalText }}</b></span>
+        <span class="detail-blend__rate">申请综合 <b>{{ detailBlendRequestedText }}</b></span>
+        <span class="detail-blend__basis">Σ(分项金额×利率) ÷ 授信总额 {{ applyTotalCredit != null ? fmtAmount(applyTotalCredit) : '—' }} 万</span>
+      </div>
       <div class="remark-text" style="margin-top:12px" v-if="application.applicationRemark">{{ application.applicationRemark }}</div>
     </div>
     </div>
@@ -1041,6 +1048,33 @@ const applyTotalCredit = computed(() => {
     return null
   }
 })
+// 审批界面综合利率(§2026-09-03 用户要求,与申请页同口径):综合利率=Σ(分项金额×分项利率)÷授信总额。
+// 仅统计金额>0 且对应利率>0 的分项;无有效分项或总额为空返回 null。原执行综合走 originalRate,申请综合走 requestedRate
+function detailBlendOf(rateKey: 'originalRate' | 'requestedRate'): number | null {
+  const denom = applyTotalCredit.value
+  if (!(denom > 0)) return null
+  let num = 0
+  let has = false
+  for (const it of siblingItems.value) {
+    const amt = Number(it.pricingAmount)
+    const rate = Number(it[rateKey])
+    if (Number.isFinite(amt) && amt > 0 && Number.isFinite(rate) && rate > 0) {
+      num += amt * rate
+      has = true
+    }
+  }
+  return has ? num / denom : null
+}
+/** 综合利率展示(百分比保留 4 位,去尾零;不可算显示 —;纯新增业务无原执行利率 → 按分项表口径显示「新增业务」) */
+const detailBlendOriginalText = computed(() => {
+  if (!siblingItems.value.some((it) => it.originalRate != null && it.originalRate !== '')) return '新增业务'
+  const v = detailBlendOf('originalRate')
+  return v == null ? '—' : `${(Math.round(v * 10000) / 10000)}%`
+})
+const detailBlendRequestedText = computed(() => {
+  const v = detailBlendOf('requestedRate')
+  return v == null ? '—' : `${(Math.round(v * 10000) / 10000)}%`
+})
 // 申请类型(新增授信/存量调息)=申请页选填的 form.businessType(NEW/EXISTING,credit_info_json.businessType;2026-08-27 补充展示)
 const applyBizTypeText = computed(() => {
   try {
@@ -1686,6 +1720,13 @@ onMounted(load)
 /* 吸底审批操作条为 fixed 定位:审批人可操作时给页尾留出条高,避免遮挡内容 */
 .detail-wrap--action { padding-bottom: 96px; }
 .remark-text { font-size: 14px; font-weight: 600; background: var(--color-bg); border-radius: 6px; padding: 12px; line-height: 1.6; }
+/* 综合利率条(§2026-09-03 用户要求:与申请页协议区同口径展示于审批申请内容下方;Σ(分项金额×利率)÷授信总额) */
+.detail-blend { display: flex; align-items: baseline; gap: 8px 24px; flex-wrap: wrap; margin-top: 12px; padding: 10px 14px; background: var(--color-bg); border-radius: var(--radius-sm); }
+.detail-blend__label { font-size: 13px; font-weight: 600; }
+.detail-blend__formula { font-size: 12px; font-weight: 400; color: var(--color-text-sub); border-bottom: 1px dashed var(--color-border); cursor: help; }
+.detail-blend__rate { font-size: 13px; color: var(--color-text-sub); }
+.detail-blend__rate b { margin-left: 4px; font-size: 16px; font-weight: 600; color: var(--color-primary); font-variant-numeric: tabular-nums; }
+.detail-blend__basis { font-size: 12px; color: var(--color-text-light); }
 .op-form__row { margin-bottom: 12px; }
 .op-form__label { display: block; font-size: 13px; color: var(--color-text-sub); margin-bottom: 6px; }
 .stat-card__sub { margin-top: 4px; }

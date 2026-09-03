@@ -23,7 +23,7 @@
         <div class="todo-card__body">
           <div class="todo-card__customer">
             {{ c.customer }}
-            <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个担保分项</span>
+            <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个授信分项</span>
           </div>
           <div class="todo-card__sub" v-if="c.single">申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }}</div>
           <div class="todo-card__sub" v-else>申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }} · 共 {{ c.itemCount }} 个分项(整单一次审批)</div>
@@ -102,7 +102,7 @@ async function load() {
         status: it.status, currentNodeCode: 'PRESIDENT', createTime: ''
       })))
     const data = [...(voteRows || []), ...(taskRows || []), ...presFlat]
-    // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部担保分项
+    // 待办以申请为粒度:同申请多分项聚合为一张卡片,进入详情后一次性完成全部授信分项
     const byApp = new Map<string, any[]>()
     for (const p of data) {
       // 委员待办行含 applicationId(申请聚合,与普通审批一致);无则按分项兜底
@@ -122,7 +122,7 @@ async function load() {
         applicationNo: first.applicationNo || '-',
         itemCount: items.length,
         single,
-        pricingItemNo: single ? (first.pricingItemNo || keyId) : `${items.length} 个担保分项`,
+        pricingItemNo: single ? (first.pricingItemNo || keyId) : `${items.length} 个授信分项`,
         // 客户显示名优先(listTodo 已补 customerName,§2026-09-01),回退客户号
         customer: first.customerName || first.pricingCustomerNo || first.customerNo || '-',
         amount: single ? (first.pricingAmount ?? '-') : items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0),
