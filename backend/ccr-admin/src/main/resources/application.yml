@@ -77,6 +77,26 @@ logging:
 
 # 缓存配置(§3.6):enabled=false 时缓存全部直查库(Redis 未就绪场景不阻塞业务)
 ccr:
+  # Mini-App-Plus 授信决议经 API 网关接入；凭证必须由部署环境注入，禁止写入配置文件。
+  integration:
+    credit-resolution:
+      enabled: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ENABLED:false}
+      base-url: ${CCR_INTEGRATION_CREDIT_RESOLUTION_GATEWAY_BASE_URL:}
+      token-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_PATH:/auth/token}
+      latest-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_LATEST_PATH:/miniapp/creditResolution/ccr/latest}
+      exchange-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_EXCHANGE_PATH:/miniapp/creditResolution/ccr/files/exchange}
+      api-key: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY:}
+      secret: ${CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET:}
+      api-key-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY_HEADER:apikey}
+      secret-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET_HEADER:secret}
+      token-fallback-ttl-seconds: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_FALLBACK_TTL_SECONDS:14400}
+      token-refresh-skew-seconds: 60
+      allowed-download-hosts: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ALLOWED_DOWNLOAD_HOSTS:}
+      connect-timeout-millis: 3000
+      request-timeout-millis: 10000
+      max-file-size-bytes: 10485760
+      max-files-per-resolution: 10
+      max-total-size-bytes: 31457280
   cache:
     enabled: true
     default-ttl-seconds: 300

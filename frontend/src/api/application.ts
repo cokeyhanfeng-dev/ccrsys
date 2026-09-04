@@ -428,3 +428,42 @@ export async function uploadAttachment(applicationId: string | number, file: Fil
 export function listAttachments(applicationId: string | number) {
   return get<any[]>(`/ccr/applications/${applicationId}/attachments`)
 }
+
+export interface ExternalResolutionFile {
+  fileId: string
+  fileName: string
+  fileSize?: number
+  contentType?: string
+}
+
+export interface ExternalCreditResolution {
+  resolutionId: string
+  resolutionNo: string
+  customerType: number
+  customerId: string
+  customerName: string
+  versionNo?: number
+  uploadTime?: string
+  files: ExternalResolutionFile[]
+}
+
+export interface CreditResolutionLookup {
+  enabled: boolean
+  found: boolean
+  message: string
+  resolution?: ExternalCreditResolution
+}
+
+/** 查询当前客户/集团的最新有效授信决议。 */
+export function getLatestExternalCreditResolution(params: {
+  customerScope: string
+  customerNo?: string
+  groupNo?: string
+}) {
+  return get<CreditResolutionLookup>('/ccr/external-credit-resolutions/latest', params)
+}
+
+/** 将最新授信决议的私有桶文件兑换并转存为申请附件。 */
+export function importLatestCreditResolution(applicationId: string | number) {
+  return post<any>(`/ccr/external-credit-resolutions/applications/${applicationId}/import-latest`)
+}

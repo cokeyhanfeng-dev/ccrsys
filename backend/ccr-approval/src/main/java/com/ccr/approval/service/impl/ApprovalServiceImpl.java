@@ -1111,7 +1111,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
         // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
         result.put("attachments", jdbcTemplate.queryForList(
-                "SELECT id, file_name fileName, file_size fileSize, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
+                "SELECT id, file_name fileName, file_size fileSize, source_type sourceType, source_resolution_no sourceResolutionNo, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
         // 集团信息(集团授信总额/到期日 + 集团贡献度,仅集团场景)
         if (groupNo != null && StrUtil.isNotBlank(groupNo.toString())) {
             String gno = groupNo.toString();

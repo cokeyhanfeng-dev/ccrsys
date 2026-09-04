@@ -30,4 +30,16 @@ public class CcrApplicationAttachment extends BaseEntity {
     /** 文件内容 */
     @TableField(select = false)
     private byte[] content;
+
+    /** 来源:MANUAL 手工上传 / MINIAPP_CREDIT_RESOLUTION 外部授信决议 */
+    private String sourceType;
+
+    /** 外部决议主键，仅外部授信决议附件使用。 */
+    private String sourceBusinessId;
+
+    /** 外部文件主键，仅外部授信决议附件使用。 */
+    private String sourceFileId;
+
+    /** 外部决议编号，供申请档案审计展示。 */
+    private String sourceResolutionNo;
 }

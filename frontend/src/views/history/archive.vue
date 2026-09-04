@@ -151,7 +151,7 @@
           <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="(a, i) in attachments" :key="i">
-              <td class="file-name" :title="a.fileName">{{ a.fileName }}</td>
+              <td class="file-name" :title="a.fileName">{{ a.fileName }} <span v-if="a.sourceType === 'MINIAPP_CREDIT_RESOLUTION'" class="badge badge--info">授信决议 {{ a.sourceResolutionNo }}</span></td>
               <td class="num">{{ fmtSize(a.fileSize) }}</td>
               <td>{{ fmtTime(a.createTime) }}</td>
               <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
