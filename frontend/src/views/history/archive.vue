@@ -193,7 +193,7 @@
         <div v-if="!otherLoans.length" class="empty-line">暂无他行融资记录</div>
       </div>
 
-      <!-- 5. 授信分项 -->
+      <!-- 5. 授信分项(担保明细并入行内展开:点击「担保方式」展开;信用/未录措施无内容不可展开,§2026-09-04) -->
       <div class="card">
         <div class="card__head"><span>授信分项</span></div>
         <table class="table" v-if="archive.pricingItems?.length">
@@ -204,48 +204,48 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in archive.pricingItems" :key="val(p, 'id')">
-              <td>{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
-              <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
-              <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
-              <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
-              <td :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
-              <td>{{ itemGuaranteeText(p) }}</td>
-              <td class="num">{{ fmtAmount(val(p, 'pricing_amount', 'pricingAmount')) }}</td>
-              <td>{{ termText(p) }}</td>
-              <td class="num">{{ rateText(val(p, 'requested_rate', 'requestedRate')) }}</td>
-              <td class="num">{{ rateText(val(p, 'current_approval_rate', 'currentApprovalRate')) }}</td>
-              <td class="num"><b>{{ rateText(val(p, 'final_rate', 'finalRate')) }}</b></td>
-              <td>{{ nodeLabel(val(p, 'current_node_code', 'currentNodeCode')) }}</td>
-              <td><span :class="itemStatusBadge(val(p, 'status'))">{{ itemStatusText(val(p, 'status')) }}</span></td>
-            </tr>
+            <template v-for="p in archive.pricingItems" :key="val(p, 'id')">
+              <tr>
+                <td>{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
+                <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
+                <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
+                <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
+                <td :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
+                <!-- 担保方式:有担保措施可点开行内明细;信用/未录措施纯文本(无内容可展开) -->
+                <td>
+                  <span v-if="hasMeasureRows(p)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(p)" @keydown.enter="toggleExpand(p)">{{ itemGuaranteeText(p) }}<span class="chev">{{ isExpanded(p) ? '▲' : '▼' }}</span></span>
+                  <span v-else>{{ itemGuaranteeText(p) }}</span>
+                </td>
+                <td class="num">{{ fmtAmount(val(p, 'pricing_amount', 'pricingAmount')) }}</td>
+                <td>{{ termText(p) }}</td>
+                <td class="num">{{ rateText(val(p, 'requested_rate', 'requestedRate')) }}</td>
+                <td class="num">{{ rateText(val(p, 'current_approval_rate', 'currentApprovalRate')) }}</td>
+                <td class="num"><b>{{ rateText(val(p, 'final_rate', 'finalRate')) }}</b></td>
+                <td>{{ nodeLabel(val(p, 'current_node_code', 'currentNodeCode')) }}</td>
+                <td><span :class="itemStatusBadge(val(p, 'status'))">{{ itemStatusText(val(p, 'status')) }}</span></td>
+              </tr>
+              <!-- 展开:该分项的担保措施明细(抵押物/保证人等),申请录入按分项挂载 -->
+              <tr v-if="isExpanded(p)" class="expand-row">
+                <td :colspan="12">
+                  <div class="expand-panel">
+                    <div class="expand-title">担保明细<span class="section-tip">申请录入</span></div>
+                    <table class="table">
+                      <thead><tr><th>担保措施</th><th>担保金额(万元)</th><th>担保物信息</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(g, gi) in measureRows(p)" :key="gi">
+                          <td>{{ measureTypeText(g.measureType) }}</td>
+                          <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
+                          <td class="hash-cell">{{ extText(g) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
         <div v-else class="empty-line">暂无数据</div>
-      </div>
-
-      <!-- 5a. 担保明细(申请录入,按分项挂载;含担保措施扩展明细) -->
-      <div class="card" v-if="hasGuarantees">
-        <div class="card__head"><span>担保明细</span></div>
-        <div v-for="(p, pi) in archive.pricingItems" :key="val(p, 'id')">
-          <div v-if="guaranteesOf(p).length" class="plan-block" :style="pi ? 'margin-top:12px' : ''">
-            <div class="plan-block__head">
-              <span class="badge badge--info">{{ val(p, 'pricing_item_no', 'pricingItemNo') }}</span>
-              <span class="section-tip">申请担保明细</span>
-            </div>
-            <table class="table">
-              <thead><tr><th>担保方式</th><th>担保措施</th><th>担保金额(万元)</th><th>措施明细</th></tr></thead>
-              <tbody>
-                <tr v-for="(g, gi) in guaranteesOf(p)" :key="gi">
-                  <td>{{ guaranteeTypeText(g.guaranteeType) }}</td>
-                  <td>{{ measureTypeText(g.measureType) }}</td>
-                  <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
-                  <td class="hash-cell">{{ extText(g) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
 
       <!-- 5d. 贡献度参考(当前与拟达成贡献度并排;G3 定价依据,贷款场景) -->
@@ -547,13 +547,28 @@ const groupContributionText = computed(() => {
   return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
 })
 // 授信分项明细(后端按 pricing_item_id 聚合)
-const hasGuarantees = computed(() => {
-  const map = archive.value.guaranteesByItem || {}
-  return Object.values(map).some((list: any) => list && list.length)
-})
 function guaranteesOf(p: any): any[] {
   const map = archive.value.guaranteesByItem || {}
   return map[String(val(p, 'id'))] || []
+}
+// 授信分项行内展开担保明细(2026-09-04:原独立「担保明细」卡移除并入此行;信用/未录措施分项无内容不可展开)
+const expandedItems = ref<string[]>([])
+function isExpanded(p: any): boolean {
+  return expandedItems.value.includes(String(val(p, 'id')))
+}
+function toggleExpand(p: any) {
+  const id = String(val(p, 'id'))
+  expandedItems.value = expandedItems.value.includes(id)
+    ? expandedItems.value.filter((x) => x !== id)
+    : [...expandedItems.value, id]
+}
+/** 该分项是否有真实担保措施行(排除信用等仅包无措施的占位行) */
+function hasMeasureRows(p: any): boolean {
+  return guaranteesOf(p).some((g: any) => g.measureType)
+}
+/** 该分项的担保措施明细(已过滤占位行,供展开表渲染) */
+function measureRows(p: any): any[] {
+  return guaranteesOf(p).filter((g: any) => g.measureType)
 }
 // 集团成员名称(档案成员行 snake_case/camel 兼容,缺失回退客户号)
 function memberName(m: any): string {
@@ -594,20 +609,24 @@ function extOf(g: any): any {
   if (typeof j === 'object') return j
   try { return JSON.parse(j) } catch { return null }
 }
-// 担保措施扩展明细转可读文本(抵押物/保证人/质押/保证金/存单等关键字段)
+// 担保物信息列(2026-09-04 由「措施明细」更名):按措施类型取关键扩展字段转可读文本。
+// 保证人是"人"不是"物",单独成组(名称/证件号/担保余额),避免误标产权证号、丢失余额;
+// 抵押/质押/保证金/存单等物类展示担保物属性(坐落/产权证号/车牌号/存单号等)。
 function extText(g: any): string {
   const ext = extOf(g)
   if (!ext) return '—'
-  const labels: Record<string, string> = {
-    name: '名称', collateralType: '类型', specModel: '规格型号', quantity: '数量',
-    plateNo: '车牌号', vin: '车架号', address: '坐落', area: '面积',
-    certNo: '产权证号', owner: '权属人', pledgeType: '质押物类型',
-    marginRatio: '比例', termMonths: '期限(月)', certificateNo: '存单号', maturityDate: '到期日'
-  }
+  const labels: Record<string, string> = g?.measureType === 'GUARANTOR'
+    ? { name: '保证人', certNo: '证件号', balance: '担保余额' }
+    : {
+        name: '名称', collateralType: '类型', specModel: '规格型号', quantity: '数量',
+        plateNo: '车牌号', vin: '车架号', address: '坐落', area: '面积',
+        certNo: '产权证号', owner: '权属人', pledgeType: '质押物类型',
+        marginRatio: '比例', termMonths: '期限(月)', certificateNo: '存单号', maturityDate: '到期日'
+      }
   const parts = Object.keys(labels)
     .filter((k) => ext[k] != null && ext[k] !== '')
     .map((k) => `${labels[k]}:${ext[k]}`)
-  return parts.length ? parts.join('；') : '见明细'
+  return parts.length ? parts.join('；') : '—'
 }
 function downloadAttachment(a: any) {
   download(`/ccr/applications/${applicationId}/attachments/${a.id}/download`)
@@ -762,4 +781,11 @@ onMounted(load)
 .file-name { max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .archive-link { color: var(--color-primary); cursor: pointer; }
 .archive-link:hover { text-decoration: underline; }
+/* 授信分项行内展开担保明细(2026-09-04):担保方式列可点 + 展开行浅底内衬表 */
+.expand-toggle { color: var(--color-primary); cursor: pointer; user-select: none; white-space: nowrap; }
+.expand-toggle:hover { text-decoration: underline; }
+.expand-toggle .chev { font-size: 10px; margin-left: 2px; }
+.expand-row > td { padding: 0; background: var(--color-bg-page, #f7f9fc); }
+.expand-panel { padding: 10px 16px 12px 20px; }
+.expand-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
 </style>
