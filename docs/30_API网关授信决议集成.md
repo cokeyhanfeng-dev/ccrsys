@@ -6,7 +6,7 @@
 
 ```text
 CCRSYS 后端
-  ├─ POST API网关令牌接口（apikey + secret）→ 获取 Mini-App-Plus 可识别的 Sa-Token
+  ├─ POST API网关令牌接口（apikey + secret + 当前登录人绩效码）→ 获取该人员的 Mini-App-Plus Sa-Token
   ├─ GET  API网关最新决议路由（Bearer Token）→ Mini-App-Plus
   └─ POST API网关文件兑换路由（Bearer Token）→ Mini-App-Plus → 私有 MinIO 300秒短链
                                                       ↓
@@ -15,7 +15,7 @@ CCRSYS 后端
 
 - Magic API 不再参与查询、鉴权或文件兑换。
 - CCRSYS 不直连 Mini-App-Plus 数据库，也不保存 MinIO AccessKey/SecretKey。
-- API 网关的令牌接口必须返回 Mini-App-Plus 能识别的登录令牌；网关自有令牌若无法被 Mini-App-Plus Sa-Token 校验，不能直接用于后两个接口。
+- API 网关令牌路由转发到 Mini-App-Plus `POST /miniapp/creditResolution/ccr/token`。Mini-App 应用侧再次校验同一组 API Key、Secret、时间戳和流水号，再按绩效码查找启用用户并校验 `ccr_service` 角色。
 - 浏览器只接收决议和文件元数据；API Key、Secret、Bearer Token、对象键和短期签名 URL均留在服务端。
 - 集团查询使用 `customerType=3` 和 CCRSYS `groupNo`，该值对应 Mini-App-Plus `customer_id/groupId`。
 
@@ -29,9 +29,9 @@ CCRSYS 后端
 - **接口名**: CCRSYS-Mini-App-Plus服务令牌
 - **路径**: `/auth/token`
 - **完整路径**: `<API网关根地址>/auth/token`
-- **网关目标**: 现有 Mini-App-Plus 登录/令牌服务
+- **网关目标**: `POST <Mini-App-Plus>/miniapp/creditResolution/ccr/token`
 - **请求头**: `apikey`, `secret`, `X-Sequence-No`, `X-Timestamp`
-- **请求体**: `{}`
+- **请求体**: `{"performanceCode":"<CCRSYS当前登录用户名/绩效码>"}`
 
 成功响应需要由网关规范化为：
 
@@ -45,9 +45,9 @@ CCRSYS 后端
 }
 ```
 
-CCRSYS 同时兼容 `accessToken`、`access_token` 和 `expires_in` 字段。令牌接口未提供有效期时，使用配置项 `token-fallback-ttl-seconds`；默认 14400 秒。CCR 在单个应用实例内缓存令牌，到期前 60 秒主动刷新，不将令牌写入 Redis 或数据库。
+CCRSYS 同时兼容 `accessToken`、`access_token` 和 `expires_in` 字段。令牌接口未提供有效期时，使用配置项 `token-fallback-ttl-seconds`；默认 14400 秒。CCR 按绩效码分别缓存令牌，到期前 60 秒主动刷新，不将令牌写入 Redis 或数据库，不同人员不会共用 Token。
 
-网关登录路由需要配置独立服务身份，禁止复用自然人的用户名和密码。服务身份在 Mini-App-Plus 中只授予角色标识 `ccr_service`，随机 Secret 至少 16 位，生产建议 32 字节以上，并支持双凭证轮换。
+Mini-App-Plus 中新建角色标识 `ccr_service`，将允许从 CCRSYS 查询授信决议的人员加入该角色。绩效码对应 `sys_user.user_name`，用户必须启用；Token 兑换不传人员密码和验证码。API Key/Secret 同时配置在 CCRSYS、API 网关和 Mini-App-Plus，网关必须透传四个鉴权头；随机 Secret 至少 16 位，生产建议 32 字节以上，并支持双凭证轮换。
 
 ### 2.2 最新有效授信决议 `/miniapp/creditResolution/ccr/latest`
 
@@ -149,6 +149,14 @@ CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET='<至少16位，生产建议32字节以
 CCR_INTEGRATION_CREDIT_RESOLUTION_ALLOWED_DOWNLOAD_HOSTS=minio.internal.example
 ```
 
+Mini-App-Plus 部署环境还需配置同一组网关凭证：
+
+```bash
+MINIAPP_CCR_GATEWAY_AUTH_ENABLED=true
+MINIAPP_CCR_GATEWAY_API_KEY='<与CCRSYS及网关登记值一致>'
+MINIAPP_CCR_GATEWAY_SECRET='<与CCRSYS及网关登记值一致>'
+```
+
 如网关使用不同的凭证头名称，可配置：
 
 ```bash
@@ -168,7 +176,7 @@ CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET_HEADER=secret
 
 ## 6. 联调检查
 
-1. 使用专用 `ccr_service` 服务身份获取令牌，确认无其他业务角色和管理权限。
+1. 使用已绑定 `ccr_service` 角色的人员绩效码获取令牌；未绑定角色、停用用户、错误凭证和过期时间戳必须被拒绝。
 2. 个人、企业、集团各选 3 组，核对客户编号和集团编号映射。
 3. 验证最新口径为 `upload_time DESC, id DESC`，只取 `status=1`。
 4. 验证伪造 `resolutionId/fileId` 组合、公开桶文件和无效决议均无法兑换。
@@ -176,3 +184,4 @@ CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET_HEADER=secret
 6. 验证签名 URL 在 300 秒后失效，非白名单主机、重定向、空文件和超限文件均被 CCR 拒绝。
 7. 验证日志中没有 API Key、Secret、Token、登录请求参数和签名 URL。
 8. 重复进入“承诺与材料”时只保留一份来源附件，审批详情和历史档案可正常下载。
+9. 使用两个不同绩效码连续查询，确认 Mini-App 登录日志分别记录实际人员，且 CCR Token 缓存互不串用。

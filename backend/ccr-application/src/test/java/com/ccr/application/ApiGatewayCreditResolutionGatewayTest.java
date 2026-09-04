@@ -32,6 +32,7 @@ class ApiGatewayCreditResolutionGatewayTest {
     private CreditResolutionProperties properties;
     private ApiGatewayCreditResolutionGateway gateway;
     private AtomicInteger loginCount;
+    private AtomicReference<String> loginBody;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -44,9 +45,11 @@ class ApiGatewayCreditResolutionGatewayTest {
         properties.setSecret("test-only-secret-with-sufficient-entropy");
         properties.setAllowedDownloadHosts(List.of("127.0.0.1"));
         loginCount = new AtomicInteger();
+        loginBody = new AtomicReference<>();
         server.createContext("/auth/token", exchange -> {
             loginCount.incrementAndGet();
             assertGatewayCredentials(exchange);
+            loginBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             json(exchange, 200, "{\"code\":200,\"data\":{\"token\":\"service-token-1\",\"expiresIn\":3600}}");
         });
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -71,11 +74,12 @@ class ApiGatewayCreditResolutionGatewayTest {
                     """);
         });
 
-        ExternalCreditResolution result = gateway.latest(3, "GROUP001").orElseThrow();
+        ExternalCreditResolution result = gateway.latest("100001", 3, "GROUP001").orElseThrow();
 
         assertEquals("SX-2026-0091", result.getResolutionNo());
         assertEquals("801", result.getFiles().get(0).getFileId());
         assertEquals(1, loginCount.get());
+        assertTrue(loginBody.get().contains("\"performanceCode\":\"100001\""));
     }
 
     @Test
@@ -85,9 +89,32 @@ class ApiGatewayCreditResolutionGatewayTest {
             json(exchange, 200, "{\"code\":200,\"data\":null}");
         });
 
-        assertTrue(gateway.latest(2, "C001").isEmpty());
-        assertTrue(gateway.latest(2, "C001").isEmpty());
+        assertTrue(gateway.latest("100001", 2, "C001").isEmpty());
+        assertTrue(gateway.latest("100001", 2, "C001").isEmpty());
         assertEquals(1, loginCount.get());
+    }
+
+    @Test
+    void latest_cachesTokensSeparatelyByPerformanceCode() {
+        server.removeContext("/auth/token");
+        server.createContext("/auth/token", exchange -> {
+            loginCount.incrementAndGet();
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String token = body.contains("100002") ? "user-token-100002" : "user-token-100001";
+            json(exchange, 200, "{\"code\":200,\"data\":{\"token\":\"" + token
+                    + "\",\"expiresIn\":3600}}");
+        });
+        server.createContext("/miniapp/creditResolution/ccr/latest", exchange -> {
+            String customerId = exchange.getRequestURI().getQuery();
+            String expected = customerId.contains("C002") ? "user-token-100002" : "user-token-100001";
+            assertProtectedHeaders(exchange, expected);
+            json(exchange, 200, "{\"code\":200,\"data\":null}");
+        });
+
+        assertTrue(gateway.latest("100001", 2, "C001").isEmpty());
+        assertTrue(gateway.latest("100002", 2, "C002").isEmpty());
+        assertTrue(gateway.latest("100001", 2, "C001").isEmpty());
+        assertEquals(2, loginCount.get());
     }
 
     @Test
@@ -110,7 +137,7 @@ class ApiGatewayCreditResolutionGatewayTest {
             json(exchange, 200, "{\"code\":200,\"data\":null}");
         });
 
-        assertTrue(gateway.latest(2, "C001").isEmpty());
+        assertTrue(gateway.latest("100001", 2, "C001").isEmpty());
         assertEquals(2, loginCount.get());
         assertEquals(2, latestCount.get());
     }
@@ -129,7 +156,7 @@ class ApiGatewayCreditResolutionGatewayTest {
         file.setFileId("801");
         file.setFileName("原文件.pdf");
 
-        DownloadedResolutionFile result = gateway.download("91", file);
+        DownloadedResolutionFile result = gateway.download("100001", "91", file);
 
         assertTrue(requestBody.get().contains("\"resolutionId\":\"91\""));
         assertTrue(requestBody.get().contains("\"fileId\":\"801\""));
@@ -144,7 +171,7 @@ class ApiGatewayCreditResolutionGatewayTest {
         ExternalResolutionFile file = new ExternalResolutionFile();
         file.setFileId("801");
 
-        ServiceException error = assertThrows(ServiceException.class, () -> gateway.download("91", file));
+        ServiceException error = assertThrows(ServiceException.class, () -> gateway.download("100001", "91", file));
 
         assertTrue(error.getMessage().contains("主机未加入允许清单"));
     }
@@ -158,7 +185,7 @@ class ApiGatewayCreditResolutionGatewayTest {
         ExternalResolutionFile file = new ExternalResolutionFile();
         file.setFileId("801");
 
-        ServiceException error = assertThrows(ServiceException.class, () -> gateway.download("91", file));
+        ServiceException error = assertThrows(ServiceException.class, () -> gateway.download("100001", "91", file));
 
         assertTrue(error.getMessage().contains("不能超过 10MB"));
     }
@@ -167,7 +194,7 @@ class ApiGatewayCreditResolutionGatewayTest {
     void latest_weakCredential_rejectsBeforeLogin() {
         properties.setSecret("123456");
 
-        ServiceException error = assertThrows(ServiceException.class, () -> gateway.latest(2, "C001"));
+        ServiceException error = assertThrows(ServiceException.class, () -> gateway.latest("100001", 2, "C001"));
 
         assertTrue(error.getMessage().contains("长度不能少于 16 位"));
         assertEquals(0, loginCount.get());

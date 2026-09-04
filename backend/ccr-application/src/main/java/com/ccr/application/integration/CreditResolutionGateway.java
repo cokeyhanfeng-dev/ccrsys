@@ -7,7 +7,7 @@ public interface CreditResolutionGateway {
 
     boolean isEnabled();
 
-    Optional<ExternalCreditResolution> latest(Integer customerType, String customerId);
+    Optional<ExternalCreditResolution> latest(String performanceCode, Integer customerType, String customerId);
 
-    DownloadedResolutionFile download(String resolutionId, ExternalResolutionFile file);
+    DownloadedResolutionFile download(String performanceCode, String resolutionId, ExternalResolutionFile file);
 }
