@@ -193,14 +193,14 @@
         <div v-if="!otherLoans.length" class="empty-line">暂无他行融资记录</div>
       </div>
 
-      <!-- 5. 定价分项 -->
+      <!-- 5. 授信分项 -->
       <div class="card">
-        <div class="card__head"><span>定价分项</span></div>
+        <div class="card__head"><span>授信分项</span></div>
         <table class="table" v-if="archive.pricingItems?.length">
           <thead>
             <tr>
               <th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th>授信协议编号</th><th>担保方式</th><th>金额(万元)</th><th>期限</th>
-              <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>终审岗位</th><th>状态</th>
+              <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>状态</th>
             </tr>
           </thead>
           <tbody>
@@ -217,7 +217,6 @@
               <td class="num">{{ rateText(val(p, 'current_approval_rate', 'currentApprovalRate')) }}</td>
               <td class="num"><b>{{ rateText(val(p, 'final_rate', 'finalRate')) }}</b></td>
               <td>{{ nodeLabel(val(p, 'current_node_code', 'currentNodeCode')) }}</td>
-              <td>{{ nodeLabel(val(p, 'route_code', 'routeCode')) }}</td>
               <td><span :class="itemStatusBadge(val(p, 'status'))">{{ itemStatusText(val(p, 'status')) }}</span></td>
             </tr>
           </tbody>
@@ -225,9 +224,9 @@
         <div v-else class="empty-line">暂无数据</div>
       </div>
 
-      <!-- 5a. 授信分项明细(申请录入,按分项挂载;含担保措施扩展明细) -->
+      <!-- 5a. 担保明细(申请录入,按分项挂载;含担保措施扩展明细) -->
       <div class="card" v-if="hasGuarantees">
-        <div class="card__head"><span>授信分项</span></div>
+        <div class="card__head"><span>担保明细</span></div>
         <div v-for="(p, pi) in archive.pricingItems" :key="val(p, 'id')">
           <div v-if="guaranteesOf(p).length" class="plan-block" :style="pi ? 'margin-top:12px' : ''">
             <div class="plan-block__head">

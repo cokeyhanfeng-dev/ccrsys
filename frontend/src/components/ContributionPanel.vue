@@ -12,7 +12,6 @@
           <tr v-for="(c, i) in contribution" :key="i">
             <td class="col-metric">
               <div class="metric-name">{{ c.metricName || metricName(c.metricCode) }}</div>
-              <div class="metric-code">{{ c.metricCode }}</div>
             </td>
             <td class="num col-value">
               <span class="metric-value">{{ c.metricValue ?? '—' }}</span>
@@ -36,7 +35,7 @@
           <tr v-for="(c, i) in commitments" :key="i">
             <td class="col-metric">
               <div class="metric-name">{{ c.metricName || metricName(c.metricCode) }}</div>
-              <div class="metric-code">{{ c.metricCode }}<template v-if="c.memberCustomerNo"> · 成员 {{ c.memberCustomerNo }}</template></div>
+              <div v-if="c.memberCustomerNo" class="metric-code">成员 {{ c.memberCustomerNo }}</div>
             </td>
             <!-- 承诺类型"其它"(§6.4):无数值目标,展示 commitment_desc 手工描述 -->
             <td class="num">{{ c.metricCode === 'OTHER' ? (c.commitmentDesc || '—') : (`${c.baselineValue ?? '—'} → ${c.targetValue ?? '—'}`) }}</td>

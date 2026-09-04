@@ -1263,7 +1263,7 @@ function itemName(it: any): string {
   // 载体类型:贷款合同按业务口径展示为授信方案(2026-08-27),存款账户不变
   const carrier = it.carrierType === 'LOAN_CONTRACT' ? '授信方案' : carrierTypeText(it.carrierType)
   const amount = it.pricingAmount != null ? `${fmtAmount(it.pricingAmount)} 万` : ''
-  let name = `${it.pricingItemNo || '定价分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
+  let name = `${it.pricingItemNo || '授信分项'}${carrier ? ' · ' + carrier : ''}${amount ? ' · ' + amount : ''}`
   // 集团场景:审批决定区标明是哪家成员申请的、申请利率是多少(成员级定价,非整个集团)
   const memberNo = it.memberCustomerNo || it.member_customer_no
   if (isGroup.value && memberNo) {

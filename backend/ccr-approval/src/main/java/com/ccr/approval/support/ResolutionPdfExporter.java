@@ -445,6 +445,49 @@ public final class ResolutionPdfExporter {
         };
     }
 
+    /** 企业规模(数仓码值或直存中文;已中文原样返回,§2026-09-03 决议书中文化) */
+    private static String entpScaleText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "LARGE" -> "大型";
+            case "MEDIUM" -> "中型";
+            case "SMALL" -> "小型";
+            case "MICRO" -> "微型";
+            default -> code;
+        };
+    }
+
+    /** 五级分类(数仓码值 010-050 或直存中文;已中文原样返回,§2026-09-03 决议书中文化) */
+    private static String fiveLevelClassText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "010" -> "正常";
+            case "020" -> "关注";
+            case "030" -> "次级";
+            case "040" -> "可疑";
+            case "050" -> "损失";
+            default -> code;
+        };
+    }
+
+    /** 婚姻状况(数仓码值或直存中文;已中文原样返回,§2026-09-03 决议书中文化) */
+    private static String maritalStatusText(String code) {
+        if (code == null) {
+            return null;
+        }
+        return switch (code) {
+            case "MARRIED" -> "已婚";
+            case "SINGLE" -> "未婚";
+            case "DIVORCED" -> "离异";
+            case "WIDOWED" -> "丧偶";
+            default -> code;
+        };
+    }
+
     /** 操作人兜底中文化:六人小组计票留痕含英文结果(如「结果 PASS」),存量数据在此替换,新数据已在生成处改中文 */
     private static String operatorText(String v) {
         if (v == null) {
@@ -520,10 +563,10 @@ public final class ResolutionPdfExporter {
                     {"客户类型", "CORP".equals(pick(customer, "custType")) ? "对公" : "INDIV".equals(pick(customer, "custType")) ? "个人" : pick(customer, "custType")},
                     {"证件号码", pick(customer, "certNo")},
                     {"企业性质", customerTypeText(pick(customer, "entpCharic"))},
-                    {"企业规模", pick(customer, "entpScale")},
+                    {"企业规模", entpScaleText(pick(customer, "entpScale"))},
                     {"所属行业", pick(customer, "industry", "blgd_idsty")},
                     {"内部信用等级", pick(customer, "creditLevel")},
-                    {"五级分类", pick(customer, "fiveLevelClass")},
+                    {"五级分类", fiveLevelClassText(pick(customer, "fiveLevelClass"))},
                     {"员工人数", pick(customer, "empeNum")},
                     {"总资产(万元)", pick(customer, "totalAssets")},
                     {"注册资本(万元)", pick(customer, "registeredCapital")},
@@ -531,7 +574,7 @@ public final class ResolutionPdfExporter {
                     {"注册地址", pick(customer, "restAddr")},
                     {"职业", pick(customer, "occupation")},
                     {"年收入(万元)", pick(customer, "annualIncome")},
-                    {"婚姻状况", pick(customer, "maritalStatus")},
+                    {"婚姻状况", maritalStatusText(pick(customer, "maritalStatus"))},
                     {"联系电话", pick(customer, "phone")},
                     {"开户机构", pick(customer, "openOrgName")},
                     {"开户日期", pick(customer, "openDate")},
@@ -555,7 +598,7 @@ public final class ResolutionPdfExporter {
             itemFmt.put("product_code", ResolutionPdfExporter::productText);
             itemFmt.put("term_unit", ResolutionPdfExporter::termUnitText);
             itemFmt.put("currency", ResolutionPdfExporter::currencyText);
-            ctx.dataTable("定价分项", items, new String[][]{
+            ctx.dataTable("授信分项", items, new String[][]{
                     {"定价客户", "pricing_customer_no", "pricingCustomerNo"},
                     {"产品", "product_code", "productCode"},
                     {"授信协议编号", "agreement_no_display"},
