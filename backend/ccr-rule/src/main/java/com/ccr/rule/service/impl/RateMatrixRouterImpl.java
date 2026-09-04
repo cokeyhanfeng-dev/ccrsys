@@ -67,6 +67,10 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
     /** 秘书岗触发利率阈值(%):申请利率 <2.6% 才插入 */
     private static final BigDecimal SECRETARY_RATE_GATE = new BigDecimal("2.6");
 
+    /** 管理综合支行长节点(2026-09-04 综合/零售两级支行):零售支行申请必经——先零售支行长再综合支行长;
+     *  零售申请矩阵落支行行长(BRANCH_MANAGER)的终审上收至该节点(零售行长只初审/可否决) */
+    private static final String PARENT_BRANCH_MANAGER_NODE = "PARENT_BRANCH_MANAGER";
+
     /** 产品链路路由模式:直接上会(存款/保证金 D16b,必经支行行长后直接上会,不参与链式优先级) */
     private static final String DIRECT_VOTE = "DIRECT_VOTE";
 
@@ -138,8 +142,8 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
 
         // DIRECT_VOTE(§8A.5②/D16b):必经支行行长后直接进入六人小组(+行长决策),不参与链式优先级
         if (route != null && DIRECT_VOTE.equals(route.getRouteMode())) {
-            return buildVoteResult(matched, route, hardBoundary, isLoan,
-                    "产品链路 DIRECT_VOTE(直接上会):必经支行行长后进入六人小组表决(≥4票)");
+            return applyBranchTypeGate(buildVoteResult(matched, route, hardBoundary, isLoan,
+                    "产品链路 DIRECT_VOTE(直接上会):必经支行行长后进入六人小组表决(≥4票)"), input);
         }
 
         // 存款/保证金:无部门层级(D16b),阈值为上限语义——高于上限才上会小组;
@@ -149,16 +153,16 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal upper = calcBoundary(row, input, null);
             // 强制上会(§8A.5② mandatory_vote):与利率是否越界无关
             if (route != null && "Y".equals(route.getMandatoryVote())) {
-                return buildVoteResult(matched, route, hardBoundary, false,
-                        "产品链路强制上会:存款/保证金必经六人小组表决(≥4票)");
+                return applyBranchTypeGate(buildVoteResult(matched, route, hardBoundary, false,
+                        "产品链路强制上会:存款/保证金必经六人小组表决(≥4票)"), input);
             }
             if (rate != null && upper != null && rate.compareTo(upper) <= 0) {
-                return buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
-                        "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审");
+                return applyBranchTypeGate(buildResult(matched, row, FIRST_NODE, upper, hardBoundary, null,
+                        "申请利率" + rate + "% 未高于期限上限" + upper + "%,支行行长权限内终审"), input);
             }
-            return applyPresident(buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
+            return applyBranchTypeGate(applyPresident(buildResult(matched, row, GROUP_NODE, upper, hardBoundary, null,
                     upper == null ? "存款/保证金一律直接上会小组(D16b)"
-                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)"), route);
+                            : "申请利率" + rate + "% 高于期限上限" + upper + "%,提交小组表决(≥4票)"), route), input);
         }
 
         // 贷款:按优先级从低到高,首个满足 rate≥boundary 的节点终审,小组兜底;
@@ -175,15 +179,15 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
             BigDecimal boundary = calcBoundary(row, input, lprMap);
             if (boundary == null) {
                 // 无边界 = 权限内即终审(D3)
-                return applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
-                        "该岗位权限内即终审(D3)"), route, input, matched), input);
+                return applyBranchTypeGate(applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), null, hardBoundary, lpr,
+                        "该岗位权限内即终审(D3)"), route, input, matched), input), input);
             }
             if (rate != null && rate.compareTo(boundary) >= 0) {
                 String msg = FIRST_NODE.equals(row.getStartNodeCode())
                         ? "申请利率" + rate + "% ≥ 支行行长终审边界(部门总经理线)" + boundary + "%,支行行长终审"
                         : "申请利率" + rate + "% ≥ 岗位下限" + boundary + "%," + row.getStartNodeCode() + "终审";
-                return applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
-                        route, input, matched), input);
+                return applyBranchTypeGate(applySecretaryGate(applyProductRoute(buildResult(matched, row, row.getStartNodeCode(), boundary, hardBoundary, lpr, msg),
+                        route, input, matched), input), input);
             }
         }
         // 无岗位可终审 → 上会小组(≥4票);配置行长决策时必经总行行长(applyPresident)
@@ -193,7 +197,7 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
                 .map(r -> buildResult(matched, r, GROUP_NODE, calcBoundary(r, input, lprMap), hardBoundary, lpr,
                         "利率低于全部岗位下限,提交小组表决(≥4票)"))
                 .orElseThrow(() -> new ServiceException(ErrorCode.RULE_NO_MATCH.getCode(), "未配置上会兜底行"));
-        return applySecretaryGate(applyPresident(vote, route), input);
+        return applyBranchTypeGate(applySecretaryGate(applyPresident(vote, route), input), input);
     }
 
     // ---------- 私有 ----------
@@ -404,6 +408,36 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         }
         chain.add(insertAt, SECRETARY_NODE);
         result.setRouteChain(chain);
+        return result;
+    }
+
+    /**
+     * 综合/零售两级支行(2026-09-04):零售支行申请在支行行长(BRANCH_MANAGER)审批后插入
+     * 管理综合支行长(PARENT_BRANCH_MANAGER)节点——零售申请先零售支行行长,再到综合支行行长;
+     * 零售支行行长对权限内单不就地终审:矩阵落 BRANCH_MANAGER 终审的行,终审上收为 PARENT_BRANCH_MANAGER。
+     * 非零售申请(综合支行/总行/部门等直接挂总行)或链路已含 PARENT 时原样返回(幂等,可重复套用)。
+     * 作为最外层收口(在秘书岗/行长决策等条件节点之后),保证插入位置与终审上收基于最终链路判定。
+     */
+    private RouteResult applyBranchTypeGate(RouteResult result, MatrixRouteInput input) {
+        if (result == null || input == null || result.getRouteChain() == null || result.getRouteChain().isEmpty()) {
+            return result;
+        }
+        if (!Boolean.TRUE.equals(input.getRetailBranch())) {
+            return result;
+        }
+        List<String> chain = new ArrayList<>(result.getRouteChain());
+        int first = chain.indexOf(FIRST_NODE);
+        if (first < 0 || chain.contains(PARENT_BRANCH_MANAGER_NODE)) {
+            return result;
+        }
+        // 零售申请必经支行行长后插管理综合支行长节点
+        chain.add(first + 1, PARENT_BRANCH_MANAGER_NODE);
+        result.setRouteChain(chain);
+        if (FIRST_NODE.equals(result.getFinalNodeCode())) {
+            result.setFinalNodeCode(PARENT_BRANCH_MANAGER_NODE);
+            result.setMessage((result.getMessage() == null ? "" : result.getMessage())
+                    + ";零售申请:支行层终审上收综合支行行长");
+        }
         return result;
     }
 

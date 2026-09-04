@@ -436,7 +436,8 @@ function nodeClassOf(n: any): string {
 const FLOW_NODE_NAMES: Record<string, string> = {
   start: '开始', end: '结束',
   BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
-  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长'
+  VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长',
+  PARENT_BRANCH_MANAGER: '综合支行行长', SECRETARY: '贷审会秘书岗'
 }
 function nodeTextOf(n: any): string {
   return FLOW_NODE_NAMES[n.nodeCode] || n.nodeName || n.nodeCode

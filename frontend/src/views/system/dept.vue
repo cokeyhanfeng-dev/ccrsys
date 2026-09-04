@@ -38,6 +38,8 @@
             <span class="tree-node">
               <span class="tree-node__name">{{ data.deptName }}</span>
               <span class="tree-node__code">{{ data.orgCode }}</span>
+              <!-- 零售支行徽标(2026-09-04 综合/零售两级支行) -->
+              <span v-if="data.branchType === 'RETAIL'" class="badge badge--warning">零售支行</span>
               <span :class="data.status === 'ENABLE' ? 'badge badge--success' : 'badge badge--neutral'">
                 {{ data.status === 'ENABLE' ? '启用' : '停用' }}
               </span>
@@ -79,6 +81,13 @@
               <label class="form-field__label">机构类型</label>
               <select class="form-select" v-model="editForm.orgType">
                 <option v-for="t in orgTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
+            <!-- 支行性质(2026-09-04 综合/零售两级支行):仅支行类型可见;零售支行须挂综合支行下 -->
+            <div class="form-field" v-if="editForm.orgType === 'BRANCH'">
+              <label class="form-field__label">支行性质</label>
+              <select class="form-select" v-model="editForm.branchType">
+                <option v-for="t in branchTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
             </div>
             <div class="form-field">
@@ -138,6 +147,14 @@
               <option v-for="t in orgTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
             </select>
           </div>
+          <!-- 支行性质(2026-09-04 综合/零售两级支行):零售支行须挂在综合支行下创建 -->
+          <div class="form-field" v-if="createDialog.form.orgType === 'BRANCH'">
+            <label class="form-field__label">支行性质</label>
+            <select class="form-select" v-model="createDialog.form.branchType">
+              <option v-for="t in branchTypeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+            <div class="form-hint">选「零售支行」须在综合支行下新增子机构(上级为综合支行);创建后性质不可由普通支行改。</div>
+          </div>
           <div class="form-field">
             <label class="form-field__label">机构编码(org_code)</label>
             <input class="form-input" v-model="createDialog.form.orgCode" />
@@ -178,10 +195,19 @@ const orgTypeOptions = [
   { value: 'GROUP', label: '集团管理机构' }
 ]
 
+// 支行性质(2026-09-04 综合/零售两级支行):后端空/COMPREHENSIVE=综合,RETAIL=零售(须挂综合支行下)
+const branchTypeOptions = [
+  { value: 'COMPREHENSIVE', label: '综合支行' },
+  { value: 'RETAIL', label: '零售支行' }
+]
+
 const tree = ref<SysDept[]>([])
 const flatDepts = ref<SysDept[]>([])
 const current = ref<SysDept | null>(null)
-const editForm = reactive({ deptName: '', orgType: '', parentId: 0 as number, manager: '', sortNo: 1 as number })
+const editForm = reactive({
+  deptName: '', orgType: '', parentId: 0 as number, manager: '', sortNo: 1 as number,
+  branchType: 'COMPREHENSIVE' as string
+})
 // §UI审查:机构树关键字过滤
 const treeRef = ref<any>(null)
 const treeKeyword = ref('')
@@ -231,6 +257,10 @@ function onSelect(data: SysDept) {
   editForm.parentId = full.parentId ?? 0
   editForm.manager = full.manager || ''
   editForm.sortNo = full.sortNo ?? 1
+  // 支行性质:后端空/COMPREHENSIVE=综合;非支行类型不显示也不提交
+  editForm.branchType = full.orgType === 'BRANCH'
+    ? (full.branchType || 'COMPREHENSIVE')
+    : ''
 }
 
 async function saveEdit() {
@@ -244,7 +274,9 @@ async function saveEdit() {
     orgType: editForm.orgType,
     parentId: editForm.parentId,
     manager: editForm.manager,
-    sortNo: editForm.sortNo
+    sortNo: editForm.sortNo,
+    // 支行性质仅支行类型提交;非支行交由后端置空(RETAIL→COMPREHENSIVE 改性质前上级须已是综合支行,后端校验)
+    ...(editForm.orgType === 'BRANCH' ? { branchType: editForm.branchType || 'COMPREHENSIVE' } : {})
   })
   ElMessage.success('已保存')
   const keepId = current.value.id
@@ -293,11 +325,11 @@ async function handleDelete() {
 const createDialog = reactive({
   show: false,
   parent: null as SysDept | null,
-  form: { deptName: '', orgType: 'BRANCH', orgCode: '', manager: '', sortNo: 1 as number }
+  form: { deptName: '', orgType: 'BRANCH', orgCode: '', manager: '', sortNo: 1 as number, branchType: 'COMPREHENSIVE' as string }
 })
 function openCreate(parent: SysDept | null) {
   createDialog.parent = parent
-  createDialog.form = { deptName: '', orgType: 'BRANCH', orgCode: '', manager: '', sortNo: 1 }
+  createDialog.form = { deptName: '', orgType: 'BRANCH', orgCode: '', manager: '', sortNo: 1, branchType: 'COMPREHENSIVE' }
   createDialog.show = true
 }
 async function saveCreate() {
@@ -312,7 +344,9 @@ async function saveCreate() {
     orgType: f.orgType,
     orgCode: f.orgCode || undefined,
     manager: f.manager,
-    sortNo: f.sortNo
+    sortNo: f.sortNo,
+    // 支行性质仅支行类型提交;零售支行必须经「新增子机构」挂在综合支行下(后端校验上级)
+    ...(f.orgType === 'BRANCH' ? { branchType: f.branchType || 'COMPREHENSIVE' } : {})
   })
   createDialog.show = false
   ElMessage.success('机构已创建(默认停用,请在详情中手动启用)')

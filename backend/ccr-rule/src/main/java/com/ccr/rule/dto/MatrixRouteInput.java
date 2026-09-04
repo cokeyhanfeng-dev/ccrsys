@@ -59,4 +59,7 @@ public class MatrixRouteInput {
 
     /** 冻结的矩阵生效日期(§8.4;空=按当前时间取生效行) */
     private LocalDateTime asOfDate;
+
+    /** 申请机构是否为零售支行(2026-09-04 综合/零售两级支行:零售申请支行层过两关,终审上收综合支行长) */
+    private Boolean retailBranch;
 }

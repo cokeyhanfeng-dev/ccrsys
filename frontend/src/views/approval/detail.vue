@@ -1038,9 +1038,15 @@ const fold = ref({ credit: false, attach: false, otherLoan: false, related: true
 // 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
 
-const ROLE_NODE: Record<string, string> = {
-  branch_manager: 'BRANCH_MANAGER', dept_gm: 'DEPT_GENERAL_MANAGER', vice_president: 'VICE_PRESIDENT',
-  committee_member: 'SIX_PEOPLE_GROUP', secretary: 'SECRETARY'
+// 角色→当前可操作节点集合(2026-09-04 综合/零售两级支行:
+// branch_manager 兼 BRANCH_MANAGER(本支行)与 PARENT_BRANCH_MANAGER(管理综合支行长批零售子行单),
+// 越权由后端 guardNodeAssignee 按申请人机构解析名单权威拦截,前端仅乐观展示)
+const ROLE_NODES: Record<string, string[]> = {
+  branch_manager: ['BRANCH_MANAGER', 'PARENT_BRANCH_MANAGER'],
+  dept_gm: ['DEPT_GENERAL_MANAGER'],
+  vice_president: ['VICE_PRESIDENT'],
+  committee_member: ['SIX_PEOPLE_GROUP'],
+  secretary: ['SECRETARY']
 }
 
 // 整单当前节点:优先申请单(application.current_node_code,后端 detail 已整单化),回退锚定分项
@@ -1135,7 +1141,7 @@ const actionable = computed(() => {
     return flowStatus.value?.currentStatus === 'ROUTING'
   }
   const role = roles[0] || ''
-  if (ROLE_NODE[role] !== node) return false
+  if (!(ROLE_NODES[role] || []).includes(node)) return false
   return flowStatus.value?.currentStatus === 'ROUTING'
 })
 
@@ -1203,9 +1209,6 @@ function isAnchorItem(it: any): boolean {
   return anchorItem.value != null && String(anchorItem.value.id) === String(it.id)
 }
 
-// 登录人当前角色节点
-const currentRoleNode = computed(() => ROLE_NODE[userStore.userInfo?.roles?.[0] || ''])
-
 // 表决统计可见性(§12.7/T4-02/T4-10):表决计票/轮次/行长决策仅行长·审计·超管可见,委员与审批人隐藏
 const canViewVote = computed(() => ['admin', 'auditor', 'president'].includes(userStore.userInfo?.roles?.[0] || ''))
 
@@ -1221,7 +1224,9 @@ function canOperate(it: any): boolean {
     // 未命中分项仅过手,不显示审批动作(2026-08-28 用户拍板)
     return it.status === 'ROUTING' && String(it.routeChain || '').includes('SECRETARY')
   }
-  return it.status === 'ROUTING' && !!it.currentNodeCode && currentRoleNode.value === it.currentNodeCode
+  const role = userStore.userInfo?.roles?.[0] || ''
+  return it.status === 'ROUTING' && !!it.currentNodeCode
+    && (ROLE_NODES[role] || []).includes(it.currentNodeCode)
 }
 
 // 审批中客户号回填权限(2026-08-20 #017):申请内存在占位客户号/占位成员

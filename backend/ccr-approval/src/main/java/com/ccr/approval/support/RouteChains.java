@@ -15,6 +15,8 @@ public final class RouteChains {
     public static final String DEPT_GENERAL_MANAGER = "DEPT_GENERAL_MANAGER";
     public static final String VICE_PRESIDENT = "VICE_PRESIDENT";
     public static final String SIX_PEOPLE_GROUP = "SIX_PEOPLE_GROUP";
+    /** 管理综合支行长节点(2026-09-04 综合/零售两级支行):零售申请先零售支行长后综合支行长,支行层终审上收于此 */
+    public static final String PARENT_BRANCH_MANAGER = "PARENT_BRANCH_MANAGER";
 
     private static final List<String> LOAN_CHAIN =
             List.of(BRANCH_MANAGER, DEPT_GENERAL_MANAGER, VICE_PRESIDENT, SIX_PEOPLE_GROUP);

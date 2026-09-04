@@ -45,6 +45,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
 import com.ccr.application.support.CustomerNoUtil;
+import com.ccr.common.core.util.BranchTypeSupport;
 import com.ccr.common.core.util.WarehouseCustomerSync;
 import com.ccr.common.cache.CcrCacheUtil;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
@@ -1623,6 +1624,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         input.setOriginalRate(item.getOriginalRate());
         input.setLprVersionId(app.getLprVersionId());
         input.setAsOfDate(app.getRouteAsOfDate());
+        // 2026-09-04 综合/零售两级支行:申请机构为零售支行时链上插管理综合支行长节点、支行层终审上收
+        input.setRetailBranch(BranchTypeSupport.isRetailBranch(jdbcTemplate, app.getApplicantOrgId()));
         return input;
     }
 

@@ -3,6 +3,7 @@ package com.ccr.common.core.assignee;
 import jakarta.annotation.Resource;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import com.ccr.common.core.util.BranchTypeSupport;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import org.springframework.dao.DataAccessException;
@@ -52,6 +53,9 @@ public class NodeAssigneeResolver {
     /** 秘书岗节点编码(需求四:贷审会秘书,2026-08-14 改由计划财务部总经理兼任;固定机构+角色解析,与分项部门归属无关) */
     private static final String SECRETARY_NODE = "SECRETARY";
 
+    /** 管理综合支行长节点编码(2026-09-04 综合/零售两级支行:按申请人机构组织树确定性解析,不依赖指派配置) */
+    private static final String PARENT_BRANCH_MANAGER_NODE = "PARENT_BRANCH_MANAGER";
+
     private static final List<String> LAYER_ORDER = List.of("PERSON", "GROUP", "DEPT", "ROLE");
 
     @Resource
@@ -78,6 +82,11 @@ public class NodeAssigneeResolver {
      */
     public ResolveResult resolve(String nodeCode, Long orgId, String flowKey, String deptCode) {
         try {
+            // §2026-09-04 综合/零售两级支行:管理综合支行长按申请人机构组织树确定性解析(先于指派配置——
+            // 不新增 ccr_node_assignee 配置行,语义=零售支行 parent_id 的管理综合支行 branch_manager 用户)
+            if (PARENT_BRANCH_MANAGER_NODE.equals(nodeCode)) {
+                return resolveParentBranchManager(orgId);
+            }
             // §D16a 分管行领导:分项 dept_code 已冻结时按部门-分管行长映射解析(一人可分管多部门,纯配置)
             if (VICE_PRESIDENT_NODE.equals(nodeCode) && deptCode != null && !deptCode.isBlank()) {
                 List<AssigneeUser> vp = findDeptVpUsers(deptCode);
@@ -106,6 +115,21 @@ public class NodeAssigneeResolver {
             log.error("节点审批人配置解析失败,拒绝按角色兜底: nodeCode={}, 原因={}", nodeCode, e.getMessage());
             return ResolveResult.failed(nodeCode);
         }
+    }
+
+    /**
+     * 管理综合支行长解析(2026-09-04):申请人机构须为零售支行(BRANCH+RETAIL),沿 parent_id 取管理综合支行
+     * (create 校验保证管理行为非零售 BRANCH),解析该综合支行下 branch_manager 角色启用用户;
+     * orgId 空 / 非零售支行 / 管理行非 BRANCH / 无启用行长 → 返回空(调用方 guardNodeAssignee 拒绝角色兜底,防越权)。
+     */
+    private ResolveResult resolveParentBranchManager(Long orgId) {
+        String parentOrgCode = BranchTypeSupport.managingComprehensiveBranchCode(jdbcTemplate, orgId);
+        if (parentOrgCode == null) {
+            return ResolveResult.empty(PARENT_BRANCH_MANAGER_NODE);
+        }
+        List<AssigneeUser> users = findEnabledUsersByRoleAndDept(BRANCH_MANAGER_ROLE, parentOrgCode);
+        return users.isEmpty() ? ResolveResult.empty(PARENT_BRANCH_MANAGER_NODE)
+                : new ResolveResult(PARENT_BRANCH_MANAGER_NODE, "DEPT", users);
     }
 
     /** 解析节点处理人用户id列表(空=不限制) */

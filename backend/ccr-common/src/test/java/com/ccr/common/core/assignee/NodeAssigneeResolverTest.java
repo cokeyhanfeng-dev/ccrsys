@@ -184,4 +184,42 @@ class NodeAssigneeResolverTest {
         assertEquals("ROLE", result.getHitLevel());
         assertEquals(List.of(1001L), result.userIds());
     }
+
+    // ---------- §2026-09-04 综合/零售两级支行:PARENT_BRANCH_MANAGER 沿组织树解析管理综合支行长 ----------
+
+    @Test
+    void resolve_parentNode_retailBranch_returnsManagingComprehensiveBranchManager() {
+        // 申请人机构=零售支行(2001):managingComprehensiveBranchCode 沿 parent_id 返回管理综合支行 org_code
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
+                .thenReturn(List.of("3202233050"));
+        NodeAssigneeResolver.AssigneeUser parentManager = user(1026L, "zhangwm", "张文伟");
+        stubUserQueries(Map.of(), Map.of(), List.of(parentManager));
+
+        NodeAssigneeResolver.ResolveResult result = resolver.resolve("PARENT_BRANCH_MANAGER", 2001L);
+        // 命中层级=DEPT(与 BRANCH_MANAGER 按申请人机构解析同层),处理人=管理综合支行 branch_manager
+        assertEquals("DEPT", result.getHitLevel());
+        assertEquals(List.of(1026L), result.userIds());
+    }
+
+    @Test
+    void resolve_parentNode_nonRetailBranch_returnsEmpty() {
+        // 申请人机构非零售支行(综合支行/部门/总行):SQL 按 branch_type='RETAIL' 过滤不命中 → 空
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class))).thenReturn(List.of());
+
+        NodeAssigneeResolver.ResolveResult result = resolver.resolve("PARENT_BRANCH_MANAGER", 2001L);
+        assertEquals(NodeAssigneeResolver.LEVEL_NONE, result.getHitLevel());
+        assertTrue(result.getUsers().isEmpty());
+    }
+
+    @Test
+    void resolve_parentNode_retailButNoEnabledManager_returnsEmpty() {
+        // 零售支行存在管理综合支行,但该行无启用 branch_manager 用户 → 空(调用方 guardNodeAssignee 拒绝,防越权)
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(Object.class)))
+                .thenReturn(List.of("3202233050"));
+        stubUserQueries(Map.of(), Map.of(), List.of());
+
+        NodeAssigneeResolver.ResolveResult result = resolver.resolve("PARENT_BRANCH_MANAGER", 2001L);
+        assertEquals(NodeAssigneeResolver.LEVEL_NONE, result.getHitLevel());
+        assertTrue(result.getUsers().isEmpty());
+    }
 }

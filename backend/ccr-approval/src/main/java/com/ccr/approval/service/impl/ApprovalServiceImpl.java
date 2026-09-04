@@ -33,6 +33,7 @@ import com.ccr.approval.mapper.DwLoanNoteReadMapper;
 import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.RouteChains;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
+import com.ccr.common.core.util.BranchTypeSupport;
 import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.core.util.OrgAchievementAssembler;
 import com.ccr.common.core.util.RelatedCustomerResolver;
@@ -172,6 +173,20 @@ public class ApprovalServiceImpl implements ApprovalService {
                                 .orderByAsc(CcrPricingItem::getCreateTime)),
                         "SECRETARY", user.getId()));
             }
+            // 管理综合支行长 PARENT 待办(2026-09-04 综合/零售两级支行):零售支行申请先零售支行长再
+            // 综合支行长——本机构直接下级零售支行在 PARENT_BRANCH_MANAGER 节点的 ROUTING 待办由
+            // 管理综合支行长处理。按申请人机构=本机构直接下级零售支行收口,非管理行(空下级)不查不泄;
+            // PARENT 审批人=管理综合支行 branch_manager(guardNodeAssignee 指派收口),无需再按指派过滤
+            List<Long> retailChildIds = BranchTypeSupport.directRetailChildIds(jdbcTemplate, user.getOrgId());
+            if (!retailChildIds.isEmpty()) {
+                merged.addAll(pricingItemMapper.selectList(new LambdaQueryWrapper<CcrPricingItem>()
+                        .eq(CcrPricingItem::getStatus, PricingItemStatus.ROUTING.getCode())
+                        .eq(CcrPricingItem::getCurrentNodeCode, RouteChains.PARENT_BRANCH_MANAGER)
+                        .inSql(CcrPricingItem::getApplicationId,
+                                "SELECT id FROM ccr_application WHERE del_flag = '0' AND applicant_org_id IN ("
+                                        + retailChildIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")")
+                        .orderByAsc(CcrPricingItem::getCreateTime)));
+            }
             result = merged;
         }
         // 待办卡片客户显示名(§2026-09-01):工作台「待审批」卡片主标题显示客户名称而非客户号,按申请批量反查快照
@@ -253,12 +268,15 @@ public class ApprovalServiceImpl implements ApprovalService {
                         : (legacyAnchor != null ? legacyAnchor.getDeptCode() : null));
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
-        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行行长节点动作
-        if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
+        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行节点动作(零售申请含管理综合支行长 PARENT,2026-09-04)
+        if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)
+                && !RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款申请仅支行行长过手,此后上会小组表决");
         }
-        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
-        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
+        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径);
+        // PARENT 节点(管理综合支行长审零售子行)不做 apply_branch_code 前缀匹配——越权由 guardNodeAssignee 指派收口
+        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())
+                && !RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
             String branchPrefix = branchCodeOf(operator.getOrgId());
             if (branchPrefix != null) {
                 List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
@@ -349,7 +367,14 @@ public class ApprovalServiceImpl implements ApprovalService {
         boolean isFinalNode;
         String next;
         if (deposit) {
-            next = RouteChains.SIX_PEOPLE_GROUP;
+            // 零售存款(2026-09-04):链含 PARENT 时零售支行长过手后先到管理综合支行长,再过手上会小组
+            if (RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
+                next = RouteChains.SIX_PEOPLE_GROUP;
+            } else if (RouteChains.BRANCH_MANAGER.equals(nodeCode) && chain.contains(RouteChains.PARENT_BRANCH_MANAGER)) {
+                next = RouteChains.PARENT_BRANCH_MANAGER;
+            } else {
+                next = RouteChains.SIX_PEOPLE_GROUP;
+            }
             isFinalNode = false;
         } else {
             next = RouteChains.nextNode(nodeCode, chain);
@@ -434,12 +459,15 @@ public class ApprovalServiceImpl implements ApprovalService {
                         : (legacyAnchor != null ? legacyAnchor.getDeptCode() : null));
         String businessType = application.getBusinessType();
         boolean deposit = "DEPOSIT".equals(businessType);
-        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行行长节点动作
-        if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)) {
+        // 存款双轨消除:普通审批链对 DEPOSIT 申请只允许支行节点动作(零售申请含管理综合支行长 PARENT,2026-09-04)
+        if (deposit && !RouteChains.BRANCH_MANAGER.equals(nodeCode)
+                && !RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
             throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "存款申请仅支行行长过手");
         }
-        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径)
-        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())) {
+        // 支行行长(含网点)只能审批本支行及下辖网点客户经理的申请(§5.4,与待办过滤同口径);
+        // PARENT 节点(管理综合支行长审零售子行)不做 apply_branch_code 前缀匹配——越权由 guardNodeAssignee 指派收口
+        if (CurrentLoginUser.ROLE_BRANCH_MANAGER.equals(operator.getRoleCode())
+                && !RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
             String branchPrefix = branchCodeOf(operator.getOrgId());
             if (branchPrefix != null) {
                 List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
@@ -2110,6 +2138,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         input.setOriginalRate(item.getOriginalRate());
         input.setLprVersionId(app.getLprVersionId());
         input.setAsOfDate(app.getRouteAsOfDate());
+        // 2026-09-04 综合/零售两级支行:零售申请调价重算同样插管理综合支行长节点、支行层终审上收
+        input.setRetailBranch(BranchTypeSupport.isRetailBranch(jdbcTemplate, app.getApplicantOrgId()));
         try {
             return rateMatrixRouter.calcRoute(input);
         } catch (ServiceException e) {
