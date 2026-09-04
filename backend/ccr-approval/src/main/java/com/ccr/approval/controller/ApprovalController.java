@@ -1026,18 +1026,19 @@ public class ApprovalController {
         return info;
     }
 
-    /** 机构达成(§12.16):申请机构 → ccr_sys_dept.org_code → 本系统实时组装(增量021 B方案,废弃数仓 dw_org_performance_snapshot) */
+    /** 机构达成(§12.16,2026-09-04 两版承诺计划合并改造):申请机构 id(v2 track.org_id 同域)→ OrgAchievementAssembler
+     *  按 ccr_commitment_track 到期终态聚合达成率(废弃旧表金额口径) */
     private List<Map<String, Object>> orgPerformance(Long appId) {
         if (appId == null) {
             return List.of();
         }
-        List<Map<String, Object>> orgCodes = jdbcTemplate.queryForList(
-                "SELECT d.org_code orgCode FROM ccr_application a JOIN ccr_sys_dept d ON d.id = a.applicant_org_id"
-                        + " WHERE a.id = ? AND d.del_flag = '0'", appId);
-        if (orgCodes.isEmpty() || orgCodes.get(0).get("orgCode") == null) {
+        List<Map<String, Object>> orgIds = jdbcTemplate.queryForList(
+                "SELECT a.applicant_org_id orgId FROM ccr_application a WHERE a.id = ? AND a.del_flag = '0'", appId);
+        if (orgIds.isEmpty() || orgIds.get(0).get("orgId") == null) {
             return List.of();
         }
-        return OrgAchievementAssembler.assemble(jdbcTemplate, orgCodes.get(0).get("orgCode").toString());
+        Long orgId = ((Number) orgIds.get(0).get("orgId")).longValue();
+        return OrgAchievementAssembler.assemble(jdbcTemplate, orgId);
     }
 
     /** 解析快照 core_json(JSON 列查询结果为字符串) */

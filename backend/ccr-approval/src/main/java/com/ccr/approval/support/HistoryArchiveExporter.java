@@ -10,6 +10,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -238,16 +240,22 @@ public final class HistoryArchiveExporter {
                     new Col("大小(字节)", "fileSize"),
                     new Col("上传时间", "createTime")));
 
-            // 机构达成(§2026-08-26 存款档案已置空 orgPerformance,贷款无数据亦不写空表)
+            // 机构达成(2026-09-04 两版承诺计划合并改造:切 v2 ccr_commitment_track 到期终态聚合,
+            // 只导出 到期承诺项数/已达成项数/达成率;存款档案 orgPerformance 已置空,无数据不写空表)
             List<Map<String, Object>> orgPerformance = (List<Map<String, Object>>) archive.get("orgPerformance");
             if (orgPerformance != null && !orgPerformance.isEmpty()) {
+                for (Map<String, Object> row : orgPerformance) {
+                    Object rate = row.get("completionRate");
+                    if (rate instanceof BigDecimal bd && !row.containsKey("completionRatePct")) {
+                        row.put("completionRatePct", bd.multiply(BigDecimal.valueOf(100))
+                                .setScale(2, RoundingMode.HALF_UP));
+                    }
+                }
                 writeTable(wb, "机构达成", watermark, orgPerformance, List.of(
                         new Col("机构", "orgName", "orgCode"),
-                        new Col("统计月份", "statMonth"),
-                        new Col("达成金额(万元)", "achievedAmount"),
-                        new Col("目标金额(万元)", "expectedAmount"),
-                        new Col("达成率", "completionRate"),
-                        new Col("数据日期", "dataDt")));
+                        new Col("到期承诺(项)", "finishedTotal"),
+                        new Col("已达成(项)", "metCount"),
+                        new Col("达成率(%)", "completionRatePct")));
             }
 
             writeTable(wb, "集团授信", watermark, (List<Map<String, Object>>) archive.get("groupCredit"), List.of(

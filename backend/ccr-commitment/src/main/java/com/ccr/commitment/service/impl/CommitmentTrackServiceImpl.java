@@ -46,6 +46,11 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
     private static final String STATUS_UNMET = "FINISHED_UNMET";
     /** 惰性结算单批上限(超出留到下次读触发,保证大库不一次拉爆) */
     private static final int SETTLE_BATCH = 200;
+    /** 比例型指标码(2026-09-04 RATIO 按码兜底):数仓 dw_contribution_metric.value_type 无 RATIO 槽位
+     *  (仅 AVG_BALANCE/INCOME/CONTRIBUTION_AMOUNT),存贷比行被推送为 CONTRIBUTION_AMOUNT 且 metric_value
+     *  是百分比量级(65=65%),非折算金额;fetchLatest 显式按码识别,不做行优先/不做求和。
+     *  前端 dict.ts RATIO_METRIC_CODES 同源。 */
+    private static final Set<String> RATIO_METRIC_CODES = Set.of("PUBLIC_DEPOSIT_LOAN_RATIO");
 
     @Resource
     private CommitmentTrackMapper trackMapper;
@@ -146,6 +151,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
             met = false;
             remark = "数仓无数据";
         } else {
+            // actual >= target 判定对 RATIO 比例型同样成立(2026-09-04):存贷比数值越大=存款占比越高,越高越好型;
+            // 比例型当前无方向元数据,均为越高越好——未来若出现越低越好型指标需在此扩展方向判定
             met = data.actual().compareTo(t.getTargetValue()) >= 0;
         }
         BigDecimal ratio = data.actual() == null || t.getTargetValue() == null
@@ -307,7 +314,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
     }
 
     /**
-     * 数仓取数:<= upTo(可空=最新)最近批次,CONTRIBUTION_AMOUNT 行优先,无则最新批次全行合计。
+     * 数仓取数:<= upTo(可空=最新)最近批次。金额型(缺省):CONTRIBUTION_AMOUNT 行优先,无则最新批次全行合计;
+     * 比例型(RATIO_METRIC_CODES 显式按码)走 {@link #fetchRatioValue}——不做行优先、不做求和(相对量不可相加)。
      * 成员承诺取成员客户号,否则主客户号。
      */
     private WarehouseData fetchLatest(String customerNo, String memberCustomerNo, String metricCode, LocalDate upTo) {
@@ -331,6 +339,9 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
                 batch.add(r);
             }
         }
+        if (RATIO_METRIC_CODES.contains(metricCode)) {
+            return fetchRatioValue(batch, latestDt);
+        }
         List<DwContributionMetric> contribution = batch.stream()
                 .filter(r -> VALUE_TYPE_CONTRIBUTION.equals(r.getValueType())).toList();
         List<DwContributionMetric> effective = contribution.isEmpty() ? batch : contribution;
@@ -338,6 +349,25 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
                 .map(r -> r.getMetricValue() == null ? BigDecimal.ZERO : r.getMetricValue())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new WarehouseData(total, latestDt);
+    }
+
+    /**
+     * 比例型取数(2026-09-04 RATIO 按码兜底):最新批次内唯一行的 metric_value 即实际值(比例不可相加、不做合计)。
+     * 批次内多行属理论异常(数仓应仅推 1 行比例值):优先非 CONTRIBUTION_AMOUNT 行(排除误标金额行),
+     * 无则取首行,并 log.warn 防静默错。
+     */
+    private WarehouseData fetchRatioValue(List<DwContributionMetric> batch, LocalDate latestDt) {
+        if (batch.size() == 1) {
+            return new WarehouseData(batch.get(0).getMetricValue(), latestDt);
+        }
+        List<DwContributionMetric> nonContribution = batch.stream()
+                .filter(r -> !VALUE_TYPE_CONTRIBUTION.equals(r.getValueType())).toList();
+        List<DwContributionMetric> pick = nonContribution.isEmpty() ? batch : nonContribution;
+        if (pick.size() > 1) {
+            log.warn("比例型指标 {} 最新批次 {} 存在 {} 行取值,取首行(数仓应仅推 1 行比例值)",
+                    pick.get(0).getMetricCode(), latestDt, pick.size());
+        }
+        return new WarehouseData(pick.get(0).getMetricValue(), latestDt);
     }
 
     /**

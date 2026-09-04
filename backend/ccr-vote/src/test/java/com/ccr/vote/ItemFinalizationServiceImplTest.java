@@ -313,6 +313,31 @@ class ItemFinalizationServiceImplTest {
     }
 
     @Test
+    void processCommitmentCreate_ratioRow_createsRatioTrack() {
+        // RATIO 型承诺(存贷比,2026-09-04 按码兜底):target_type=RATIO → target_kind=RATIO,unit 直取行字段(%)
+        ApplicationCommitmentRead ratioRow = commitmentRow();
+        ratioRow.setTargetType("RATIO");
+        ratioRow.setMetricCode("PUBLIC_DEPOSIT_LOAN_RATIO");
+        ratioRow.setTargetValue(new BigDecimal("65"));
+        ratioRow.setUnit("%");
+        Map<String, Object> payload = Map.of("applicationId", 30L, "resolutionId", 500L);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(resolutionMapper.selectById(500L)).thenReturn(resolution);
+        when(commitmentTrackMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(commitmentReadMapper.selectList(any(Wrapper.class))).thenReturn(List.of(ratioRow));
+
+        finalizationService.processCommitmentCreate(payload);
+
+        verify(commitmentTrackService).createTracks(argThat(tracks -> tracks.size() == 1
+                && "RATIO".equals(tracks.get(0).getTargetKind())
+                && "PUBLIC_DEPOSIT_LOAN_RATIO".equals(tracks.get(0).getMetricCode())
+                && new BigDecimal("65").compareTo(tracks.get(0).getTargetValue()) == 0
+                && "%".equals(tracks.get(0).getUnit())
+                && Long.valueOf(1001L).equals(tracks.get(0).getManagerId())
+                && "TRACKING".equals(tracks.get(0).getStatus())));
+    }
+
+    @Test
     void processCommitmentCreate_memberRow_carriesMemberNo() {
         ApplicationCommitmentRead memberRow = commitmentRow();
         memberRow.setMetricScope("GROUP_MEMBER");
