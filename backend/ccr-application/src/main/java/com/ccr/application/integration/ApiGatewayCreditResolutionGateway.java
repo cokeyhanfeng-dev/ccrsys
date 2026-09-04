@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** 通过 API 网关登录并访问 Mini-App-Plus 授信决议接口。 */
 @Slf4j
@@ -38,7 +39,7 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final Object tokenLock = new Object();
-    private volatile TokenState tokenState;
+    private final Map<String, TokenState> tokenStates = new ConcurrentHashMap<>();
 
     public ApiGatewayCreditResolutionGateway(CreditResolutionProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
@@ -55,13 +56,14 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
     }
 
     @Override
-    public Optional<ExternalCreditResolution> latest(Integer customerType, String customerId) {
+    public Optional<ExternalCreditResolution> latest(String performanceCode, Integer customerType, String customerId) {
         requireConfigured();
+        String operator = requirePerformanceCode(performanceCode);
         URI uri = UriComponentsBuilder.fromUriString(join(properties.getBaseUrl(), properties.getLatestPath()))
                 .queryParam("customerType", customerType)
                 .queryParam("customerId", customerId)
                 .build().encode().toUri();
-        JsonNode data = callProtectedJson(uri, "GET", null, "查询授信决议");
+        JsonNode data = callProtectedJson(uri, "GET", null, operator, "查询授信决议");
         if (data == null || data.isNull() || (data.isArray() && data.isEmpty())) {
             return Optional.empty();
         }
@@ -83,8 +85,9 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
     }
 
     @Override
-    public DownloadedResolutionFile download(String resolutionId, ExternalResolutionFile file) {
+    public DownloadedResolutionFile download(String performanceCode, String resolutionId, ExternalResolutionFile file) {
         requireConfigured();
+        String operator = requirePerformanceCode(performanceCode);
         if (file == null || !StringUtils.hasText(file.getFileId())) {
             throw new ServiceException(502, "授信决议文件标识缺失");
         }
@@ -98,7 +101,7 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
             throw new ServiceException(500, "授信决议文件兑换请求构造失败");
         }
         JsonNode exchange = callProtectedJson(URI.create(join(properties.getBaseUrl(), properties.getExchangePath())),
-                "POST", body, "兑换授信决议文件地址");
+                "POST", body, operator, "兑换授信决议文件地址");
         String downloadUrl = text(exchange, "downloadUrl");
         if (!StringUtils.hasText(downloadUrl)) {
             downloadUrl = text(exchange, "url");
@@ -147,12 +150,12 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
         }
     }
 
-    private JsonNode callProtectedJson(URI uri, String method, String body, String operation) {
+    private JsonNode callProtectedJson(URI uri, String method, String body, String performanceCode, String operation) {
         for (int attempt = 0; attempt < 2; attempt++) {
-            String token = accessToken();
+            String token = accessToken(performanceCode);
             GatewayResponse response = send(buildProtectedRequest(uri, method, body, token), operation);
             if (response.unauthorized()) {
-                invalidateToken(token);
+                invalidateToken(performanceCode, token);
                 if (attempt == 0) {
                     continue;
                 }
@@ -173,28 +176,35 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
         return builder.GET().build();
     }
 
-    private String accessToken() {
-        TokenState current = tokenState;
+    private String accessToken(String performanceCode) {
+        TokenState current = tokenStates.get(performanceCode);
         Instant refreshAt = Instant.now().plusSeconds(properties.getTokenRefreshSkewSeconds());
         if (current != null && current.expiresAt().isAfter(refreshAt)) {
             return current.value();
         }
         synchronized (tokenLock) {
-            current = tokenState;
+            current = tokenStates.get(performanceCode);
             refreshAt = Instant.now().plusSeconds(properties.getTokenRefreshSkewSeconds());
             if (current != null && current.expiresAt().isAfter(refreshAt)) {
                 return current.value();
             }
-            tokenState = login();
-            return tokenState.value();
+            TokenState loggedIn = login(performanceCode);
+            tokenStates.put(performanceCode, loggedIn);
+            return loggedIn.value();
         }
     }
 
-    private TokenState login() {
+    private TokenState login(String performanceCode) {
         URI uri = URI.create(join(properties.getBaseUrl(), properties.getTokenPath()));
+        String body;
+        try {
+            body = objectMapper.writeValueAsString(Map.of("performanceCode", performanceCode));
+        } catch (Exception e) {
+            throw new ServiceException(500, "API 网关登录请求构造失败");
+        }
         HttpRequest request = gatewayRequestBuilder(uri)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         GatewayResponse response = send(request, "获取 API 网关令牌");
         JsonNode data = successData(response, "获取 API 网关令牌");
@@ -254,12 +264,20 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
         return root.has("data") ? root.get("data") : root;
     }
 
-    private void invalidateToken(String usedToken) {
+    private void invalidateToken(String performanceCode, String usedToken) {
         synchronized (tokenLock) {
-            if (tokenState != null && tokenState.value().equals(usedToken)) {
-                tokenState = null;
+            TokenState current = tokenStates.get(performanceCode);
+            if (current != null && current.value().equals(usedToken)) {
+                tokenStates.remove(performanceCode);
             }
         }
+    }
+
+    private String requirePerformanceCode(String performanceCode) {
+        if (!StringUtils.hasText(performanceCode)) {
+            throw new ServiceException(401, "当前登录人绩效码不能为空");
+        }
+        return performanceCode.trim();
     }
 
     private void validateDownloadUri(URI uri) {

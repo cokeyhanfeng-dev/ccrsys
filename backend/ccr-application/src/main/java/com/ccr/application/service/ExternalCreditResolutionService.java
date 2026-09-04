@@ -12,6 +12,8 @@ import com.ccr.application.integration.ExternalCreditResolution;
 import com.ccr.application.integration.ExternalResolutionFile;
 import com.ccr.application.mapper.CcrApplicationAttachmentMapper;
 import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.read.SysUserRead;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class ExternalCreditResolutionService {
     private final CreditResolutionGateway gateway;
     private final CreditResolutionProperties properties;
     private final ApplicationAccessService applicationAccessService;
+    private final AppLoginUser appLoginUser;
     private final CcrApplicationMapper applicationMapper;
     private final CcrApplicationAttachmentMapper attachmentMapper;
     private final TransactionTemplate transactionTemplate;
@@ -43,8 +46,9 @@ public class ExternalCreditResolutionService {
         if (!gateway.isEnabled()) {
             return new CreditResolutionLookupResponse(false, false, "授信决议集成功能未配置", null);
         }
+        String performanceCode = currentPerformanceCode();
         Subject subject = subject(customerScope, customerNo, groupNo);
-        Optional<ExternalCreditResolution> latest = gateway.latest(subject.customerType(), subject.customerId());
+        Optional<ExternalCreditResolution> latest = gateway.latest(performanceCode, subject.customerType(), subject.customerId());
         return latest
                 .map(resolution -> new CreditResolutionLookupResponse(true, true, "已查询到最新有效授信决议", resolution))
                 .orElseGet(() -> new CreditResolutionLookupResponse(true, false, "未查询到有效授信决议", null));
@@ -55,12 +59,13 @@ public class ExternalCreditResolutionService {
         if (!gateway.isEnabled()) {
             throw new ServiceException(503, "授信决议集成功能未配置");
         }
+        String performanceCode = currentPerformanceCode();
         CcrApplication application = applicationMapper.selectById(applicationId);
         if (application == null || "1".equals(application.getDelFlag())) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在");
         }
         Subject subject = subject(application.getCustomerScope(), application.getCustomerNo(), application.getGroupNo());
-        ExternalCreditResolution resolution = gateway.latest(subject.customerType(), subject.customerId())
+        ExternalCreditResolution resolution = gateway.latest(performanceCode, subject.customerType(), subject.customerId())
                 .orElseThrow(() -> new ServiceException(404, "未查询到有效授信决议"));
         List<ExternalResolutionFile> files = resolution.getFiles() == null ? List.of() : resolution.getFiles();
         if (files.size() > properties.getMaxFilesPerResolution()) {
@@ -83,7 +88,7 @@ public class ExternalCreditResolutionService {
         List<DownloadedResolutionFile> downloaded = new ArrayList<>();
         long totalSize = 0L;
         for (ExternalResolutionFile file : pending) {
-            DownloadedResolutionFile data = gateway.download(resolution.getResolutionId(), file);
+            DownloadedResolutionFile data = gateway.download(performanceCode, resolution.getResolutionId(), file);
             totalSize += data.content().length;
             if (totalSize > properties.getMaxTotalSizeBytes()) {
                 throw new ServiceException(400, "单份授信决议附件总大小不能超过 30MB");
@@ -149,6 +154,14 @@ public class ExternalCreditResolutionService {
             throw new ServiceException(400, "客户编号不能为空");
         }
         return new Subject("INDIVIDUAL".equals(customerScope) ? 1 : 2, customerNo.trim());
+    }
+
+    private String currentPerformanceCode() {
+        SysUserRead user = appLoginUser.requireCurrentUser();
+        if (user == null || !StringUtils.hasText(user.getUsername())) {
+            throw new ServiceException(ErrorCode.UNAUTHORIZED.getCode(), "当前登录人绩效码不能为空");
+        }
+        return user.getUsername().trim();
     }
 
     private static String limit(String value, int maxLength) {
