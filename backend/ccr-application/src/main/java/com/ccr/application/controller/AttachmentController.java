@@ -58,6 +58,7 @@ public class AttachmentController {
             att.setFileType(file.getContentType() != null && file.getContentType().length() > 128
                     ? file.getContentType().substring(0, 128) : file.getContentType());
             att.setContent(file.getBytes());
+            att.setSourceType("MANUAL");
             attachmentMapper.insert(att);
             return R.ok(Map.of("id", att.getId(), "fileName", att.getFileName(), "fileSize", att.getFileSize()));
         } catch (ServiceException e) {

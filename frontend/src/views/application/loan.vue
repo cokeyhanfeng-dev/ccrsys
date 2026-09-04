@@ -493,6 +493,25 @@
         </div>
       </div>
 
+      <div class="external-resolution-card" :class="{ 'external-resolution-card--empty': !externalResolutionLookup?.found }">
+        <div class="external-resolution-card__head">
+          <div>
+            <div class="external-resolution-card__title">客户最新授信决议</div>
+            <div class="form-hint">按{{ isGroup ? '集团编号' : '客户编号' }}查询最新有效决议，提交材料时自动带入决议附件</div>
+          </div>
+          <button class="btn btn--secondary" :disabled="externalResolutionLoading" @click="loadExternalCreditResolution(true)">
+            {{ externalResolutionLoading ? '查询中…' : '重新查询' }}
+          </button>
+        </div>
+        <div v-if="externalResolutionLookup?.found && externalResolutionLookup.resolution" class="desc-grid external-resolution-card__detail">
+          <div><div class="desc-item__label">决议编号</div><div class="desc-item__value">{{ externalResolutionLookup.resolution.resolutionNo }}</div></div>
+          <div><div class="desc-item__label">决议客户</div><div class="desc-item__value">{{ externalResolutionLookup.resolution.customerName || '—' }}</div></div>
+          <div><div class="desc-item__label">上传时间</div><div class="desc-item__value">{{ externalResolutionLookup.resolution.uploadTime || '—' }}</div></div>
+          <div><div class="desc-item__label">决议附件</div><div class="desc-item__value">{{ externalResolutionLookup.resolution.files?.length || 0 }} 个</div></div>
+        </div>
+        <div v-else class="empty-line">{{ externalResolutionLookup?.message || '进入本环节后自动查询最新有效授信决议' }}</div>
+      </div>
+
       <!-- 授信概览:业务类型 + 授信额度/拆分合计(存量/新增/GROUP 项按列对齐);GROUP 追加集团批复/可用 -->
       <div class="credit-overview">
         <div class="credit-overview__item">
@@ -867,16 +886,25 @@
         材料附件
         <InfoTip content="附件随草稿保存/提交上传至申请单,审批各环节可查看;已上传附件在审批详情展示。" />
       </div>
+      <div v-if="externalResolutionLookup?.found" class="external-resolution-import">
+        <span class="badge" :class="externalResolutionImportError ? 'badge--warning' : 'badge--success'">
+          {{ externalResolutionImporting ? '正在带入授信决议附件…' : externalResolutionImportError || (externalResolutionLookup.resolution?.files?.length ? '授信决议附件已自动带入' : '最新授信决议没有附件') }}
+        </span>
+        <button v-if="externalResolutionImportError" class="btn btn--text" :disabled="externalResolutionImporting" @click="autoImportExternalResolution(true)">重试</button>
+      </div>
       <button class="btn btn--secondary" @click="attachmentInput?.click()">＋ 添加附件</button>
       <input ref="attachmentInput" type="file" multiple style="display:none" @change="onAttachmentFiles" />
       <table class="table" v-if="attachments.length" style="margin-top:12px">
         <thead><tr><th>文件名</th><th>大小</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
-          <tr v-for="(a, i) in attachments" :key="i">
+          <tr v-for="(a, i) in attachments" :key="a.id || `${a.name}-${i}`">
             <td>{{ a.name }}</td>
             <td class="num">{{ fmtSize(a.size) }}</td>
-            <td><span class="badge" :class="a.uploaded ? 'badge--success' : 'badge--warning'">{{ a.uploaded ? '已上传' : '待上传' }}</span></td>
-            <td><button class="btn btn--text" @click="attachments.splice(i, 1)">移除</button></td>
+            <td>
+              <span class="badge" :class="a.uploaded ? 'badge--success' : 'badge--warning'">{{ a.uploaded ? '已上传' : '待上传' }}</span>
+              <span v-if="a.sourceType === 'MINIAPP_CREDIT_RESOLUTION'" class="badge badge--info">授信决议 {{ a.sourceResolutionNo }}</span>
+            </td>
+            <td><button v-if="a.sourceType !== 'MINIAPP_CREDIT_RESOLUTION'" class="btn btn--text" @click="attachments.splice(i, 1)">移除</button><span v-else>自动附件</span></td>
           </tr>
         </tbody>
       </table>
@@ -968,6 +996,8 @@ import {
   routePreview,
   uploadAttachment,
   listAttachments,
+  getLatestExternalCreditResolution,
+  importLatestCreditResolution,
   submitCheck,
   submitApplication,
   reapplyApplication,
@@ -976,7 +1006,8 @@ import {
   type ApplicationPayload,
   type GuaranteeMeasureInput,
   type RoutePreview,
-  type SubmitCheck
+  type SubmitCheck,
+  type CreditResolutionLookup
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
 import {
@@ -1245,7 +1276,21 @@ const supplementMembers = ref<Array<Record<string, any>>>([])
 
 // 承诺与附件
 const commitments = ref<CommitmentRow[]>([])
-const attachments = ref<Array<{ name: string; size: number; dataBase64: string; file?: File; uploaded?: boolean }>>([])
+type AttachmentRow = {
+  id?: string | number
+  name: string
+  size: number
+  dataBase64: string
+  file?: File
+  uploaded?: boolean
+  sourceType?: string
+  sourceResolutionNo?: string
+}
+const attachments = ref<AttachmentRow[]>([])
+const externalResolutionLookup = ref<CreditResolutionLookup | null>(null)
+const externalResolutionLoading = ref(false)
+const externalResolutionImporting = ref(false)
+const externalResolutionImportError = ref('')
 // 关联人员(§12.4④,后端无独立接收字段,序列化后随申请备注附带)
 const relations = ref<RelatedPersonRow[]>([])
 
@@ -1703,7 +1748,12 @@ function repairOrphanGuarantees() {
   }
 }
 // 进入「利率申请」步时归并一次悬空分项(覆盖旧草稿回显场景)
-watch(step, (s) => { if (s === 3) repairOrphanGuarantees() })
+watch(step, (s) => {
+  if (s === 3) {
+    repairOrphanGuarantees()
+    loadExternalCreditResolution(false)
+  }
+})
 const activeMemberTabRaw = ref('')
 /** 当前页签:原值失效(成员取消勾选/待分配清空)时回落到第一个页签 */
 const activeMemberTab = computed<string>({
@@ -2121,6 +2171,77 @@ async function uploadPendingAttachments() {
   }
 }
 
+/** 查询客户或集团最新有效授信决议；查询失败只提示，不清空现有申请数据。 */
+async function loadExternalCreditResolution(showMessage: boolean) {
+  const customerId = form.customerScope === 'GROUP' ? form.groupNo : form.customerNo
+  if (!customerId || externalResolutionLoading.value) return
+  externalResolutionLoading.value = true
+  try {
+    externalResolutionLookup.value = await getLatestExternalCreditResolution({
+      customerScope: form.customerScope === 'CORPORATE' ? 'CORPORATE_SINGLE' : form.customerScope,
+      customerNo: form.customerScope === 'GROUP' ? undefined : form.customerNo,
+      groupNo: form.customerScope === 'GROUP' ? form.groupNo : undefined,
+    })
+    if (showMessage) {
+      const result = externalResolutionLookup.value
+      if (result?.found) ElMessage.success(`已带出授信决议 ${result.resolution?.resolutionNo}`)
+      else ElMessage.info(result?.message || '未查询到有效授信决议')
+    }
+  } catch (err: any) {
+    externalResolutionLookup.value = null
+    if (showMessage) ElMessage.warning(err?.message || '授信决议查询失败')
+  } finally {
+    externalResolutionLoading.value = false
+  }
+}
+
+/** 从后端重新加载附件元数据，确保外部自动附件与数据库状态一致。 */
+async function refreshAttachmentRows() {
+  if (!draft.id) return
+  const pending = attachments.value.filter((a) => !a.uploaded && a.file)
+  const rows = await listAttachments(draft.id)
+  attachments.value = [
+    ...(rows || []).map((a: any) => ({
+      id: a.id,
+      name: a.fileName,
+      size: a.fileSize,
+      dataBase64: '',
+      uploaded: true,
+      sourceType: a.sourceType,
+      sourceResolutionNo: a.sourceResolutionNo,
+    })),
+    ...pending,
+  ]
+}
+
+/** 兑换私有桶短期地址并把决议文件转存为申请附件；后端以外部文件ID保证重复调用幂等。 */
+async function autoImportExternalResolution(showMessage: boolean) {
+  if (!draft.id || externalResolutionImporting.value) return
+  if (!externalResolutionLookup.value) await loadExternalCreditResolution(false)
+  if (!externalResolutionLookup.value?.enabled || !externalResolutionLookup.value.found) return
+  if (!externalResolutionLookup.value.resolution?.files?.length) return
+  externalResolutionImporting.value = true
+  externalResolutionImportError.value = ''
+  try {
+    const result = await importLatestCreditResolution(draft.id)
+    externalResolutionLookup.value = {
+      enabled: true,
+      found: true,
+      message: '已查询到最新有效授信决议',
+      resolution: result.resolution,
+    }
+    await refreshAttachmentRows()
+    if (showMessage && result.importedCount > 0) {
+      ElMessage.success(`已自动带入 ${result.importedCount} 个授信决议附件`)
+    }
+  } catch (err: any) {
+    externalResolutionImportError.value = err?.message || '授信决议附件自动带入失败'
+    if (showMessage) ElMessage.warning(externalResolutionImportError.value)
+  } finally {
+    externalResolutionImporting.value = false
+  }
+}
+
 // ---------- 提交闭环:创建/保存草稿 → submit-check → 确认 → submit ----------
 function isBlank(v: any) {
   return v === undefined || v === null || String(v).trim() === ''
@@ -2299,8 +2420,9 @@ async function goNext(target: number) {
     return
   }
   // 自动暂存:点"下一步"先把上一步信息存为草稿,未完成可稍后从历史申请继续编辑(§用户要求 2026-08-25)
-  await autoSaveDraft()
+  const draftSaved = await autoSaveDraft()
   step.value = target
+  if (target === 4 && draftSaved) await autoImportExternalResolution(false)
   // 提交预览:进入即自动加载路由,供确认弹窗展示审批路由预览(§2026-08-26 精简提交页,不再手动点路由预览)
   if (target === 5) onRoutePreview()
 }
@@ -2316,8 +2438,9 @@ async function goStep(i: number) {
       return
     }
   }
-  await autoSaveDraft()
+  const draftSaved = await autoSaveDraft()
   step.value = i
+  if (i === 4 && draftSaved) await autoImportExternalResolution(false)
   // 提交预览:进入即自动加载路由(同上,§2026-08-26)
   if (i === 5) onRoutePreview()
 }
@@ -2669,10 +2792,10 @@ async function ensureDraft(): Promise<boolean> {
  *  后端 createDraft/saveDraft 仅校验业务类型/客户范围,允许保存不完整草稿(§12.1 DRAFT)。
  *  已填完的步骤内容落库,未完成申请可从历史申请"继续编辑"接着填(§用户要求 2026-08-25)。
  *  失败静默不打断下一步(用户仍可手动点"存草稿"或提交时严格校验)。 */
-async function autoSaveDraft() {
-  if (saving.value || submitted.value) return
+async function autoSaveDraft(): Promise<boolean> {
+  if (saving.value || submitted.value) return false
   // 备注超长时自动暂存跳过(落库必失败):静默不打断下一步,手动存草稿/提交处会明确提示精简
-  if (remarkTooLongTip()) return
+  if (remarkTooLongTip()) return false
   saving.value = true
   try {
     const payload = buildPayload()
@@ -2685,8 +2808,10 @@ async function autoSaveDraft() {
       draft.versionNo = created.versionNo ?? 1
       draft.applicationNo = created.applicationNo
     }
+    return true
   } catch {
     // 自动暂存失败不阻塞切步;提交/路由预览走 ensureDraft 严格校验并已做错误提示
+    return false
   } finally {
     saving.value = false
   }
@@ -2700,6 +2825,7 @@ async function onSaveDraft() {
 
 async function onRoutePreview() {
   if (!(await ensureDraft()) || !draft.id) return
+  await autoImportExternalResolution(false)
   await uploadPendingAttachments()
   try {
     routeResult.value = await routePreview(draft.id)
@@ -2939,14 +3065,7 @@ async function loadDraftIntoForm(id: number | string) {
     })
   }
   // 已上传附件回显(材料附件步骤)
-  try {
-    const atts = await listAttachments(id)
-    for (const a of atts || []) {
-      if (!attachments.value.some((x) => x.name === a.fileName)) {
-        attachments.value.push({ name: a.fileName, size: a.fileSize, dataBase64: '', uploaded: true } as any)
-      }
-    }
-  } catch { /* 忽略 */ }
+  try { await refreshAttachmentRows() } catch { /* 忽略 */ }
   form.businessType = hasPlanned ? 'NEW' : 'EXISTING'
   // 集团存量草稿协议态回显(§2026-09-03 协议必选):queryGroup 已把 dw_group_credit_snapshot 集团授信行注入
   // creditAgreements,按保存快照的协议号恢复选中态并重填 creditInfo,否则协议必选校验在草稿重提时误拦
@@ -3197,6 +3316,20 @@ async function loadDraftIntoForm(id: number | string) {
   .commitment-card__grid { grid-template-columns: 1fr; }
 }
 .commitment-static { min-height: 36px; display: flex; align-items: center; }
+
+/* 外部授信决议：第四环节只读展示，临时下载地址始终留在服务端。 */
+.external-resolution-card {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-light);
+}
+.external-resolution-card--empty { border-color: var(--color-border); background: var(--color-bg); }
+.external-resolution-card__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.external-resolution-card__title { font-size: 14px; font-weight: 600; color: var(--color-text-main); }
+.external-resolution-card__detail { margin-top: 12px; }
+.external-resolution-import { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
 
 /* 向导步骤条(沿用 design-system .stepper):融入白色页头区(去浮卡背景/投影/外边距) */
 .wizard-stepper {
