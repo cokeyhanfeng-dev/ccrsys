@@ -15,7 +15,7 @@
             </td>
             <td class="num col-value">
               <span class="metric-value">{{ c.metricValue ?? '—' }}</span>
-              <span class="metric-unit">{{ unitOf(c.valueType) }}</span>
+              <span class="metric-unit">{{ unitOf(c) }}</span>
             </td>
             <td class="col-check">
               <span class="badge" :class="checkBadgeOf(c).cls">{{ checkBadgeOf(c).text }}</span>
@@ -56,7 +56,7 @@
  * 勾稽 badge 依据数据可用性:已取数 / 待取数(有承诺目标但当前值缺失) / 无数据。
  * 适用于审批详情、申请单当前贡献度参考;录入场景传 show-commitments=false 仅展示左栏(整行通栏)。
  */
-import { metricName, commitmentUnitText } from '@/utils/dict'
+import { metricName, commitmentUnitText, isRatioMetric } from '@/utils/dict'
 
 const props = withDefaults(
   defineProps<{
@@ -72,14 +72,15 @@ const props = withDefaults(
   { commitments: () => [], showCommitments: true, asOfDate: '' }
 )
 
-/** 数值口径→单位文案 */
-function unitOf(valueType?: string): string {
+/** 数值口径→单位文案(比例型指标码优先:存贷款比按 % 直显,数值即百分比量级 65=65%,§2026-09-04) */
+function unitOf(c: any): string {
+  if (isRatioMetric(c.metricCode)) return '%'
   const map: Record<string, string> = {
     AVG_BALANCE: '万元·日均',
     INCOME: '万元',
     CONTRIBUTION_AMOUNT: '万元'
   }
-  return valueType ? (map[valueType] || '') : ''
+  return c.valueType ? (map[c.valueType] || '') : ''
 }
 
 function checkBadgeOf(c: any): { cls: string; text: string } {

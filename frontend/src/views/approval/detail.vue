@@ -67,25 +67,50 @@
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
-      <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示) -->
-      <table class="table" style="margin-top:12px">
+      <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示)
+           2026-09-04 用户要求与授信总额字段区对齐:局部拉满卡片宽(覆盖全局 .table fit-content 收缩) -->
+      <table class="table detail-items" style="margin-top:12px">
         <thead><tr>
           <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
           <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
           <th>当前节点</th><th>状态</th>
         </tr></thead>
         <tbody>
-          <tr v-for="it in siblingItems" :key="it.id">
-            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
-            <td v-if="isLoan">{{ guaranteesText(it.guarantees) }}</td>
-            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-            <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
-            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-            <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
-            <td>{{ agreementNos.join('、') || '—' }}</td>
-            <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
-            <td>{{ itemStatusText(it.status) }}</td>
-          </tr>
+          <template v-for="it in siblingItems" :key="it.id">
+            <tr>
+              <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+              <!-- 担保方式:有担保措施可点开行内明细(与档案授信分项卡一致,2026-09-04);信用/未录措施纯文本 -->
+              <td v-if="isLoan">
+                <span v-if="hasMeasureRows(it)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(it)" @keydown.enter="toggleExpand(it)">{{ guaranteesText(it.guarantees) }}<span class="chev">{{ isExpanded(it) ? '▲' : '▼' }}</span></span>
+                <span v-else>{{ guaranteesText(it.guarantees) }}</span>
+              </td>
+              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+              <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
+              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+              <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+              <td>{{ agreementNos.join('、') || '—' }}</td>
+              <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
+              <td>{{ itemStatusText(it.status) }}</td>
+            </tr>
+            <!-- 展开:该分项的担保措施明细(抵押物/保证人等),申请录入按分项挂载 -->
+            <tr v-if="isExpanded(it)" class="expand-row">
+              <td :colspan="itemColspan">
+                <div class="expand-panel">
+                  <div class="expand-title">担保明细<span class="section-tip">申请录入</span></div>
+                  <table class="table">
+                    <thead><tr><th>担保措施</th><th>担保金额(万元)</th><th>担保物信息</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(g, gi) in measureRows(it)" :key="gi">
+                        <td>{{ measureTypeText(g.measureType) }}</td>
+                        <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
+                        <td class="hash-cell">{{ extText(g) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
       <!-- 综合利率(§2026-09-03 用户要求:与申请页同口径展示于审批界面;综合利率=Σ(分项金额×分项利率)÷授信总额,原执行/申请两口径) -->
@@ -257,7 +282,7 @@
             <div class="empty-line"><button class="btn btn--text" @click="fold.credit = true">收起 ▲</button></div>
           </div>
         </template>
-        <div v-else class="empty-line">暂无授信协议数据</div>
+        <div v-else class="empty-line">该客户暂无其它存量授信（本次申请授信不在此列）</div>
       </template>
     </div>
 
@@ -476,25 +501,20 @@
       <div v-else class="empty-line">该客户暂无历史承诺申请</div>
     </div>
 
-    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-01 只展示概要卡:机构名称/统计月份/平均达成率,明细表按需求移除) -->
+    <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-04 两版承诺计划合并改造:切 v2 track 到期终态口径,
+         只展示达成率+进度条,达成金额/目标金额/统计月份/数据日期已移除;badge 由「数仓」改「承诺」) -->
     <div class="card" v-if="isLoan">
-      <div class="card__head"><span>机构达成</span><span class="badge badge--info">数仓</span></div>
+      <div class="card__head"><span>机构达成</span><span class="badge badge--info">承诺</span></div>
       <div class="org-perf" v-if="orgPerfRow">
         <div class="org-perf__main">
           <div class="org-perf__title">
             <span class="org-perf__name">{{ orgPerfRow.orgName || orgPerfRow.orgCode || '—' }}</span>
-            <span class="org-perf__month">{{ orgPerfRow.statMonth || '—' }}</span>
           </div>
           <div class="org-perf__rate" :class="rateCls(orgPerfRow.completionRate)">{{ fmtPct(orgPerfRow.completionRate) }}</div>
-          <div class="org-perf__rate-label">平均达成率</div>
+          <div class="org-perf__rate-label">到期承诺达成率</div>
         </div>
         <div class="org-perf__bar">
           <div class="org-perf__bar-inner" :class="rateCls(orgPerfRow.completionRate)" :style="{ width: progressWidth(orgPerfRow.completionRate) }"></div>
-        </div>
-        <div class="org-perf__meta">
-          <span>达成金额 <b>{{ fmtAmount(orgPerfRow.achievedAmount) }}</b> 万元</span>
-          <span>目标金额 <b>{{ fmtAmount(orgPerfRow.expectedAmount) }}</b> 万元</span>
-          <span v-if="orgPerfRow.dataDt">数据日期 {{ orgPerfRow.dataDt }}</span>
         </div>
       </div>
       <div v-else class="empty-line">暂无数据</div>
@@ -904,9 +924,9 @@ const source = ref('')
 const snapshotInfo = ref<any>({})
 const tracking = ref<any[]>([])
 const orgPerformance = ref<any[]>([])
-// 机构达成概要行(后端至多 1 条:机构名称/统计月份/平均达成率,2026-09-01)
+// 机构达成概要行(后端至多 1 条:机构名称/到期承诺达成率,2026-09-04 切 v2 ccr_commitment_track 聚合)
 const orgPerfRow = computed(() => orgPerformance.value[0] || null)
-// 达成率颜色:completionRate 为 0-1 比例(后端 achieved/expected,60/1000=0.06=6%),
+// 达成率颜色:completionRate 为 0-1 比例(到期终态 FINISHED_MET 占比,60%=0.6),
 // ≥1(100%)绿 / ≥0.8(80%)黄 / 其余红
 function rateCls(r: any): string {
   const v = Number(r)
@@ -1314,11 +1334,52 @@ function guaranteesText(list?: any[]): string {
   return types.map(guaranteeTypeText).join('、')
 }
 
+// —— 申请内容卡分项表担保明细行内展开(2026-09-04,与档案授信分项卡同款交互)——
+const expandedItemIds = ref<Set<string>>(new Set())
+function isExpanded(it: any): boolean {
+  return expandedItemIds.value.has(String(it?.id))
+}
+function toggleExpand(it: any) {
+  const id = String(it?.id)
+  const next = new Set(expandedItemIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedItemIds.value = next
+}
+/** 该分项是否有真实担保措施行(排除信用等仅包无措施的占位行) */
+function hasMeasureRows(it: any): boolean {
+  return (it?.guarantees || []).some((g: any) => g.measureType)
+}
+/** 该分项的担保措施明细(已过滤占位行,供展开表渲染) */
+function measureRows(it: any): any[] {
+  return (it?.guarantees || []).filter((g: any) => g.measureType)
+}
+/** 申请内容卡分项表列数(展开行 colspan):成员(集团)+担保方式(贷款)+金额+原/申请/测算利率+协议+节点+状态 */
+const itemColspan = computed(() => (isGroup ? 1 : 0) + (isLoan ? 1 : 0) + 7)
+
 function extOf(g: any): any {
   const j = g?.extJson
   if (!j) return null
   if (typeof j === 'object') return j
   try { return JSON.parse(j) } catch { return null }
+}
+
+// 担保物信息列(与档案授信分项卡同款,2026-09-04):保证人是"人"非"物",单独成组;抵押/质押等物类展示产权属性
+function extText(g: any): string {
+  const ext = extOf(g)
+  if (!ext) return '—'
+  const labels: Record<string, string> = g?.measureType === 'GUARANTOR'
+    ? { name: '保证人', certNo: '证件号', balance: '担保余额' }
+    : {
+        name: '名称', collateralType: '类型', specModel: '规格型号', quantity: '数量',
+        plateNo: '车牌号', vin: '车架号', address: '坐落', area: '面积',
+        certNo: '产权证号', owner: '权属人', pledgeType: '质押物类型',
+        marginRatio: '比例', termMonths: '期限(月)', certificateNo: '存单号', maturityDate: '到期日'
+      }
+  const parts = Object.keys(labels)
+    .filter((k) => ext[k] != null && ext[k] !== '')
+    .map((k) => `${labels[k]}:${ext[k]}`)
+  return parts.length ? parts.join('；') : '—'
 }
 
 // 流程轨迹动作徽标:否决/终审红,提交灰蓝,通过绿
@@ -1849,14 +1910,13 @@ onMounted(load)
 .rate-bad { color: var(--color-danger); font-weight: 600; }
 .rate-warn { color: var(--color-warning); font-weight: 600; }
 .muted { color: var(--color-text-secondary, #909399); }
-/* 机构达成概要卡(2026-09-01):名称/月份/平均达成率+进度条,折叠态一行摘要 */
+/* 机构达成概要卡(2026-09-04):名称/到期承诺达成率+进度条,金额/月份/数据日期已移除 */
 .org-perf {
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px 14px; border-radius: 8px;
   background: var(--color-bg, #f8f9fa); margin-bottom: 10px;
 }
 .org-perf__name { font-size: 15px; font-weight: 700; color: var(--color-text-main); }
-.org-perf__month { font-size: 13px; color: var(--color-text-sub); }
 .org-perf__rate { font-size: 18px; font-weight: 700; }
 .org-perf__rate-label { font-size: 12px; color: var(--color-text-sub); }
 .org-perf__main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -1866,8 +1926,6 @@ onMounted(load)
 .org-perf__bar-inner.rate-ok { background: var(--color-success); }
 .org-perf__bar-inner.rate-warn { background: var(--color-warning); }
 .org-perf__bar-inner.rate-bad { background: var(--color-danger); }
-.org-perf__meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--color-text-sub); }
-.org-perf__meta b { font-weight: 600; color: var(--color-text-main); }
 /* 审批概要确认弹窗(2026-09-01):键值列表式展示申请/客户/金额/利率/意见 */
 .op-confirm { display: flex; flex-direction: column; }
 .op-confirm__row {
@@ -1895,6 +1953,16 @@ onMounted(load)
 .app-row:hover td { background: var(--color-fill, #f5f7fa); }
 .sub-table { margin: 10px 0 4px; padding: 12px; background: var(--color-fill, #f8f9fa); border-radius: 6px; }
 .sub-table__title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+/* 申请内容卡分项表:与授信总额字段区同宽铺满(覆盖全局 .table fit-content 收缩,2026-09-04 用户要求;勿回改) */
+.detail-items { display: table; width: 100%; table-layout: auto; }
+/* 申请内容卡分项表担保明细行内展开(2026-09-04,与档案授信分项卡同款) */
+.expand-toggle { color: var(--color-primary); cursor: pointer; user-select: none; white-space: nowrap; }
+.expand-toggle:hover { text-decoration: underline; }
+.expand-toggle .chev { font-size: 10px; margin-left: 2px; }
+.expand-row > td { padding: 0; background: var(--color-bg-page, #f7f9fc); }
+.expand-panel { padding: 10px 16px 12px 20px; }
+.expand-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+.hash-cell { font-size: 12px; color: var(--color-text-sub); word-break: break-all; }
 /* 担保措施明细:嵌套键值表格(与贷款合同/担保表同色系,圆角细边框) */
 .measure-detail > td { background: #fafbfc; padding: 4px 8px 8px; }
 .measure-table { width: 100%; border-collapse: collapse; font-size: 13px; }

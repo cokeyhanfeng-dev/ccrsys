@@ -424,8 +424,8 @@ export function noteStatusBadge(code?: string): string {
   return code === 'NORMAL' ? 'badge--success' : code === 'OVERDUE' ? 'badge--danger' : 'badge--neutral'
 }
 
-/** 承诺指标单位(ccr_application_commitment.unit:WAN_YUAN/COUNT) */
-export const COMMITMENT_UNIT: Record<string, string> = { WAN_YUAN: '万元', COUNT: '户/笔' }
+/** 承诺指标单位(ccr_application_commitment.unit:WAN_YUAN/COUNT;比例型承诺(存贷款比)固定 '%') */
+export const COMMITMENT_UNIT: Record<string, string> = { WAN_YUAN: '万元', COUNT: '户/笔', '%': '%' }
 export function commitmentUnitText(code?: string, fallback = '—'): string {
   return textOf(COMMITMENT_UNIT, code, fallback)
 }
@@ -506,6 +506,14 @@ export function datasetName(code?: string, fallback = '—'): string {
 }
 
 // ---------- 贡献度指标 ----------
+
+/** 比例型贡献度指标(数值即百分比量级,展示单位 %;§2026-09-04 用户确认 65=65% 直显)。
+ *  数仓 dw_contribution_metric 行 value_type 现推送为 CONTRIBUTION_AMOUNT(表注释未放开 RATIO),
+ *  归并/单位映射无法靠 value_type 识别比例型,前端按码特判兜底;数仓放开 RATIO 后可平滑迁移。 */
+export const RATIO_METRIC_CODES: ReadonlySet<string> = new Set(['PUBLIC_DEPOSIT_LOAN_RATIO'])
+export function isRatioMetric(code?: string | null): boolean {
+  return !!code && RATIO_METRIC_CODES.has(code)
+}
 
 /** 启用指标下拉(§9;对公启用指标恰好 8 项,20260820 收敛)
  * store/metricDict 初始回退源:接口未加载/数仓无数据时下拉仅展示这 8 项;

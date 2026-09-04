@@ -254,22 +254,23 @@
         <ContributionPanel :contribution="contribution" :commitments="archive.commitments || []" />
       </div>
 
-      <!-- 5e. 机构达成(仅贷款场景;存款无机构达成概念,§2026-08-26 用户要求删除) -->
+      <!-- 5e. 机构达成(仅贷款场景;存款无机构达成概念,§2026-08-26 用户要求删除)
+           2026-09-04 两版承诺计划合并改造:切 v2 track 到期终态口径,与审批详情统一——只展示达成率+进度条,
+           达成金额/目标金额/统计月份/数据日期已移除;badge 由「数仓」改「承诺」 -->
       <div class="card" v-if="isLoan && orgPerformance.length">
-        <div class="card__head"><span>机构达成</span></div>
-        <table class="table">
-          <thead><tr><th>机构</th><th>统计月份</th><th>达成金额(万元)</th><th>目标金额(万元)</th><th>达成率</th><th>数据日期</th></tr></thead>
-          <tbody>
-            <tr v-for="o in orgPerformance" :key="o.orgCode">
-              <td>{{ o.orgName || o.orgCode || '—' }}</td>
-              <td>{{ o.statMonth }}</td>
-              <td class="num">{{ fmtAmount(o.achievedAmount) }}</td>
-              <td class="num">{{ fmtAmount(o.expectedAmount) }}</td>
-              <td class="num">{{ rateRatioText(o.completionRate) }}</td>
-              <td>{{ fmtDate(o.dataDt) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="card__head"><span>机构达成</span><span class="badge badge--info">承诺</span></div>
+        <div class="org-perf" v-if="orgPerfRow">
+          <div class="org-perf__main">
+            <div class="org-perf__title">
+              <span class="org-perf__name">{{ orgPerfRow.orgName || orgPerfRow.orgCode || '—' }}</span>
+            </div>
+            <div class="org-perf__rate" :class="rateCls(orgPerfRow.completionRate)">{{ fmtPct(orgPerfRow.completionRate) }}</div>
+            <div class="org-perf__rate-label">到期承诺达成率</div>
+          </div>
+          <div class="org-perf__bar">
+            <div class="org-perf__bar-inner" :class="rateCls(orgPerfRow.completionRate)" :style="{ width: progressWidth(orgPerfRow.completionRate) }"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 5b. 关联人(申请录入,按关联客户号补全基本信息/授信信息) -->
@@ -540,6 +541,8 @@ const otherLoanSummary = computed(() => archive.value.otherLoanSummary || [])
 const otherLoans = computed(() => archive.value.otherLoans || [])
 const contribution = computed(() => archive.value.contribution || [])
 const orgPerformance = computed(() => archive.value.orgPerformance || [])
+// 机构达成概要行(与审批详情统一:后端至多 1 条,取首行,2026-09-04)
+const orgPerfRow = computed(() => orgPerformance.value[0] || null)
 const groupCredit = computed(() => archive.value.groupCredit || [])
 const groupContributionText = computed(() => {
   const g = (archive.value.groupContribution || [])[0]
@@ -648,12 +651,24 @@ function fmtDate(t: any) {
 function rateText(r: any) {
   return r !== null && r !== undefined && r !== '' && r !== '—' ? `${r}%` : '—'
 }
-// 机构达成率展示:completionRate 为 0-1 比例(60/1000=0.06=6%),×100 转百分比(2026-09-01 修复展示口径)
-function rateRatioText(r: any) {
-  if (r === null || r === undefined || r === '' || r === '—') return '—'
+// 机构达成率(与审批详情同款 helper):completionRate 为 0-1 比例(到期终态 FINISHED_MET 占比,60%=0.6),
+// ×100 转百分比;颜色 ≥1(100%)绿 / ≥0.8(80%)黄 / 其余红(2026-09-04 归档页与审批详情统一)
+function rateCls(r: any): string {
   const v = Number(r)
-  if (!Number.isFinite(v)) return '—'
+  if (!Number.isFinite(v)) return ''
+  if (v >= 1) return 'rate-ok'
+  if (v >= 0.8) return 'rate-warn'
+  return 'rate-bad'
+}
+function fmtPct(r: any): string {
+  const v = Number(r)
+  if (!Number.isFinite(v)) return '暂无数据'
   return `${Math.round(v * 10000) / 100}%`
+}
+function progressWidth(r: any): string {
+  const v = Number(r)
+  if (!Number.isFinite(v) || v <= 0) return '0%'
+  return `${Math.min(v * 100, 100)}%`
 }
 function termText(p: any) {
   const v = val(p, 'term_value', 'termValue')
@@ -788,4 +803,23 @@ onMounted(load)
 .expand-row > td { padding: 0; background: var(--color-bg-page, #f7f9fc); }
 .expand-panel { padding: 10px 16px 12px 20px; }
 .expand-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+/* 机构达成概要卡(与审批详情统一,2026-09-04):名称/到期承诺达成率+进度条,金额/月份/数据日期已移除 */
+.rate-ok { color: var(--color-success); font-weight: 600; }
+.rate-bad { color: var(--color-danger); font-weight: 600; }
+.rate-warn { color: var(--color-warning); font-weight: 600; }
+.org-perf {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: 8px;
+  background: var(--color-bg, #f8f9fa); margin-bottom: 10px;
+}
+.org-perf__name { font-size: 15px; font-weight: 700; color: var(--color-text-main); }
+.org-perf__rate { font-size: 18px; font-weight: 700; }
+.org-perf__rate-label { font-size: 12px; color: var(--color-text-sub); }
+.org-perf__main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.org-perf__title { display: flex; align-items: baseline; gap: 10px; }
+.org-perf__bar { height: 6px; border-radius: 3px; background: var(--color-border-light, #e5e7eb); overflow: hidden; }
+.org-perf__bar-inner { height: 100%; border-radius: 3px; background: var(--color-primary); transition: width .3s ease; }
+.org-perf__bar-inner.rate-ok { background: var(--color-success); }
+.org-perf__bar-inner.rate-warn { background: var(--color-warning); }
+.org-perf__bar-inner.rate-bad { background: var(--color-danger); }
 </style>

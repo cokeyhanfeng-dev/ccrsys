@@ -839,9 +839,9 @@
             <div class="form-field">
               <label class="form-field__label">目标类型 <span class="req">*</span></label>
               <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral commitment-static">手工描述</span>
-              <select v-else class="form-select" v-model="c.targetType">
-                <option value="BALANCE">余额</option>
-                <option value="COUNT">笔数</option>
+              <select v-else class="form-select" v-model="c.targetType" :disabled="isRatioMetric(c.metricCode)">
+                <option v-if="!isRatioMetric(c.metricCode)" value="BALANCE">余额</option>
+                <option v-if="!isRatioMetric(c.metricCode)" value="COUNT">笔数</option>
                 <option value="RATIO">比例</option>
               </select>
             </div>
@@ -860,9 +860,10 @@
             <div class="form-field">
               <label class="form-field__label">单位</label>
               <template v-if="c.metricCode === 'OTHER'"><div class="section-tip commitment-static">—</div></template>
-              <select v-else class="form-select" v-model="c.unit">
-                <option value="WAN_YUAN">万元</option>
-                <option value="COUNT">户/笔</option>
+              <select v-else class="form-select" v-model="c.unit" :disabled="isRatioMetric(c.metricCode)">
+                <option v-if="!isRatioMetric(c.metricCode)" value="WAN_YUAN">万元</option>
+                <option v-if="!isRatioMetric(c.metricCode)" value="COUNT">户/笔</option>
+                <option value="%">%</option>
               </select>
             </div>
             <!-- 适用范围不再手动选择(§2026-08-26 用户要求:按客户已填关联人自动匹配,addCommitment 时判定) -->
@@ -1015,7 +1016,7 @@ import {
   inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo,
-  isPlaceholderCustomerNo
+  isPlaceholderCustomerNo, isRatioMetric
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -2079,6 +2080,16 @@ function onMetricChange(c: CommitmentRow) {
     c.baselineValue = String(v)
   } else {
     c.baselineValue = ''
+  }
+  // 比例型指标(存贷款比):数值即百分比量级(65=65%),目标类型锁定「比例」、单位锁定「%」,
+  // 与指标定义(value_type=RATIO/unit='%')一致,防止被当金额(万元)处理(§2026-09-04)
+  if (isRatioMetric(c.metricCode)) {
+    c.targetType = 'RATIO'
+    c.unit = '%'
+  } else if (c.unit === '%') {
+    // 离开比例型:清掉被强制锁定的 %/RATIO 残留,回金额型默认,防单位错配
+    c.unit = 'WAN_YUAN'
+    c.targetType = 'BALANCE'
   }
   // 「其它」无数值目标(提交以 commitmentDesc 为准,targetValue 序列化置 undefined),残留量化目标一并清空
   if (c.metricCode === 'OTHER' && c.targetValue !== '') {
