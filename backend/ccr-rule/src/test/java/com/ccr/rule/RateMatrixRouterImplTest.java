@@ -724,4 +724,58 @@ class RateMatrixRouterImplTest {
         RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.3"));
         assertEquals("VICE_PRESIDENT", result.getFinalNodeCode());
     }
+
+    // ---------- §2026-09-04 综合/零售两级支行:零售申请插 PARENT_BRANCH_MANAGER 并上收支行层终审 ----------
+
+    @Test
+    void 零售贷款_权限内终审上收综合支行长() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 3.4 ≥ 支行行长终审边界(3.4):矩阵本应支行行长终审;零售申请支行层终审上收 → 管理综合支行长
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4");
+        in.setRetailBranch(true);
+        RouteResult result = router.calcRoute(in);
+        assertEquals("PARENT_BRANCH_MANAGER", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "PARENT_BRANCH_MANAGER"), result.getRouteChain());
+        assertTrue(result.getMessage().contains("终审上收综合支行行长"));
+    }
+
+    @Test
+    void 零售贷款_超支行权限_插PARENT终审不变() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 3.3 < BM线3.4 且 ≥ VP线3.2 → VP 终审;零售申请仅必经两任支行长,不改 VP 终审
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.3");
+        in.setRetailBranch(true);
+        RouteResult result = router.calcRoute(in);
+        assertEquals("VICE_PRESIDENT", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "PARENT_BRANCH_MANAGER",
+                "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT"), result.getRouteChain());
+    }
+
+    @Test
+    void 零售存款_未超上限_终审上收综合支行长() {
+        when(matrixMapper.selectList(any())).thenReturn(List.of(depositRow("M-DEP-TIME-3M", null, "3M", "0.85")));
+        MatrixRouteInput in = new MatrixRouteInput();
+        in.setBusinessBigType("DEPOSIT");
+        in.setNewOrExisting("NEW");
+        in.setTermValue(3);
+        in.setTermUnit("MONTH");
+        in.setRequestedRate(new BigDecimal("0.85"));
+        in.setRetailBranch(true);
+        RouteResult result = router.calcRoute(in);
+        // 存款未超上限本应支行行长终审;零售存款零售行长过手后由管理综合支行长终审
+        assertEquals("PARENT_BRANCH_MANAGER", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER", "PARENT_BRANCH_MANAGER"), result.getRouteChain());
+    }
+
+    @Test
+    void 非零售申请_链路不含PARENT() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // retailBranch 未置位(综合支行/普通支行):链路与终审与现状一致,不插 PARENT
+        RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "3.4"));
+        assertEquals("BRANCH_MANAGER", result.getFinalNodeCode());
+        assertEquals(List.of("BRANCH_MANAGER"), result.getRouteChain());
+    }
 }

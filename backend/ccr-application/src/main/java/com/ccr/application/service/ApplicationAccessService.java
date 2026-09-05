@@ -8,6 +8,7 @@ import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.read.SysUserRead;
 import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
+import com.ccr.common.core.util.BranchTypeSupport;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
@@ -106,7 +107,10 @@ public class ApplicationAccessService {
                 && user.getId().equals(application.getApplicantUserId())) {
             return;
         }
-        if (AppLoginUser.ROLE_BRANCH_MANAGER.equals(role) && inSameBranch(user, application)) {
+        // 支行行长:同支行单可见;管理综合支行长可见其直接下级零售支行的申请
+        // (2026-09-04 综合/零售两级支行:零售申请须过综合支行长,PARENT 流程须能打开详情)
+        if (AppLoginUser.ROLE_BRANCH_MANAGER.equals(role)
+                && (inSameBranch(user, application) || managesRetailChild(user, application))) {
             return;
         }
         if ((AppLoginUser.ROLE_DEPT_GM.equals(role) || AppLoginUser.ROLE_VICE_PRESIDENT.equals(role))
@@ -139,6 +143,17 @@ public class ApplicationAccessService {
                   AND branch_code IS NOT NULL
                 """, String.class, user.getOrgId());
         return !branchCodes.isEmpty() && branchCodes.get(0).equals(application.getApplyBranchCode());
+    }
+
+    /**
+     * 2026-09-04 综合/零售两级支行:申请的申请人机构是否为当前用户所在机构的直接下级零售支行。
+     * 管理综合支行长据此可查看其名下零售支行客户经理提交的申请(审批须过 PARENT_BRANCH_MANAGER 节点,
+     * 详情入口 requireView 若不放行,PARENT 流程将无法打开)。
+     */
+    private boolean managesRetailChild(SysUserRead user, CcrApplication application) {
+        return application.getApplicantOrgId() != null
+                && BranchTypeSupport.directRetailChildIds(jdbcTemplate, user.getOrgId())
+                        .contains(application.getApplicantOrgId());
     }
 
     private boolean isCurrentNodeAssignee(SysUserRead user, CcrApplication application,

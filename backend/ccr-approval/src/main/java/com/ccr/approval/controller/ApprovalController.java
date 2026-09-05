@@ -1212,14 +1212,13 @@ public class ApprovalController {
         member.put("fiveLevelClass", jsonSafe(core.get("ffthlv_class")));
         member.put("creditLevel", jsonSafe(core.get("crdt_grd")));
         member.put("industry", jsonSafe(core.get("blgd_idsty")));
-        member.put("registeredCapital", jsonSafe(core.get("reg_cap")));
+        member.put("registeredCapital", jsonSafe(core.get("rest_asts")));
         member.put("openOrgName", jsonSafe(core.get("openact_org_nm")));
         member.put("openDate", snapshotDate(jsonSafe(core.get("openact_dt"))));
         member.put("basicAccount", jsonSafe(core.get("basic_account_no")));
         member.put("customerClass", jsonSafe(core.get("cust_class")));
         member.put("empeNum", jsonSafe(core.get("entp_empe_num")));
         member.put("estbDate", snapshotDate(jsonSafe(core.get("estp_estb_dt"))));
-        member.put("totalAssets", jsonSafe(core.get("rest_asts")));
         member.put("restAddr", jsonSafe(core.get("rest_addr")));
     }
 
@@ -1256,9 +1255,9 @@ public class ApprovalController {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT cert_no certNo, cert_tp certType, entp_charic entpCharic, entp_scale entpScale,"
                         + " blgd_idsty industry, crdt_grd creditLevel, ffthlv_class fiveLevelClass,"
-                        + " reg_cap registeredCapital, openact_org_nm openOrgName, openact_dt openDate,"
+                        + " rest_asts registeredCapital, openact_org_nm openOrgName, openact_dt openDate,"
                         + " basic_account_no basicAccount, cust_class customerClass, entp_empe_num empeNum,"
-                        + " estp_estb_dt estbDate, rest_asts totalAssets, rest_addr restAddr"
+                        + " estp_estb_dt estbDate, rest_addr restAddr"
                         + " FROM caps_corp_cust_basic_info WHERE cust_no = ? LIMIT 1", memberNo);
         if (!rows.isEmpty()) {
             member.putAll(rows.get(0));
@@ -1426,6 +1425,12 @@ public class ApprovalController {
     @GetMapping("/done")
     public R<List<Map<String, Object>>> done() {
         return R.ok(approvalService.listDone());
+    }
+
+    /** 工作台今日已办计数(§2026-09-05):本人今日 action∪表决∪决策 的去重申请数(与累计口径一致) */
+    @GetMapping("/done/today")
+    public R<Integer> doneToday() {
+        return R.ok(approvalService.countTodayDone());
     }
 
     /** 历史审批分页(§13.2/§14.4,按登录人角色/数据权限;§2026-08-26 支持申请号/状态/客户名称筛选) */

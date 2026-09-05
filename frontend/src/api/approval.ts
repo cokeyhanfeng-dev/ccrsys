@@ -55,6 +55,11 @@ export function pageApprovalHistory<T = any>(pageNum = 1, pageSize = 10): Promis
   return get<T>('/ccr/approval/history', { pageNum, pageSize })
 }
 
+/** 工作台今日已办计数(§2026-09-05):本人今日 审批 action∪表决∪决策 的去重申请数(与累计口径一致) */
+export function listTodayDone(): Promise<number> {
+  return get<number>('/ccr/approval/done/today')
+}
+
 /** 节点进入自动回填结果(§2026-09-02 #460):applicable=是否适用单户通道;backfilled=本次是否实际回填;customerNo=回填后真实号 */
 export interface AutoBackfillResult {
   applicable?: boolean

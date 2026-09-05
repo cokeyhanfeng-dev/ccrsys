@@ -56,6 +56,8 @@ export interface SysDept {
   branchCode?: string
   deptName: string
   orgType?: string
+  /** 支行性质(2026-09-04 综合/零售两级支行):仅 BRANCH 机构有意义,RETAIL零售/COMPREHENSIVE综合/空=综合 */
+  branchType?: string
   manager?: string
   status?: string
   sortNo?: number

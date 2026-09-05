@@ -136,7 +136,8 @@ public class CustomerController {
         } else {
             List<Map<String, Object>> indv = jdbcTemplate.queryForList("""
                     SELECT cust_no customerNo, cust_nm customerName, cert_tp certType, cert_no certNo, ocupn occupation,
-                           whlyr_incm annualIncome, mrrg_sittn maritalStatus, tel_no phone, cust_class customerClass, mgr_no mgrNo
+                           whlyr_incm annualIncome, mrrg_sittn maritalStatus, ffthlv_class fiveLevelClass, tel_no phone,
+                           cust_class customerClass, mgr_no mgrNo
                     FROM caps_indv_cust_basic_info
                     WHERE cust_no = ? AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no) LIMIT 1""", customerNo);
             if (indv.isEmpty()) {

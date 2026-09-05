@@ -72,6 +72,7 @@ public class SysDeptController {
         node.put("branchCode", d.getBranchCode());
         node.put("deptName", d.getDeptName());
         node.put("orgType", d.getOrgType());
+        node.put("branchType", d.getBranchType());
         node.put("status", d.getStatus());
         node.put("children", buildChildren(all, d.getId()));
         return node;
@@ -94,6 +95,7 @@ public class SysDeptController {
             throw new ServiceException(400, "机构名称与机构类型必填");
         }
         CcrSysDept parent = loadParent(dept.getParentId());
+        validateBranchType(dept, parent);
         if (StrUtil.isBlank(dept.getOrgCode())) {
             dept.setOrgCode(generateChildCode(parent));
         } else {
@@ -133,17 +135,24 @@ public class SysDeptController {
         if (StrUtil.isNotBlank(dept.getOrgType()) && !dept.getOrgType().equals(exist.getOrgType())) {
             exist.setOrgType(dept.getOrgType());
         }
+        // 支行性质变更:仅当请求显式携带时应用(缺省 null=综合,既有支行不受影响)
+        if (dept.getBranchType() != null) {
+            exist.setBranchType(dept.getBranchType());
+        }
         // 改上级:成环校验 + 编码前缀一致性校验,并重算祖先链/支行编码
+        CcrSysDept resolvedParent;
         if (dept.getParentId() != null && !dept.getParentId().equals(exist.getParentId())) {
-            CcrSysDept parent = loadParent(dept.getParentId());
+            resolvedParent = loadParent(dept.getParentId());
             checkNotCycle(id, dept.getParentId());
-            checkPrefixConsistency(parent, exist.getOrgCode());
+            checkPrefixConsistency(resolvedParent, exist.getOrgCode());
             exist.setParentId(dept.getParentId());
-            fillHierarchy(exist, parent);
+            fillHierarchy(exist, resolvedParent);
         } else {
             // 上级未变:机构类型可能变化,按当前上级重算支行编码
-            fillHierarchy(exist, loadParent(exist.getParentId()));
+            resolvedParent = loadParent(exist.getParentId());
+            fillHierarchy(exist, resolvedParent);
         }
+        validateBranchType(exist, resolvedParent);
         exist.setUpdateTime(LocalDateTime.now());
         deptMapper.updateById(exist);
         return R.ok();
@@ -208,6 +217,32 @@ public class SysDeptController {
             throw new ServiceException(400, "父机构不存在");
         }
         return parent;
+    }
+
+    /**
+     * 支行性质校验(2026-09-04 综合/零售两级支行):
+     * - 仅 BRANCH 机构有支行性质;非支行机构性质恒置空(兼容机构类型变更)。
+     * - 值域 RETAIL(零售)/COMPREHENSIVE(综合),空=综合。
+     * - RETAIL 上级必须为现存非零售 BRANCH(综合支行),保证审批沿组织树可上溯到管理综合支行;
+     *   挂总行/部门/网点/零售支行下均拒绝。
+     */
+    private void validateBranchType(CcrSysDept dept, CcrSysDept parent) {
+        String branchType = StrUtil.trimToNull(dept.getBranchType());
+        if (!"BRANCH".equals(dept.getOrgType())) {
+            dept.setBranchType(null);
+            return;
+        }
+        if (branchType == null) {
+            return; // 空=综合,缺省
+        }
+        if (!"RETAIL".equals(branchType) && !"COMPREHENSIVE".equals(branchType)) {
+            throw new ServiceException(400, "支行性质仅支持 RETAIL(零售支行)/COMPREHENSIVE(综合支行)");
+        }
+        if ("RETAIL".equals(branchType)
+                && (parent == null || !"BRANCH".equals(parent.getOrgType())
+                    || "RETAIL".equals(parent.getBranchType()))) {
+            throw new ServiceException(400, "零售支行必须挂靠在综合支行下(上级须为现存非零售支行,不能是总行/部门/网点/零售支行)");
+        }
     }
 
     /** 按父机构编码前缀自动生成下级编码:无下级=父码+01,否则最大下级码+1 */

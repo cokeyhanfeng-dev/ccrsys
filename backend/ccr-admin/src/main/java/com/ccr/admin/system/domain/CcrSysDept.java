@@ -34,6 +34,9 @@ public class CcrSysDept {
     /** HEAD总行/DEPT部门/BRANCH支行/NETWORK网点/GROUP集团管理机构 */
     private String orgType;
 
+    /** 支行性质:仅 BRANCH 机构有意义;RETAIL零售(须挂综合支行下)/COMPREHENSIVE综合/空=综合(2026-09-04) */
+    private String branchType;
+
     /** 负责人 */
     private String manager;
 

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS `ccr_sys_dept` (
   `dept_name`   VARCHAR(64)  NOT NULL COMMENT '机构名称',
   `parent_id`   BIGINT       NOT NULL DEFAULT 0 COMMENT '父机构id',
   `org_type`    VARCHAR(16)  NOT NULL COMMENT 'HEAD总行/DEPT部门/BRANCH支行/NETWORK网点/GROUP集团管理机构',
+  `branch_type` VARCHAR(16)  NULL COMMENT '支行性质:RETAIL零售/COMPREHENSIVE综合(NULL=综合),仅 BRANCH 机构有意义(2026-09-04 综合/零售两级支行)',
   `manager`     VARCHAR(64)  NULL COMMENT '负责人',
   `status`      VARCHAR(8)   NOT NULL DEFAULT 'ENABLE',
   `sort_no`     INT          NOT NULL DEFAULT 1,

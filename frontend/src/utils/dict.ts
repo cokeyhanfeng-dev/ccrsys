@@ -118,7 +118,7 @@ export function configStatusText(code?: string, fallback = '—'): string {
 export const NODE_LABELS: Record<string, string> = {
   BRANCH_MANAGER: '支行行长', DEPT_GENERAL_MANAGER: '部门总经理',
   VICE_PRESIDENT: '分管行长', SIX_PEOPLE_GROUP: '六人小组', PRESIDENT: '总行行长',
-  SECRETARY: '贷审会秘书岗'
+  SECRETARY: '贷审会秘书岗', PARENT_BRANCH_MANAGER: '综合支行行长'
 }
 export function nodeLabel(code?: string, fallback = '—'): string {
   return textOf(NODE_LABELS, code, fallback)
