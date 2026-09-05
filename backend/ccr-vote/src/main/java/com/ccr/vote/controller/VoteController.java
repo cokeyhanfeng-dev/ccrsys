@@ -130,6 +130,11 @@ public class VoteController {
                 SELECT va.round_id roundId, va.voter_anonym_no anonymNo, va.status assignStatus,
                        pi.application_id applicationId, a.application_no applicationNo,
                        a.business_type businessType, pi.pricing_customer_no customerNo,
+                       -- 客户/集团显示名称(与行长/审批待办同口径:客户快照 customerName,集团回退 groupName;§2026-09-05)
+                       COALESCE(
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')), ''),
+                         pi.pricing_customer_no) customerName,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.requested_rate requestedRate, pi.original_rate originalRate,
                        pi.pricing_amount pricingAmount, pi.product_code productCode,
