@@ -41,12 +41,13 @@ class ApiGatewayCreditResolutionGatewayTest {
         properties = new CreditResolutionProperties();
         properties.setEnabled(true);
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-        properties.setApiKey("ccrsys-test-api-key");
-        properties.setSecret("test-only-secret-with-sufficient-entropy");
+        properties.setAppId("10111");
+        properties.setApiKey("test-only-api-key-with-sufficient-entropy");
+        properties.setTokenPath("/miniapp/auth/token");
         properties.setAllowedDownloadHosts(List.of("127.0.0.1"));
         loginCount = new AtomicInteger();
         loginBody = new AtomicReference<>();
-        server.createContext("/auth/token", exchange -> {
+        server.createContext("/miniapp/auth/token", exchange -> {
             loginCount.incrementAndGet();
             assertGatewayCredentials(exchange);
             loginBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -96,8 +97,8 @@ class ApiGatewayCreditResolutionGatewayTest {
 
     @Test
     void latest_cachesTokensSeparatelyByPerformanceCode() {
-        server.removeContext("/auth/token");
-        server.createContext("/auth/token", exchange -> {
+        server.removeContext("/miniapp/auth/token");
+        server.createContext("/miniapp/auth/token", exchange -> {
             loginCount.incrementAndGet();
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String token = body.contains("100002") ? "user-token-100002" : "user-token-100001";
@@ -119,8 +120,8 @@ class ApiGatewayCreditResolutionGatewayTest {
 
     @Test
     void latest_unauthorized_refreshesTokenAndRetriesOnce() {
-        server.removeContext("/auth/token");
-        server.createContext("/auth/token", exchange -> {
+        server.removeContext("/miniapp/auth/token");
+        server.createContext("/miniapp/auth/token", exchange -> {
             int count = loginCount.incrementAndGet();
             json(exchange, 200, "{\"code\":200,\"data\":{\"token\":\"service-token-" + count
                     + "\",\"expiresIn\":3600}}");
@@ -192,7 +193,7 @@ class ApiGatewayCreditResolutionGatewayTest {
 
     @Test
     void latest_weakCredential_rejectsBeforeLogin() {
-        properties.setSecret("123456");
+        properties.setApiKey("123456");
 
         ServiceException error = assertThrows(ServiceException.class, () -> gateway.latest("100001", 2, "C001"));
 
@@ -206,8 +207,8 @@ class ApiGatewayCreditResolutionGatewayTest {
     }
 
     private void assertGatewayCredentials(HttpExchange exchange) {
-        assertEquals("ccrsys-test-api-key", exchange.getRequestHeaders().getFirst("apikey"));
-        assertEquals("test-only-secret-with-sufficient-entropy", exchange.getRequestHeaders().getFirst("secret"));
+        assertEquals("10111", exchange.getRequestHeaders().getFirst("X-App-Id"));
+        assertEquals("test-only-api-key-with-sufficient-entropy", exchange.getRequestHeaders().getFirst("apikey"));
         assertTrue(exchange.getRequestHeaders().getFirst("X-Sequence-No").matches("[0-9a-f]{32}"));
         assertTrue(exchange.getRequestHeaders().getFirst("X-Timestamp").matches("\\d{14}"));
     }

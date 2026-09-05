@@ -23,6 +23,7 @@ usage() {
   backend-test      执行后端全部单元测试
   frontend-test     npm ci 后执行前端生产构建
   verify            执行后端单测和前端构建
+  release [1|2|12]  生成生产更新包:1 后端、2 前端、12 全部；不传参数时交互选择
 
 容器测试环境:
   app-up            构建并启动 MySQL/Redis/后端/前端完整测试栈
@@ -99,6 +100,9 @@ case "${command_name}" in
   verify)
     "${CCR_PROJECT_ROOT}/dev" backend-test
     "${CCR_PROJECT_ROOT}/dev" frontend-test
+    ;;
+  release)
+    "${CCR_PROJECT_ROOT}/scripts/package-release.sh" "$@"
     ;;
   app-up)
     ccr_compose up -d --build --wait

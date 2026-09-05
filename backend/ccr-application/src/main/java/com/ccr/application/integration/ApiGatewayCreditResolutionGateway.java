@@ -223,8 +223,8 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
         return HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofMillis(properties.getRequestTimeoutMillis()))
                 .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                .header(properties.getAppIdHeader(), properties.getAppId().trim())
                 .header(properties.getApiKeyHeader(), properties.getApiKey().trim())
-                .header(properties.getSecretHeader(), properties.getSecret().trim())
                 .header("X-Sequence-No", UUID.randomUUID().toString().replace("-", ""))
                 .header("X-Timestamp", LocalDateTime.now().format(GATEWAY_TIMESTAMP_FORMATTER));
     }
@@ -325,12 +325,12 @@ public class ApiGatewayCreditResolutionGateway implements CreditResolutionGatewa
         }
         if (!StringUtils.hasText(properties.getBaseUrl()) || !StringUtils.hasText(properties.getTokenPath())
                 || !StringUtils.hasText(properties.getLatestPath()) || !StringUtils.hasText(properties.getExchangePath())
-                || !StringUtils.hasText(properties.getApiKey()) || !StringUtils.hasText(properties.getSecret())
-                || !StringUtils.hasText(properties.getApiKeyHeader()) || !StringUtils.hasText(properties.getSecretHeader())) {
-            throw new ServiceException(503, "授信决议 API 网关地址、接口路径、API Key 或 Secret 未配置");
+                || !StringUtils.hasText(properties.getAppId()) || !StringUtils.hasText(properties.getApiKey())
+                || !StringUtils.hasText(properties.getAppIdHeader()) || !StringUtils.hasText(properties.getApiKeyHeader())) {
+            throw new ServiceException(503, "授信决议 API 网关地址、接口路径、App ID 或 API Key 未配置");
         }
-        if (properties.getSecret().trim().length() < 16) {
-            throw new ServiceException(503, "授信决议 API 网关 Secret 长度不能少于 16 位");
+        if (properties.getApiKey().trim().length() < 16) {
+            throw new ServiceException(503, "授信决议 API 网关 API Key 长度不能少于 16 位");
         }
     }
 

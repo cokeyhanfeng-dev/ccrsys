@@ -23,8 +23,8 @@ public class CreditResolutionProperties {
     /** API 网关根地址，例如 https://api-gateway.internal.example。 */
     private String baseUrl;
 
-    /** 使用 API Key 和 Secret 换取服务令牌的相对路径。 */
-    private String tokenPath = "/auth/token";
+    /** 使用网关应用凭证换取用户令牌的相对路径。 */
+    private String tokenPath = "/miniapp/auth/token";
 
     /** 查询某客户或集团最新有效决议的相对路径。 */
     private String latestPath = "/miniapp/creditResolution/ccr/latest";
@@ -32,14 +32,14 @@ public class CreditResolutionProperties {
     /** 将私有桶文件 ID 兑换为短期下载地址的相对路径。 */
     private String exchangePath = "/miniapp/creditResolution/ccr/files/exchange";
 
-    /** API 网关分配给 CCRSYS 的 API Key。 */
+    /** API 网关分配给 CCRSYS 的应用标识。 */
+    private String appId;
+
+    /** API 网关分配给 CCRSYS 的 API Key；部署时至少使用 16 位高熵随机值。 */
     private String apiKey;
 
-    /** API 网关分配给 CCRSYS 的 Secret；部署时至少使用 16 位高熵随机值。 */
-    private String secret;
-
+    private String appIdHeader = "X-App-Id";
     private String apiKeyHeader = "apikey";
-    private String secretHeader = "secret";
     private long tokenFallbackTtlSeconds = 14400;
     private long tokenRefreshSkewSeconds = 60;
 
