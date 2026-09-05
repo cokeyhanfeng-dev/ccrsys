@@ -119,8 +119,8 @@
         </div>
       </div>
 
-      <!-- 2b. 授信信息(补录 + 数仓协议合并去重) -->
-      <div class="card">
+      <!-- 2b. 授信信息(补录 + 数仓协议合并去重;仅贷款场景,存款无授信概念,§2026-09-05 与审批详情对齐) -->
+      <div class="card" v-if="isLoan">
         <div class="card__head"><span>授信信息</span></div>
         <table class="table" v-if="creditAgreements.length">
           <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
@@ -144,8 +144,8 @@
         <div v-else class="empty-line">暂无授信协议数据</div>
       </div>
 
-      <!-- 2d. 申请材料附件(申请时上传材料元数据,下载走附件下载接口) -->
-      <div class="card">
+      <!-- 2d. 申请材料附件(申请时上传材料元数据,下载走附件下载接口;仅贷款场景,存款无附件概念,§2026-09-05 与审批详情对齐) -->
+      <div class="card" v-if="isLoan">
         <div class="card__head"><span>申请材料附件</span><span class="badge badge--info">{{ attachments.length }} 个附件</span></div>
         <table class="table" v-if="attachments.length">
           <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
@@ -199,7 +199,7 @@
         <table class="table" v-if="archive.pricingItems?.length">
           <thead>
             <tr>
-              <th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th>授信协议编号</th><th>担保方式</th><th>金额(万元)</th><th>期限</th>
+              <th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th>授信协议编号</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th><th>期限</th>
               <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>状态</th>
             </tr>
           </thead>
@@ -211,8 +211,8 @@
                 <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
                 <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
                 <td :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
-                <!-- 担保方式:有担保措施可点开行内明细;信用/未录措施纯文本(无内容可展开) -->
-                <td>
+                <!-- 担保方式(仅贷款场景,存款无担保概念):有担保措施可点开行内明细;信用/未录措施纯文本(无内容可展开) -->
+                <td v-if="isLoan">
                   <span v-if="hasMeasureRows(p)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(p)" @keydown.enter="toggleExpand(p)">{{ itemGuaranteeText(p) }}<span class="chev">{{ isExpanded(p) ? '▲' : '▼' }}</span></span>
                   <span v-else>{{ itemGuaranteeText(p) }}</span>
                 </td>
@@ -226,7 +226,7 @@
               </tr>
               <!-- 展开:该分项的担保措施明细(抵押物/保证人等),申请录入按分项挂载 -->
               <tr v-if="isExpanded(p)" class="expand-row">
-                <td :colspan="12">
+                <td :colspan="isLoan ? 12 : 11">
                   <div class="expand-panel">
                     <div class="expand-title">担保明细<span class="section-tip">申请录入</span></div>
                     <table class="table">
@@ -273,8 +273,8 @@
         </div>
       </div>
 
-      <!-- 5b. 关联人(申请录入,按关联客户号补全基本信息/授信信息) -->
-      <div class="card" v-if="archive.relatedPersons?.length">
+      <!-- 5b. 关联人(申请录入,按关联客户号补全基本信息/授信信息;仅贷款场景,存款无关联人概念,§2026-09-05 与审批详情对齐) -->
+      <div class="card" v-if="isLoan && archive.relatedPersons?.length">
         <div class="card__head"><span>关联人</span></div>
         <table class="table">
           <thead>
@@ -406,7 +406,7 @@
             </tr>
           </tbody>
         </table>
-        <table class="table" style="margin-top:8px" v-if="archive.resolutionExecutions?.length">
+        <table class="table" style="margin-top:8px" v-if="isLoan && archive.resolutionExecutions?.length">
           <thead><tr><th>贷款合同号</th><th>补充协议号</th><th>执行利率</th><th>执行状态</th><th>核验结果</th><th>核验时间</th></tr></thead>
           <tbody>
             <tr v-for="(e, i) in archive.resolutionExecutions" :key="i">
@@ -422,7 +422,7 @@
       </div>
 
       <!-- 11. 历史履约(该申请承诺计划 + 逐期指标完成情况;与贡献度跟踪同源,按申请挂钩) -->
-      <div class="card" v-if="commitmentGroups.length">
+      <div class="card" v-if="isLoan && commitmentGroups.length">
         <div class="card__head">
           <span>历史履约 <InfoTip content="该申请审批通过后形成的承诺计划履约情况(与贡献度跟踪同一数据源,按申请挂钩;每期 = 每一次申请)。" style="margin-left:6px" /></span>
           <button class="btn btn--text" @click="router.push('/commitment')">查看贡献度跟踪</button>
