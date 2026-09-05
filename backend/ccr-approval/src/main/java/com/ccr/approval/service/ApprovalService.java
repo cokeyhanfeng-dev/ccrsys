@@ -55,6 +55,14 @@ public interface ApprovalService {
     List<Map<String, Object>> listDone();
 
     /**
+     * 工作台「今日已办」计数(§2026-09-05):与累计/历史参与口径一致——今日审批 action ∪ 本人表决 ballot ∪ 本人行长决策,
+     * 按申请去重(旧实现仅计 ccr_approval_action,委员表决/行长决策永不计入今日,生产实报已办数与累计不一致)
+     *
+     * @return 本人今日办理过的申请数
+     */
+    int countTodayDone();
+
+    /**
      * 历史审批分页(§13.2/§14.4):客户经理看本人申请、审批人看本人审批过、行长/审计看全部
      *
      * @param applicationNo 申请号模糊(可空)

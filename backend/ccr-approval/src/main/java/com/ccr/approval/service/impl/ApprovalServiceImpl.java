@@ -838,6 +838,25 @@ public class ApprovalServiceImpl implements ApprovalService {
                 """, operatorId);
     }
 
+    /** 工作台今日已办(§2026-09-05):今日审批 action ∪ 本人表决 ballot ∪ 本人行长决策,按申请去重(与累计口径一致) */
+    @Override
+    public int countTodayDone() {
+        Long userId = currentLoginUser.requireLoginId();
+        Integer n = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM (
+                  SELECT pi.application_id FROM ccr_approval_action aa
+                   JOIN ccr_pricing_item pi ON pi.id = aa.pricing_item_id
+                   WHERE aa.del_flag = '0' AND aa.operator_id = ? AND aa.operation_time >= CURDATE()
+                  UNION SELECT pi.application_id FROM ccr_ballot b
+                   JOIN ccr_pricing_item pi ON pi.id = b.pricing_item_id
+                   WHERE b.del_flag = '0' AND b.voter_user_hash = SHA2(?, 256) AND b.submit_time >= CURDATE()
+                  UNION SELECT pi.application_id FROM ccr_president_decision pd
+                   JOIN ccr_pricing_item pi ON pi.id = pd.pricing_item_id
+                   WHERE pd.del_flag = '0' AND pd.president_user_id = ? AND pd.decision_time >= CURDATE()
+                ) t""", Integer.class, userId, userId, userId);
+        return n == null ? 0 : n;
+    }
+
     // ---------- 历史审批(§13.2/§14.4) ----------
 
     @Override

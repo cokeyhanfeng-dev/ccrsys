@@ -1427,6 +1427,12 @@ public class ApprovalController {
         return R.ok(approvalService.listDone());
     }
 
+    /** 工作台今日已办计数(§2026-09-05):本人今日 action∪表决∪决策 的去重申请数(与累计口径一致) */
+    @GetMapping("/done/today")
+    public R<Integer> doneToday() {
+        return R.ok(approvalService.countTodayDone());
+    }
+
     /** 历史审批分页(§13.2/§14.4,按登录人角色/数据权限;§2026-08-26 支持申请号/状态/客户名称筛选) */
     @GetMapping("/history")
     public R<Map<String, Object>> history(@RequestParam(defaultValue = "1") int pageNum,

@@ -24,7 +24,7 @@
         </div>
         <div class="ws-item">
           <span class="ws-item__label">今日已办</span>
-          <b class="ws-item__num">{{ doneToday }}</b>
+          <b class="ws-item__num">{{ todayDoneCount }}</b>
         </div>
         <div class="ws-item">
           <span class="ws-item__label">承诺达成率</span>
@@ -175,12 +175,11 @@
 </template>
 
 <script setup lang="ts">
-import { listApprovalDone } from '@/api/approval2'
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { get } from '@/api/request'
-import { listApprovalTasks, pageApprovalHistory } from '@/api/approval'
+import { listApprovalTasks, listTodayDone, pageApprovalHistory } from '@/api/approval'
 import { listVoteTodo, listPresidentTodo } from '@/api/vote'
 import { listCommitmentTracks } from '@/api/commitment'
 import {
@@ -229,13 +228,12 @@ const greeting = computed(() => {
 const WEEK = ['日', '一', '二', '三', '四', '五', '六']
 const dateDay = computed(() => `${now.value.getMonth() + 1}月${now.value.getDate()}日`)
 const dateText = computed(() => `${now.value.getFullYear()}年${now.value.getMonth() + 1}月${now.value.getDate()}日 星期${WEEK[now.value.getDay()]}`)
-const todayStr = computed(() => `${now.value.getFullYear()}-${String(now.value.getMonth() + 1).padStart(2, '0')}-${String(now.value.getDate()).padStart(2, '0')}`)
 
 // ---------- 数据 ----------
 const tasks = ref<any[]>([])          // 审批待办(支行行长/部门总经理/分管行长)
 const voteTodos = ref<any[]>([])      // 委员待表决
 const presidentTodos = ref<any[]>([]) // 行长待决策
-const doneRows = ref<any[]>([])       // 本人已办
+const todayDoneCount = ref(0)         // 今日已办(后端统计:今日 action∪表决∪决策,§2026-09-05 与累计同口径)
 const historyTotal = ref(0)           // 历史 total(累计已办)
 const applications = ref<any[]>([])   // 客户经理本人申请 / admin 全量在途
 const trackRows = ref<any[]>([])       // 承诺跟踪记录(v2:TRACKING/FINISHED_MET/FINISHED_UNMET)
@@ -420,10 +418,6 @@ const atRiskTop = computed(() => {
   return rows
 })
 
-// ---------- 已办 ----------
-const doneToday = computed(
-  () => doneRows.value.filter((r) => String(r.operationTime || '').slice(0, 10) === todayStr.value).length
-)
 
 // ---------- KPI 卡(按角色差异化) ----------
 // 审批中=复合多状态(与历史申请页筛选/后端 status IN 口径一致;§2026-08-26 统计卡点击跳转历史并自动筛选)
@@ -436,7 +430,7 @@ const stats = computed(() => {
     sub: s.unmet ? `到期未完成 ${s.unmet} 项` : '暂无到期未完成', subDanger: s.unmet > 0
   }
   const todayCard = {
-    icon: 'CircleCheck', label: '今日已办', value: doneToday.value,
+    icon: 'CircleCheck', label: '今日已办', value: todayDoneCount.value,
     cls: 'stat-card__num--success', to: '/history', sub: '本人今日办理的任务', subDanger: false
   }
   const totalCard = {
@@ -488,7 +482,7 @@ async function load() {
     jobs.push(safe(async () => { applications.value = (await get<any[]>('/ccr/applications')) || [] }))
   }
   if (r !== 'customer_manager') {
-    jobs.push(safe(async () => { doneRows.value = (await listApprovalDone<any[]>()) || [] }))
+    jobs.push(safe(async () => { todayDoneCount.value = Number(await listTodayDone()) || 0 }))
     jobs.push(safe(async () => {
       const h = await pageApprovalHistory(1, 1)
       historyTotal.value = Number(h?.total) || 0
