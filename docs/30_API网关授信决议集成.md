@@ -16,8 +16,16 @@ CCRSYS 后端
 - Magic API 不再参与查询、鉴权或文件兑换。
 - CCRSYS 不直连 Mini-App-Plus 数据库，也不保存 MinIO AccessKey/SecretKey。
 - API 网关令牌路由转发到 Mini-App-Plus `POST /miniapp/creditResolution/ccr/token`。Mini-App 应用侧再次校验 App ID、API Key、时间戳和流水号，再按绩效码查找启用用户并校验 `ccr_service` 角色。
-- 浏览器只接收决议和文件元数据；App ID、API Key、Bearer Token、对象键和短期签名 URL 均留在服务端。
+- 浏览器接收决议元数据和经 CCR 鉴权代理的文件内容；App ID、API Key、Bearer Token、对象键和短期签名 URL 均留在服务端。
 - 集团查询使用 `customerType=3` 和 CCRSYS `groupNo`，该值对应 Mini-App-Plus `customer_id/groupId`。
+
+### 第四环节附件预览
+
+“利率申请”的最新授信决议卡片提供逐文件预览入口。预览窗口可拖动、无模态遮罩，可同时填写申请；支持 PDF、PNG、JPEG，其余格式下载查看。打开前保存当前草稿，关闭或切换文件时取消请求并释放浏览器临时文件。
+
+CCR 新增 `GET /ccr/external-credit-resolutions/applications/{applicationId}/files/{fileId}/preview?resolutionId=...`，要求当前客户经理拥有该草稿。服务端从申请读取客户范围和编号，重新查询最新决议，校验决议 ID 和文件归属，再复用现有安全下载流程返回二进制。决议变更返回 409，文件不属于决议返回 404；响应禁止缓存，按文件特征识别可预览格式。预览不写附件表，第五环节继续自动导入。此次上线仅更新 CCR 后端和前端，无需新增网关路由或修改 Mini-App。
+
+回归检查：本人草稿可查看；他人/非草稿拒绝；旧决议和伪造文件拒绝且不调用下载；预览无附件写入；PDF/图片可查看，其他格式仅下载；关闭/快速切换无旧内容回显；窗口打开时表单可编辑，第五环节导入仍有效。
 
 ## 2. API 网关注册清单
 

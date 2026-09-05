@@ -29,6 +29,8 @@ ccr/
 
 ## 隔离环境快速开始
 
+Windows 同事可在项目根目录运行 `release.cmd 1`（后端）、`release.cmd 2`（前端）、`release.cmd 12`（全部），也可双击后选择。首次使用请按 [Windows 打包说明](docs/31_离线增量部署手册.md#30a-windows-开发机打包) 准备工具；脚本不安装工具或修改系统配置。
+
 ```bash
 ./dev setup
 ./dev versions
