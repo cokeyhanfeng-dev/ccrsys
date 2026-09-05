@@ -36,7 +36,7 @@
         >
           <template #default="{ data }">
             <span class="tree-node">
-              <span class="tree-node__name">{{ data.deptName }}</span>
+              <span class="tree-node__name" :title="data.deptName">{{ data.deptName }}</span>
               <span class="tree-node__code">{{ data.orgCode }}</span>
               <!-- 零售支行徽标(2026-09-04 综合/零售两级支行) -->
               <span v-if="data.branchType === 'RETAIL'" class="badge badge--warning">零售支行</span>
@@ -361,8 +361,11 @@ onMounted(load)
 .dept-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .dept-tree { flex: 0 0 480px; max-width: 100%; max-height: calc(100vh - 220px); overflow: auto; }
 .dept-detail { flex: 1 1 320px; min-width: 0; }
-.tree-node { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tree-node__code { color: var(--color-text-sub); font-size: 12px; } /* §UI审查:浅灰小字改 text-sub 提对比 */
+/* 树节点整行不横向溢出:名称可收缩省略(title 显全名),徽标固定在行尾恒可见(2026-09-05 零售支行徽标被右缘遮挡修复) */
+.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.tree-node__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node__code { flex: none; color: var(--color-text-sub); font-size: 12px; white-space: nowrap; } /* §UI审查:浅灰小字改 text-sub 提对比 */
+.tree-node .badge { flex: none; white-space: nowrap; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 /* 768px 断点:树与详情纵向堆叠,双列表单转单列 */
 @media (max-width: 768px) {
