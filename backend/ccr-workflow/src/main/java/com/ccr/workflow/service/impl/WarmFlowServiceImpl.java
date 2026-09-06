@@ -207,11 +207,12 @@ public class WarmFlowServiceImpl implements WarmFlowService {
         return handlers;
     }
 
-    /** 确保指定流程定义已发布;已发布跳过,初始化失败仅记日志不影响系统启动 */
+    /** 确保指定流程定义已发布;已发布则校验并补齐缺失标准链出边(自愈),未发布则创建。初始化失败仅记日志不影响系统启动 */
     private void ensureFlow(String flowCode, String flowName, Map<String, String> nodeHandlers) {
         try {
             Definition published = definitionService.getPublishByFlowCode(flowCode);
             if (published != null) {
+                repairMissingSkips(published, nodeHandlers);
                 return;
             }
             createFlow(flowCode, flowName, nodeHandlers);
@@ -220,6 +221,53 @@ public class WarmFlowServiceImpl implements WarmFlowService {
             // 初始化失败不影响系统启动(轨迹记录时再降级)
             log.error("流程定义初始化失败 flowCode={}", flowCode, e);
         }
+    }
+
+    /**
+     * 自愈校验(2026-09-05):已发布定义的 flow_skip PASS 出边须覆盖 nodeHandlers 顺序标准链
+     * (start→首节点→…→末节点→end),缺哪条补哪条——仅 INSERT,不动既有行,幂等可重复执行。
+     * 背景:曾因清理脚本清空 flow_skip 但保留 flow_definition/flow_node,而旧 ensureFlow 见定义
+     * 已发布即跳过重建,导致 flow_skip 永久为空,引擎启动/推进找不出边报 NPE(生产二犯)。
+     * 此自愈保证定义在而跳转缺失时重启即恢复,不依赖人工补脚本。
+     */
+    private void repairMissingSkips(Definition definition, Map<String, String> nodeHandlers) {
+        if (definition == null || nodeHandlers == null || nodeHandlers.isEmpty()) {
+            return;
+        }
+        Long defId = definition.getId();
+        List<String> codes = new ArrayList<>(nodeHandlers.keySet());
+        // start→首节点(0 开始节点→1 中间节点)
+        if (ensureSkip(defId, "start", 0, codes.get(0), 1)) {
+            log.info("flow_skip 自愈补齐: 定义{} start→{}", defId, codes.get(0));
+        }
+        // 中间节点逐级上送,末节点→end(2 结束节点)
+        for (int i = 0; i < codes.size(); i++) {
+            String now = codes.get(i);
+            boolean last = i + 1 >= codes.size();
+            String next = last ? "end" : codes.get(i + 1);
+            if (ensureSkip(defId, now, 1, next, last ? 2 : 1)) {
+                log.info("flow_skip 自愈补齐: 定义{} {}→{}", defId, now, next);
+            }
+        }
+    }
+
+    /** 单个出边缺失判定并补齐;已存在(del_flag='0' 或空)则不动,返回是否实际补齐 */
+    private boolean ensureSkip(Long defId, String nowNode, int nowType, String nextNode, int nextType) {
+        Long exist = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM flow_skip WHERE definition_id = ? AND now_node_code = ?"
+                        + " AND next_node_code = ? AND (del_flag = '0' OR del_flag IS NULL)",
+                Long.class, defId, nowNode, nextNode);
+        if (exist != null && exist > 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                INSERT INTO flow_skip
+                  (id, definition_id, now_node_code, now_node_type, next_node_code, next_node_type,
+                   skip_name, skip_type, skip_condition, del_flag, create_time, create_by, update_time, update_by)
+                VALUES (?, ?, ?, ?, ?, ?, '通过', 'PASS', NULL, '0', NOW(), 'system', NOW(), 'system')
+                """,
+                IdUtil.getSnowflakeNextId(), defId, nowNode, nowType, nextNode, nextType);
+        return true;
     }
 
     @Override
