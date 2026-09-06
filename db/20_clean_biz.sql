@@ -1,12 +1,15 @@
 -- ============================================================
 -- 手工测试业务数据清理(2026-08-13,配合 docs/06_测试方案.md §12 数据准备 / docs/07_手工测试用例.md)
 -- 范围:清空全部业务表(申请/分项/审批/表决/决议/快照/承诺/通知/审计/导出/outbox/变更日志)
---   + Warm-Flow 运行数据(flow_instance/flow_task/flow_his_task/flow_skip,审批实例/任务/历史/跳过)
+--   + Warm-Flow 运行态(flow_instance/flow_task/flow_his_task,审批实例/任务/历史)
 -- 保留:系统主数据(sys_user/sys_dept/sys_menu/sys_role/sys_user_post)、配置表
 --   (dict/rate_matrix/node_permission/node_assignee/dept_vp/product*/lpr*/rule*/cache_config/
 --    dataset*/field*/metric*/source_mapping/validation_rule/display_schema/notification_rule*/
 --    tracking_policy*)、数仓 mock(caps_*/dw_*,由 10_mock/15/16/17 维护)、
---    Warm-Flow 流程定义(flow_definition/flow_node/flow_user,审批流程定义必须保留)
+--    Warm-Flow 流程定义与跳转(flow_definition/flow_node/flow_user/flow_skip,定义静态数据必须保留)
+-- ⚠️ 勿清 flow_skip:清它而留定义会导致 ensureFlow「已发布即跳过」不重建,引擎永久缺跳转 NPE
+--    (2026-08-21/2026-09-05 两次生产事故根因)。清理运行态即可,flow_skip 随定义保留。
+--    若环境 flow_skip 已被清空:重启后端(v2.0.3+ ensureFlow 自愈自动补)或执行补 skip 脚本。
 -- 幂等:可重复执行;TRUNCATE 隐式提交,执行前已 SET FOREIGN_KEY_CHECKS=0
 -- 执行:docker exec -i ccr-mysql mysql -uroot -proot123 --default-character-set=utf8mb4 ccr_rate < db/20_clean_biz.sql
 -- ============================================================
@@ -15,8 +18,8 @@ USE `ccr_rate`;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- Warm-Flow 运行数据(流程定义 flow_definition/flow_node/flow_user 保留)
-TRUNCATE TABLE flow_skip;
+-- Warm-Flow 运行态清空(流程定义 flow_definition/flow_node/flow_user 与跳转 flow_skip 保留,
+-- 勿清 flow_skip——见头部⚠️;本行注释为原误删点,已移除)
 TRUNCATE TABLE flow_task;
 TRUNCATE TABLE flow_his_task;
 TRUNCATE TABLE flow_instance;
