@@ -54,6 +54,29 @@ public class ExternalCreditResolutionService {
                 .orElseGet(() -> new CreditResolutionLookupResponse(true, false, "未查询到有效授信决议", null));
     }
 
+    /** 草稿阶段只读取预览文件，不写入申请附件。 */
+    public DownloadedResolutionFile preview(Long applicationId, String resolutionId, String fileId) {
+        applicationAccessService.requireDraftOwner(applicationId);
+        if (!gateway.isEnabled()) {
+            throw new ServiceException(503, "授信决议集成功能未配置");
+        }
+        CcrApplication application = applicationMapper.selectById(applicationId);
+        if (application == null || "1".equals(application.getDelFlag())) {
+            throw new ServiceException(404, "申请不存在");
+        }
+        String operator = currentPerformanceCode();
+        Subject subject = subject(application.getCustomerScope(), application.getCustomerNo(), application.getGroupNo());
+        ExternalCreditResolution resolution = gateway.latest(operator, subject.customerType(), subject.customerId())
+                .orElseThrow(() -> new ServiceException(404, "未查询到有效授信决议"));
+        if (!java.util.Objects.equals(resolution.getResolutionId(), resolutionId)) {
+            throw new ServiceException(409, "授信决议已更新，请重新查询后预览");
+        }
+        ExternalResolutionFile file = (resolution.getFiles() == null ? List.<ExternalResolutionFile>of() : resolution.getFiles())
+                .stream().filter(item -> item != null && java.util.Objects.equals(item.getFileId(), fileId))
+                .findFirst().orElseThrow(() -> new ServiceException(404, "文件不属于当前授信决议"));
+        return gateway.download(operator, resolutionId, file);
+    }
+
     public CreditResolutionImportResponse importLatest(Long applicationId) {
         applicationAccessService.requireDraftOwner(applicationId);
         if (!gateway.isEnabled()) {

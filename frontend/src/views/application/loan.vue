@@ -510,6 +510,8 @@
           <div><div class="desc-item__label">决议附件</div><div class="desc-item__value">{{ externalResolutionLookup.resolution.files?.length || 0 }} 个</div></div>
         </div>
         <div v-else class="empty-line">{{ externalResolutionLookup?.message || '进入本环节后自动查询最新有效授信决议' }}</div>
+        <ExternalResolutionPreview :resolution="externalResolutionLookup?.resolution"
+          :prepare="prepareResolutionPreview" />
       </div>
 
       <!-- 授信概览:业务类型 + 授信额度/拆分合计(存量/新增/GROUP 项按列对齐);GROUP 追加集团批复/可用 -->
@@ -1011,6 +1013,7 @@ import {
   type CreditResolutionLookup
 } from '@/api/application'
 import SubmitCheckDialog from './SubmitCheckDialog.vue'
+import ExternalResolutionPreview from './ExternalResolutionPreview.vue'
 import {
   GUARANTEE_TYPES, guaranteeTypeText, nodeLabel,
   inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
@@ -2180,6 +2183,12 @@ async function uploadPendingAttachments() {
       ElMessage.error(`附件「${a.name}」上传失败:${err?.message || '网络异常'}`)
     }
   }
+}
+
+/** 保存客户上下文，供后端校验当前草稿的预览权限。 */
+async function prepareResolutionPreview(): Promise<string | number | null> {
+  if (saving.value || !(await ensureDraft())) return null
+  return draft.id || null
 }
 
 /** 查询客户或集团最新有效授信决议；查询失败只提示，不清空现有申请数据。 */

@@ -82,13 +82,13 @@ ccr:
     credit-resolution:
       enabled: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ENABLED:false}
       base-url: ${CCR_INTEGRATION_CREDIT_RESOLUTION_GATEWAY_BASE_URL:}
-      token-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_PATH:/auth/token}
+      token-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_PATH:/miniapp/auth/token}
       latest-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_LATEST_PATH:/miniapp/creditResolution/ccr/latest}
       exchange-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_EXCHANGE_PATH:/miniapp/creditResolution/ccr/files/exchange}
+      app-id: ${CCR_INTEGRATION_CREDIT_RESOLUTION_APP_ID:}
       api-key: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY:}
-      secret: ${CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET:}
+      app-id-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_APP_ID_HEADER:X-App-Id}
       api-key-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY_HEADER:apikey}
-      secret-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_SECRET_HEADER:secret}
       token-fallback-ttl-seconds: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_FALLBACK_TTL_SECONDS:14400}
       token-refresh-skew-seconds: 60
       allowed-download-hosts: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ALLOWED_DOWNLOAD_HOSTS:}
