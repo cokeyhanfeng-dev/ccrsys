@@ -419,6 +419,16 @@ const atRiskTop = computed(() => {
 })
 
 
+// 待我审批卡数值=去重申请数:待办列表按申请聚合(同申请多分项一张卡、一次处理整单),
+// 计数须与 /approval 页卡片数一致;listTodo/listVoteTodo 按分项行返回,直接用行数会把多分项申请重复计 §2026-09-05
+const pendingAppCount = computed(() => {
+  const seen = new Set<string>()
+  for (const p of [...tasks.value, ...voteTodos.value]) {
+    seen.add(String(p.applicationId || p.id || p.pricingItemId || p.roundId || ''))
+  }
+  return seen.size
+})
+
 // ---------- KPI 卡(按角色差异化) ----------
 // 审批中=复合多状态(与历史申请页筛选/后端 status IN 口径一致;§2026-08-26 统计卡点击跳转历史并自动筛选)
 const IN_PROGRESS_STATUS = 'ROUTING,SUBMITTED,SUBMITTING,APPROVED_LEVEL,PROCESSING,VOTING,COMMITTEE_PASS,PRESIDENT_DECISION'
@@ -461,8 +471,8 @@ const stats = computed(() => {
   } else if (APPROVAL_ROLES.includes(r) || isCommittee.value) {
     // §委员工作台:表决不再单设「待我表决」卡,并入「待我审批」——/approval 页已把普通审批待办与
     // 表决待办(listVoteTodo)按申请聚合展示,两类入口同一页面,故合并计数;去掉该卡后委员 5 卡变 4 卡不换行
-    const mergeTodo = tasks.value.length + voteTodos.value.length
-    cards.push({ icon: 'Stamp', label: '待我审批', value: mergeTodo, cls: 'stat-card__num--warning', to: '/approval', sub: isCommittee.value ? '待本人审批/表决的分项' : '流转到本人当前节点的分项', subDanger: false })
+    // 待办卡数值按整单(去重申请)计,与 /approval 待办卡片数一致,非按分项行数 §2026-09-05
+    cards.push({ icon: 'Stamp', label: '待我审批', value: pendingAppCount.value, cls: 'stat-card__num--warning', to: '/approval', sub: isCommittee.value ? '待本人审批/表决的申请' : '流转到本人当前节点的申请', subDanger: false })
   }
   cards.push(todayCard, totalCard, trackCard)
   return cards

@@ -651,8 +651,8 @@
          行长统一「同意利率/一票否决」,并在本区查看六人小组匿名审批意见(§12.7) -->
     <div class="card" v-if="isPresidentDecision">
       <div class="card__head"><span>行长决策(整单)</span></div>
-      <!-- 六人审批结果汇总(整单:取首待决策分项计票,分项明细在下方匿名意见折叠内);
-           分层展示:表决结论(主) + 计票(次) + 申请金额/利率(整单决策需知) -->
+      <!-- 六人表决结论 + 整单概要(§2026-09-05 主卡重构):结论/计票/总额/项数留顶部;
+           分项原执行/申请/审批通过利率与委员匿名意见平铺于下方列表,不再只显一个/首项利率 -->
       <div class="vote-summary" v-if="presidentDecisionItems.length">
         <div class="vote-summary__main">
           <span class="vote-summary__verdict" :class="presidentVoteResult === 'FAIL' ? 'is-fail' : 'is-pass'">
@@ -669,44 +669,62 @@
         </div>
         <div class="vote-summary__meta">
           <span class="dg-label">申请总额</span><b>{{ fmtAmount(presidentTotalAmount) }} 万元</b>
-          <span class="dg-label">申请利率</span><b>{{ fmtRate(presidentDecisionItems[0]?.requestedRate) }}</b>
-          <span class="dg-label">测算利率</span><b>{{ fmtRate(presidentDecisionItems[0]?.calculatedRate) }}</b>
           <span class="dg-label">待决策分项</span><b>{{ presidentDecisionItems.length }} 项</b>
+          <span class="dg-label">业务类型</span><b>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></b>
+          <span class="dg-label">申请编号</span><b>{{ application.applicationNo || '—' }}</b>
         </div>
       </div>
-      <div class="stat-card__sub" v-if="presidentDecisionItems.length > 1" style="margin:8px 0">
-        本申请含多个分项,六人小组按分项分别计票;以下按分项展示表决结果与匿名意见,行长统一整单决策。
+      <!-- 待决策分项完整列表(§2026-09-05 主卡重构):整单一次决策,不再只显一个/首项利率;
+           各分项逐行展示 原执行→申请→审批通过 利率,同意后按「审批通过利率」逐项签发决议 -->
+      <table v-if="presidentDecisionItems.length" class="table">
+        <thead><tr>
+          <th>授信分项</th>
+          <th v-if="isGroup">成员</th>
+          <th>金额(万元)</th>
+          <th>期限</th>
+          <th>原执行利率</th>
+          <th>申请利率</th>
+          <th>审批通过利率</th>
+        </tr></thead>
+        <tbody>
+          <tr v-for="it in presidentDecisionItems" :key="it.id">
+            <td>
+              <span style="font-weight:600">{{ itemTitle(it) }}</span>
+              <span v-if="isRateAdjusted(it)" class="badge badge--warning" style="margin-left:8px">已调价 {{ fmtRate(it.requestedRate) }} → {{ fmtRate(it.currentApprovalRate) }}</span>
+            </td>
+            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+            <td>{{ fmtTerm(it) }}</td>
+            <td class="num">{{ origRateText(it) }}</td>
+            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+            <td class="num"><b>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</b></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="!presidentDecisionItems.length" class="empty-line" style="padding:8px">暂无待决策分项</div>
+
+      <!-- 六人小组匿名审批意见(§2026-09-05 主卡重构):整单推进、意见整单只展示一次(不再按分项折叠重复);
+           匿名码每批随机分配,仅行长/审计可见 -->
+      <div v-if="presidentDecisionItems.length" class="op-item__subhead" style="margin-top:14px">存贷款利率审批小组意见</div>
+      <table v-if="presidentOpinionRows.length" class="table">
+        <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
+        <tbody>
+          <tr v-for="(o, i) in presidentOpinionRows" :key="i">
+            <td>{{ o.seq ? '存贷款利率审批小组成员 ' + o.seq : (o.anonymNo || '—') }}</td>
+            <td>
+              <span :class="voteChoiceBadge(o.voteChoice)">
+                {{ voteChoiceText(o.voteChoice) }}
+              </span>
+            </td>
+            <td>{{ o.voteComment || '—' }}</td>
+            <td>{{ o.submitTime ? String(o.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="presidentDecisionItems.length && !presidentOpinionRows.length" class="empty-line" style="padding:8px">暂无委员匿名意见</div>
+      <div v-if="presidentDecisionItems.length" class="stat-card__sub" style="margin:6px 0 0">
+        整单一次决策:同意后按上表「审批通过利率」逐项签发决议;一票否决则整单终态、全部分项一并否决。
       </div>
-      <!-- 六人小组匿名审批意见(匿名码每批随机分配,仅行长/审计可见;默认收起) -->
-      <el-collapse v-if="presidentDecisionItems.length">
-        <el-collapse-item v-for="it in presidentDecisionItems" :key="it.id" :name="`item-${it.id}`">
-          <template #title>
-            <span style="font-weight:600;margin-right:8px">{{ itemName(it) }}</span>
-            <span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteText(voteResultOfItem(it)) }}</span>
-          </template>
-          <div class="stat-card__sub" style="margin-bottom:6px">
-            金额 {{ fmtAmount(it.pricingAmount) }} 万 · 期限 {{ fmtTerm(it) }}
-            · 申请利率 {{ fmtRate(it.requestedRate) }} · 测算利率 {{ fmtRate(it.calculatedRate) }} · 审批利率 {{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}
-            · 六人表决 {{ voteText(voteResultOfItem(it)) }}
-          </div>
-          <table class="table">
-            <thead><tr><th>委员(匿名)</th><th>表决</th><th>意见</th><th>提交时间</th></tr></thead>
-            <tbody>
-              <tr v-for="(o, i) in (presidentOpinions[it.id] || [])" :key="i">
-                <td>{{ o.seq ? '存贷款利率审批小组成员 ' + o.seq : (o.anonymNo || '—') }}</td>
-                <td>
-                  <span :class="voteChoiceBadge(o.voteChoice)">
-                    {{ voteChoiceText(o.voteChoice) }}
-                  </span>
-                </td>
-                <td>{{ o.voteComment || '—' }}</td>
-                <td>{{ o.submitTime ? String(o.submitTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="!(presidentOpinions[it.id] || []).length" class="empty-line" style="padding:8px">暂无委员匿名意见</div>
-        </el-collapse-item>
-      </el-collapse>
       <div class="op-form__row" style="margin-top:12px">
         <label class="op-form__label">行长决策意见</label>
         <el-input v-model="presidentOpinion" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="同意可填意见;一票否决必须填写意见" />
@@ -835,6 +853,56 @@
       </template>
     </el-dialog>
 
+    <!-- 行长整单决策确认弹窗(§2026-09-05):顶部整单概要 + 逐分项明细(金额/期限/申请利率/审批利率/六人表决),
+         行长逐项核对后整单同意/一票否决;替代旧 ElMessageBox 纯文本(只显第一分项利率) -->
+    <el-dialog v-model="presidentConfirmVisible" :title="presidentConfirmTitle" width="780px">
+      <div class="op-confirm">
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">操作类型</span>
+          <span class="op-confirm__action" :class="presidentConfirmAction === 'APPROVE' ? 'is-ok' : 'is-danger'">
+            {{ presidentConfirmAction === 'APPROVE' ? '同意利率(整单签发决议)' : '一票否决(整单终态)' }}
+          </span>
+        </div>
+        <div class="op-confirm__row"><span class="op-confirm__label">申请编号</span><span>{{ application.applicationNo || '—' }}</span></div>
+        <div class="op-confirm__row"><span class="op-confirm__label">客户</span><span>{{ customerName }}</span></div>
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">业务类型</span>
+          <span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
+        </div>
+        <div class="op-confirm__row">
+          <span class="op-confirm__label">整单概要</span>
+          <span>待决策 <b>{{ presidentDecisionItems.length }}</b> 项 · 申请总额 <b>{{ fmtAmount(presidentTotalAmount) }} 万元</b> · 决策利率 <b>{{ decideFinalRateText }}</b></span>
+        </div>
+        <div class="op-confirm__row"><span class="op-confirm__label">行长意见</span><span class="op-confirm__opinion">{{ presidentOpinion.trim() || '—' }}</span></div>
+      </div>
+      <div class="stat-card__sub" style="margin-top:12px">
+        各分项将按下表「审批利率」终审签发决议(六人表决已按分项分别通过,可含审批中逐项调价),行长统一整单决策。
+      </div>
+      <table class="table" style="margin-top:8px">
+        <thead><tr><th>分项</th><th>金额(万元)</th><th>期限</th><th>申请利率</th><th>审批利率</th><th>六人表决</th></tr></thead>
+        <tbody>
+          <tr v-for="it in presidentDecisionItems" :key="it.id">
+            <td>{{ itemName(it) }}</td>
+            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+            <td>{{ fmtTerm(it) }}</td>
+            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+            <td class="num">{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</td>
+            <td><span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteText(voteResultOfItem(it)) }}</span><span v-else class="dg-label">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="dlg-tip" style="margin-top:12px">
+        {{ presidentConfirmAction === 'VETO'
+          ? '确认后该申请被一票否决,同申请全部分项一并进入终态,流程结束,不可撤销。'
+          : '确认后整单签发决议,同申请全部分项终审通过,不可撤销。' }}
+      </div>
+      <template #footer>
+        <button class="btn btn--secondary" @click="presidentConfirmVisible = false">取消</button>
+        <button class="btn" :class="presidentConfirmAction === 'APPROVE' ? 'btn--primary' : 'btn--danger'"
+          :disabled="submitting" @click="confirmPresidentSubmit">{{ submitting ? '提交中…' : '确认提交' }}</button>
+      </template>
+    </el-dialog>
+
     <!-- 授信协议历史审批(§2026-09-01 存量授信展示:同协议历史申请审批状态) -->
     <el-dialog v-model="agreementHistoryVisible" :title="`授信协议历史审批${agreementHistoryNo ? ' · ' + agreementHistoryNo : ''}`" width="760px">
       <div v-loading="agreementHistoryLoading">
@@ -865,7 +933,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getApprovalDetail, approveTask, rejectTask, autoBackfillCustomerNo, newIdempotencyKey, type ApprovalResult, type AutoBackfillResult } from '@/api/approval'
 import { submitBallot, submitPresidentDecision } from '@/api/vote'
 import { listRoundOpinions, listAgreementHistory } from '@/api/approval2'
@@ -1005,6 +1073,55 @@ const presidentVoteResult = computed(() => {
   const r = presidentVote.value
   return r ? String(r.result || '') : ''
 })
+// 行长决策利率区间(§2026-09-05 多分项修正):确认弹窗「决策利率」按全部分项 currentApprovalRate
+// (含逐项调价,未调沿用申请利率)min~max 区间展示,不再只取第一分项;
+// 行长主卡本身用下方分项列表逐项展示 原执行/申请/审批通过 利率,不进区间
+function collectDecideRates(pick: (it: any) => any): number[] {
+  const out: number[] = []
+  for (const it of presidentDecisionItems.value) {
+    const v = pick(it)
+    if (v == null || v === '' || Number.isNaN(Number(v))) continue
+    out.push(Number(v))
+  }
+  return out
+}
+function fmtRateRange(vals: number[]): string {
+  if (!vals.length) return '—'
+  return vals.length === 1 ? fmtRate(vals[0]) : `${fmtRate(Math.min(...vals))} ~ ${fmtRate(Math.max(...vals))}`
+}
+const decideFinalRateText = computed(() => fmtRateRange(collectDecideRates((it: any) => it.currentApprovalRate ?? it.requestedRate)))
+// 原执行利率文案:存量调息分项有 originalRate 原样展示;新增授信(NEW)分项无原利率 → 显示「新增业务」
+function origRateText(it: any): string {
+  return it.originalRate != null && it.originalRate !== '' ? fmtRate(it.originalRate) : '新增业务'
+}
+// 分项是否审批中被调过价(审批通过利率 ≠ 申请利率):行长分项列表加「已调价」提示
+function isRateAdjusted(it: any): boolean {
+  return it.currentApprovalRate != null && it.requestedRate != null
+    && Number(it.currentApprovalRate) !== Number(it.requestedRate)
+}
+// 六人小组审批意见(整单一次,§2026-09-05):跨待决策分项汇总委员匿名意见,按委员身份
+// (seq/匿名码)去重平铺一次 —— 整单推进委员按整单投一次票,不再按分项重复折叠展示
+const presidentOpinionRows = computed(() => {
+  const map = new Map<string, any>()
+  for (const it of presidentDecisionItems.value) {
+    for (const o of (presidentOpinions.value[it.id] || [])) {
+      const key = o.seq != null ? `seq-${o.seq}` : (o.anonymNo ? `an-${o.anonymNo}` : `row-${map.size}`)
+      const prev = map.get(key)
+      if (!prev || (!prev.voteComment && o.voteComment)) map.set(key, o)
+    }
+  }
+  return [...map.values()].sort((a: any, b: any) => {
+    const na = Number(a.seq), nb = Number(b.seq)
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+    return 0
+  })
+})
+
+// 行长整单决策结构化确认弹窗状态(§2026-09-05):同意/一票否决统一先弹综合概要(整单概要+逐分项明细)确认
+const presidentConfirmVisible = ref(false)
+const presidentConfirmAction = ref<'APPROVE' | 'VETO'>('APPROVE')
+const presidentConfirmTitle = computed(() =>
+  presidentConfirmAction.value === 'APPROVE' ? '确认同意利率(整单)' : '确认一票否决(整单)')
 
 const opComment = ref('')
 
@@ -1297,6 +1414,16 @@ function itemName(it: any): string {
   return name
 }
 
+// 行长待决策分项列表首列(§2026-09-05 主卡重构):有真实分项编号用编号(行长可逐项引用,同 demo「授信方案 #N」),
+// 无编号回退「载体 · 产品名」(金额/成员已有独立列,不在此重复)
+function itemTitle(it: any): string {
+  const no = it.pricingItemNo && it.pricingItemNo !== '授信分项' ? String(it.pricingItemNo) : ''
+  if (no) return no
+  const carrier = it.carrierType === 'LOAN_CONTRACT' ? '授信方案' : (carrierTypeText(it.carrierType) || '')
+  const prod = productName(it.productCode)
+  return carrier && carrier !== prod ? `${carrier} · ${prod}` : (prod || carrier || '授信分项')
+}
+
 // 集团成员标签:优先成员名称,无名称回退客户号(分项成员列/审批决定区共用;内部合成号显示"非我行客户")
 function memberLabel(memberNo?: string): string {
   if (!memberNo) return '—'
@@ -1562,7 +1689,8 @@ async function loadPresidentOpinions() {
   presidentOpinions.value = map
 }
 
-// 行长决策(整单,§7.5):同意利率 → 整单终审签发决议;一票否决 → 整单终态;必填意见
+// 行长决策(整单,§7.5):点「同意/一票否决」→ 弹结构化确认(整单概要+逐分项明细),确认后提交。
+// §2026-09-05 多分项修正:旧实现 ElMessageBox 纯文本只引第一分项 requestedRate,改整单综合展示。
 async function doPresidentDecision(decision: 'APPROVE' | 'VETO') {
   const appId = application.value.id ?? pi.value.application_id
   if (!appId) {
@@ -1573,16 +1701,20 @@ async function doPresidentDecision(decision: 'APPROVE' | 'VETO') {
     ElMessage.warning('一票否决必须填写决策意见')
     return
   }
-  const confirmText = decision === 'APPROVE'
-    ? `确认同意利率 ${fmtRate(presidentDecisionItems.value[0]?.requestedRate)}?同意后整单签发决议,不可撤销。`
-    : '确认一票否决该申请?否决后为终态,同申请全部分项一并否决。'
-  try {
-    await ElMessageBox.confirm(confirmText, decision === 'APPROVE' ? '同意利率' : '一票否决', {
-      type: decision === 'APPROVE' ? 'info' : 'warning',
-      confirmButtonText: decision === 'APPROVE' ? '确认同意' : '确认否决',
-      cancelButtonText: '取消'
-    })
-  } catch {
+  presidentConfirmAction.value = decision
+  presidentConfirmVisible.value = true
+}
+// 行长弹窗「确认提交」:正式提交行长决策(同意利率 → 整单终审签发决议;一票否决 → 整单终态)
+async function confirmPresidentSubmit() {
+  if (submitting.value) return // 防重入(§2026-09-02)
+  const appId = application.value.id ?? pi.value.application_id
+  if (!appId) {
+    ElMessage.error('无法获取申请编号,请刷新后重试')
+    return
+  }
+  const decision = presidentConfirmAction.value
+  if (decision === 'VETO' && !presidentOpinion.value?.trim()) {
+    ElMessage.warning('一票否决必须填写决策意见')
     return
   }
   submitting.value = true
@@ -1593,8 +1725,10 @@ async function doPresidentDecision(decision: 'APPROVE' | 'VETO') {
       opinion: presidentOpinion.value?.trim() || undefined
     })
     ElMessage.success(decision === 'APPROVE' ? '已同意利率,申请终审通过' : '已一票否决')
+    presidentConfirmVisible.value = false
     router.push('/president')
   } catch {
+    presidentConfirmVisible.value = false
     load()
   } finally {
     submitting.value = false

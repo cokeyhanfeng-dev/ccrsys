@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>行长整单决策 · 展示样例（待确认）</title>
+<style>
+  :root {
+    --primary: #2f6fed; --text-main: #17233d; --text-sub: #8a94a6;
+    --border: #e6eaf0; --surface: #fff; --bg: #f5f7fa;
+    --success: #16a34a; --danger: #dc2626; --warning: #d97706; --info: #2563eb;
+    --success-bg: #ecfdf3; --danger-bg: #fef2f2; --warning-bg: #fffbeb; --info-bg: #eff6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 24px; background: var(--bg); font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif; color: var(--text-main); }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .note { font-size: 13px; color: var(--text-sub); margin: 0 0 20px; line-height: 1.7; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
+  .card__head { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .card__head .tag { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--info); background: var(--info-bg); border: 1px solid #dbeafe; padding: 2px 10px; border-radius: 999px; }
+  .verdict { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .verdict .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .pill-pass { background: var(--success-bg); color: var(--success); }
+  .pill-ok { background: var(--info-bg); color: var(--info); }
+  .pill-gray { background: #f1f3f7; color: #6b7688; }
+  .pill-approve { background: var(--success-bg); color: var(--success); }
+  .pill-reject { background: var(--danger-bg); color: var(--danger); }
+  .summary { display: flex; gap: 26px; flex-wrap: wrap; font-size: 13px; color: var(--text-sub); margin-bottom: 16px; }
+  .summary b { color: var(--text-main); font-size: 15px; margin-left: 4px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 4px 0 6px; }
+  .table th { background: #f8fafc; text-align: left; font-weight: 600; color: #5b6b84; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .table td { padding: 9px 12px; border-bottom: 1px solid #f0f2f6; vertical-align: middle; }
+  .table tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .member { color: #9a6b1f; background: var(--warning-bg); padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+  .section-sub { font-size: 13px; font-weight: 600; color: #44506a; margin: 20px 0 6px; display: flex; align-items: center; gap: 8px; }
+  .section-sub .cnt { font-size: 12px; color: var(--text-sub); font-weight: 400; }
+  .empty-tip { font-size: 12px; color: var(--text-sub); }
+  .footer-tip { font-size: 13px; color: var(--text-sub); background: #f8fafc; border-left: 3px solid var(--primary); padding: 8px 12px; border-radius: 4px; margin: 16px 0 12px; line-height: 1.7; }
+  .opinion-row { margin: 12px 0; }
+  .opinion-row label { display: block; font-size: 13px; color: #44506a; margin-bottom: 6px; font-weight: 600; }
+  .opinion-row textarea { width: 100%; min-height: 72px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 13.5px; resize: vertical; }
+  .actions { display: flex; gap: 12px; margin-top: 6px; }
+  .btn { border: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; cursor: pointer; font-weight: 500; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-plain { background: #fff; color: var(--text-main); border: 1px solid var(--border); }
+  .mark { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 12px; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .newtag { background: #ecfdf5; color: #047857; font-size: 12px; padding: 1px 8px; border-radius: 6px; white-space: nowrap; }
+  hr { border: none; border-top: 1px dashed var(--border); margin: 26px 0; }
+  .legend { font-size: 12.5px; color: var(--text-sub); line-height: 2; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>行长整单决策区 — 展示样例（v2，待你确认）</h1>
+  <p class="note">
+    进入审批详情的「行长决策（整单）」卡片。改动要点：<br />
+    ① 待决策分项用<b>完整列表</b>逐项展示：原执行利率 / 申请利率 / 审批通过利率（不再只显一个利率或第一个利率）；<br />
+    ② 六人小组审批意见<b>整单只展示一次</b>（整单推进、无分项概念，不按分项重复折叠）；<br />
+    ③ 提交时弹确认框按上表「审批通过利率」逐项终审签发决议（此前已确认的方案）。<br />
+    样例为虚构演示数据：3 个分项、集团成员、含一个审批中被调过价的分项（分项 2：4.00% → 3.95%）。
+  </p>
+
+  <div class="card">
+    <div class="card__head">
+      行长决策（整单）
+      <span class="tag">总行行长 · 待我决策</span>
+    </div>
+
+    <!-- ① 表决结论 + 整单概要（只留结论/总额/项数；利率不进这里，在下方列表逐项看） -->
+    <div class="verdict">
+      <span class="pill pill-pass">六人小组表决通过</span>
+      <span class="pill pill-ok">通过线 ≥ 4</span>
+      <span class="pill pill-gray">已收 6 票</span>
+      <span class="pill pill-approve">赞成 5</span>
+      <span class="pill pill-reject">反对 1</span>
+    </div>
+    <div class="summary">
+      <span>申请总额<b>1,000 万元</b></span>
+      <span>待决策分项<b>3 项</b></span>
+      <span>业务类型<b>贷款 · 存量调息</b></span>
+      <span>申请编号<b>CCR2026090500123</b>（江苏某某纺织集团）</span>
+    </div>
+
+    <!-- ② 待决策分项完整列表：原执行 / 申请 / 审批通过 -->
+    <div class="section-sub">待决策分项 <span class="cnt">整单一次决策，同意后按「审批通过利率」签发决议</span></div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>授信分项</th>
+          <th>成员</th>
+          <th style="text-align:right">金额(万元)</th>
+          <th>期限</th>
+          <th style="text-align:right">原执行利率</th>
+          <th style="text-align:right">申请利率</th>
+          <th style="text-align:right">审批通过利率</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>流贷 · 授信方案 #1（纺织 A 厂）</td>
+          <td><span class="member">江苏某某纺织 A</span></td>
+          <td class="num">500</td>
+          <td>1 年</td>
+          <td class="num">4.35%</td>
+          <td class="num">3.95%</td>
+          <td class="num">3.95%</td>
+        </tr>
+        <tr>
+          <td>流贷 · 授信方案 #2（织造 B 厂）<span class="mark">审批中已调价 4.00% → 3.95%</span></td>
+          <td><span class="member">江苏某某织造 B</span></td>
+          <td class="num">300</td>
+          <td>1 年</td>
+          <td class="num">4.20%</td>
+          <td class="num">4.00%</td>
+          <td class="num"><b>3.95%</b></td>
+        </tr>
+        <tr>
+          <td>银承贴现 · 授信方案 #3（纺织 A 厂）</td>
+          <td><span class="member">江苏某某纺织 A</span></td>
+          <td class="num">200</td>
+          <td>6 个月</td>
+          <td class="num">3.60%</td>
+          <td class="num">3.50%</td>
+          <td class="num">3.50%</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="empty-tip">注：新增授信（NEW）分项无原执行利率，该列显示「新增业务」。</div>
+
+    <!-- ③ 六人小组审批意见（整单仅一次，平铺 6 人） -->
+    <div class="section-sub">存贷款利率审批小组意见 <span class="cnt">整单只展示一次</span></div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>委员（匿名）</th>
+          <th>表决</th>
+          <th>意见</th>
+          <th style="text-align:right">提交时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>存贷款利率审批小组成员 01</td><td><span class="pill pill-approve">赞成</span></td><td>同意，利率不低于测算下限。</td><td class="num">2026-09-05 14:21</td></tr>
+        <tr><td>存贷款利率审批小组成员 02</td><td><span class="pill pill-approve">赞成</span></td><td>同意。</td><td class="num">2026-09-05 14:23</td></tr>
+        <tr><td>存贷款利率审批小组成员 03</td><td><span class="pill pill-approve">赞成</span></td><td>—</td><td class="num">2026-09-05 14:25</td></tr>
+        <tr><td>存贷款利率审批小组成员 04</td><td><span class="pill pill-approve">赞成</span></td><td>分项 2 已调价至下限之上，同意。</td><td class="num">2026-09-05 14:26</td></tr>
+        <tr><td>存贷款利率审批小组成员 05</td><td><span class="pill pill-reject">反对</span></td><td>建议 B 厂 300 万维持 4.00%。</td><td class="num">2026-09-05 14:30</td></tr>
+        <tr><td>存贷款利率审批小组成员 06</td><td><span class="pill pill-approve">赞成</span></td><td>同意。</td><td class="num">2026-09-05 14:32</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ④ 行长意见 + 动作 -->
+    <div class="opinion-row">
+      <label>行长决策意见</label>
+      <textarea placeholder="同意可填意见；一票否决必须填写意见">同意，按上表审批利率签发，请合规放款。</textarea>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary">同意（整单）</button>
+      <button class="btn btn-danger">否决（整单）</button>
+    </div>
+    <div class="footer-tip">
+      点击「同意/否决」后弹确认框：顶部整单概要 + 逐分项明细（含上表利率与六人表决），确认后提交；同意 → 整单终审签发决议，否决 → 整单终态、全部分项一并否决。
+    </div>
+  </div>
+
+  <hr />
+  <div class="legend">
+    <b>对比现状（改前）：</b>顶部只显示「申请总额 + 一个/区间利率 + 待决策 N 项」数字，六人小组意见按每个分项各一个折叠面板重复出现；本次改为分项完整列表 + 六人意见整单一次。<br />
+    <b>字段来源（均已具备）：</b>原执行利率 originalRate（新增无 → 显示「新增业务」）、申请利率 requestedRate、审批通过利率 currentApprovalRate（审批中可被逐项调价，未调沿用申请利率）、六人匿名意见按整单轮次返回。
+  </div>
+</div>
+</body>
+</html>
