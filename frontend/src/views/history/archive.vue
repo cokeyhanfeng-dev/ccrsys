@@ -71,8 +71,8 @@
         <div v-else class="empty-line">暂无数据</div>
       </div>
 
-      <!-- 2. 集团与成员 -->
-      <div class="card" v-if="isGroup">
+      <!-- 2. 集团与成员(仅贷款场景:集团为贷款授信概念,存款即使集团单也无集团成员展示,§2026-09-05 与审批界面一致) -->
+      <div class="card" v-if="isGroup && isLoan">
         <div class="card__head"><span>集团成员</span></div>
         <table class="table" v-if="archive.members?.length">
           <thead><tr><th>成员名称</th><th>成员客户号</th><th>成员角色</th><th>申请金额(万元)</th></tr></thead>
@@ -193,24 +193,26 @@
         <div v-if="!otherLoans.length" class="empty-line">暂无他行融资记录</div>
       </div>
 
-      <!-- 5. 授信分项(担保明细并入行内展开:点击「担保方式」展开;信用/未录措施无内容不可展开,§2026-09-04) -->
+      <!-- 5. 授信分项(担保明细并入行内展开:点击「担保方式」展开;信用/未录措施无内容不可展开,§2026-09-04)
+           §2026-09-05 存款对齐审批界面:存款无「授信分项/授信协议/定价客户」概念,标题改「分项明细」并去掉该两列
+           (担保列已 isLoan 仅贷款;存款保留 产品/原利率/金额/期限/申请/审批/最终利率/节点/状态,与审批页申请内容分项表同列) -->
       <div class="card">
-        <div class="card__head"><span>授信分项</span></div>
+        <div class="card__head"><span>{{ isLoan ? '授信分项' : '分项明细' }}</span></div>
         <table class="table" v-if="archive.pricingItems?.length">
           <thead>
             <tr>
-              <th>{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th>授信协议编号</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th><th>期限</th>
+              <th v-if="isLoan">{{ isGroup ? '成员' : '定价客户' }}</th><th>产品</th><th>原执行利率</th><th v-if="isLoan">授信协议编号</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th><th>期限</th>
               <th>申请利率</th><th>审批利率</th><th>最终利率</th><th>当前节点</th><th>状态</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="p in archive.pricingItems" :key="val(p, 'id')">
               <tr>
-                <td>{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
+                <td v-if="isLoan">{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
                 <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
                 <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
                 <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
-                <td :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
+                <td v-if="isLoan" :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
                 <!-- 担保方式(仅贷款场景,存款无担保概念):有担保措施可点开行内明细;信用/未录措施纯文本(无内容可展开) -->
                 <td v-if="isLoan">
                   <span v-if="hasMeasureRows(p)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(p)" @keydown.enter="toggleExpand(p)">{{ itemGuaranteeText(p) }}<span class="chev">{{ isExpanded(p) ? '▲' : '▼' }}</span></span>
@@ -226,7 +228,7 @@
               </tr>
               <!-- 展开:该分项的担保措施明细(抵押物/保证人等),申请录入按分项挂载 -->
               <tr v-if="isExpanded(p)" class="expand-row">
-                <td :colspan="isLoan ? 12 : 11">
+                <td :colspan="isLoan ? 12 : 9">
                   <div class="expand-panel">
                     <div class="expand-title">担保明细<span class="section-tip">申请录入</span></div>
                     <table class="table">
