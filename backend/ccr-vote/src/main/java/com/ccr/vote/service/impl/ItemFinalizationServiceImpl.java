@@ -88,12 +88,11 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
         if (item == null) {
             return;
         }
-        // 小组否决(COMMITTEE_REJECT)也是终态,同样签发否决决议(决议书,不建承诺计划)
-        boolean committeeReject = "COMMITTEE_REJECT".equals(decisionSource)
-                && PricingItemStatus.REJECTED.getCode().equals(item.getStatus());
+        // 仅批准类终态(FINAL/APPROVED_LEVEL)签发决议;否决类终态一律不签决议、不建承诺计划——
+        // 小组否决(COMMITTEE_REJECT,2026-09-05 用户拍板:小组未通过不提供决议书)与行长否决/普通整单否决一致,
+        // 只聚合主申请 REJECTED 后流程结束,不留否决决议记录(历史已签发的否决决议仅作存量留痕展示)。
         if (PricingItemStatus.FINAL.getCode().equals(item.getStatus())
-                || PricingItemStatus.APPROVED_LEVEL.getCode().equals(item.getStatus())
-                || committeeReject) {
+                || PricingItemStatus.APPROVED_LEVEL.getCode().equals(item.getStatus())) {
             // 整单化:决议按申请维度一份,仅首个终态分项触发事件;同申请其余分项终态幂等跳过(只聚合)
             Long resolutionCount = resolutionMapper.selectCount(new LambdaQueryWrapper<CcrResolution>()
                     .eq(CcrResolution::getApplicationId, item.getApplicationId()));

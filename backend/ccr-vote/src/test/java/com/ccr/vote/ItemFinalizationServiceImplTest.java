@@ -392,6 +392,22 @@ class ItemFinalizationServiceImplTest {
     }
 
     @Test
+    void aggregate_committeeReject_noResolutionIssued() {
+        // §2026-09-05 用户拍板:六人小组表决未通过(COMMITTEE_REJECT)不再签发否决决议书——
+        // 分项 REJECTED 时不再走签决议分支(不写 RESOLUTION_CREATE 事件),仅聚合主申请 REJECTED 终态
+        item.setStatus(PricingItemStatus.REJECTED.getCode());
+        when(pricingItemMapper.selectById(10L)).thenReturn(item);
+        when(applicationMapper.selectById(30L)).thenReturn(application);
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+
+        finalizationService.afterItemTerminal(10L, "COMMITTEE_REJECT");
+
+        verify(outboxService, never()).publish(eq("RESOLUTION_CREATE"), anyString(), anyString());
+        verify(applicationMapper).updateById(argThat((CcrApplication a) ->
+                "REJECTED".equals(a.getStatus()) && a.getFinalTime() != null));
+    }
+
+    @Test
     void aggregate_mixedTerminal_goesFinal_notStuckRouting() {
         // 全部出终态但批准/否决混合:主申请置 FINAL(已批准部分生效),不再滞留 ROUTING
         item.setStatus(PricingItemStatus.FINAL.getCode());
