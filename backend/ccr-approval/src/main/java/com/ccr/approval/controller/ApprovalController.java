@@ -584,15 +584,37 @@ public class ApprovalController {
             otherLoanSummaryRows.addAll(dwSummary);
         }
         result.put("otherLoanSummary", otherLoanSummaryRows);
-        result.put("otherLoans", jdbcTemplate.queryForList(
-                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo));
+        List<Map<String, Object>> dwOtherLoans = jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNo, custNo);
+        result.put("otherLoans", dwOtherLoans);
 
         // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
         if (appId != null) {
             result.put("attachments", jdbcTemplate.queryForList(
                     "SELECT id, file_name fileName, file_size fileSize, source_type sourceType, source_resolution_no sourceResolutionNo, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
-            result.put("appOtherLoans", jdbcTemplate.queryForList(
-                    "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId));
+            List<Map<String, Object>> appOtherLoans = jdbcTemplate.queryForList(
+                    "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", appId);
+            // 他行融资明细去重(§2026-09-05 生产实报:审批展示同机构两行 = 数仓征信与申请人工补录重叠):
+            // 数仓征信(dw_credit_financing_detail 最新批次)为准,人工补录行仅补数仓未覆盖机构;
+            // 数仓已有同机构时过滤人工行,避免前端 concat 后同机构重复展示;纯人工机构不受影响(补数仓缺失,信息不丢)
+            if (!dwOtherLoans.isEmpty() && !appOtherLoans.isEmpty()) {
+                Set<String> dwLenders = new LinkedHashSet<>();
+                for (Map<String, Object> row : dwOtherLoans) {
+                    Object lender = row.get("lenderName");
+                    if (lender != null && !lender.toString().isBlank()) {
+                        dwLenders.add(lender.toString());
+                    }
+                }
+                List<Map<String, Object>> filtered = new ArrayList<>(appOtherLoans.size());
+                for (Map<String, Object> row : appOtherLoans) {
+                    Object lender = row.get("lenderName");
+                    if (lender == null || lender.toString().isBlank() || !dwLenders.contains(lender.toString())) {
+                        filtered.add(row);
+                    }
+                }
+                appOtherLoans = filtered;
+            }
+            result.put("appOtherLoans", appOtherLoans);
         }
 
         // 关联人(客户经理申请时实际录入,§12.4④;按关联客户号补全基本信息/授信信息)
