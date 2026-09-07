@@ -10,6 +10,8 @@ import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -748,13 +750,68 @@ public final class ResolutionPdfExporter {
         }
     }
 
-    /** classpath 字体流 */
-    private static InputStream loadFont(String path) {
+    /**
+     * 加载决议书嵌入中文字体(黑体 simhei 标题 / 仿宋 simfang 正文)。
+     * 查找顺序:
+     *   1) classpath fonts/ 同名文件(本地 IDE / 已内置字体的 jar 默认命中的来源);
+     *   2) 外部字体目录:系统属性 ccr.pdf.fontDir → 环境变量 CCR_PDF_FONT_DIR → ./fonts → /app/fonts
+     *      (生产 jar 缺字体时,把 ttf 放到该目录即可,无需重打 jar;Docker 可 docker cp 到 /app/fonts);
+     *   3) 系统字体目录兜底(本地 Windows %WINDIR%\Fonts / Linux 常见字体目录)。
+     * 全部未命中才抛异常,并在提示中列出已尝试位置,便于排障。
+     */
+    private static InputStream loadFont(String path) throws IOException {
+        String font = new File(path).getName(); // path=fonts/simhei.ttf → simhei.ttf
+        // 1) classpath(历史默认;本地 IDE / 含字体 jar 命中)
         InputStream in = ResolutionPdfExporter.class.getClassLoader().getResourceAsStream(path);
-        if (in == null) {
-            throw new IllegalStateException("决议书中文字体缺失(classpath:" + path + "),请检查 resources/fonts 目录");
+        if (in != null) {
+            return in;
         }
-        return in;
+        // 2) 外部字体目录(部署侧可配置,规避「字体不入库 → git 构建 jar 缺字体」)
+        for (String dir : externalFontDirs()) {
+            File f = new File(dir, font);
+            if (f.isFile() && f.canRead()) {
+                return new FileInputStream(f);
+            }
+        }
+        // 3) 系统字体目录(本地兜底)
+        for (String dir : systemFontDirs()) {
+            File f = new File(dir, font);
+            if (f.isFile() && f.canRead()) {
+                return new FileInputStream(f);
+            }
+        }
+        throw new IllegalStateException("决议书中文字体缺失(" + path + ")。已尝试:classpath:" + path
+                + "、外部字体目录" + externalFontDirs() + "、系统字体目录" + systemFontDirs()
+                + " 均未找到该字体。请检查 resources/fonts 目录;生产可将字体放置到外部字体目录"
+                + "(如 docker cp simhei.ttf simfang.ttf ccr-prod-backend:/app/fonts/ 后重启),无需重打 jar。");
+    }
+
+    /** 外部字体目录候选(部署侧指定:系统属性 ccr.pdf.fontDir 或环境变量 CCR_PDF_FONT_DIR,含常用默认) */
+    private static List<String> externalFontDirs() {
+        List<String> dirs = new ArrayList<>();
+        String prop = System.getProperty("ccr.pdf.fontDir");
+        if (prop != null && !prop.isBlank()) {
+            dirs.add(prop.trim());
+        }
+        String env = System.getenv("CCR_PDF_FONT_DIR");
+        if (env != null && !env.isBlank()) {
+            dirs.add(env.trim());
+        }
+        dirs.add("./fonts");
+        dirs.add("/app/fonts");
+        return dirs;
+    }
+
+    /** 系统字体目录兜底(本地运行或容器已装中文字体时) */
+    private static List<String> systemFontDirs() {
+        List<String> dirs = new ArrayList<>();
+        String windir = System.getenv("WINDIR");
+        if (windir != null && !windir.isBlank()) {
+            dirs.add(windir + File.separator + "Fonts");
+        }
+        dirs.add("/usr/share/fonts");
+        dirs.add("/usr/local/share/fonts");
+        return dirs;
     }
 
     // ---------- PDF 排版 ----------
