@@ -31,9 +31,7 @@ backend/Dockerfile.local
 # 部署侧生产连接配置(含真实密码,严禁入库,详设 §3.7)
 config/application-prod.yml
 
-# 决议书 PDF 嵌入中文字体(约 20MB,不入库,部署前由本地 fonts 提供)
-backend/ccr-approval/src/main/resources/fonts/
-
+# 决议书 PDF 嵌入中文字体(约 20MB):2026-09-07 起入库,杜绝干净 git 构建缺字(生产事故)
 # 含真实用户/机构/敏感数据的 SQL:仅本地执行,严禁 push
 db/23_password_change_flag.sql
 db/24_plaintext_sensitive.sql
