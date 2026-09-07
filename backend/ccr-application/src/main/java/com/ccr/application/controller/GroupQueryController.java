@@ -123,6 +123,53 @@ public class GroupQueryController {
         return R.ok(members);
     }
 
+    /** 集团存量调息数据源:按所选集团授信协议 group_credit_no,整单带出该协议下全部成员的全部拆分项。
+     * 契约(2026-09):拆分项 dw_credit_split_snapshot.credit_no = dw_member_credit_limit_snapshot.member_limit_no;
+     * 取数:group_credit_no → memberLimitsByGroup 全部 member_limit_no → credit_no IN (…) 的拆分项
+     *      (有效、最新批次)→ 每项内嵌担保措施(measures)并保留 custNo(即成员客户号),前端按 custNo 归属成员。
+     * 未传协议号默认取该集团第一份有效授信;数仓无该集团授信(纯手工)返回空,不阻断手工兜底。 */
+    @GetMapping("/ccr/groups/{groupNo}/splits")
+    public R<List<Map<String, Object>>> groupSplits(@PathVariable String groupNo,
+                                                    @RequestParam(required = false) String groupCreditNo) {
+        if (mergedGroup(groupNo) == null) {
+            throw new ServiceException(404, "集团不存在:" + groupNo);
+        }
+        Map<String, Object> credit = StrUtil.isBlank(groupCreditNo)
+                ? mergedCredit(groupNo)
+                : dataWarehouseService.findGroupCreditByNo(groupCreditNo);
+        if (credit == null || credit.get("group_credit_no") == null) {
+            return R.ok(new ArrayList<>());
+        }
+        String gcNo = String.valueOf(credit.get("group_credit_no"));
+        List<String> memberLimitNos = dataWarehouseService.memberLimitsByGroup(gcNo).stream()
+                .map(l -> l.get("member_limit_no"))
+                .filter(java.util.Objects::nonNull)
+                .map(String::valueOf)
+                .filter(StrUtil::isNotBlank)
+                .distinct().toList();
+        if (memberLimitNos.isEmpty()) {
+            return R.ok(new ArrayList<>());
+        }
+        List<Map<String, Object>> splits = dataWarehouseService.splitsByMemberLimitNos(memberLimitNos);
+        List<String> splitNos = splits.stream()
+                .map(s -> s.get("split_no"))
+                .filter(java.util.Objects::nonNull)
+                .map(String::valueOf).toList();
+        List<Map<String, Object>> measures = splitNos.isEmpty() ? List.of()
+                : dataWarehouseService.splitMeasures(splitNos);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> sp : splits) {
+            String sn = String.valueOf(sp.get("split_no"));
+            Map<String, Object> row = camel(sp);
+            row.put("measures", measures.stream()
+                    .filter(m -> sn.equals(String.valueOf(m.get("split_no"))))
+                    .map(GroupQueryController::camel)
+                    .toList());
+            result.add(row);
+        }
+        return R.ok(result);
+    }
+
     /** 成员额度/合同/合同下借据/担保视图 */
     @GetMapping("/ccr/members/{customerNo}/credit-view")
     public R<Map<String, Object>> memberCreditView(@PathVariable String customerNo) {

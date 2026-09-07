@@ -172,6 +172,15 @@ public class DataWarehouseService {
                 ORDER BY CASE credit_status WHEN 'EFFECTIVE' THEN 0 ELSE 1 END, group_credit_no""", groupNo);
     }
 
+    /** 集团授信单条(按协议号 group_credit_no,最新批次,有效优先)——集团存量拆分项带出接口按所选协议定位用 */
+    public Map<String, Object> findGroupCreditByNo(String groupCreditNo) {
+        return queryOne("""
+                SELECT * FROM dw_group_credit_snapshot
+                WHERE group_credit_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_group_credit_snapshot)
+                ORDER BY CASE credit_status WHEN 'EFFECTIVE' THEN 0 ELSE 1 END, etl_md5 DESC
+                LIMIT 1""", groupCreditNo);
+    }
+
     /** 集团下全部成员额度(最新批次) */
     public List<Map<String, Object>> memberLimitsByGroup(String groupCreditNo) {
         return jdbcTemplate.queryForList("""
@@ -272,6 +281,23 @@ public class DataWarehouseService {
                 WHERE split_no IN (%s)
                   AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_split_measure_snapshot)
                 ORDER BY split_no, etl_md5""".formatted(placeholders), splitNos.toArray());
+    }
+
+    /** 集团存量拆分项:按「成员额度号集合」取拆分项(最新批次,仅有效)。
+     * 契约(2026-09):集团拆分项 dw_credit_split_snapshot.credit_no = dw_member_credit_limit_snapshot.member_limit_no;
+     * 前端从集团协议 group_credit_no → memberLimitsByGroup 拿到全部 member_limit_no 后调用本方法,
+     * 即得该协议名下全部成员的全部拆分项(单户按 cust_no 取数的 creditSplits 不含集团口径)。 */
+    public List<Map<String, Object>> splitsByMemberLimitNos(Collection<String> memberLimitNos) {
+        if (memberLimitNos == null || memberLimitNos.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(memberLimitNos.size(), "?"));
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_credit_split_snapshot
+                WHERE credit_no IN (%s)
+                  AND split_status = 'EFFECTIVE'
+                  AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_split_snapshot)
+                ORDER BY cust_no, split_no""".formatted(placeholders), memberLimitNos.toArray());
     }
 
     // ---------- 私有 ----------
