@@ -574,6 +574,8 @@ class ApplicationSubmitServiceImplTest {
         app.setBusinessType("LOAN");
         app.setCustomerScope("CORPORATE_SINGLE");
         app.setCustomerNo("CORP001");
+        // §2026-09-02 单户主客户证件号码必填(checkCompleteness),测试补客户信息快照证件号
+        app.setCustomerInfoJson("{\"ucrCode\":\"91330100TEST0001X\"}");
         app.setApplicantUserId(1000L);
         app.setApplicantOrgId(1001L);
         app.setStatus("DRAFT");
@@ -779,6 +781,8 @@ class ApplicationSubmitServiceImplTest {
         app.setBusinessType("LOAN");
         app.setCustomerScope("CORPORATE_SINGLE");
         app.setCustomerNo("CORP001");
+        // §2026-09-02 单户主客户证件号码必填(checkCompleteness),测试补客户信息快照证件号
+        app.setCustomerInfoJson("{\"ucrCode\":\"91330100TEST0001X\"}");
         app.setApplicantUserId(1000L);
         app.setApplicantOrgId(1001L);
         app.setStatus("DRAFT");
@@ -840,5 +844,133 @@ class ApplicationSubmitServiceImplTest {
 
         ServiceException e = assertThrows(ServiceException.class, () -> service.reapply(1L));
         assertEquals(ErrorCode.FLOW_STATUS_CONFLICT.getCode(), e.getCode());
+    }
+
+    // ---------- 分项合计勾稽上限化(#527):存量集团拆分合计 2800 万 < 申请额度 10000 万 → 放行 ----------
+    // (2026-09-07 用户拍板:存量自动带出拆分项仅部分执行,合计小于授信总额属正常,不再强制相等)
+
+    @Test
+    void submitAllowsExistingSplitSumBelowApplyAmount() {
+        CcrApplication app = existingGroupApp("10000");
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        item.setPricingAmount(new BigDecimal("2800")); // 拆分合计 2800,仅为申请额度的一部分(存量拆分只带部分)
+        item.setOriginalRate(new BigDecimal("3.80"));   // 存量原利率(判定 EXISTING,数仓拆分项带出)
+        item.setRequestedRate(new BigDecimal("3.60"));  // 申请利率 3.60 < 原利率 3.80(降息,#528 放行)
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        CcrApplicationMember m = member("MEMBER_A");
+        m.setRequestAmount(new BigDecimal("2800"));     // 成员申请金额 ≤ 申请额度 10000
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(m));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new CcrPricingItemContractRel()));
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+        when(dataWarehouseService.findGroupMember("GROUP001", "MEMBER_A"))
+                .thenReturn(Map.of("member_customer_no", "MEMBER_A"));
+
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        // 旧「合计须等于授信总额」逻辑下 2800≠10000 会被拦;现在仅超限拦截,2800<10000 正常提交
+        SubmitResponse response = service.submit(1L);
+        assertTrue(response.getSubmitted());
+    }
+
+    // ---------- 存量调息申请利率上限(#528):申请利率不得高于原利率 ----------
+
+    @Test
+    void submitBlocksWhenExistingRateAboveOriginalRate() {
+        CcrApplication app = existingGroupApp("10000");
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        item.setPricingAmount(new BigDecimal("2800"));
+        item.setOriginalRate(new BigDecimal("3.80"));  // 存量原利率
+        item.setRequestedRate(new BigDecimal("3.90")); // 申请利率高于原利率 → 不得高于原利率,阻断
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        CcrApplicationMember m = member("MEMBER_A");
+        m.setRequestAmount(new BigDecimal("2800"));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(m));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of());
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+
+        ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
+        assertEquals(ErrorCode.QUALITY_BLOCK.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("不得高于原利率"));
+    }
+
+    @Test
+    void submitAllowsExistingRateEqualOriginalRate() {
+        CcrApplication app = existingGroupApp("10000");
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        item.setPricingAmount(new BigDecimal("2800"));
+        item.setOriginalRate(new BigDecimal("3.80"));
+        item.setRequestedRate(new BigDecimal("3.80")); // 等于原利率:维持不变,放行
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        CcrApplicationMember m = member("MEMBER_A");
+        m.setRequestAmount(new BigDecimal("2800"));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(m));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        when(contractRelMapper.selectList(any()))
+                .thenReturn(List.of(new CcrPricingItemContractRel()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new CcrPricingItemContractRel()));
+        when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+        when(dataWarehouseService.findGroupMember("GROUP001", "MEMBER_A"))
+                .thenReturn(Map.of("member_customer_no", "MEMBER_A"));
+
+        CcrLprVersion lpr = new CcrLprVersion();
+        lpr.setId(9601L);
+        lpr.setVersionCode("LPR_V1");
+        when(lprVersionMapper.selectOne(any())).thenReturn(lpr);
+
+        when(snapshotGateway.createBundle(1L)).thenReturn(7001L);
+        lenient().when(snapshotGateway.addRecord(eq(7001L), any())).thenReturn(8001L);
+        when(snapshotGateway.validate(7001L)).thenReturn("PASS");
+        SnapshotBundleResult bundle = new SnapshotBundleResult();
+        bundle.setBundleId(7001L);
+        bundle.setStatus("FROZEN");
+        when(snapshotGateway.freeze(7001L)).thenReturn(bundle);
+
+        RouteResult route = new RouteResult();
+        route.setStartNodeCode("BRANCH_MANAGER");
+        route.setFinalNodeCode("SIX_PEOPLE_GROUP");
+        route.setRouteChain(List.of("BRANCH_MANAGER", "SIX_PEOPLE_GROUP"));
+        route.setRateDirection("LOWER_BETTER");
+        route.setBoundaryRate(new BigDecimal("3.20"));
+        route.setMatchedMatrixNo("MX-001");
+        route.setLprVersionId(9601L);
+        when(rateMatrixRouter.calcRoute(any())).thenReturn(route);
+
+        SubmitResponse response = service.submit(1L);
+        assertTrue(response.getSubmitted());
     }
 }

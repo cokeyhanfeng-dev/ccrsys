@@ -282,8 +282,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
         // 2. 质量预校验(BLOCK/WARN)
         List<SubmitCheckResponse.QualityPrecheckItem> precheck = qualityPrecheck(app, latest);
-        // 分项金额勾稽(§2026-09-01):非集团分项申请金额合计须等于授信总额(新增+存量严格相等)
+        // 分项金额勾稽(§2026-09-07):分项申请金额合计不得超过授信总额(存量自动带出拆分项可小于协议/批复总额,超限才 BLOCK)
         precheck.addAll(guaranteeTotalPrecheck(app, items));
+        // 存量调息申请利率上限(§2026-09-07 用户拍板):贷款存量(EXISTING)申请利率不得高于原利率,高于才 BLOCK
+        precheck.addAll(existingRatePrecheck(app, items));
         response.setQualityPrecheck(precheck);
 
         // 3. 硬边界校验(逐分项)
@@ -399,8 +401,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return items;
     }
 
-    /** 分项金额勾稽预校验(§2026-09-01):非集团分项申请金额合计须等于授信总额(credit_info_json.totalCredit 快照值,新增+存量严格相等);
-     *  集团沿用成员额度勾稽不进此;快照缺省回退分项金额(无明确总额)时跳过,前端已拦 */
+    /** 分项金额勾稽预校验(§2026-09-07):分项申请金额合计不得超过授信总额——存量自动带出拆分项可小于协议/批复
+     *  总额(部分拆分执行,如集团存量拆分 2800 vs 协议 10000),不再强制相等,仅当分项合计超过总额才 BLOCK;
+     *  总额口径:单户=credit_info_json.totalCredit 快照值,集团=applyAmountOf(app);快照缺省(无明确总额)时跳过,前端已拦 */
     private List<SubmitCheckResponse.QualityPrecheckItem> guaranteeTotalPrecheck(CcrApplication app, List<CcrPricingItem> items) {
         List<SubmitCheckResponse.QualityPrecheckItem> result = new ArrayList<>();
         BigDecimal totalCredit;
@@ -423,9 +426,31 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 .map(CcrPricingItem::getPricingAmount)
                 .filter(java.util.Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (itemSum.subtract(totalCredit).abs().compareTo(new BigDecimal("0.01")) > 0) {
+        if (itemSum.subtract(totalCredit).compareTo(new BigDecimal("0.01")) > 0) {
             result.add(precheckItem("ITEM_TOTAL_CREDIT", "BLOCK", app.getCustomerNo(),
-                    "分项申请金额合计 " + itemSum + " 万元与授信总额 " + totalCredit + " 万元不一致,请调整分项金额(合计须等于授信总额)"));
+                    "分项申请金额合计 " + itemSum + " 万元超过授信总额 " + totalCredit + " 万元,请调减分项金额(合计不得超过授信总额)"));
+        }
+        return result;
+    }
+
+    /** 存量调息申请利率上限预校验(§2026-09-07 用户拍板):仅贷款存量调息(EXISTING,单户+集团)申请利率不得高于原利率——
+     *  高于才 BLOCK、等于(维持原利率)放行;原利率为空(拆分项未带出/未补录)该分项跳过。
+     *  存量判定复用 resolveNewOrExisting(credit_info_json.businessType=EXISTING,存款恒 NEW 不走此)。
+     *  与提交硬校验 checkExistingRateCap 同口径双拦截。 */
+    private List<SubmitCheckResponse.QualityPrecheckItem> existingRatePrecheck(CcrApplication app, List<CcrPricingItem> items) {
+        List<SubmitCheckResponse.QualityPrecheckItem> result = new ArrayList<>();
+        for (CcrPricingItem item : items) {
+            if (!"EXISTING".equals(resolveNewOrExisting(app, item))) {
+                continue;
+            }
+            BigDecimal original = item.getOriginalRate();
+            BigDecimal requested = item.getRequestedRate();
+            if (original == null || requested == null || requested.compareTo(original) <= 0) {
+                continue;
+            }
+            result.add(precheckItem("ITEM_EXISTING_RATE", "BLOCK", item.getPricingItemNo(),
+                    "授信分项[" + item.getPricingItemNo() + "]存量调息申请利率 " + requested.stripTrailingZeros().toPlainString()
+                            + "% 不得高于原利率 " + original.stripTrailingZeros().toPlainString() + "%,请保持或调低利率"));
         }
         return result;
     }
@@ -479,8 +504,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         }
         // e2) 存款起点利率硬边界(2026-08-27 用户拍板):申请利率必须严格高于矩阵起点利率(挂牌价)才能提交
         checkDepositStartRate(app, items, groupCreditTotal);
-        // e3) 分项金额勾稽(2026-09-01 用户拍板):非集团分项申请金额合计须等于授信总额(credit_info_json.totalCredit 快照值),不等不容许提交(与 submitCheck 预校验同口径双拦截)
+        // e3) 分项金额勾稽(2026-09-07 用户拍板):分项申请金额合计不得超过授信总额(存量自动带出拆分项可小于协议/批复总额),
+        //     超过不容许提交(与 submitCheck 预校验 guaranteeTotalPrecheck 同口径双拦截)
         checkGuaranteeTotal(app, items);
+        // e4) 存量调息申请利率上限(2026-09-07 用户拍板):贷款存量(EXISTING)申请利率不得高于原利率,高于整单回滚
+        //     (与 submitCheck 预校验 existingRatePrecheck 同口径双拦截;等于放行,原利率空跳过)
+        checkExistingRateCap(app, items);
         // 主申请先置 SUBMITTED(§7.2 步骤6 中间态:校验通过、快照采集/路由前),路由完成后置 ROUTING
         applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
                 .eq(CcrApplication::getId, id)
@@ -1521,8 +1550,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * 分项金额勾稽硬校验(2026-09-01 用户拍板):分项申请金额合计须等于授信总额才能提交——
-     * 分项申请金额是实际执行额度,授信总额是客户可用额度,两者不一致说明分项拆分错误。
+     * 分项金额勾稽硬校验(2026-09-07 用户拍板):分项申请金额合计不得超过授信总额才能提交——
+     * 存量调息自动带出拆分项可能只是协议/批复总额的一部分(部分拆分执行),合计小于总额属正常,
+     * 不再强制相等;仅当分项合计超过授信总额(实际执行额度超过可用额度,说明拆分超限)才整单回滚。
      * 单户授信总额=credit_info_json.totalCredit(存量=数仓授信协议金额合计自动带出,新增=手工录入);
      * 集团授信总额=group_info_json.applyAmount(前端按集团批复授信额度优先回退手工录入总授信落库,
      * 与勾稽条/序列化/路由定档同口径:存量集团=集团当前授信协议批复总额,新增集团=新增授信总额)。
@@ -1551,9 +1581,31 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 .map(CcrPricingItem::getPricingAmount)
                 .filter(java.util.Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (itemSum.subtract(totalCredit).abs().compareTo(new BigDecimal("0.01")) > 0) {
+        if (itemSum.subtract(totalCredit).compareTo(new BigDecimal("0.01")) > 0) {
             throw new ServiceException(ErrorCode.QUALITY_BLOCK.getCode(),
-                    "分项申请金额合计 " + itemSum + " 万元与授信总额 " + totalCredit + " 万元不一致,请调整分项金额(合计须等于授信总额)");
+                    "分项申请金额合计 " + itemSum + " 万元超过授信总额 " + totalCredit + " 万元,请调减分项金额(合计不得超过授信总额)");
+        }
+    }
+
+    /**
+     * 存量调息申请利率上限硬校验(2026-09-07 用户拍板):仅贷款存量调息(EXISTING,单户+集团)申请利率不得高于原利率——
+     * 高于原利率(调升)整单回滚;等于(维持原利率)放行;原利率为空该分项跳过。
+     * 存量判定复用 resolveNewOrExisting(credit_info_json.businessType=EXISTING,存款恒 NEW 不走此)。
+     * 与 submitCheck 预校验 existingRatePrecheck 同口径双拦截,失败整单回滚。
+     */
+    private void checkExistingRateCap(CcrApplication app, List<CcrPricingItem> items) {
+        for (CcrPricingItem item : items) {
+            if (!"EXISTING".equals(resolveNewOrExisting(app, item))) {
+                continue;
+            }
+            BigDecimal original = item.getOriginalRate();
+            BigDecimal requested = item.getRequestedRate();
+            if (original == null || requested == null || requested.compareTo(original) <= 0) {
+                continue;
+            }
+            throw new ServiceException(ErrorCode.QUALITY_BLOCK.getCode(),
+                    "授信分项[" + item.getPricingItemNo() + "]存量调息申请利率 " + requested.stripTrailingZeros().toPlainString()
+                            + "% 不得高于原利率 " + original.stripTrailingZeros().toPlainString() + "%,请保持或调低利率");
         }
     }
 
