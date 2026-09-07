@@ -42,6 +42,11 @@ public final class ResolutionPdfExporter {
     /** Owner 密码(解锁权限/权限变更用,内部保管,不对使用方公开);User 密码空=打开无需密码 */
     private static final String OWNER_PASSWORD = "ccr-rate-resolution-owner-2026";
 
+    /** 贷款决议书「审批利率调整」表列宽(pt;合计=CW=483.28):
+     *  §2026-09-07 授信分项带金额后共 8 列,授信协议编号列加宽(相对 7 列等宽 CW/7≈69 加宽约 26%→90),
+     *  其余列收窄;表头超宽自动折行,协议编号可整行展示。 */
+    private static final float[] LOAN_RATE_COL_WIDTHS = {56f, 90f, 58f, 56f, 52f, 52f, 52f, 67.28f};
+
     // ---------- 文案映射(同 docx) ----------
 
     /** 单元格显示规整:
@@ -117,6 +122,50 @@ public final class ResolutionPdfExporter {
             return "集团";
         }
         return s == null ? "" : s;
+    }
+
+    // ---------- 集团决议书客户区(§2026-09-07) ----------
+
+    /** 集团决议书客户区行:按集团专属字段展示,空值不渲染。
+     *  客户号=集团号(archive.customer 集团行 customerNo/groupNo 即集团号),客户信息=集团信息
+     *  (archive 组装 groupCustomerOf:集团名/集团号/USCC 必出,行业/内部评级/五级/注册资本/开户机构/开户日期/基本账户
+     *   来自申请补录 group_info_json,缺失留空不渲染,避免套用单户员工/资产/婚姻等无关字段)。 */
+    private static String[][] groupCustomerRows(Map<String, Object> customer) {
+        List<String[]> rows = new ArrayList<>();
+        appendDescRow(rows, "客户名称", pick(customer, "customerName", "groupName", "cust_nm"));
+        appendDescRow(rows, "客户号(集团号)", pick(customer, "customerNo", "groupNo"));
+        appendDescRow(rows, "统一社会信用代码", pick(customer, "certNo"));
+        appendDescRow(rows, "所属行业", pick(customer, "industry"));
+        appendDescRow(rows, "内部信用等级", pick(customer, "creditLevel"));
+        appendDescRow(rows, "五级分类", fiveLevelClassText(pick(customer, "fiveLevelClass")));
+        appendDescRow(rows, "注册资本(万元)", pick(customer, "registeredCapital"));
+        appendDescRow(rows, "开户机构", pick(customer, "openOrgName"));
+        appendDescRow(rows, "开户日期", pick(customer, "openDate"));
+        appendDescRow(rows, "基本账户", pick(customer, "basicAccount"));
+        return rows.toArray(new String[0][]);
+    }
+
+    /** 描述行追加(空值不渲染:值为 null/空串 跳过) */
+    private static void appendDescRow(List<String[]> rows, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            rows.add(new String[]{key, value});
+        }
+    }
+
+    /** 授信分项金额合计(万元)——贷款决议书「审批利率调整」区顶部汇总本次决议授信总额(§2026-09-07) */
+    private static String totalAmountOf(List<Map<String, Object>> items) {
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for (Map<String, Object> item : items) {
+            String v = pick(item, "pricing_amount", "pricingAmount");
+            if (v != null && !v.isEmpty()) {
+                try {
+                    total = total.add(new java.math.BigDecimal(v));
+                } catch (NumberFormatException ignore) {
+                    // 非数值金额跳过,不影响其余分项合计
+                }
+            }
+        }
+        return total.stripTrailingZeros().toPlainString();
     }
 
     // ---------- 决议书中文展示字典(§用户要求:决议书全部中文,不写英文编码) ----------
@@ -528,6 +577,8 @@ public final class ResolutionPdfExporter {
         enrichPricingItems(archive, app, items, guarantees);
         // 业务类型区分:存款决议书保留完整审批留痕;贷款决议书按用户要求精简为三部分(客户基本信息/审批利率调整/贡献度信息)
         boolean isDeposit = "DEPOSIT".equals(pick(app, "business_type", "businessType"));
+        // §2026-09-07 集团决议书按实际展示:集团客户只展集团相关内容(客户号=集团号,客户信息=集团信息),客户区走集团专属字段并空值不渲染
+        boolean isGroup = "GROUP".equals(pick(app, "customer_scope", "customerScope"));
         Map<String, Object> res = resolutions.isEmpty() ? null : resolutions.get(0);
         boolean committeeReject = res != null
                 && "COMMITTEE_REJECT".equals(pick(res, "decisionSource", "decision_source"));
@@ -558,8 +609,12 @@ public final class ResolutionPdfExporter {
             }
 
             // ---- 一、客户信息(贷款决议书标题为"客户基本信息") ----
+            // §2026-09-07 集团决议书按实际展示:集团客户区走集团专属字段(客户号=集团号,客户信息=集团信息,空值不渲染);
+            // 单户/个人维持原客户信息全集展示。
             ctx.section(isDeposit ? "一、客户信息" : "一、客户基本信息");
-            ctx.descTable(new String[][]{
+            ctx.descTable(isGroup
+                    ? groupCustomerRows(customer)
+                    : new String[][]{
                     {"客户名称", pick(customer, "customerName", "cust_nm")},
                     {"客户号", pick(customer, "customerNo", "cust_no")},
                     {"客户类型", "CORP".equals(pick(customer, "custType")) ? "对公" : "INDIV".equals(pick(customer, "custType")) ? "个人" : pick(customer, "custType")},
@@ -580,7 +635,7 @@ public final class ResolutionPdfExporter {
                     {"联系电话", pick(customer, "phone")},
                     {"开户机构", pick(customer, "openOrgName")},
                     {"开户日期", pick(customer, "openDate")},
-            });
+                    });
             ctx.gap(8);
 
             // ---- 二、申请的贷款信息(仅存款决议书保留) ----
@@ -614,16 +669,32 @@ public final class ResolutionPdfExporter {
             }
 
             // ---- 三、利率调整(贷款决议书标题为"审批利率调整") ----
+            // §2026-09-07 贷款决议书授信分项带具体金额(万元):利率调整明细加「金额(万元)」列,顶部汇总本次决议授信总额,
+            // 授信协议编号列加宽(相对 7 列等宽约 +26%);存款决议书利率调整表维持原样(存款分项金额见「申请的贷款信息」分项表)。
             ctx.section(isDeposit ? "三、利率调整" : "二、审批利率调整");
-            ctx.dataTable("利率调整明细", items, new String[][]{
-                    {"产品", "product_code", "productCode"},
-                    {"授信协议编号", "agreement_no_display"},
-                    {"担保方式", "guarantee_type_display"},
-                    {"原执行利率(%)", "original_rate", "originalRate"},
-                    {"申请利率(%)", "requested_rate", "requestedRate"},
-                    {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
-                    {"最终决议利率(%)", "final_rate", "finalRate"},
-            }, Map.of("product_code", ResolutionPdfExporter::productText));
+            if (!isDeposit) {
+                ctx.para("本次决议授信总额合计 " + totalAmountOf(items) + " 万元,各授信分项金额明细如下。", 9, 0);
+                ctx.dataTable("利率调整明细", items, new String[][]{
+                        {"产品", "product_code", "productCode"},
+                        {"授信协议编号", "agreement_no_display"},
+                        {"担保方式", "guarantee_type_display"},
+                        {"金额(万元)", "pricing_amount", "pricingAmount"},
+                        {"原执行利率(%)", "original_rate", "originalRate"},
+                        {"申请利率(%)", "requested_rate", "requestedRate"},
+                        {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
+                        {"最终决议利率(%)", "final_rate", "finalRate"},
+                }, Map.of("product_code", ResolutionPdfExporter::productText), LOAN_RATE_COL_WIDTHS);
+            } else {
+                ctx.dataTable("利率调整明细", items, new String[][]{
+                        {"产品", "product_code", "productCode"},
+                        {"授信协议编号", "agreement_no_display"},
+                        {"担保方式", "guarantee_type_display"},
+                        {"原执行利率(%)", "original_rate", "originalRate"},
+                        {"申请利率(%)", "requested_rate", "requestedRate"},
+                        {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
+                        {"最终决议利率(%)", "final_rate", "finalRate"},
+                }, Map.of("product_code", ResolutionPdfExporter::productText));
+            }
             // 利率调整明细以表格呈现,删除冗余文字描述(§2026-08-26 用户要求);
             // 例外:小组表决否决时表格无法表达「未形成最终利率」,保留一行说明
             if (committeeReject) {
@@ -913,6 +984,15 @@ public final class ResolutionPdfExporter {
          */
         private void dataTable(String title, List<Map<String, Object>> rows, String[][] cols,
                                Map<String, UnaryOperator<String>> fmt) throws IOException {
+            dataTable(title, rows, cols, fmt, null);
+        }
+
+        /**
+         * 数据表(可带列中文格式化 + 自定义列宽):widths 为 null(或长度不匹配列数)时按等宽分配,
+         * 与既有行为一致;widths 长度须等于列数(合计按 CW 上下浮动,单元格超宽自动折行)。
+         */
+        private void dataTable(String title, List<Map<String, Object>> rows, String[][] cols,
+                               Map<String, UnaryOperator<String>> fmt, float[] widths) throws IOException {
             if (rows == null || rows.isEmpty()) {
                 return;
             }
@@ -940,8 +1020,12 @@ public final class ResolutionPdfExporter {
                 }
             }
             float[] w = new float[cols.length];
-            for (int i = 0; i < cols.length; i++) {
-                w[i] = CW / cols.length;
+            if (widths != null && widths.length == cols.length) {
+                System.arraycopy(widths, 0, w, 0, w.length);
+            } else {
+                for (int i = 0; i < cols.length; i++) {
+                    w[i] = CW / cols.length;
+                }
             }
             table(grid, w, true);
         }
