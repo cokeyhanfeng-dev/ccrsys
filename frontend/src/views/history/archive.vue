@@ -27,8 +27,9 @@
           <div class="desc-item"><div class="desc-item__label">申请号</div><div class="desc-item__value">{{ val(archive.application, 'application_no', 'applicationNo') }}</div></div>
           <div class="desc-item"><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText(val(archive.application, 'business_type', 'businessType')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">客户范围</div><div class="desc-item__value">{{ customerScopeText(val(archive.application, 'customer_scope', 'customerScope')) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ val(archive.application, 'customer_no', 'customerNo') }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ val(archive.application, 'group_no', 'groupNo') }}</div></div>
+          <!-- §2026-09-07 集团/单户互斥展示:集团申请不落 customer_no(恒空),只显集团号;单户/个人只显客户号 -->
+          <div v-if="!isGroup" class="desc-item"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ val(archive.application, 'customer_no', 'customerNo') || '—' }}</div></div>
+          <div v-else class="desc-item"><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ val(archive.application, 'group_no', 'groupNo') }}</div></div>
           <div class="desc-item"><div class="desc-item__label">提交时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'submit_time', 'submitTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">终态时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'final_time', 'finalTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">关联原申请</div><div class="desc-item__value"><span v-if="sourceApplicationId"><a class="archive-link" @click="goSourceArchive">查看原申请</a></span><span v-else>—</span></div></div>
@@ -107,41 +108,51 @@
             <div v-if="m.basicAccount" class="desc-item"><div class="desc-item__label">基本户账户</div><div class="desc-item__value">{{ m.basicAccount }}</div></div>
           </div>
         </div>
-        <!-- 集团授信与贡献度(§12.4 集团场景) -->
-        <div class="desc-grid" v-if="groupCredit.length" style="margin-top:12px">
-          <div class="desc-item"><div class="desc-item__label">集团授信总额(万元)</div><div class="desc-item__value">{{ fmtAmount(groupCredit[0].approvedTotalAmount) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">已分配额度(万元)</div><div class="desc-item__value">{{ fmtAmount(groupCredit[0].allocatedAmount) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">已用额度(万元)</div><div class="desc-item__value">{{ fmtAmount(groupCredit[0].usedAmount) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">可用额度(万元)</div><div class="desc-item__value">{{ fmtAmount(groupCredit[0].availableAmount) }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">授信到期日</div><div class="desc-item__value">{{ groupCredit[0].creditEnd || '—' }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">授信状态</div><div class="desc-item__value">{{ creditStatusText(groupCredit[0].creditStatus || '—') }}</div></div>
-          <div class="desc-item"><div class="desc-item__label">集团贡献度</div><div class="desc-item__value">{{ groupContributionText }}</div></div>
-        </div>
       </div>
 
-      <!-- 2b. 授信信息(补录 + 数仓协议合并去重;仅贷款场景,存款无授信概念,§2026-09-05 与审批详情对齐) -->
+      <!-- 2b. 授信信息(集团=集团综合授信 dw_group_credit_snapshot 按集团号;单户=数仓存量授信协议按客户号 + 补录去重。
+           集团申请 customer_no 恒空不落单户协议表,故集团场景展示集团综合授信,不再出现空协议卡,§2026-09-07 对齐审批详情;仅贷款场景,存款无授信概念) -->
       <div class="card" v-if="isLoan">
-        <div class="card__head"><span>授信信息</span></div>
-        <table class="table" v-if="creditAgreements.length">
-          <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
-          <tbody>
-            <tr v-for="(a, i) in creditAgreements" :key="i">
-              <td>
-                {{ a.agreementNo || '—' }}
-                <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
-              </td>
-              <td>{{ agreementTypeText(a.agreementType) }}</td>
-              <td>{{ currencyText(a.currency || 'CNY') }}</td>
-              <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
-              <td>{{ a.startDate || '—' }}</td>
-              <td>{{ a.endDate || '—' }}</td>
-              <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
-              <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
-              <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-line">暂无授信协议数据</div>
+        <div class="card__head"><span>授信信息</span><span v-if="isGroup" class="badge badge--info">集团综合授信</span></div>
+        <!-- 集团场景:集团综合授信(数仓 dw_group_credit_snapshot,按集团号关联) -->
+        <template v-if="isGroup">
+          <template v-if="groupCredit.length">
+            <div class="desc-grid desc-grid--3">
+              <div class="desc-item"><div class="desc-item__label">批复总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].approvedTotalAmount) }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">已分配额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].allocatedAmount) }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">已用额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].usedAmount) }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">可用额度(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupCredit[0].availableAmount) }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">授信开始日期</div><div class="desc-item__value">{{ groupCredit[0].creditStart || '—' }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">授信到期日期</div><div class="desc-item__value">{{ groupCredit[0].creditEnd || '—' }}</div></div>
+              <div class="desc-item"><div class="desc-item__label">授信状态</div><div class="desc-item__value"><span :class="creditStatusBadge(groupCredit[0].creditStatus)">{{ creditStatusText(groupCredit[0].creditStatus) }}</span></div></div>
+              <div class="desc-item"><div class="desc-item__label">集团贡献度</div><div class="desc-item__value desc-item__value--num">{{ groupContributionText }}</div></div>
+            </div>
+          </template>
+          <div v-else class="empty-line">暂无集团综合授信数据</div>
+        </template>
+        <!-- 单户/个人场景:存量授信协议(补录 + 数仓协议合并去重) -->
+        <template v-else>
+          <table class="table" v-if="creditAgreements.length">
+            <thead><tr><th>授信协议编号</th><th>授信类型</th><th>币种</th><th>状态</th><th>开始日期</th><th>结束日期</th><th>授信额度(万元)</th><th>已用额度(万元)</th><th>可用额度(万元)</th></tr></thead>
+            <tbody>
+              <tr v-for="(a, i) in creditAgreements" :key="i">
+                <td>
+                  {{ a.agreementNo || '—' }}
+                  <span v-if="a.source === 'APPLICATION'" class="badge badge--warning" style="margin-left:4px">补录</span>
+                </td>
+                <td>{{ agreementTypeText(a.agreementType) }}</td>
+                <td>{{ currencyText(a.currency || 'CNY') }}</td>
+                <td><span :class="agreementStatusBadge(a.agreementStatus)">{{ agreementStatusText(a.agreementStatus) }}</span></td>
+                <td>{{ a.startDate || '—' }}</td>
+                <td>{{ a.endDate || '—' }}</td>
+                <td class="num">{{ fmtAmount(a.creditAmount) }}</td>
+                <td class="num">{{ fmtAmount(a.usedAmount) }}</td>
+                <td class="num">{{ fmtAmount(a.availableAmount) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty-line">暂无授信协议数据</div>
+        </template>
       </div>
 
       <!-- 2d. 申请材料附件(申请时上传材料元数据,下载走附件下载接口;仅贷款场景,存款无附件概念,§2026-09-05 与审批详情对齐) -->
@@ -546,6 +557,11 @@ const orgPerformance = computed(() => archive.value.orgPerformance || [])
 // 机构达成概要行(与审批详情统一:后端至多 1 条,取首行,2026-09-04)
 const orgPerfRow = computed(() => orgPerformance.value[0] || null)
 const groupCredit = computed(() => archive.value.groupCredit || [])
+// 集团综合授信状态 badge(与审批详情一致:EFFECTIVE 有效 / EXPIRED 到期 / FROZEN 冻结)
+function creditStatusBadge(code?: string): string {
+  const map: Record<string, string> = { EFFECTIVE: 'badge badge--success', EXPIRED: 'badge badge--warning', FROZEN: 'badge badge--danger' }
+  return map[code || ''] || 'badge badge--neutral'
+}
 const groupContributionText = computed(() => {
   const g = (archive.value.groupContribution || [])[0]
   if (!g || g.metricValue == null) return '暂无数据'

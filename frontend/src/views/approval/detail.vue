@@ -63,7 +63,9 @@
         <div><div class="desc-item__label">申请号</div><div class="desc-item__value">{{ application.applicationNo || '—' }}</div></div>
         <div><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText }}</div></div>
         <div><div class="desc-item__label">申请类型</div><div class="desc-item__value">{{ applyBizTypeText }}</div></div>
-        <div><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}</div></div>
+        <!-- §2026-09-07 集团/单户互斥展示:集团申请 customer_no 为空(回退即成员号易误导),改显集团号;单户/个人维持客户号 -->
+        <div v-if="!isGroup"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}</div></div>
+        <div v-else><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ application.groupNo || '—' }}</div></div>
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
