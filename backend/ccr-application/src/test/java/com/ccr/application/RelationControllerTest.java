@@ -4,6 +4,7 @@ import com.ccr.application.controller.RelationController;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrRelation;
 import com.ccr.application.mapper.CcrApplicationMapper;
+import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.mapper.CcrRelationMapper;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.support.AppLoginUser;
@@ -41,6 +42,9 @@ class RelationControllerTest {
 
     @Mock
     private CcrApplicationMapper applicationMapper;
+
+    @Mock
+    private CcrPricingItemMapper pricingItemMapper;
 
     @Mock
     private AppLoginUser appLoginUser;
@@ -122,8 +126,11 @@ class RelationControllerTest {
     @Test
     void bind_无绑定对象_阻断() {
         stubApplication(null, null);
+        // 空号主单且无定价分项可兜底 → 抛「客户号尚未生成」ServiceException(缺 pricingItemMapper mock 会先 NPE)
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of());
         Map<String, Object> body = bindBody(null, null);
-        assertThrows(ServiceException.class, () -> controller.bind(body));
+        ServiceException ex = assertThrows(ServiceException.class, () -> controller.bind(body));
+        assertTrue(ex.getMessage().contains("客户号尚未生成"));
         verify(relationMapper, never()).insert(any(CcrRelation.class));
     }
 
