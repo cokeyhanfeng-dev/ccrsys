@@ -5,6 +5,8 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ccr.admin.config.AuthIntegrationProperties;
+import com.ccr.admin.config.SsoAuthService;
 import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
@@ -29,7 +31,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 登录认证(真实用户表 ccr_sys_user 校验;SSO 统一认证预留适配)
+ * 登录认证:账号取自 ccr_sys_user;启用统一认证(enabled)时 admin 除外经 SSO 验密(角色/机构仍本地取),
+ * 未启用(默认)保持本地 BCrypt 流程。
  */
 @RestController
 @RequestMapping("/auth")
@@ -48,6 +51,12 @@ public class AuthController {
     @Resource
     private NodeAssigneeResolver nodeAssigneeResolver;
 
+    @Resource
+    private AuthIntegrationProperties authIntegrationProperties;
+
+    @Resource
+    private SsoAuthService ssoAuthService;
+
     @PostMapping("/login")
     public R<Map<String, Object>> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String username = body.getOrDefault("username", "");
@@ -57,10 +66,25 @@ public class AuthController {
         CcrSysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<CcrSysUser>()
                 .eq(CcrSysUser::getUsername, username)
                 .eq(CcrSysUser::getDelFlag, "0"));
-        // BCrypt 校验密码(不落明文)
-        if (user == null || user.getPassword() == null
+        if (user == null) {
+            writeLoginLog("LOGIN_FAIL", 0L, username, ip, "用户名或密码错误");
+            throw new ServiceException(401, "用户名或密码错误");
+        }
+        // 密码校验:启用统一认证(enabled 默认 true)且已注入凭证(isReady)时,admin 除外走 SSO 验密,角色/机构仍取本地库;
+        // admin、或 enabled=false、或未注入 api-key(未接入环境)→ 本地 BCrypt 兜底,不锁死登录
+        boolean useSso = authIntegrationProperties.isEnabled()
+                && !"admin".equalsIgnoreCase(user.getUsername())
+                && authIntegrationProperties.isReady();
+        if (useSso) {
+            try {
+                ssoAuthService.verify(user.getUsername(), password);
+            } catch (ServiceException e) {
+                writeLoginLog("LOGIN_FAIL", user.getId(), user.getUsername(), ip, "统一认证:" + e.getMessage());
+                throw e;
+            }
+        } else if (user.getPassword() == null
                 || !BCrypt.checkpw(password, user.getPassword())) {
-            writeLoginLog("LOGIN_FAIL", user == null ? 0L : user.getId(), username, ip, "用户名或密码错误");
+            writeLoginLog("LOGIN_FAIL", user.getId(), user.getUsername(), ip, "用户名或密码错误");
             throw new ServiceException(401, "用户名或密码错误");
         }
         if (!"ENABLE".equals(user.getStatus())) {
@@ -73,8 +97,9 @@ public class AuthController {
         String orgCode = dept == null ? null : dept.getOrgCode();
         String dataScope = dataScopeLevel(user.getRoleCode());
         StpUtil.getSession().set("orgId", user.getOrgId());
-        // 是否需强制改密(兼容旧数据无字段:null 视为需改密)
-        String pwdChangeFlag = user.getPwdChangeFlag() == null ? "1" : user.getPwdChangeFlag();
+        // 2026-09-07 全局取消首次登录强制改密:接入统一认证后非 admin 密码归统一认证管,本系统不再强制首登改本系统密码;
+        // admin/本地账号同样不再强制(登录直接进系统);如需改密走布局用户下拉的主动改密入口
+        String pwdChangeFlag = "0";
         StpUtil.getSession().set("pwdChangeFlag", pwdChangeFlag);
         String token = StpUtil.getTokenValue();
 
@@ -112,8 +137,8 @@ public class AuthController {
     }
 
     /**
-     * 修改密码(登录用户主动改密,首次登录强制改密入口)
-     * 校验:原密码正确 → 新密码满足强规则 → 新旧不同;成功后 pwd_change_flag 置 0,解除强制改密
+     * 修改密码(登录用户主动改密入口,布局下拉菜单;2026-09-07 起不再作强制首登入口)
+     * 校验:原密码正确 → 新密码满足强规则 → 新旧不同;成功后 pwd_change_flag 置 0
      * 旧密码错误返回 400(不用 401,避免前端 401 清 token 整页跳登录)
      */
     @PostMapping("/change-password")

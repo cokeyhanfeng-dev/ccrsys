@@ -97,6 +97,19 @@ ccr:
       max-file-size-bytes: 10485760
       max-files-per-resolution: 10
       max-total-size-bytes: 31457280
+    # 统一认证(SSO)登录验证(2026-09-07 接入,配置驱动):admin 除外在注入凭证(CCR_INTEGRATION_AUTH_API_KEY)后
+    # 走 SSO 判密码,角色/机构仍取本地库;未注入凭证(生产尚未接入)自动回退本地 BCrypt,不锁死登录。
+    # api-key 凭证仅允许部署环境注入 ${CCR_INTEGRATION_AUTH_API_KEY:},禁止写入代码/配置/镜像。
+    auth:
+      enabled: ${CCR_INTEGRATION_AUTH_ENABLED:true}
+      url: ${CCR_INTEGRATION_AUTH_URL:http://32.13.6.6:8000/authing/login}
+      app-id: ${CCR_INTEGRATION_AUTH_APP_ID:10111}
+      api-key: ${CCR_INTEGRATION_AUTH_API_KEY:}
+      app-code: ${CCR_INTEGRATION_AUTH_APP_CODE:65f3b6d259663202ce3277e8}
+      app-id-header: ${CCR_INTEGRATION_AUTH_APP_ID_HEADER:X-App-Id}
+      api-key-header: ${CCR_INTEGRATION_AUTH_API_KEY_HEADER:apikey}
+      connect-timeout-millis: 3000
+      request-timeout-millis: 10000
   cache:
     enabled: true
     default-ttl-seconds: 300
