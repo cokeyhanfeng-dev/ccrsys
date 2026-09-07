@@ -10,6 +10,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.SQLException;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.when;
 
 /**
@@ -45,6 +50,54 @@ class NodeAssigneeResolverTest {
         row.put("assignee_code", code);
         row.put("relation", "OR");
         return row;
+    }
+
+    @Test
+    void preview_无指派时按申请支行查启用行长() {
+        stubConfigs(List.of());
+        var user = new NodeAssigneeResolver.AssigneeUser(7L, "bm001", "行长甲");
+        when(jdbcTemplate.query(contains("LEFT(?, CHAR_LENGTH(d.branch_code))"),
+                any(RowMapper.class), eq("100101"))).thenReturn(List.of(user));
+        var result = resolver.resolvePreview("BRANCH_MANAGER", 1L, null, "100101");
+        assertEquals(List.of("行长甲"), result.displayNames());
+        assertNull(result.previewMessage());
+        assertEquals("BRANCH_ROLE", result.getHitLevel());
+    }
+
+    @Test
+    void preview_无申请支行不查询全行人员() {
+        stubConfigs(List.of());
+        var result = resolver.resolvePreview("BRANCH_MANAGER", null, null, " ");
+        assertTrue(result.users().isEmpty());
+        assertNotNull(result.previewMessage());
+        verify(jdbcTemplate, never()).query(anyString(), any(RowMapper.class), anyString());
+    }
+
+    @Test
+    void preview_部门节点不使用行长兜底() {
+        stubConfigs(List.of());
+        assertTrue(resolver.resolvePreview("DEPT_GENERAL_MANAGER", 1L, null, "1001").users().isEmpty());
+        verify(jdbcTemplate, never()).query(anyString(), any(RowMapper.class), anyString());
+    }
+
+    @Test
+    void preview_指派查询异常不降级放大人员范围() {
+        when(jdbcTemplate.queryForList(anyString(), any(Object.class), any(Object.class),
+                any(Object.class), any(Object.class)))
+                .thenThrow(new BadSqlGrammarException("query", "sql", new SQLException("error")));
+        var result = resolver.resolvePreview("BRANCH_MANAGER", 1L, null, "1001");
+        assertEquals("ERROR", result.getHitLevel());
+        assertTrue(result.previewMessage().contains("暂不可用"));
+        verify(jdbcTemplate, never()).query(anyString(), any(RowMapper.class), anyString());
+    }
+
+    @Test
+    void preview_已匹配人员没有姓名仍显示登录名() {
+        var result = new NodeAssigneeResolver.ResolveResult("BRANCH_MANAGER", "PERSON", List.of(
+                new NodeAssigneeResolver.AssigneeUser(1L, "bm001", " "),
+                new NodeAssigneeResolver.AssigneeUser(2L, "bm002", "行长乙")));
+        assertEquals(List.of("bm001", "行长乙"), result.displayNames());
+        assertNull(result.previewMessage());
     }
 
     /** loadConfigs 打桩(queryForList(String, Object...)) */

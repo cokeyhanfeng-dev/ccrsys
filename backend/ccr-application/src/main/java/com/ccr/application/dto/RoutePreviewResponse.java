@@ -35,6 +35,9 @@ public class RoutePreviewResponse {
     /** 整单下一步审批人姓名(routeChain 首节点解析) */
     private List<String> nextApproverNames;
 
+    /** 未匹配或查询异常时的预览提示，不影响提交。 */
+    private String nextApproverMessage;
+
     /** 整单命中的权限矩阵行编号(审计溯源) */
     private String matchedMatrixNo;
 
@@ -79,6 +82,9 @@ public class RoutePreviewResponse {
 
         /** 下一步审批人姓名(routeChain 首节点解析,§2026-08-26 客户经理提交预览显示审批人) */
         private List<String> nextApproverNames;
+
+        /** 未匹配或查询异常时的预览提示，不影响提交。 */
+        private String nextApproverMessage;
 
         /** 硬边界是否通过(未配置边界视为通过) */
         private Boolean hardBoundaryPass;

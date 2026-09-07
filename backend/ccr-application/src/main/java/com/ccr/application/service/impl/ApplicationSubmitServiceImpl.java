@@ -200,12 +200,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 // 下一步审批人姓名:routeChain 首节点按申请人机构+分项部门归属解析(§2026-08-26 预览显示审批人)
                 List<String> chain = route.getRouteChain();
                 if (chain != null && !chain.isEmpty()) {
-                    NodeAssigneeResolver.ResolveResult resolved = nodeAssigneeResolver.resolve(
-                            chain.get(0), app.getApplicantOrgId(), null, item.getDeptCode());
-                    preview.setNextApproverNames(resolved.users().stream()
-                            .map(NodeAssigneeResolver.AssigneeUser::getNickName)
-                            .filter(StrUtil::isNotBlank)
-                            .toList());
+                    NodeAssigneeResolver.ResolveResult resolved = nodeAssigneeResolver.resolvePreview(
+                            chain.get(0), app.getApplicantOrgId(), item.getDeptCode(), app.getApplyBranchCode());
+                    preview.setNextApproverNames(resolved.displayNames());
+                    preview.setNextApproverMessage(resolved.previewMessage());
                 }
                 preview.setLprVersionId(route.getLprVersionId());
                 preview.setLprVersionCode(route.getLprVersionCode());
@@ -237,6 +235,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             response.setFinalNodeCode(anchorPreview.getFinalNodeCode());
             response.setRouteChain(anchorPreview.getRouteChain());
             response.setNextApproverNames(anchorPreview.getNextApproverNames());
+            response.setNextApproverMessage(anchorPreview.getNextApproverMessage());
             response.setMatchedMatrixNo(anchorRoute.getMatchedMatrixNo());
             response.setBoundaryRate(anchorRoute.getBoundaryRate());
         }

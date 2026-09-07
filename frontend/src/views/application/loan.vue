@@ -2371,7 +2371,7 @@ function creditTotalAmount(): number {
  *  新增授信直接按本次填的授信走,不走数仓既有批复,GROUP001 手工 3000 不得被批复 10000 顶掉);
  *  存量调息(EXISTING)=所选集团授信协议额度优先(协议必选,§2026-09-03:协议=数仓 dw_group_credit_snapshot 集团授信行,
  *  creditAmount=该行批复总额;选中后授信总额=所选协议额度,与单户一致),回退既有批复总额/手工录入(兼容旧草稿);
- *  勾稽条 groupApplyAmount / 提交勾稽 validateGuaranteeTotal / 落库 serializeGroupInfo 三处同口径。 */
+ *  勾稽条 groupApplyAmount / 授信上下文校验 validateCreditContext / 落库 serializeGroupInfo 三处同口径。 */
 function groupApplyTotalAmount(): number {
   const approved = Number(groupCredit.value?.approvedTotalAmount)
   const manual = Number(form.totalCredit)
@@ -2402,10 +2402,10 @@ function validateGuaranteeTotal(): string | null {
       if (!creditAgreements.value.length) return '该集团无存量授信协议(数仓未推送集团授信),不能按存量调息申请,请改选「新增授信」'
       if (isBlank(selectedAgreementNo.value)) return '请选择存量授信协议(集团授信协议编号)'
     }
-    total = groupApplyTotalAmount()
+    const total = groupApplyTotalAmount()
     if (total <= 0) return '请先录入集团授信总额(存量集团:选择授信协议带出协议额度;新增集团:录入本次总授信额度)'
   } else {
-    total = creditTotalAmount()
+    const total = creditTotalAmount()
     if (total <= 0) return '请先录入总授信额度(存量:选择授信协议;新增:手工录入总授信额度)'
   }
   const sum = guaranteesTotalAmount.value
@@ -2560,7 +2560,7 @@ function validateForDraft(): string | null {
   const isGroup = form.customerScope === 'GROUP'
   // 主体识别:草稿必须能定位到是哪个客户/集团(否则草稿无从编辑),以下不再强校验业务完整性——
   // §2026-09-03 用户拍板「草稿只存不强校验」:未选涉及成员/空金额分项/缺协议/承诺未填等均可先存草稿,稍后从历史申请继续编辑;
-  // 孤儿分项(未选涉及成员)等强校验已移入 validateGuaranteeTotal(提交/进入下一步才拦)
+  // 孤儿分项(未选涉及成员)等强校验已移入 validateCreditContext(提交/进入下一步才拦)
   if (isGroup) {
     if (isBlank(form.groupNo)) return '请填写集团客户编号'
   } else if (!hasCustomerIdentity()) {
@@ -2841,7 +2841,7 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
   // 集团属性(存量集团数仓带出可下拉修改,§2026-08-25)
   if (!isNewGroup.value && form.stateOwnedFlag) out.stateOwnedFlag = form.stateOwnedFlag
   // 本次申请额度(§2026-09-03 口径修正):新增授信(NEW)按本次手工录入的授信总额(不再被数仓既有批复顶掉),存量调息按集团批复总额;
-  // 与勾稽条 groupApplyAmount / 提交勾稽 validateGuaranteeTotal 同口径;全无时回退担保金额合计兜底
+  // 与勾稽条 groupApplyAmount / 授信上下文校验 validateCreditContext 同口径;全无时回退担保金额合计兜底
   const guaranteeSum = form.guarantees.reduce((s, g) => s + (Number(g.amount) || 0), 0)
   let applyAmount = groupApplyTotalAmount()
   if (!(applyAmount > 0)) applyAmount = guaranteeSum

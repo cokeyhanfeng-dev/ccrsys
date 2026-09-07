@@ -78,7 +78,7 @@
                 </div>
                 <div class="desc-item">
                   <div class="desc-item__label">下一步审批人</div>
-                  <div class="desc-item__value">{{ (routePreview.nextApproverNames || []).join('、') || '—' }}</div>
+                  <div class="desc-item__value">{{ (routePreview.nextApproverNames || []).join('、') || routePreview.nextApproverMessage || '未匹配到审批人，请联系管理员核对机构及节点人员配置' }}</div>
                 </div>
               </div>
             </template>

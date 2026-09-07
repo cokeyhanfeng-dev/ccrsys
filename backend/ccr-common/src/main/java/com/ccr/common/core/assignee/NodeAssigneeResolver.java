@@ -117,6 +117,31 @@ public class NodeAssigneeResolver {
         }
     }
 
+    /** 仅用于提交预览：指派为空时，按业务待办的支行范围展示行长候选人，不参与授权。 */
+    public ResolveResult resolvePreview(String nodeCode, Long orgId, String deptCode, String applyBranchCode) {
+        ResolveResult resolved = resolve(nodeCode, orgId, null, deptCode);
+        if (!resolved.users().isEmpty() || LEVEL_ERROR.equals(resolved.getHitLevel())
+                || !BRANCH_MANAGER_NODE.equals(nodeCode)
+                || applyBranchCode == null || applyBranchCode.isBlank()) {
+            return resolved;
+        }
+        try {
+            List<AssigneeUser> users = jdbcTemplate.query("""
+                    SELECT u.id, u.username, u.nick_name FROM ccr_sys_user u
+                    JOIN ccr_sys_dept d ON d.id = u.org_id AND d.del_flag = '0'
+                    WHERE u.role_code = 'branch_manager' AND u.status = 'ENABLE' AND u.del_flag = '0'
+                      AND d.branch_code IS NOT NULL AND TRIM(d.branch_code) <> ''
+                      AND LEFT(?, CHAR_LENGTH(d.branch_code)) = d.branch_code
+                    ORDER BY u.id
+                    """, (rs, i) -> new AssigneeUser(rs.getLong("id"), rs.getString("username"),
+                    rs.getString("nick_name")), applyBranchCode);
+            return new ResolveResult(nodeCode, users.isEmpty() ? LEVEL_NONE : "BRANCH_ROLE", users);
+        } catch (DataAccessException e) {
+            log.warn("预览支行审批人查询失败: nodeCode={}", nodeCode, e);
+            return ResolveResult.failed(nodeCode);
+        }
+    }
+
     /**
      * 管理综合支行长解析(2026-09-04):申请人机构须为零售支行(BRANCH+RETAIL),沿 parent_id 取管理综合支行
      * (create 校验保证管理行为非零售 BRANCH),解析该综合支行下 branch_manager 角色启用用户;
@@ -420,7 +445,20 @@ public class NodeAssigneeResolver {
             return users.stream().map(AssigneeUser::getUserId).toList();
         }
 
-        /** 解析出的处理人列表(含姓名昵称,§2026-08-26 提交预览下一步审批人姓名) */
+        /** 姓名缺失时保留登录名，避免已匹配人员在预览中消失。 */
+        public List<String> displayNames() {
+            return users.stream().map(u -> u.getNickName() == null || u.getNickName().isBlank()
+                    ? u.getUsername() : u.getNickName())
+                    .filter(name -> name != null && !name.isBlank()).toList();
+        }
+
+        public String previewMessage() {
+            if (LEVEL_ERROR.equals(hitLevel)) {
+                return "审批人查询暂不可用，请稍后重试";
+            }
+            return displayNames().isEmpty() ? "未匹配到审批人，请联系管理员核对机构及节点人员配置" : null;
+        }
+
         public List<AssigneeUser> users() {
             return users;
         }
