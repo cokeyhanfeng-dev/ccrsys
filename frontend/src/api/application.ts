@@ -355,6 +355,12 @@ export function getGroupMembers(groupNo: string) {
   return get<any[]>(`/ccr/groups/${groupNo}/members`)
 }
 
+/** 集团存量调息数据源:按所选集团授信协议(group_credit_no)整单带该协议下全部成员拆分项
+ *  (含担保措施 measures + 成员 custNo;拆分项 credit_no=成员额度号,2026-09 契约) */
+export function getGroupSplits(groupNo: string, groupCreditNo: string) {
+  return get<any[]>(`/ccr/groups/${groupNo}/splits`, { groupCreditNo })
+}
+
 /** 集团联想(§13.1;按集团号/集团名模糊,申请页集团下拉) */
 export function suggestGroups<T = any[]>(keyword: string): Promise<T> {
   return get<T>('/ccr/groups/suggest', { keyword })
