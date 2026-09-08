@@ -203,8 +203,6 @@
         <div><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ application.groupNo }}</div></div>
         <div><div class="desc-item__label">成员数</div><div class="desc-item__value">{{ groupMembers.length }} 户</div></div>
         <div><div class="desc-item__label">合计申请金额</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(groupTotalAmount) }} 万元</div></div>
-        <!-- P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额) -->
-        <div><div class="desc-item__label">集团贡献度</div><div class="desc-item__value">{{ groupContributionText }}</div></div>
       </div>
       <el-collapse v-if="groupMembers.length" style="margin-top:12px">
         <el-collapse-item v-for="(m, i) in groupMembers" :key="i" :title="memberTitle(m)" :name="i">
@@ -1039,8 +1037,6 @@ const agreementNos = computed(() => {
   } catch { /* creditInfoJson 解析失败则忽略补录协议号 */ }
   return nos
 })
-// 集团贡献度(数仓 GROUP 口径 TOTAL)
-const groupContribution = ref<any>(null)
 // 集团综合授信(dw_group_credit_snapshot 按集团号,审批详情「授信信息」集团场景展示;单户场景为空)
 const groupCredit = ref<any[]>([])
 const attachments = ref<any[]>([])
@@ -1447,14 +1443,6 @@ function memberTitle(m: any): string {
   return `成员 ${who}(${memberRoleText(m.memberRole, '成员')})`
 }
 
-// P1-2:集团贡献度(数仓 GROUP 口径综合贡献总额,万元)
-const groupContributionText = computed(() => {
-  const g = groupContribution.value
-  if (!g || g.metricValue == null) return '暂无数据'
-  return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
-})
-
-
 // 部门归属文案(§D16a 矩阵透出:机构org_code——3202233912公司金融部/3202233943授信评审部/3202233991零售金融)
 function deptText(code?: string) {
   const map: Record<string, string> = { '3202233912': '公司金融部', '3202233943': '授信评审部', '3202233991': '零售金融' }
@@ -1641,7 +1629,6 @@ async function load() {
     relations.value = data.relations || []
     relatedPersons.value = data.relatedPersons || []
     rawCreditAgreements.value = data.creditAgreements || []
-    groupContribution.value = data.groupContribution || null
     groupCredit.value = data.groupCredit || []
     attachments.value = data.attachments || []
     resolutions.value = data.resolutions || []

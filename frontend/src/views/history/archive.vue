@@ -125,7 +125,6 @@
               <div class="desc-item"><div class="desc-item__label">授信开始日期</div><div class="desc-item__value">{{ groupCredit[0].creditStart || '—' }}</div></div>
               <div class="desc-item"><div class="desc-item__label">授信到期日期</div><div class="desc-item__value">{{ groupCredit[0].creditEnd || '—' }}</div></div>
               <div class="desc-item"><div class="desc-item__label">授信状态</div><div class="desc-item__value"><span :class="creditStatusBadge(groupCredit[0].creditStatus)">{{ creditStatusText(groupCredit[0].creditStatus) }}</span></div></div>
-              <div class="desc-item"><div class="desc-item__label">集团贡献度</div><div class="desc-item__value desc-item__value--num">{{ groupContributionText }}</div></div>
             </div>
           </template>
           <div v-else class="empty-line">暂无集团综合授信数据</div>
@@ -551,7 +550,9 @@ const firstResolutionStatus = computed(() => val((archive.value.resolutions || [
 const creditAgreements = computed(() => archive.value.creditAgreements || [])
 const attachments = computed(() => archive.value.attachments || [])
 const otherLoanSummary = computed(() => archive.value.otherLoanSummary || [])
-const otherLoans = computed(() => archive.value.otherLoans || [])
+// 他行融资明细:数仓征信(dw_credit_financing_detail)+ 申请人工补录/Excel(ccr_application_other_loan,后端已按数仓同机构过滤,#515)
+// 合并展示与审批详情 detail.vue 一致(#535 生产实报:集团历史申请人工他行融资已录入但档案不显示)
+const otherLoans = computed(() => [...(archive.value.otherLoans || []), ...(archive.value.appOtherLoans || [])])
 const contribution = computed(() => archive.value.contribution || [])
 const orgPerformance = computed(() => archive.value.orgPerformance || [])
 // 机构达成概要行(与审批详情统一:后端至多 1 条,取首行,2026-09-04)
@@ -562,11 +563,6 @@ function creditStatusBadge(code?: string): string {
   const map: Record<string, string> = { EFFECTIVE: 'badge badge--success', EXPIRED: 'badge badge--warning', FROZEN: 'badge badge--danger' }
   return map[code || ''] || 'badge badge--neutral'
 }
-const groupContributionText = computed(() => {
-  const g = (archive.value.groupContribution || [])[0]
-  if (!g || g.metricValue == null) return '暂无数据'
-  return `${g.metricValue}${g.valueType === 'CONTRIBUTION_AMOUNT' ? ' 万元' : ''}`.trim()
-})
 // 授信分项明细(后端按 pricing_item_id 聚合)
 function guaranteesOf(p: any): any[] {
   const map = archive.value.guaranteesByItem || {}

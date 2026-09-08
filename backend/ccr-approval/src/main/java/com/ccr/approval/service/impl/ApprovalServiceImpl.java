@@ -1186,27 +1186,44 @@ public class ApprovalServiceImpl implements ApprovalService {
         // 他行融资(申请人工补录/Excel 导入 + 数仓征信,最新批次;报告日期=数仓征信报告日期,§2026-08-26)
         result.put("otherLoanSummary", jdbcTemplate.queryForList(
                 "SELECT f.lender_count lenderCount, f.npl_balance nplBalance, f.credit_amount_total creditAmountTotal, f.used_amount_total usedAmountTotal, f.loan_account_count loanAccountCount, f.overdue_account_count overdueAccountCount, f.overdue_balance overdueBalance, f.special_mention_balance specialMentionBalance, f.external_guarantee_balance externalGuaranteeBalance, (SELECT r.report_date FROM dw_credit_report_snapshot r WHERE r.cust_no = f.cust_no ORDER BY r.data_dt DESC, r.report_date DESC LIMIT 1) reportDate FROM dw_credit_financing_summary f WHERE f.cust_no = ? ORDER BY f.data_dt DESC LIMIT 1", custNoStr));
-        result.put("otherLoans", jdbcTemplate.queryForList(
-                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNoStr, custNoStr));
-        result.put("appOtherLoans", jdbcTemplate.queryForList(
-                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
+        List<Map<String, Object>> dwOtherLoans = jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, data_dt dataDt, 'DW' inputMode FROM dw_credit_financing_detail WHERE customer_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_credit_financing_detail WHERE customer_no = ?)", custNoStr, custNoStr);
+        result.put("otherLoans", dwOtherLoans);
+        List<Map<String, Object>> appOtherLoans = jdbcTemplate.queryForList(
+                "SELECT lender_name lenderName, credit_amount creditAmount, used_amount usedAmount, balance_amount balanceAmount, annual_rate annualRate, input_mode inputMode FROM ccr_application_other_loan WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId);
+        // 他行融资明细去重(与审批详情 ApprovalController.detail 同口径,#515):数仓征信为准,人工补录行仅补数仓未覆盖机构;
+        // 数仓已有同机构时过滤人工行,避免前端合并后同机构重复展示(#535:档案消费 appOtherLoans 后须与 detail 行为一致)
+        if (!dwOtherLoans.isEmpty() && !appOtherLoans.isEmpty()) {
+            Set<String> dwLenders = new LinkedHashSet<>();
+            for (Map<String, Object> row : dwOtherLoans) {
+                Object lender = row.get("lenderName");
+                if (lender != null && !lender.toString().isBlank()) {
+                    dwLenders.add(lender.toString());
+                }
+            }
+            List<Map<String, Object>> filtered = new ArrayList<>(appOtherLoans.size());
+            for (Map<String, Object> row : appOtherLoans) {
+                Object lender = row.get("lenderName");
+                if (lender == null || lender.toString().isBlank() || !dwLenders.contains(lender.toString())) {
+                    filtered.add(row);
+                }
+            }
+            appOtherLoans = filtered;
+        }
+        result.put("appOtherLoans", appOtherLoans);
         // 申请附件(材料附件步骤上传;元数据,下载走 /ccr/applications/{appId}/attachments/{id}/download)
         result.put("attachments", jdbcTemplate.queryForList(
                 "SELECT id, file_name fileName, file_size fileSize, source_type sourceType, source_resolution_no sourceResolutionNo, create_time createTime FROM ccr_application_attachment WHERE application_id = ? AND del_flag = '0' ORDER BY id", applicationId));
-        // 集团信息(集团授信总额/到期日 + 集团贡献度,仅集团场景)
+        // 集团信息(集团综合授信,仅集团场景;集团贡献度不再单列,按成员分指标见「贡献度参考」面板)
         if (groupNo != null && StrUtil.isNotBlank(groupNo.toString())) {
             String gno = groupNo.toString();
             result.put("groupCredit", jdbcTemplate.queryForList(
                     "SELECT approved_total_amount approvedTotalAmount, allocated_amount allocatedAmount, used_amount usedAmount, available_amount availableAmount, credit_start creditStart, credit_end creditEnd, credit_status creditStatus FROM dw_group_credit_snapshot WHERE group_no = ? ORDER BY data_dt DESC LIMIT 1", gno));
-            result.put("groupContribution", jdbcTemplate.queryForList(
-                    "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric"
-                            + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP'"
-                            + " AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric"
-                            + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP')",
-                    gno, gno));
+            // 集团贡献度参考面板:集团客户号=group_no,单户同款取数读数仓 GROUP 批(成员合并口径由数仓承担);
+            // 取最新 data_dt,排除 TOTAL(综合总额行);集团级汇总与集团综合授信一致为实时读数仓,不走提交快照
+            result.put("contribution", groupContributionMetrics(gno));
         } else {
             result.put("groupCredit", List.of());
-            result.put("groupContribution", List.of());
         }
         // 机构达成(申请机构最新批次;§2026-08-26 存款申请无机构达成概念,置空不组装)
         result.put("orgPerformance", "DEPOSIT".equals(application.get("business_type"))
@@ -1653,6 +1670,17 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         return jdbcTemplate.queryForList(
                 "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType FROM dw_contribution_metric WHERE cust_no = ?", custNo);
+    }
+
+    /** 集团贡献度参考(#534):数仓按集团客户号(=group_no)推 GROUP 行(每分指标一行,成员合并口径数仓承担);
+     *  与单户同款取数,key=集团号;取最新 data_dt,排除 TOTAL(综合总额,已不再单列展示) */
+    private List<Map<String, Object>> groupContributionMetrics(String groupNo) {
+        return jdbcTemplate.queryForList(
+                "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType"
+                        + " FROM dw_contribution_metric WHERE cust_no = ? AND metric_code <> 'TOTAL'"
+                        + " AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric"
+                        + " WHERE cust_no = ? AND metric_code <> 'TOTAL')",
+                groupNo, groupNo);
     }
 
     /** 客户信息人工修正(customer_info_json):人工值覆盖基线,新增客户(无基线)即唯一来源 */

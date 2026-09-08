@@ -133,14 +133,6 @@ public class ApprovalController {
                     String groupNo = groupNoObj.toString();
                     result.put("groupMembers", jdbcTemplate.queryForList(
                             "SELECT member_customer_no memberCustomerNo, member_role memberRole, request_amount requestAmount FROM ccr_application_member WHERE application_id = ? AND del_flag = '0'", appId));
-                    // P1-2:集团贡献度(数仓 GROUP 口径 TOTAL 综合贡献总额,最新批次;集团号=group_no)
-                    List<Map<String, Object>> gc = jdbcTemplate.queryForList(
-                            "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric"
-                                    + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP'"
-                                    + " AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric"
-                                    + " WHERE cust_no = ? AND metric_code = 'TOTAL' AND metric_scope = 'GROUP')",
-                            groupNo, groupNo);
-                    result.put("groupContribution", gc.isEmpty() ? List.of() : gc.get(0));
                 }
                 // 资料校验结果:快照质量 PASS/WARN/BLOCK 明细与整体结论
                 Object bundleId = apps.get(0).get("snapshotBundleId");
@@ -288,6 +280,16 @@ public class ApprovalController {
                     + " FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?", custNo));
             result.put("contribution", jdbcTemplate.queryForList(
                     "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType FROM dw_contribution_metric WHERE cust_no = ?", custNo));
+        }
+        // 集团贡献度参考(#534):集团客户号=group_no,单户同款取数读数仓 GROUP 批(最新 data_dt,排除 TOTAL 综合总额行);
+        // 集团级汇总实时读数仓,与集团综合授信一致(不走提交快照)
+        if (groupScene) {
+            result.put("contribution", jdbcTemplate.queryForList(
+                    "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType"
+                            + " FROM dw_contribution_metric WHERE cust_no = ? AND metric_code <> 'TOTAL'"
+                            + " AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric"
+                            + " WHERE cust_no = ? AND metric_code <> 'TOTAL')",
+                    groupNoStr, groupNoStr));
         }
         // 集团成员名称补充:快照成员主数据/手工成员快照优先,降级实时数仓/手工成员表
         @SuppressWarnings("unchecked")
