@@ -54,6 +54,13 @@ public class AssigneeController {
 
     private static final Set<String> ASSIGNEE_TYPES = Set.of("PERSON", "GROUP", "DEPT", "ROLE");
 
+    /**
+     * 指派人角色白名单(2026-09-08 收敛):节点指派候选人/保存仅允许 支行行长/部门总经理/分管行长;
+     * 客户经理/秘书/审计/配置复核/合同经办/admin 等角色一律不可作为节点指派人(防绕过 curl)。
+     * 运行期解析 NodeAssigneeResolver 不改,存量白名单外 ROLE/GROUP/DEPT:role 行编辑再保存会被拦截。
+     */
+    private static final Set<String> ASSIGNEE_ROLE_WHITELIST = Set.of("branch_manager", "dept_gm", "vice_president");
+
     private static final Set<String> RELATIONS = Set.of("AND", "OR");
 
     @Resource
@@ -222,14 +229,8 @@ public class AssigneeController {
         String validFrom = str(body.get("validFrom"));
         String validTo = str(body.get("validTo"));
         if (StrUtil.isNotBlank(delegateTo)) {
-            // 代理人必须是启用用户(按工号)
-            Long cnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM ccr_sys_user WHERE username = ? AND status = 'ENABLE' AND del_flag = '0'",
-                    Long.class, delegateTo);
-            if (cnt == null || cnt == 0) {
-                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "代理人不存在或已停用:" + delegateTo);
-            }
+            // 代理人必须是启用用户(按工号)且角色在白名单(2026-09-08 与指派人同收口;空=取消代理不校验)
+            requireWhitelistedEnabledUser(delegateTo, "代理人");
         }
         int rows = jdbcTemplate.update("""
                         UPDATE ccr_node_assignee
@@ -379,14 +380,51 @@ public class AssigneeController {
         if (StrUtil.isNotBlank(relation) && !RELATIONS.contains(relation)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "关系仅支持 AND/OR");
         }
-        // PERSON 按工号直接指派:保存前校验指派人状态(§12.17 ⑤)
+        // PERSON 按工号直接指派:保存前校验指派人状态 + 角色白名单(§12.17 ⑤,2026-09-08 收敛)
         if ("PERSON".equals(assigneeType)) {
-            Long cnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM ccr_sys_user WHERE username = ? AND status = 'ENABLE' AND del_flag = '0'",
-                    Long.class, assigneeCode);
-            if (cnt == null || cnt == 0) {
+            requireWhitelistedEnabledUser(assigneeCode, "指派人");
+        }
+        // ROLE/GROUP 角色型指派:逐码校验白名单(纯角色码/逗号分段)
+        if ("ROLE".equals(assigneeType) || "GROUP".equals(assigneeType)) {
+            requireWhitelistedRole(assigneeCode, "角色型指派人");
+        }
+        // DEPT 部门节点:冒号语法(org:role)校验冒号后角色白名单;纯机构码(按机构,如支行行长 3202230000)不校验防误伤
+        if ("DEPT".equals(assigneeType) && assigneeCode.contains(":")) {
+            requireWhitelistedRole(assigneeCode, "部门节点角色");
+        }
+    }
+
+    /** 校验启用用户且角色在白名单(支行行长/部门总经理/分管行长);返回其角色码;不存在/停用/白名单外均 400 */
+    private String requireWhitelistedEnabledUser(String username, String subject) {
+        List<String> roleCodes = jdbcTemplate.queryForList(
+                "SELECT role_code FROM ccr_sys_user WHERE username = ? AND status = 'ENABLE' AND del_flag = '0'",
+                String.class, username);
+        if (roleCodes.isEmpty()) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    subject + "不存在或已停用:" + username);
+        }
+        String roleCode = roleCodes.get(0);
+        if (!ASSIGNEE_ROLE_WHITELIST.contains(roleCode)) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    subject + "须为支行行长/部门总经理/分管行长角色,当前用户角色不可作指派人:" + username);
+        }
+        return roleCode;
+    }
+
+    /**
+     * 角色型指派码校验:按逗号分段逐码比对白名单;
+     * DEPT 冒号语法(org:role)取冒号后段;纯码无冒号直接用整段。白名单外角色码 → 400。
+     */
+    private void requireWhitelistedRole(String code, String subject) {
+        for (String part : code.split(",")) {
+            String role = part.trim();
+            int colon = role.indexOf(':');
+            if (colon >= 0) {
+                role = role.substring(colon + 1).trim();
+            }
+            if (!ASSIGNEE_ROLE_WHITELIST.contains(role)) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "指派人不存在或已停用:" + assigneeCode);
+                        subject + "须为支行行长/部门总经理/分管行长角色,白名单外角色不可作指派人:" + role);
             }
         }
     }

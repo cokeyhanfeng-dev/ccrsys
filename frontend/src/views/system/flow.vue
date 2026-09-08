@@ -269,7 +269,8 @@
             </select>
             <select v-else-if="assigneeDialog.form.assigneeType === 'ROLE'" class="form-select" v-model="assigneeDialog.form.assigneeCode">
               <option value="" disabled>请选择角色</option>
-              <option v-for="r in roles" :key="r.roleCode" :value="r.roleCode">{{ r.roleName }}({{ r.roleCode }})</option>
+              <!-- 2026-09-08 收敛:仅白名单角色(支行行长/部门总经理/分管行长) -->
+              <option v-for="r in dialogRoles" :key="r.roleCode" :value="r.roleCode">{{ r.roleName }}({{ r.roleCode }})</option>
             </select>
             <select v-else-if="assigneeDialog.form.assigneeType === 'DEPT'" class="form-select" v-model="assigneeDialog.form.assigneeCode">
               <option value="" disabled>请选择部门/机构</option>
@@ -278,7 +279,7 @@
             <!-- 「按人员组」=角色集合(逗号分隔角色码,后端 GROUP 层按角色展开启用用户;
                  §2026-08-27 修复:原加载手工群组接口不存在致 404,且语义与后端不符) -->
             <div v-else-if="assigneeDialog.form.assigneeType === 'GROUP'" class="assignee-group-pick">
-              <label v-for="r in roles" :key="r.roleCode" class="assignee-group-pick__item">
+              <label v-for="r in dialogRoles" :key="r.roleCode" class="assignee-group-pick__item">
                 <input type="checkbox" :value="r.roleCode" :checked="groupRoles.includes(r.roleCode)" @change="toggleGroupRole(r.roleCode)" />
                 <span>{{ r.roleName }}({{ r.roleCode }})</span>
               </label>
@@ -411,6 +412,10 @@ import {
 } from '@/api/system'
 import { nodeLabel, assigneeTypeText } from '@/utils/dict'
 
+// 指派人角色白名单(2026-09-08 收敛):节点指派候选人与后端 AssigneeController.ASSIGNEE_ROLE_WHITELIST 对齐,
+// 仅支行行长/部门总经理/分管行长;客户经理/秘书/审计/配置复核/合同经办/admin 等角色不出现在候选下拉
+const ASSIGNEE_ROLE_WHITELIST = ['branch_manager', 'dept_gm', 'vice_president']
+
 const tabs = [
   { key: 'assignee', label: '节点指派' },
   { key: 'deptVp', label: '分管行长映射' },
@@ -517,7 +522,9 @@ async function loadRefs() {
   try {
     // 用户管理分页化后 listUsers 返回 {total, records},指派下拉取 records(启用用户约 77,一次拉全)
     const page = await listUsers({ status: 'ENABLE', pageNum: 1, pageSize: 200 })
-    users.value = (page as any)?.records || []
+    const allUsers: any[] = (page as any)?.records || []
+    // 指派候选收敛(2026-09-08):仅保留白名单角色用户;按人/代理人/vpUsers(分管行长映射)同源收口
+    users.value = allUsers.filter((u) => ASSIGNEE_ROLE_WHITELIST.includes(u.roleCode))
   } catch {
     users.value = []
   }
@@ -653,6 +660,18 @@ function toggleGroupRole(roleCode: string) {
   else cur.push(roleCode)
   assigneeDialog.form.assigneeCode = cur.join(',')
 }
+// 角色下拉候选(2026-09-08 收敛):按角色/按人员组仅列白名单角色;存量指派若含白名单外角色码,
+// 追加对应角色仅用于回显(保存仍会被后端白名单拦截,运行时解析 NodeAssigneeResolver 不受影响)
+const pickRoles = computed(() => roles.value.filter((r) => ASSIGNEE_ROLE_WHITELIST.includes(r.roleCode)))
+const dialogRoles = computed(() => {
+  const shown = pickRoles.value.map((r) => r.roleCode)
+  const legacyCodes = (assigneeDialog.form.assigneeCode || '')
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter((c: string) => c && !c.includes(':')) // 仅回显纯角色码;DEPT 冒号语法(org:role)不进角色下拉
+  const extra = roles.value.filter((r) => legacyCodes.includes(r.roleCode) && !shown.includes(r.roleCode))
+  return [...pickRoles.value, ...extra]
+})
 function openAssigneeEdit(a: NodeAssignee) {
   assigneeDialog.isEdit = true
   assigneeDialog.form = {
