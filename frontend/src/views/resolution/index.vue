@@ -2,7 +2,7 @@
   <div>
     <div class="section-head">
       <div class="section-title">决议书查询</div>
-      <InfoTip content="仅展示当前有效决议(执行中/已执行等);被否决或被关闭的决议不在此列。可下载对应决议书 PDF。" />
+      <InfoTip content="仅展示当前有效决议(已签发/执行中等);被否决或被关闭的决议不在此列。可下载对应决议书 PDF。" />
     </div>
 
     <div class="card">
@@ -18,8 +18,7 @@
       <table class="table table--full" v-loading="listLoading">
         <thead>
           <tr>
-            <th>客户/集团</th><th>客户号</th><th>决议书编号</th>
-            <th>执行状态</th><th>签发日期</th><th>操作</th>
+            <th>客户/集团</th><th>客户号</th><th>决议书编号</th><th>签发日期</th><th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -31,13 +30,12 @@
               </span>
             </td>
             <td>{{ row.resolutionNo }}</td>
-            <td><span :class="execStatusBadge(row.executionStatus)">{{ execStatusText(row.executionStatus) }}</span></td>
             <td>{{ fmtTime(row.issueTime) }}</td>
             <td>
               <button class="btn btn--text" @click="download(row)">下载决议书</button>
             </td>
           </tr>
-          <tr v-if="!records.length"><td colspan="6"><div class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div></td></tr>
+          <tr v-if="!records.length"><td colspan="5"><div class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div></td></tr>
         </tbody>
       </table>
 
@@ -59,7 +57,6 @@
 import { reactive, ref, onMounted } from 'vue'
 import { pageResolutions } from '@/api/resolution'
 import { downloadResolutionDoc } from '@/api/history'
-import { execStatusText, execStatusBadge } from '@/utils/dict'
 import { fmtDateTime } from '@/utils/format'
 
 const records = ref<any[]>([])
