@@ -335,10 +335,13 @@ public class ResolutionServiceImpl implements ResolutionService {
         List<Object> params = new ArrayList<>();
         if (StrUtil.isNotBlank(customerName)) {
             String k = customerName.trim();
-            // 客户名称子串:匹配客户/集团名称 JSON 快照(系统序列化键值,格式稳定;同 history 页 LIKE 手法)
-            where.append(" AND (a.customer_info_json LIKE ? OR a.group_info_json LIKE ?)");
-            params.add("\"customerName\":\"" + k + "%");
-            params.add("\"groupName\":\"" + k + "%");
+            // 客户名称真子串:客户快照 customerName/集团快照 groupName。两列为 MySQL JSON 类型,
+            // 入库被规范化为 "key": "value"(键后带空格),锚定原始文本会恒失配;统一 JSON_EXTRACT 取值后
+            // LIKE '%k%'(与展示端 extractJsonName 正则容忍空格口径一致,同时满足需求「子串模糊」)
+            where.append(" AND (JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')) LIKE ?"
+                    + " OR JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')) LIKE ?)");
+            params.add("%" + k + "%");
+            params.add("%" + k + "%");
         }
         if (StrUtil.isNotBlank(customerNo)) {
             String k = customerNo.trim();
