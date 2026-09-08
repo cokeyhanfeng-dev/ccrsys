@@ -1346,11 +1346,15 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     "仅终态/退回申请可关联重提(当前:" + source.getStatus() + ")");
         }
 
-        // 新草稿:复制客户/集团/申请说明,记录来源申请
+        // 新草稿:复制客户/集团/申请说明与客户信息快照,记录来源申请
+        // (单户/对公 customerInfoJson/creditInfoJson 一并带出——漏复制会导致重提草稿丢客户快照,
+        //  年收入/职业/证件号等回填为空;与 CcrApplicationServiceImpl.copyForCreate 复制口径对齐)
         CcrApplication target = new CcrApplication();
         target.setBusinessType(source.getBusinessType());
         target.setCustomerScope(source.getCustomerScope());
         target.setCustomerNo(source.getCustomerNo());
+        target.setCustomerInfoJson(source.getCustomerInfoJson());
+        target.setCreditInfoJson(source.getCreditInfoJson());
         target.setGroupNo(source.getGroupNo());
         target.setApplicantUserId(source.getApplicantUserId());
         target.setApplicantOrgId(source.getApplicantOrgId());

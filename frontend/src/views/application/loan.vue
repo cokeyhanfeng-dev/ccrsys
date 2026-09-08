@@ -3105,6 +3105,14 @@ async function loadDraftIntoForm(id: number | string) {
     }
   } else if (app.customerNo && !isPlaceholderCustomerNo(app.customerNo)) {
     await loadCustomerDetail()
+    // 单户重提/继续编辑:数仓重查后仍以提交快照兜底(数仓客户档案可能缺年收入/职业等字段,
+    // 覆盖会把上面快照回填值清空;§客户信息快照语义——以提交时为准)
+    if (custInfo?.annualIncome != null) form.annualIncome = custInfo.annualIncome
+    if (custInfo?.occupation != null) form.occupation = custInfo.occupation
+    if (custInfo?.phone != null) form.phone = custInfo.phone
+    if (custInfo?.idNo != null) form.idNo = custInfo.idNo
+    if (custInfo?.maritalStatus != null) form.maritalStatus = maritalStatusCode(custInfo.maritalStatus)
+    if (custInfo?.fiveLevelClass != null) form.fiveLevelClass = normalizeFiveLevelClass(custInfo.fiveLevelClass)
   }
 
   // 分项 → 利率申请;已批准沿用原决议的占位分项不在本页编辑
