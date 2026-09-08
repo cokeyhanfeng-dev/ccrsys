@@ -232,6 +232,7 @@ export interface RoutePreview {
   routeChain?: string[]
   /** 整单下一步审批人姓名(routeChain 首节点解析) */
   nextApproverNames?: string[]
+  nextApproverMessage?: string
   /** 整单命中的权限矩阵行编号(审计溯源) */
   matchedMatrixNo?: string
   /** 整单终审节点边界利率(审计溯源) */
@@ -247,6 +248,7 @@ export interface RoutePreview {
     finalNodeCode?: string
     routeChain?: string[]
     nextApproverNames?: string[]
+    nextApproverMessage?: string
     hardBoundaryPass?: boolean
     hardBoundaryRate?: number
     lprVersionCode?: string

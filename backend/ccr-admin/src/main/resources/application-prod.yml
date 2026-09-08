@@ -9,3 +9,18 @@ spring:
     hikari:
       maximum-pool-size: 50
       minimum-idle: 10
+
+# Mini-App 授信决议 API 网关集成（真实地址与凭证由部署环境注入）
+ccr:
+  integration:
+    credit-resolution:
+      enabled: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ENABLED:false}
+      base-url: ${CCR_INTEGRATION_CREDIT_RESOLUTION_GATEWAY_BASE_URL:}
+      token-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_TOKEN_PATH:/miniapp/auth/token}
+      latest-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_LATEST_PATH:/miniapp/creditResolution/ccr/latest}
+      exchange-path: ${CCR_INTEGRATION_CREDIT_RESOLUTION_EXCHANGE_PATH:/miniapp/creditResolution/ccr/files/exchange}
+      app-id: ${CCR_INTEGRATION_CREDIT_RESOLUTION_APP_ID:}
+      api-key: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY:}
+      app-id-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_APP_ID_HEADER:X-App-Id}
+      api-key-header: ${CCR_INTEGRATION_CREDIT_RESOLUTION_API_KEY_HEADER:apikey}
+      allowed-download-hosts: ${CCR_INTEGRATION_CREDIT_RESOLUTION_ALLOWED_DOWNLOAD_HOSTS:}
