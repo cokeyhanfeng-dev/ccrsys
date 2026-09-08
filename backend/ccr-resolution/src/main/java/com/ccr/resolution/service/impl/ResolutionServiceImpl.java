@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.domain.CcrGuaranteePackage;
 import com.ccr.application.domain.CcrPricingItem;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.resolution.domain.CcrNotificationLog;
@@ -54,6 +55,9 @@ public class ResolutionServiceImpl implements ResolutionService {
     private static final String NOTIFY_KEY_PREFIX = "RECONCILE_EXCEPTION:";
     /** 预留合同经办岗角色编码(待消息模块按岗位路由到实际经办人) */
     private static final String ROLE_CONTRACT_OPERATOR = "contract_operator";
+    /** 决议书查询「当前有效决议」执行状态白名单(2026-09-08;排除 CLOSED/VOID 与无执行记录的否决决议) */
+    private static final String EFFECTIVE_EXEC_STATUS_SQL =
+            "'ISSUED','CONTRACT_PENDING','CONTRACT_BOUND','EXECUTED','RECONCILE_EXCEPTION'";
 
     @Resource
     private CcrResolutionMapper resolutionMapper;
@@ -302,6 +306,80 @@ public class ResolutionServiceImpl implements ResolutionService {
                 sql + " AND a.id IN (" + participatedApplicationSql(loginId) + ") ORDER BY r.issue_time DESC");
     }
 
+    // ---------- 决议书查询页(2026-09-08,resolution_query 专用) ----------
+
+    /**
+     * 决议书查询(全量可见,仅「当前有效决议」):执行状态白名单
+     * ISSUED/CONTRACT_PENDING/CONTRACT_BOUND/EXECUTED/RECONCILE_EXCEPTION,
+     * CLOSED/VOID 与无执行记录的否决决议一律不列入(EXISTS 子查询天然排除,同时规避一条决议多条
+     * 执行记录导致的 JOIN 重复行)。
+     * 支持 客户名称(customer_info_json/group_info_json 快照子串)、客户号(兼集团号,匹配 customer_no/group_no)、
+     * 决议书编号 三者组合子串模糊;签发时间倒序分页。
+     *
+     * @return {total, records}(record 含 customerName/customerNo/groupNo/resolutionNo/executionStatus/issueTime/applicationId)
+     */
+    @Override
+    public Map<String, Object> queryResolutions(int pageNum, int pageSize, String customerName,
+                                                String customerNo, String resolutionNo) {
+        Long loginId = StpUtil.getLoginIdAsLong();
+        String roleCode = currentRoleCode(loginId);
+        // 本页只服务查询专岗与全量角色;客户经理等既有角色仍走 listResolutions(§13.2 数据权限)
+        if (!isFullViewRole(roleCode)) {
+            throw new ServiceException(ErrorCode.FORBIDDEN.getCode(), "无决议书查询权限");
+        }
+        int page = Math.max(pageNum, 1);
+        int size = Math.min(Math.max(pageSize, 1), 200);
+        StringBuilder where = new StringBuilder(" WHERE r.del_flag = '0'"
+                + " AND EXISTS (SELECT 1 FROM ccr_resolution_execution e WHERE e.resolution_id = r.id"
+                + " AND e.del_flag = '0' AND e.execution_status IN (" + EFFECTIVE_EXEC_STATUS_SQL + "))");
+        List<Object> params = new ArrayList<>();
+        if (StrUtil.isNotBlank(customerName)) {
+            String k = customerName.trim();
+            // 客户名称子串:匹配客户/集团名称 JSON 快照(系统序列化键值,格式稳定;同 history 页 LIKE 手法)
+            where.append(" AND (a.customer_info_json LIKE ? OR a.group_info_json LIKE ?)");
+            params.add("\"customerName\":\"" + k + "%");
+            params.add("\"groupName\":\"" + k + "%");
+        }
+        if (StrUtil.isNotBlank(customerNo)) {
+            String k = customerNo.trim();
+            // 客户号框兼容集团号:单户取 customer_no,集团决议取 group_no
+            where.append(" AND (a.customer_no LIKE ? OR a.group_no LIKE ?)");
+            params.add("%" + k + "%");
+            params.add("%" + k + "%");
+        }
+        if (StrUtil.isNotBlank(resolutionNo)) {
+            where.append(" AND r.resolution_no LIKE ?");
+            params.add("%" + resolutionNo.trim() + "%");
+        }
+        String from = """
+                FROM ccr_resolution r
+                LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id
+                JOIN ccr_application a ON a.id = COALESCE(r.application_id, pi.application_id)
+                """;
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*)" + from + where,
+                Long.class, params.toArray());
+        // 执行状态展示最新一条(决议可能多条执行记录,避免 JOIN 出重复行)
+        String select = """
+                SELECT r.id, r.resolution_no resolutionNo, r.decision_source decisionSource,
+                       r.issue_time issueTime,
+                       a.id applicationId, a.application_no applicationNo, a.business_type businessType,
+                       a.customer_no customerNo, a.group_no groupNo,
+                       COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
+                                JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName'))) customerName,
+                       (SELECT e.execution_status FROM ccr_resolution_execution e
+                         WHERE e.resolution_id = r.id AND e.del_flag = '0' ORDER BY e.id DESC LIMIT 1) executionStatus
+                """;
+        params.add(size);
+        params.add((long) (page - 1) * size);
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                select + from + where + " ORDER BY r.issue_time DESC, r.id DESC LIMIT ? OFFSET ?",
+                params.toArray());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("total", total == null ? 0L : total);
+        data.put("records", records);
+        return data;
+    }
+
     @Override
     public Map<String, Object> resolutionDetail(Long resolutionId) {
         Long loginId = StpUtil.getLoginIdAsLong();
@@ -344,10 +422,10 @@ public class ResolutionServiceImpl implements ResolutionService {
         return result;
     }
 
-    /** 全量数据权限角色:行长/管理员/审计 */
+    /** 全量数据权限角色:行长/管理员/审计/决议书查询(决议查询走全量可见,但列表带有效状态白名单过滤) */
     private boolean isFullViewRole(String roleCode) {
         return "president".equals(roleCode) || "admin".equals(roleCode) || "auditor".equals(roleCode)
-                || "contract_operator".equals(roleCode);
+                || "contract_operator".equals(roleCode) || AppLoginUser.ROLE_RESOLUTION_QUERY.equals(roleCode);
     }
 
     /** 登录人角色编码(用户表为准,不接受传参) */

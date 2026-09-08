@@ -46,4 +46,15 @@ public interface ResolutionService {
      * 决议详情(含执行记录),数据权限同列表
      */
     Map<String, Object> resolutionDetail(Long resolutionId);
+
+    /**
+     * 决议书查询页(§2026-09-08 resolution_query 专用):
+     * 仅「当前有效决议」(执行状态白名单 ISSUED/CONTRACT_PENDING/CONTRACT_BOUND/EXECUTED/RECONCILE_EXCEPTION,
+     * 排除 CLOSED/VOID 与被否决无执行记录决议);客户名称、客户号(兼集团号)、决议书编号可组合子串模糊;
+     * 权限:resolution_query 及全量角色(president/admin/auditor/contract_operator)可查,其余 403。
+     *
+     * @return {total, records}(记录含客户名称/客户号或集团号/决议号/执行状态/签发时间/applicationId)
+     */
+    Map<String, Object> queryResolutions(int pageNum, int pageSize, String customerName,
+                                         String customerNo, String resolutionNo);
 }

@@ -25,6 +25,8 @@ public class AppLoginUser {
     /** 贷审会秘书岗(由计划财务部总经理兼任,主角色 dept_gm) */
     public static final String ROLE_SECRETARY = "secretary";
     public static final String ROLE_CONTRACT_OPERATOR = "contract_operator";
+    /** 决议书查询专岗:仅决议书查询与下载,无档案/审批权限(2026-09-08) */
+    public static final String ROLE_RESOLUTION_QUERY = "resolution_query";
     /** 行长/审计/管理员:全量 */
     public static final String ROLE_PRESIDENT = "president";
     public static final String ROLE_AUDITOR = "auditor";

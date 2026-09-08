@@ -22,6 +22,7 @@
                 '/approval': 'Stamp',
                 '/commitment': 'Timer',
                 '/history': 'Document',
+                '/resolution': 'DocumentCopy',
                 '/datacenter': 'DataAnalysis',
                 '/audit': 'View',
                 '/system/user': 'User',
@@ -152,6 +153,8 @@ const allMenus = [
   // 贡献度跟踪:所有业务角色可见(审批人看自己审批过的客户,数据权限;6人小组/行长看全部)
   { path: '/commitment', title: '贡献度跟踪', roles: ['*'] },
   { path: '/history', title: '历史', roles: ['*'] },
+  // 决议书查询(2026-09-08):决议书查询专岗 + admin(admin 守卫特判全可见)
+  { path: '/resolution', title: '决议书查询', roles: ['resolution_query'] },
   // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,仅 admin 可见
   { path: '/datacenter', title: '数据中心', roles: ['admin'] },
   // 审计管理(§12.14):审计人员专用(admin 全量可见)

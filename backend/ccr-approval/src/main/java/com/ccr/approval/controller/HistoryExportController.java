@@ -4,6 +4,7 @@ import com.ccr.approval.service.ApprovalService;
 import com.ccr.approval.support.HistoryArchiveExporter;
 import com.ccr.approval.support.ResolutionPdfExporter;
 import com.ccr.application.service.ApplicationAccessService;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.vote.read.SysUserRead;
@@ -87,10 +88,15 @@ public class HistoryExportController {
     /** 决议书下载(§决议):按申请生成只读 PDF 决议书,供客户经理/审批人在历史申请中下载/打印。
      *  权限保护:PDF 加密(256位),禁编辑/复制/提取/组装,仅可打印——下载后不可修改;
      *  数据权限复用 historyDetail(checkHistoryPermission:客户经理本人/审批参与/行长全量);
+     *  决议书查询专岗(resolution_query,2026-09-08)免参与校验走 resolutionArchiveForDownload
+     *  (该角色无档案 JSON 查看权,仅能经查询页下载决议书 PDF);其余角色沿用原 historyDetail;
      *  仅已签发决议(ccr_resolution)的申请可下载,无决议返回 404 提示。 */
     @GetMapping("/{applicationId}/resolution-doc")
     public ResponseEntity<byte[]> resolutionDoc(@PathVariable Long applicationId) throws IOException {
-        Map<String, Object> archive = approvalService.historyDetail(applicationId);
+        SysUserRead operator = currentLoginUser.requireCurrentUser();
+        Map<String, Object> archive = AppLoginUser.ROLE_RESOLUTION_QUERY.equals(operator.getRoleCode())
+                ? approvalService.resolutionArchiveForDownload(applicationId)
+                : approvalService.historyDetail(applicationId);
         List<?> resolutions = (List<?>) archive.get("resolutions");
         if (resolutions == null || resolutions.isEmpty()) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "该申请暂无已通过的决议,无法生成决议书");

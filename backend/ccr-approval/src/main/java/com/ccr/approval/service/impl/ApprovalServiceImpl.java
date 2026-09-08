@@ -21,6 +21,7 @@ import com.ccr.application.mapper.CcrGuaranteePackageMapper;
 import com.ccr.application.mapper.CcrPricingItemMapper;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
+import com.ccr.application.support.AppLoginUser;
 import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.approval.domain.CcrApprovalAction;
 import com.ccr.approval.domain.CcrRateAdjustment;
@@ -986,7 +987,40 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         Map<String, Object> application = apps.get(0);
         checkHistoryPermission(user, application);
+        return assembleArchive(application, applicationId, user);
+    }
 
+    /**
+     * 决议书下载档案组装(2026-09-08,resolution_query 专岗):全量可见、跳过 checkHistoryPermission;
+     * 其余角色由 HistoryExportController 兜底路由到原 historyDetail(现行为不变),此处对非专岗再走一次
+     * 数据权限防越权。要求申请存在「有效决议」(排除否决决议,与查询页仅列有效决议口径一致),否则 404。
+     * PDF 从不落库,下载时由 ResolutionPdfExporter.build(archive) 即时生成,故须能组装 archive。
+     */
+    @Override
+    public Map<String, Object> resolutionArchiveForDownload(Long applicationId) {
+        SysUserRead user = currentLoginUser.requireCurrentUser();
+        List<Map<String, Object>> apps = jdbcTemplate.queryForList(
+                "SELECT * FROM ccr_application WHERE id = ? AND del_flag = '0'", applicationId);
+        if (apps.isEmpty()) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "申请不存在");
+        }
+        Map<String, Object> application = apps.get(0);
+        if (!AppLoginUser.ROLE_RESOLUTION_QUERY.equals(user.getRoleCode())) {
+            checkHistoryPermission(user, application);
+        }
+        Long validResolutions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ccr_resolution r LEFT JOIN ccr_pricing_item pi ON pi.id = r.pricing_item_id"
+                        + " WHERE (r.application_id = ? OR pi.application_id = ?) AND r.del_flag = '0'"
+                        + " AND r.decision_source <> 'COMMITTEE_REJECT'",
+                Long.class, applicationId, applicationId);
+        if (validResolutions == null || validResolutions == 0) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "该申请无有效决议书");
+        }
+        return assembleArchive(application, applicationId, user);
+    }
+
+    /** 档案 body 组装:审批详情/历史档案/决议书下载共用(表决/行长决策可见性按登录人角色决定) */
+    private Map<String, Object> assembleArchive(Map<String, Object> application, Long applicationId, SysUserRead user) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("application", application);
         List<Map<String, Object>> members = jdbcTemplate.queryForList(

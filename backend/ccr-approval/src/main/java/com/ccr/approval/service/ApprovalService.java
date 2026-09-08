@@ -78,6 +78,12 @@ public interface ApprovalService {
      */
     Map<String, Object> historyDetail(Long applicationId);
 
+    /**
+     * 决议书下载档案组装(2026-09-08,resolution_query 专岗):全量可见、跳过 checkHistoryPermission,
+     * 要求申请存在「有效决议」(排除否决决议);决议书 PDF 从不落库,下载时即时 build 该 archive。
+     */
+    Map<String, Object> resolutionArchiveForDownload(Long applicationId);
+
     /** 授信协议历史审批申请(§2026-09-01 存量授信展示:按 credit_info_json.agreementNo 查同协议历史申请) */
     List<Map<String, Object>> agreementHistory(String agreementNo);
 

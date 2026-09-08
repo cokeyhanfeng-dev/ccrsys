@@ -450,7 +450,7 @@ export const ROLE_TEXT: Record<string, string> = {
   customer_manager: '客户经理', branch_manager: '支行行长', dept_gm: '部门总经理',
   vice_president: '分管行长', committee_member: '审批小组成员', president: '总行行长',
   admin: '系统管理员', auditor: '审计员', config_reviewer: '配置复核员',
-  contract_operator: '合同经办岗', secretary: '贷审会秘书岗'
+  contract_operator: '合同经办岗', secretary: '贷审会秘书岗', resolution_query: '决议书查询员'
 }
 export function roleText(code?: string, fallback = '—'): string {
   return textOf(ROLE_TEXT, code, fallback)

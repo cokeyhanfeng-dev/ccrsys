@@ -77,6 +77,13 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '申请档案' }
       },
       {
+        // 决议书查询(2026-09-08):决议书查询专岗专用(全量可见仅有效决议);admin 守卫特判可见
+        path: 'resolution',
+        name: 'Resolution',
+        component: () => import('@/views/resolution/index.vue'),
+        meta: { title: '决议书查询', icon: 'DocumentCopy', roles: ['resolution_query'] }
+      },
+      {
         // 数据中心(§9.6 F8):技术监控数据仅 admin 可见
         path: 'datacenter',
         name: 'DataCenter',
