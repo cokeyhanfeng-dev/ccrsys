@@ -908,6 +908,24 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         return list;
     }
 
+    /** 审批节点编码→中文(与前端 nodeLabel/审批待办同口径;含零售两级支行新增的 PARENT_BRANCH_MANAGER)。
+     *  未收录编码回退原样,避免丢信息。 */
+    private static final Map<String, String> NODE_TEXT = new HashMap<>();
+
+    static {
+        NODE_TEXT.put("BRANCH_MANAGER", "支行行长");
+        NODE_TEXT.put("PARENT_BRANCH_MANAGER", "综合支行行长");
+        NODE_TEXT.put("DEPT_GENERAL_MANAGER", "部门总经理");
+        NODE_TEXT.put("VICE_PRESIDENT", "分管行长");
+        NODE_TEXT.put("SECRETARY", "贷审会秘书岗");
+        NODE_TEXT.put("SIX_PEOPLE_GROUP", "六人小组");
+        NODE_TEXT.put("PRESIDENT", "总行行长");
+    }
+
+    private static String nodeTextOf(String code) {
+        return NODE_TEXT.getOrDefault(code, code);
+    }
+
     /** 审批轨迹增强:补在途分项当前节点文本与到达当前节点时间(该节点最早动作时间;首节点回退提交时间) */
     private void enrichNodeProgress(List<CcrApplication> list) {
         if (list.isEmpty()) {
@@ -949,7 +967,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             }
             LinkedHashSet<String> ns = nodeByApp.get(app.getId());
             if (ns != null && !ns.isEmpty()) {
-                app.setCurrentNodeText(String.join("、", ns));
+                // 节点编码转中文后拼接(否则工作台「我的申请动态」当前节点直接显示英文编码)
+                List<String> names = new ArrayList<>(ns.size());
+                for (String c : ns) {
+                    names.add(nodeTextOf(c));
+                }
+                app.setCurrentNodeText(String.join("、", names));
             }
             app.setNodeReachTime(reachByApp.get(app.getId()));
         }
