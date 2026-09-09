@@ -10,9 +10,9 @@
 ## 填写方式
 
 1. 已有 `.env` 时，将模板变量合并进去，保留数据库、Redis、决议书网关等原有配置；首次配置可将示例复制到部署目录并命名为 `.env`。
-2. 将四个 URL 中的 `https://gateway.example.invalid` 替换为相应实际网关地址。如果不同接口使用不同网关，分别填写各自完整 URL。
-3. `APP_ID`、`API_KEY`、`APP_CODE` 沿用服务器上已可用的账号密码 Authing 配置。模板中的 `10111` 和应用编码取自当前工程默认值；若服务器现有值不同，以现有可用值为准。API Key 必须替换占位文本；包含 `$`、`#` 等字符时保留单引号。
-4. code 登录响应路径使用 `data` 和 `data.userBasicInfo.username`。企业微信只增加开关和发送 URL，共用 Authing 的 APP_ID/API_KEY 与头名称，发送体为系统生成的 toUser/text。
+2. 将四个 URL 中的示例协议、主机与端口替换为相应实际网关地址。如果不同接口使用不同网关，分别填写各自完整 URL。
+3. `APP_ID`、`API_KEY`、原密码登录的 `APP_CODE` 沿用服务器上已可用的 Authing 配置。免密单独新增 `CCR_INTEGRATION_AUTH_CODE_APP_CODE=rate-approval`。模板中的 `10111` 和应用编码取自当前工程默认值；若服务器现有值不同，以现有可用值为准。API Key 必须替换占位文本；包含 `$`、`#` 等字符时保留单引号。
+4. code 登录两步均为 GET，路径为 `/authing/getAccessTokenByCode` 和 `/authing/getLoginUser/{appCode}/{token}`；保留模板占位符，由后端动态替换。读取直接令牌文本和顶层 `loginUserId`。旧 `CCR_INTEGRATION_AUTH_` 前缀下的 `CODE_TOKEN_PATH`、`USER_NAME_PATH`、`RESPONSE_CODE_PATH`、`RESPONSE_SUCCESS_CODE` 已移除，需从旧 Compose 和 `.env` 删除。企业微信只增加开关和发送 URL，共用 Authing 的 APP_ID/API_KEY 与头名称，发送体为系统生成的 toUser/text。
 5. 模板按生产启用两项能力填写；隔离测试时将 `CCR_INTEGRATION_WECHAT_ENABLED=false`。当前通过行内网关发送，无需额外配置 CorpID、AgentID 或企微应用 Secret，也无需填写接收人、正文、code、token。
 
 当前根 `docker-compose.yml` 已含全部变量透传。服务器使用旧文件时，将 YAML 模板中的 environment 项合并至现有 backend 服务，保留原有镜像、挂载、数据库、Redis 等配置。`.env` 中的值通过这些条目传入容器，无需再重复配置 `env_file`。

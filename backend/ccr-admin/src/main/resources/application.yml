@@ -106,12 +106,9 @@ ccr:
     auth:
       enabled: ${CCR_INTEGRATION_AUTH_ENABLED:true}
       code-enabled: ${CCR_INTEGRATION_AUTH_CODE_ENABLED:false}
+      code-app-code: ${CCR_INTEGRATION_AUTH_CODE_APP_CODE:rate-approval}
       code-token-url: ${CCR_INTEGRATION_AUTH_CODE_TOKEN_URL:}
       user-info-url: ${CCR_INTEGRATION_AUTH_USER_INFO_URL:}
-      code-token-path: ${CCR_INTEGRATION_AUTH_CODE_TOKEN_PATH:data}
-      user-name-path: ${CCR_INTEGRATION_AUTH_USER_NAME_PATH:data.userBasicInfo.username}
-      response-code-path: ${CCR_INTEGRATION_AUTH_RESPONSE_CODE_PATH:code}
-      response-success-code: ${CCR_INTEGRATION_AUTH_RESPONSE_SUCCESS_CODE:200}
       url: ${CCR_INTEGRATION_AUTH_URL:http://32.13.6.6:8000/authing/login}
       app-id: ${CCR_INTEGRATION_AUTH_APP_ID:10111}
       api-key: ${CCR_INTEGRATION_AUTH_API_KEY:}

@@ -113,7 +113,7 @@ JDK 17 位于项目 `.tools/`；Maven、npm 缓存位于项目 `.cache/`；兼�
 
 ## Authing code 单点登录
 
-电脑端支持平台携 `code` 进入，后端兑换令牌并核验本地账号后建立 CCRSYS 会话，原账号密码登录继续可用。新能力默认关闭，需配置两个网关 URL；已按网关记录接入 GET 换令牌、POST 查用户，并复用账号密码认证的 appCode；配置、回归和联调边界见 [Authing code 接入说明](docs/41_Authing_code单点登录.md)。
+电脑端支持平台携 `code` 进入，后端兑换令牌并核验本地账号后建立 CCRSYS 会话，原账号密码登录继续可用。新能力默认关闭，需配置两个网关 URL；已按最新网关接入两步 GET：直接读取令牌文本，再按 `loginUserId` 匹配账号；免密独立使用 `CCR_INTEGRATION_AUTH_CODE_APP_CODE=rate-approval`；配置、回归和联调边界见 [Authing code 接入说明](docs/41_Authing_code单点登录.md)。
 
 ## 企业微信节点提醒
 

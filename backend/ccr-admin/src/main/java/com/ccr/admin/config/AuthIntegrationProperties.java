@@ -33,17 +33,15 @@ public class AuthIntegrationProperties {
 
     /** code 免密独立开关，部署方确认网关契约后启用。 */
     private boolean codeEnabled = false;
+    /** code 免密使用独立应用编码，不改变账号密码认证的 appCode。 */
+    private String codeAppCode = "rate-approval";
     private String codeTokenUrl;
+    /** GET 地址模板，路径中必须包含独立的 {appCode} 和 {token} 段。 */
     private String userInfoUrl;
-    /** 以下为明确的 JSON 字段路径，不通过递归猜测账号或令牌。 */
-    private String codeTokenPath = "data";
-    private String userNamePath = "data.userBasicInfo.username";
-    private String responseCodePath = "code";
-    private String responseSuccessCode = "200";
 
     public boolean isCodeReady() {
         return enabled && codeEnabled && StrUtil.isAllNotBlank(codeTokenUrl, userInfoUrl,
-                appId, apiKey, appCode, codeTokenPath, userNamePath, responseCodePath, responseSuccessCode);
+                appId, apiKey, codeAppCode);
     }
 
     /** 是否已接入:url 与 apiKey 齐备才算;enabled=true 但未齐备视为未接入,登录回退本地 BCrypt。 */
