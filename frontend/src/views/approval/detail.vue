@@ -70,11 +70,12 @@
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
       </div>
       <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示)
-           2026-09-04 用户要求与授信总额字段区对齐:局部拉满卡片宽(覆盖全局 .table fit-content 收缩) -->
+           2026-09-04 用户要求与授信总额字段区对齐:局部拉满卡片宽(覆盖全局 .table fit-content 收缩)
+           2026-09-09 表头与内容对齐:金额/利率数据格为 .num 右对齐,表头左对齐致标题与数字右缘错位,数字列表头同右对齐 -->
       <table class="table detail-items" style="margin-top:12px">
         <thead><tr>
-          <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
-          <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
+          <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th class="num">金额(万元)</th>
+          <th class="num">原利率</th><th class="num">申请利率</th><th class="num">测算利率</th><th>授信协议</th>
           <th>当前节点</th><th>状态</th>
         </tr></thead>
         <tbody>
@@ -292,14 +293,18 @@
       <template v-if="attachments.length">
         <div v-if="fold.attach" class="empty-line">附件共 {{ attachments.length }} 个,已折叠 —— <button class="btn btn--text" @click="fold.attach = false">展开 ▾</button></div>
         <div v-show="!fold.attach">
+          <!-- 2026-09-09 附件预览:图片/PDF 可直接点「预览」弹窗查看(Office 等不显示预览只保留下载) -->
           <table class="table">
-            <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+            <thead><tr><th>文件名</th><th class="num">大小</th><th>上传时间</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="(a, i) in attachments" :key="i">
                 <td>{{ a.fileName }} <span v-if="a.sourceType === 'MINIAPP_CREDIT_RESOLUTION'" class="badge badge--info">授信决议 {{ a.sourceResolutionNo }}</span></td>
                 <td class="num">{{ fmtSize(a.fileSize) }}</td>
                 <td>{{ a.createTime ? String(a.createTime).replace('T', ' ').slice(0, 16) : '—' }}</td>
-                <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
+                <td>
+                  <button v-if="canPreviewAttachment(a)" class="btn btn--text" @click="previewAttachment(a)">预览</button>
+                  <button class="btn btn--text" @click="downloadAttachment(a)">下载</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -926,6 +931,23 @@
         <button class="btn btn--secondary" @click="agreementHistoryVisible = false">关闭</button>
       </template>
     </el-dialog>
+
+    <!-- 附件预览(2026-09-09:图片/PDF 点「预览」弹窗内直接查看,无需下载后再打开;Office/其它不显示预览只保留下载) -->
+    <el-dialog v-model="previewOpen" :title="previewName ? '附件预览 · ' + previewName : '附件预览'" width="min(860px, 92vw)" top="6vh" @closed="releasePreview">
+      <div v-loading="previewBusy" class="preview-content">
+        <div v-if="previewError" role="alert" class="preview-message">
+          {{ previewError }}<button class="btn btn--secondary" style="margin-left:10px" @click="retryPreview">重试</button>
+        </div>
+        <iframe v-else-if="previewUrl && previewMime === 'application/pdf'" :src="previewUrl" title="附件 PDF" />
+        <img v-else-if="previewUrl && previewMime.startsWith('image/')" :src="previewUrl" :alt="previewName" />
+        <div v-else-if="previewUrl" class="preview-message">此格式暂不支持在线预览，请点「下载」查看</div>
+        <div v-else class="preview-message">{{ previewBusy ? '正在读取附件…' : '' }}</div>
+      </div>
+      <template #footer>
+        <a v-if="previewUrl && previewTarget" class="btn btn--secondary" :href="previewUrl" :download="previewName">下载</a>
+        <button class="btn btn--primary" @click="previewOpen = false">关闭</button>
+      </template>
+    </el-dialog>
   </div>
   </div>
 </template>
@@ -934,6 +956,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import axios from 'axios'
 import { getApprovalDetail, approveTask, rejectTask, autoBackfillCustomerNo, newIdempotencyKey, type ApprovalResult, type AutoBackfillResult } from '@/api/approval'
 import { submitBallot, submitPresidentDecision } from '@/api/vote'
 import { listRoundOpinions, listAgreementHistory } from '@/api/approval2'
@@ -1728,6 +1751,81 @@ function downloadAttachment(a: any) {
   download(`/ccr/applications/${application.value.id}/attachments/${a.id}/download`)
 }
 
+// ---- 附件预览(2026-09-09:图片/PDF 点「预览」弹窗内联展示,免下载后打开) ----
+const previewOpen = ref(false)
+const previewBusy = ref(false)
+const previewUrl = ref('')
+const previewMime = ref('')
+const previewName = ref('')
+const previewError = ref('')
+let previewTarget: any = null
+let previewSeq = 0
+
+/** 可预览判定:仅图片/PDF(按上传存的 contentType(fileType)判定,兜底扩展名;Office/其它不显示预览) */
+function canPreviewAttachment(a: any): boolean {
+  const t = String(a.fileType || '').toLowerCase()
+  const n = String(a.fileName || '').toLowerCase()
+  if (t.startsWith('image/') || t === 'application/pdf') return true
+  return /\.(png|jpe?g|gif|webp|bmp|pdf)$/.test(n)
+}
+
+function releasePreview() {
+  previewSeq++
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewMime.value = ''
+  previewBusy.value = false
+}
+
+async function loadPreview(a: any) {
+  releasePreview()
+  previewError.value = ''
+  previewTarget = a
+  previewName.value = a.fileName || ''
+  previewOpen.value = true
+  previewBusy.value = true
+  const current = previewSeq
+  try {
+    const token = sessionStorage.getItem('ccr_token')
+    const resp = await axios.get(`/api/ccr/applications/${application.value.id}/attachments/${a.id}/download`, {
+      responseType: 'blob', timeout: 60000,
+      headers: token ? { Authorization: token } : {}
+    })
+    const blob = resp.data as Blob
+    // 后端出错返回 R JSON 包装(与 download 封装同判定)
+    if (blob.type.includes('json')) {
+      const result = JSON.parse(await blob.text())
+      throw new Error(result.msg || '附件读取失败，请重新登录或重试')
+    }
+    if (current !== previewSeq || !previewOpen.value) return
+    previewMime.value = blob.type.split(';')[0] || ''
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch (err: any) {
+    if (current !== previewSeq || !previewOpen.value) return
+    const data = err.response?.data
+    if (data instanceof Blob && data.type.includes('json')) {
+      try {
+        const message = JSON.parse(await data.text()).msg || '附件读取失败'
+        previewError.value = message
+      } catch {
+        previewError.value = '附件读取失败，请重试'
+      }
+    } else {
+      previewError.value = err.message || '附件读取失败，请重试'
+    }
+  } finally {
+    if (current === previewSeq) previewBusy.value = false
+  }
+}
+
+function previewAttachment(a: any) {
+  if (canPreviewAttachment(a)) loadPreview(a)
+}
+
+async function retryPreview() {
+  if (previewTarget) await loadPreview(previewTarget)
+}
+
 function goBack() {
   router.push('/approval')
 }
@@ -2115,4 +2213,9 @@ onMounted(load)
 .vote-summary__meta { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; padding-top: 2px; }
 .vote-summary__meta .dg-label { margin-right: 4px; font-size: 12px; }
 .vote-summary__meta b { font-weight: 600; color: var(--color-text-main); }
+/* 附件预览弹窗内容区(2026-09-09):PDF 铺满内滚、图片居中自适应,加载/错误提示同弹窗风格 */
+.preview-content { height: 65vh; overflow: auto; background: #f3f5f8; border: 1px solid #e5e7eb; border-radius: 8px; }
+.preview-content iframe { width: 100%; height: 100%; border: 0; }
+.preview-content img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.preview-message { padding: 32px 16px; text-align: center; color: #606266; }
 </style>
