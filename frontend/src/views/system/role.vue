@@ -90,15 +90,17 @@ async function load() {
   } catch {
     roles.value = []
   }
-  // 菜单(与实际前端侧边栏一致,对应 ccr_sys_menu 种子 db/08_system.sql)
-  // §UI审查:补齐「缓存配置」「运行监控」两项,与侧边栏一致
+  // 菜单(与权威表 ccr_sys_menu 对齐:db/08_system.sql 种子 1-13 + 增量决议书查询 id=14)
+  // §UI审查:移除「缓存配置」「运行监控」——二者为 admin 专属系统功能(后端 requireAdmin + 前端 roles:['admin'] 写死),
+  //         权威表无对应行、不可按角色授权,列在授权清单会误导(2026-09-09 对齐)
   menus.value = [
     { id: 1, menuName: '工作台' }, { id: 2, menuName: '贷款利率申请' }, { id: 3, menuName: '存款利率申请' },
     { id: 10, menuName: '利率审批' }, { id: 4, menuName: '贡献度跟踪' }, { id: 5, menuName: '历史' },
+    // 决议书查询(2026-09-08 增量 id=14,决议书查询专岗 resolution_query 授权)
+    { id: 14, menuName: '决议书查询' },
     { id: 11, menuName: '数据中心' }, { id: 12, menuName: '审计管理' },
     { id: 6, menuName: '用户管理' }, { id: 7, menuName: '权限管理' }, { id: 13, menuName: '机构管理' },
-    { id: 8, menuName: '流程配置' }, { id: 9, menuName: '参数管理' },
-    { id: 14, menuName: '缓存配置' }, { id: 15, menuName: '运行监控' }
+    { id: 8, menuName: '流程配置' }, { id: 9, menuName: '参数管理' }
   ]
 }
 function menuText(ids: string) {
