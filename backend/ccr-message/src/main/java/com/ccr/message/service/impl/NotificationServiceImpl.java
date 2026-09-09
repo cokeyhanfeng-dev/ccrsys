@@ -56,6 +56,9 @@ public class NotificationServiceImpl implements NotificationService {
     @Resource
     private List<MessageSender> messageSenders;
 
+    @Resource
+    private WechatNotificationDispatcher wechatDispatcher;
+
     /** 失败重试上限 */
     @Value("${ccr.message.max-retry:3}")
     private int maxRetry;
@@ -166,6 +169,7 @@ public class NotificationServiceImpl implements NotificationService {
         notifyLog.setRecipientType(message.getRecipientType());
         notifyLog.setRecipientId(message.getRecipientId());
         notifyLog.setChannel(message.getChannel() == null || message.getChannel().isBlank() ? "SYSTEM" : message.getChannel());
+        if ("WECHAT".equalsIgnoreCase(notifyLog.getChannel())) notifyLog.setChannel("WECHAT");
         notifyLog.setMessageKey(messageKey);
         notifyLog.setMessageContent(message.getContent());
         notifyLog.setSendStatus("PENDING");
@@ -177,7 +181,10 @@ public class NotificationServiceImpl implements NotificationService {
             // 并发下同键重复:幂等跳过
             return null;
         }
-        dispatch(notifyLog);
+        // 企业微信先持久化为 PENDING，由后台任务在业务事务提交后发送。
+        if (!"WECHAT".equalsIgnoreCase(notifyLog.getChannel())) {
+            dispatch(notifyLog);
+        }
         return notifyLog;
     }
 
@@ -186,13 +193,20 @@ public class NotificationServiceImpl implements NotificationService {
         List<CcrNotificationLog> pending = logMapper.selectList(new LambdaQueryWrapper<CcrNotificationLog>()
                 .and(w -> w.eq(CcrNotificationLog::getSendStatus, "PENDING")
                         .or(w2 -> w2.in(CcrNotificationLog::getSendStatus, "FAILED", "RETRYING")
-                                .lt(CcrNotificationLog::getRetryCount, maxRetry)))
+                                .lt(CcrNotificationLog::getRetryCount, maxRetry))
+                        .or(w2 -> w2.eq(CcrNotificationLog::getChannel, "WECHAT")
+                                .eq(CcrNotificationLog::getSendStatus, "PROCESSING")
+                                .le(CcrNotificationLog::getUpdateTime, LocalDateTime.now().minusMinutes(5))))
                 .orderByAsc(CcrNotificationLog::getId)
                 .last("LIMIT " + BATCH_LIMIT));
         int processed = 0;
         for (CcrNotificationLog notifyLog : pending) {
             try {
-                dispatch(notifyLog);
+                if ("WECHAT".equalsIgnoreCase(notifyLog.getChannel())) {
+                    wechatDispatcher.dispatch(notifyLog);
+                } else {
+                    dispatch(notifyLog);
+                }
                 processed++;
             } catch (Exception e) {
                 // 单条失败(如乐观锁冲突)不中断整批

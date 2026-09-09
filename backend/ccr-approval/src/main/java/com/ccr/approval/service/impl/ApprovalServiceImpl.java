@@ -1,5 +1,6 @@
 package com.ccr.approval.service.impl;
 
+import com.ccr.common.outbox.NodeReminderPublisher;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
@@ -99,6 +100,9 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /** 贷审会秘书岗节点(需求四:整单必经的中间审核节点,批完整单上送小组) */
     private static final String SECRETARY_NODE = "SECRETARY";
+
+    @Resource
+    private NodeReminderPublisher nodeReminderPublisher;
 
     @Resource
     private CcrPricingItemMapper pricingItemMapper;
@@ -407,6 +411,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         // 同步整单当前节点(申请单为准,分项 current_node_code 已随 updateWholeOrderItems 推进)
         updateApplicationNode(application, next, null);
+        if (!toGroup) {
+            nodeReminderPublisher.publish(applicationId, next, "APPROVE:" + nodeCode, null, null);
+        }
         // Warm-Flow 业务轨迹(失败仅记日志,不阻断主流程)
         warmFlowService.recordBusinessTrail(application.getApplicationNo(), nodeCode, "APPROVE",
                 operatorName(operator), comment);
@@ -2440,7 +2447,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         adj.setBoundaryMaxRate(perm == null ? null : perm.getBoundaryMaxRate());
         adj.setAdjustReason("节点调价");
         adj.setOperatorId(operatorId);
-        adj.setOperationChannel("PC");
+        adj.setOperationChannel(com.ccr.common.core.util.OperationChannel.current());
         adj.setOperationTime(LocalDateTime.now());
         rateAdjustmentMapper.insert(adj);
     }
@@ -2480,7 +2487,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         action.setAfterRate(afterRate);
         action.setFromStatus(fromStatus);
         action.setToStatus(toStatus);
-        action.setOperationChannel("PC");
+        action.setOperationChannel(com.ccr.common.core.util.OperationChannel.current());
         action.setOperationTime(LocalDateTime.now());
         action.setIdempotencyKey(idempotencyKey);
         return action;

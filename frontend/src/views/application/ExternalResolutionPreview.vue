@@ -27,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { readToken } from '@/auth/storage.mjs'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
 import type { ExternalCreditResolution } from '@/api/application'
@@ -71,7 +72,7 @@ async function load() {
     if (current !== sequence || !open.value) return
     if (!applicationId) throw new Error('请先完成客户基本信息并保存草稿，再预览附件')
     controller = new AbortController()
-    const token = sessionStorage.getItem('ccr_token')
+    const token = readToken()
     const response = await axios.get(`/api/ccr/external-credit-resolutions/applications/${encodeURIComponent(applicationId)}/files/${encodeURIComponent(fileId)}/preview`, {
       params: { resolutionId }, responseType: 'blob', timeout: 60000,
       signal: controller.signal, headers: token ? { Authorization: token } : {},

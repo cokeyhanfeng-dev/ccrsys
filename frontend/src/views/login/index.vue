@@ -43,6 +43,7 @@
       <el-card class="login-card" shadow="never">
         <h2 class="login-title">欢迎登录</h2>
         <p class="login-sub">客户贡献度与利率决策系统</p>
+        <el-alert v-if="userStore.ssoError" :title="userStore.ssoError" type="error" :closable="false" show-icon />
         <!-- label 统一置上,placeholder 只承担输入引导 -->
         <el-form :model="form" label-position="top" @submit.prevent="onSubmit">
           <el-form-item label="用户名">
@@ -69,7 +70,7 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <p class="login-tip form-hint">首期本地账号演示;SSO 统一认证预留适配</p>
+        <p class="login-tip form-hint">支持账号密码登录及统一认证平台免密进入</p>
       </el-card>
       <p class="login-panel__foot">客户贡献度与利率决策系统 · CCR</p>
     </section>

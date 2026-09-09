@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
+import { clearAuth, readToken } from '@/auth/storage.mjs'
 
 // Axios 统一封装:携带 token、统一错误提示
 const service = axios.create({
@@ -8,7 +9,7 @@ const service = axios.create({
 })
 
 service.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('ccr_token')
+  const token = config.url === '/auth/code-login' ? '' : readToken()
   if (token) {
     config.headers.Authorization = token
   }
@@ -22,9 +23,12 @@ service.interceptors.response.use(
     if (res.code === 200) {
       return res.data
     }
+    if (response.config.url === '/auth/code-login') {
+      return Promise.reject(new Error('单点认证未通过'))
+    }
     // 会话过期/未登录(Sa-Token 经全局异常处理返回业务码 401):清 token 并跳登录页
     if (res.code === 401) {
-      sessionStorage.removeItem('ccr_token')
+      clearAuth()
       // 已在登录页:401 即账号或密码错误,明确提示,避免静默失败
       if (window.location.pathname.startsWith('/login')) {
         ElMessage.error(res.msg || '用户名或密码错误')
@@ -38,8 +42,11 @@ service.interceptors.response.use(
     return Promise.reject(new Error(res.msg))
   },
   (error) => {
+    if (error.config?.url === '/auth/code-login') {
+      return Promise.reject(new Error('单点认证暂时不可用'))
+    }
     if (error.response?.status === 401 || error.response?.data?.code === 401) {
-      sessionStorage.removeItem('ccr_token')
+      clearAuth()
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = '/login'
       }
@@ -73,7 +80,7 @@ export function del<T = any>(url: string, params?: object): Promise<T> {
 
 // 文件下载(独立 axios 调用,绕开 R 包装拦截器;从 Content-Disposition 取文件名)
 export async function download(url: string): Promise<void> {
-  const token = sessionStorage.getItem('ccr_token')
+  const token = readToken()
   try {
     const resp = await axios.get(`/api${url}`, {
       responseType: 'blob',

@@ -100,8 +100,18 @@ ccr:
     # 统一认证(SSO)登录验证(2026-09-07 接入,配置驱动):admin 除外在注入凭证(CCR_INTEGRATION_AUTH_API_KEY)后
     # 走 SSO 判密码,角色/机构仍取本地库;未注入凭证(生产尚未接入)自动回退本地 BCrypt,不锁死登录。
     # api-key 凭证仅允许部署环境注入 ${CCR_INTEGRATION_AUTH_API_KEY:},禁止写入代码/配置/镜像。
+    wechat:
+      enabled: ${CCR_INTEGRATION_WECHAT_ENABLED:false}
+      url: ${CCR_INTEGRATION_WECHAT_URL:}
     auth:
       enabled: ${CCR_INTEGRATION_AUTH_ENABLED:true}
+      code-enabled: ${CCR_INTEGRATION_AUTH_CODE_ENABLED:false}
+      code-token-url: ${CCR_INTEGRATION_AUTH_CODE_TOKEN_URL:}
+      user-info-url: ${CCR_INTEGRATION_AUTH_USER_INFO_URL:}
+      code-token-path: ${CCR_INTEGRATION_AUTH_CODE_TOKEN_PATH:data}
+      user-name-path: ${CCR_INTEGRATION_AUTH_USER_NAME_PATH:data.userBasicInfo.username}
+      response-code-path: ${CCR_INTEGRATION_AUTH_RESPONSE_CODE_PATH:code}
+      response-success-code: ${CCR_INTEGRATION_AUTH_RESPONSE_SUCCESS_CODE:200}
       url: ${CCR_INTEGRATION_AUTH_URL:http://32.13.6.6:8000/authing/login}
       app-id: ${CCR_INTEGRATION_AUTH_APP_ID:10111}
       api-key: ${CCR_INTEGRATION_AUTH_API_KEY:}
@@ -110,6 +120,19 @@ ccr:
       api-key-header: ${CCR_INTEGRATION_AUTH_API_KEY_HEADER:apikey}
       connect-timeout-millis: 3000
       request-timeout-millis: 10000
+  message:
+    retry-cron: "0/30 * * * * ?"
+  mobile:
+    oa:
+      enabled: ${CCR_MOBILE_OA_ENABLED:false}
+      verify-url: ${CCR_MOBILE_OA_VERIFY_URL:}
+      app-id: ${CCR_MOBILE_OA_APP_ID:}
+      api-key: ${CCR_MOBILE_OA_API_KEY:}
+    youdu:
+      enabled: ${CCR_MOBILE_YOUDU_ENABLED:false}
+      verify-url: ${CCR_MOBILE_YOUDU_VERIFY_URL:}
+      success-code: ${CCR_MOBILE_YOUDU_SUCCESS_CODE:0}
+
   cache:
     enabled: true
     default-ttl-seconds: 300

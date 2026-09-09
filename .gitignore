@@ -6,6 +6,7 @@ backend/**/*.jar.original
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend/dist-mobile/
 
 # IDE / OS
 .idea/

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { post } from '@/api/request'
+import { post, request } from '@/api/request'
+import { authStorage, clearAuth, readToken, readUserInfo, saveAuth } from '@/auth/storage.mjs'
 
 export interface UserInfo {
   userId: number
@@ -14,36 +15,44 @@ export interface UserInfo {
   pwdChangeFlag?: string
 }
 
-// 用户状态:token 与登录信息存 sessionStorage(会话级,关闭浏览器/标签即清空需重新登录;
-// 页面刷新 F5 保留,路由守卫/数据权限仍可用)
+// 两种登录共用本地权限信息；平台 token 不进入浏览器。
 export const useUserStore = defineStore('user', () => {
-  const token = ref<string>(sessionStorage.getItem('ccr_token') || '')
-  const userInfo = ref<UserInfo | null>(
-    JSON.parse(sessionStorage.getItem('ccr_user_info') || 'null')
-  )
+  const userInfo = ref<UserInfo | null>(readUserInfo())
+  const token = ref<string>(readToken())
+  const ssoError = ref('')
+
+  function acceptLogin(data: { token: string; userInfo: UserInfo }, persistent = false) {
+    saveAuth(data, persistent)
+    token.value = data.token
+    userInfo.value = data.userInfo
+    ssoError.value = ''
+  }
 
   async function login(username: string, password: string) {
     const data = await post<{ token: string; userInfo: UserInfo }>('/auth/login', { username, password })
-    token.value = data.token
-    userInfo.value = data.userInfo
-    sessionStorage.setItem('ccr_token', data.token)
-    sessionStorage.setItem('ccr_user_info', JSON.stringify(data.userInfo))
+    acceptLogin(data)
+  }
+
+  async function loginByCode(code: string) {
+    const data = await request<{ token: string; userInfo: UserInfo }>({
+      url: '/auth/code-login', method: 'post', data: { code }, timeout: 30000
+    })
+    acceptLogin(data, true)
   }
 
   function logout() {
     token.value = ''
     userInfo.value = null
-    sessionStorage.removeItem('ccr_token')
-    sessionStorage.removeItem('ccr_user_info')
+    clearAuth()
   }
 
   // 改密成功后标记已改,并同步持久化(sessionStorage),避免刷新后又被守卫弹回
   function markPasswordChanged() {
     if (userInfo.value) {
       userInfo.value = { ...userInfo.value, pwdChangeFlag: '0' }
-      sessionStorage.setItem('ccr_user_info', JSON.stringify(userInfo.value))
+      authStorage().setItem('ccr_user_info', JSON.stringify(userInfo.value))
     }
   }
 
-  return { token, userInfo, login, logout, markPasswordChanged }
+  return { token, userInfo, ssoError, login, loginByCode, logout, markPasswordChanged }
 })

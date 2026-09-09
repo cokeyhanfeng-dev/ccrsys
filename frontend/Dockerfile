@@ -3,5 +3,6 @@
 # 有网环境可恢复多阶段构建(FROM node:20-alpine AS build ... COPY --from=build /app/dist ...)。
 FROM nginx:alpine
 COPY dist /usr/share/nginx/html
+COPY dist-mobile /usr/share/nginx/html/mobile
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

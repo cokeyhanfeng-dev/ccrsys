@@ -1,3 +1,4 @@
+import { readToken } from '@/auth/storage.mjs'
 import { get, post, put, request } from './request'
 import { nodeLabel } from '@/utils/dict'
 
@@ -424,7 +425,7 @@ export async function uploadAttachment(applicationId: string | number, file: Fil
   fd.append('file', file)
   const resp = await fetch(`/api/ccr/applications/${applicationId}/attachments`, {
     method: 'POST',
-    headers: { Authorization: sessionStorage.getItem('ccr_token') || '' },
+    headers: { Authorization: readToken() || '' },
     body: fd
   })
   const res = await resp.json()

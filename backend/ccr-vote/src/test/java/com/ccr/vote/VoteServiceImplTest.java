@@ -63,6 +63,9 @@ import static org.mockito.Mockito.when;
 class VoteServiceImplTest {
 
     @Mock
+    private com.ccr.common.outbox.NodeReminderPublisher nodeReminderPublisher;
+
+    @Mock
     private CcrVoteRoundMapper voteRoundMapper;
     @Mock
     private CcrVoteRoundItemMapper roundItemMapper;
@@ -440,6 +443,7 @@ class VoteServiceImplTest {
         when(assignmentMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
         CcrVoteAssignment created = voteService.substitute(100L, 2001L, 2002L, "请假");
+        verify(nodeReminderPublisher).publish(round.getApplicationId(), "SIX_PEOPLE_GROUP", "SUBSTITUTE:100:2002", 100L, 2002L);
 
         // 原 assignment 置 REPLACED
         verify(assignmentMapper).updateById(argThat((CcrVoteAssignment a) -> "REPLACED".equals(a.getStatus())));
@@ -504,6 +508,7 @@ class VoteServiceImplTest {
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
 
         CcrVoteRound created = voteService.createGroupRound(30L);
+        verify(nodeReminderPublisher).publish(30L, "SIX_PEOPLE_GROUP", "ROUND:" + created.getId(), created.getId(), null);
 
         verify(voteRoundMapper).insert(any(CcrVoteRound.class));
         verify(roundItemMapper, times(1)).insert(any(CcrVoteRoundItem.class));
@@ -533,6 +538,7 @@ class VoteServiceImplTest {
         when(pricingItemMapper.updateById(any(CcrPricingItem.class))).thenReturn(1);
 
         CcrVoteRound created = voteService.createGroupRound(30L);
+        verify(nodeReminderPublisher).publish(30L, "SIX_PEOPLE_GROUP", "ROUND:" + created.getId(), created.getId(), null);
 
         verify(voteRoundMapper).insert(any(CcrVoteRound.class));
         verify(assignmentMapper, times(6)).insert(any(CcrVoteAssignment.class));
@@ -606,6 +612,7 @@ class VoteServiceImplTest {
                 "COUNT_PASS".equals(t.getActionType())
                         && PricingItemStatus.VOTING.getCode().equals(t.getFromStatus())
                         && PricingItemStatus.PRESIDENT_DECISION.getCode().equals(t.getToStatus())));
+        verify(nodeReminderPublisher).publish(round.getApplicationId(), "PRESIDENT", "COUNT:" + round.getId(), round.getId(), null);
         // 批次关闭(PASSED)
         verify(voteRoundMapper).updateById(argThat((CcrVoteRound r) -> "PASSED".equals(r.getStatus())));
     }

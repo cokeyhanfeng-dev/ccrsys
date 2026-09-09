@@ -17,11 +17,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class SaTokenConfig implements WebMvcConfigurer {
 
+    @jakarta.annotation.Resource
+    private com.ccr.admin.mobile.MobileSessionInterceptor mobileSessionInterceptor;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(mobileSessionInterceptor).addPathPatterns("/**").order(1);
         registry.addInterceptor(new SaInterceptor(handle -> {
                     SaRouter.match("/**")
-                            .notMatch("/actuator/**", "/health", "/auth/login", "/demo/**")
+                            .notMatch("/actuator/**", "/health", "/auth/login", "/auth/code-login", "/mobile/login", "/mobile/oa/login", "/demo/**")
                             .check(r -> StpUtil.checkLogin());
                     // 2026-09-07 已全局取消首次登录强制改密(登录恒 pwdChangeFlag=0),不再需要 1016 兜底拦截
                     // 阈值配置(参数管理):admin/config_reviewer 任一角色可用

@@ -58,3 +58,32 @@ retry_http "http://127.0.0.1:13000/api/health" "${proxy_health_file}" \
 grep -q '"status":"UP"' "${proxy_health_file}" || ccr_die "前端 API 代理响应异常"
 
 echo "冒烟测试通过: MySQL=${table_count} tables, Redis=PONG, backend/login/frontend/proxy=OK"
+
+# 移动端仅核对公开入口和拒绝路径；真实免密成功需有度客户端/验票服务参与。
+echo "[mobile] 独立入口与权限边界"
+mobile_file="${CCR_CACHE_DIR}/smoke-mobile.html"
+retry_http "http://127.0.0.1:13000/mobile/" "${mobile_file}" || ccr_die "移动入口访问失败"
+grep -q 'id="root"' "${mobile_file}" || ccr_die "移动入口未部署"
+mobile_auth_file="${CCR_CACHE_DIR}/smoke-mobile-auth.json"
+curl -fsS 'http://127.0.0.1:13000/mobile/api/mobile/session' -o "${mobile_auth_file}"
+grep -q '"code":401' "${mobile_auth_file}" || ccr_die "移动接口未拒绝匿名访问"
+mobile_status="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:13000/mobile/api/auth/login)"
+[[ "${mobile_status}" == "404" ]] || ccr_die "移动代理未封闭电脑端接口"
+echo "移动冒烟通过: entry=OK, anonymous=401, non-mobile-proxy=404"
+# 电脑端登录令牌即使自报移动渠道，仍不可访问移动接口。
+mobile_header_file="${CCR_CACHE_DIR}/smoke-mobile-header.txt"
+node - "${login_file}" "${mobile_header_file}" <<'NODE'
+const fs = require('node:fs');
+const login = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+fs.writeFileSync(process.argv[3], 'Authorization: ' + login.data.token + '\nX-Client-Type: mobile\n', {mode: 0o600});
+NODE
+curl -fsS 'http://127.0.0.1:13000/mobile/api/mobile/session' -H "@${mobile_header_file}" -o "${mobile_auth_file}"
+grep -q '"code":403' "${mobile_auth_file}" || ccr_die "电脑端令牌越过移动渠道校验"
+rm -f "${mobile_header_file}"
+curl -fsS 'http://127.0.0.1:13000/mobile/api/mobile/login' -H 'Content-Type: application/json' --data '{"username":"admin"}' -o "${mobile_auth_file}"
+grep -q '"code":400' "${mobile_auth_file}" || ccr_die "移动登录允许缺少有度凭证"
+echo "移动鉴权通过: PC-token=403, username-only=400"
+# OA 登录同样必须提供票据，不能用客户端账号替代。
+curl -fsS 'http://127.0.0.1:13000/mobile/api/mobile/oa/login' -H 'Content-Type: application/json' --data '{"username":"admin"}' -o "${mobile_auth_file}"
+grep -q '"code":400' "${mobile_auth_file}" || ccr_die "OA 登录允许缺少票据"
+echo "OA 鉴权参数检查通过: username-only=400"

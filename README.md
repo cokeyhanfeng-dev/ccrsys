@@ -106,3 +106,17 @@ JDK 17 位于项目 `.tools/`；Maven、npm 缓存位于项目 `.cache/`；兼�
 | M8 PC 前端 | T19–T21 | 申请/审批/管理页面接真实接口 |
 
 > 外部数据 `dw_*_snapshot` 由数仓产出,开发期通过 `ccr.external.mock-enabled=true` 走本地 mock,不阻塞业务开发。
+
+## 移动审批
+
+正式移动入口位于 `frontend/mobile`，沿用已确认 UI，独立构建、Nginx 直连 CCR，支持 OA 票据与有度免密登录，仅审批人员可访问。`./dev mobile-run` 启动 `http://127.0.0.1:13001/mobile/`；`./dev mobile-build` 输出 `frontend/dist-mobile`。完整测试栈入口为 `http://127.0.0.1:13000/mobile/`。OA/有度默认关闭，需由部署环境分别注入验票配置后联调；普通浏览器不提供密码登录。详见 [移动审批实现与联调](docs/40_移动审批实现与联调.md)。
+
+## Authing code 单点登录
+
+电脑端支持平台携 `code` 进入，后端兑换令牌并核验本地账号后建立 CCRSYS 会话，原账号密码登录继续可用。新能力默认关闭，需配置两个网关 URL；已按网关记录接入 GET 换令牌、POST 查用户，并复用账号密码认证的 appCode；配置、回归和联调边界见 [Authing code 接入说明](docs/41_Authing_code单点登录.md)。
+
+## 企业微信节点提醒
+
+审批节点到达、六人表决建批/替补及转行长决策已接入异步提醒，保留站内信。部署环境配置 `CCR_INTEGRATION_WECHAT_ENABLED=true` 与 `CCR_INTEGRATION_WECHAT_URL`，网关凭证复用统一认证。默认关闭，接收账号按本地登录名（绩效码）解析。契约、重试及联调边界见 [企业微信节点提醒](docs/42_企业微信节点提醒.md)。
+
+Authing 密码认证、code 登录与企业微信提醒的合并 `.env` / Compose 模板见 [部署模板](docs/deployment/README.md)，填入现有凭证和实际网关地址后合并到服务器配置。

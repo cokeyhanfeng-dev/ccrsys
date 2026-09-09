@@ -31,6 +31,21 @@ public class AuthIntegrationProperties {
     private int connectTimeoutMillis = 3000;
     private int requestTimeoutMillis = 10000;
 
+    /** code 免密独立开关，部署方确认网关契约后启用。 */
+    private boolean codeEnabled = false;
+    private String codeTokenUrl;
+    private String userInfoUrl;
+    /** 以下为明确的 JSON 字段路径，不通过递归猜测账号或令牌。 */
+    private String codeTokenPath = "data";
+    private String userNamePath = "data.userBasicInfo.username";
+    private String responseCodePath = "code";
+    private String responseSuccessCode = "200";
+
+    public boolean isCodeReady() {
+        return enabled && codeEnabled && StrUtil.isAllNotBlank(codeTokenUrl, userInfoUrl,
+                appId, apiKey, appCode, codeTokenPath, userNamePath, responseCodePath, responseSuccessCode);
+    }
+
     /** 是否已接入:url 与 apiKey 齐备才算;enabled=true 但未齐备视为未接入,登录回退本地 BCrypt。 */
     public boolean isReady() {
         return StrUtil.isNotBlank(url) && StrUtil.isNotBlank(apiKey);

@@ -1,5 +1,6 @@
 package com.ccr.application.service.impl;
 
+import com.ccr.common.outbox.NodeReminderPublisher;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
@@ -103,6 +104,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 数据时效容忍天数(§9.4 默认 3 个自然日,超过 BLOCK 阻断提交;与快照质量规则同一配置) */
     @Value("${ccr.snapshot.data-stale-days:3}")
     private int dataStaleDays;
+
+    @Resource
+    private NodeReminderPublisher nodeReminderPublisher;
 
     @Resource
     private JdbcTemplate jdbcTemplate;
@@ -805,15 +809,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         outboxService.publish(OutboxEventType.NOTIFY, "SUBMIT:APP:" + app.getId() + ":APPLICANT",
                 JSONUtil.toJsonStr(applicantNotify));
 
-        Map<String, Object> branchNotify = new LinkedHashMap<>();
-        branchNotify.put("recipientType", "BRANCH_MANAGER");
-        branchNotify.put("orgId", app.getApplicantOrgId());
-        branchNotify.put("channel", "SYSTEM");
-        branchNotify.put("messageKey", "SUBMIT_NOTIFY:APP:" + app.getId() + ":BRANCH_MANAGER");
-        branchNotify.put("content", "定价申请 " + app.getApplicationNo() + " 已提交,待支行行长审批(分项:"
-                + itemNos + ")");
-        outboxService.publish(OutboxEventType.NOTIFY, "SUBMIT:APP:" + app.getId() + ":BRANCH_MANAGER",
-                JSONUtil.toJsonStr(branchNotify));
+        nodeReminderPublisher.publish(app.getId(), app.getStartNodeCode(), "SUBMIT", null, null);
     }
 
     /** 提交审计留痕(§15.2):主单+分项核心要素 JSON 快照;写入失败不阻断提交 */

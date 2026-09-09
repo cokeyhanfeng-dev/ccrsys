@@ -302,6 +302,17 @@ class NotificationServiceImplTest {
         assertEquals(500, result.getErrorMessage().length());
     }
 
+    @Test
+    void sendNotification_wechatPersistsPendingWithoutSendingInsideBusinessTransaction() throws Exception {
+        NotificationMessage message = new NotificationMessage();
+        message.setRecipientType("USER"); message.setRecipientId("123");
+        message.setChannel("WECHAT"); message.setContent("待审批"); message.setMessageKey("NODE:pending");
+        CcrNotificationLog saved = service.sendNotification(message);
+        assertEquals("PENDING", saved.getSendStatus());
+        verify(logMapper).insert(any(CcrNotificationLog.class));
+        verify(mockSender, never()).send(any());
+    }
+
     // ---------- processPendingAndRetry ----------
 
     @Test

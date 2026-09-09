@@ -65,6 +65,9 @@ import static org.mockito.Mockito.when;
 class ApprovalServiceImplTest {
 
     @Mock
+    private com.ccr.common.outbox.NodeReminderPublisher nodeReminderPublisher;
+
+    @Mock
     private CcrPricingItemMapper pricingItemMapper;
     @Mock
     private CcrApplicationMapper applicationMapper;
@@ -225,6 +228,7 @@ class ApprovalServiceImplTest {
 
         // 存款仅支行过手:整单上会小组并合批,不终审
         verify(voteService).createGroupRound(30L);
+        org.mockito.Mockito.verifyNoInteractions(nodeReminderPublisher);
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
 
@@ -290,6 +294,7 @@ class ApprovalServiceImplTest {
 
         // 整单上送终点为六人小组 → 自动合批
         verify(voteService).createGroupRound(30L);
+        org.mockito.Mockito.verifyNoInteractions(nodeReminderPublisher);
     }
 
     // ---------- 多分项整单(一次动作整单推进,无逐分项分批) ----------
@@ -304,6 +309,7 @@ class ApprovalServiceImplTest {
         approvalService.approve(30L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
         // 整单一次推进:两项各 update 一次(共 2 次),都推进部门总经理,不终审、不合批
+        verify(nodeReminderPublisher).publish(30L, "DEPT_GENERAL_MANAGER", "APPROVE:BRANCH_MANAGER", null, null);
         verify(pricingItemMapper, times(2)).update(isNull(), any(Wrapper.class));
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
         verify(voteService, never()).createGroupRound(any());
@@ -660,6 +666,7 @@ class ApprovalServiceImplTest {
 
         assertEquals("SIX_PEOPLE_GROUP", res.getNextNodeCode());
         verify(voteService).createGroupRound(30L);
+        org.mockito.Mockito.verifyNoInteractions(nodeReminderPublisher);
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
     }
 }

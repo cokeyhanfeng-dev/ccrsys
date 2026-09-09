@@ -50,6 +50,9 @@ public class NotificationLogController {
                 .eq(effectiveRecipientId != null && !effectiveRecipientId.isBlank(),
                         CcrNotificationLog::getRecipientId, effectiveRecipientId)
                 .eq(sendStatus != null && !sendStatus.isBlank(), CcrNotificationLog::getSendStatus, sendStatus)
+                // 节点提醒双渠道共用一条站内展示，普通用户不重复看到企微投递日志。
+                .and(!fullView, w -> w.ne(CcrNotificationLog::getChannel, "WECHAT")
+                        .or().notLikeRight(CcrNotificationLog::getMessageKey, "NR:"))
                 .orderByDesc(CcrNotificationLog::getCreateTime)
                 .last("LIMIT 200")));
     }

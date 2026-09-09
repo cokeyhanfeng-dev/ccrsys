@@ -1,5 +1,6 @@
 package com.ccr.admin.outbox;
 
+import com.ccr.admin.message.NodeReminderHandler;
 import cn.hutool.json.JSONUtil;
 import com.ccr.common.outbox.OutboxEventHandler;
 import com.ccr.common.outbox.OutboxEventType;
@@ -19,6 +20,9 @@ public class NotifyOutboxHandler implements OutboxEventHandler {
     @Resource
     private NotificationService notificationService;
 
+    @Resource
+    private NodeReminderHandler nodeReminderHandler;
+
     @Override
     public String eventType() {
         return OutboxEventType.NOTIFY;
@@ -27,6 +31,10 @@ public class NotifyOutboxHandler implements OutboxEventHandler {
     @Override
     public void handle(CcrOutboxEvent event) {
         var payload = JSONUtil.parseObj(event.getPayload());
+        if ("NODE_REMINDER".equals(payload.getStr("kind"))) {
+            nodeReminderHandler.handle(payload);
+            return;
+        }
         NotificationMessage message = new NotificationMessage();
         message.setRecipientType(payload.getStr("recipientType"));
         message.setRecipientId(payload.getStr("recipientId"));

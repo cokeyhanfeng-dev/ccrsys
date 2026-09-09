@@ -6,7 +6,9 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.admin.config.AuthIntegrationProperties;
+import com.ccr.admin.config.AuthingCodeIdentityService;
 import com.ccr.admin.config.SsoAuthService;
+import com.ccr.admin.controller.dto.CodeLoginRequest;
 import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
@@ -17,6 +19,8 @@ import com.ccr.common.core.util.PasswordUtil;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,8 +61,60 @@ public class AuthController {
     @Resource
     private SsoAuthService ssoAuthService;
 
+    @Resource
+    private AuthingCodeIdentityService authingCodeIdentity;
+
+    @PostMapping("/code-login")
+    public R<Map<String, Object>> codeLogin(
+            @Valid @RequestBody CodeLoginRequest body,
+            HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        try {
+            return establishSession(authingCodeIdentity.verify(body.code()), request, false);
+        } catch (ServiceException e) {
+            writeLoginLog("LOGIN_FAIL", 0L, null, clientIp(request), "Authing code 认证或本地账号准入未通过");
+            throw e;
+        }
+    }
+
+    @Resource
+    private com.ccr.admin.mobile.MobileAccessService mobileAccess;
+
     @PostMapping("/login")
     public R<Map<String, Object>> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        return loginInternal(body, request);
+    }
+
+    @Resource
+    private com.ccr.admin.mobile.YouduIdentityService youduIdentity;
+
+    @Resource
+    private com.ccr.admin.mobile.OaIdentityService oaIdentity;
+
+    /** 两个免密入口共用本地账号准入及会话建立，不接受前端自报账号。 */
+    public R<Map<String, Object>> mobileLogin(String token, HttpServletRequest request) {
+        return mobileIdentityLogin(() -> youduIdentity.verify(token), "有度", request);
+    }
+
+    public R<Map<String, Object>> mobileOaLogin(String ticket, HttpServletRequest request) {
+        return mobileIdentityLogin(() -> oaIdentity.verify(ticket), "OA", request);
+    }
+
+    private R<Map<String, Object>> mobileIdentityLogin(java.util.function.Supplier<String> verifier,
+                                                       String source, HttpServletRequest request) {
+        try {
+            String username = verifier.get();
+            CcrSysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<CcrSysUser>()
+                    .eq(CcrSysUser::getUsername, username).eq(CcrSysUser::getDelFlag, "0"));
+            mobileAccess.requireEligible(user);
+            return establishSession(user, request, true);
+        } catch (ServiceException e) {
+            writeLoginLog("LOGIN_FAIL", 0L, null, clientIp(request), "移动端" + source + "认证或审批准入未通过");
+            throw e;
+        }
+    }
+
+    private R<Map<String, Object>> loginInternal(Map<String, String> body, HttpServletRequest request) {
         String username = body.getOrDefault("username", "");
         String password = body.getOrDefault("password", "");
         // §15.2 真实客户端 IP:nginx 已转发 X-Forwarded-For,优先取首段,避免记录 Docker 内网地址
@@ -91,7 +147,19 @@ public class AuthController {
             writeLoginLog("LOGIN_FAIL", user.getId(), username, ip, "用户已停用");
             throw new ServiceException(401, "用户已停用");
         }
-        StpUtil.login(user.getId());
+        return establishSession(user, request, false);
+    }
+
+    private R<Map<String, Object>> establishSession(CcrSysUser user, HttpServletRequest request, boolean mobile) {
+        String ip = clientIp(request);
+        if (mobile) {
+            mobileAccess.requireEligible(user);
+            StpUtil.login(user.getId(), new cn.dev33.satoken.stp.SaLoginModel()
+                    .setDevice("mobile").setToken(java.util.UUID.randomUUID().toString()).setActiveTimeout(7200));
+            StpUtil.getTokenSession().set("client", com.ccr.admin.mobile.MobileAccessService.CLIENT);
+        } else {
+            StpUtil.login(user.getId());
+        }
         // 写入当前用户机构上下文(公共字段自动填充用)
         CcrSysDept dept = user.getOrgId() == null ? null : sysDeptMapper.selectById(user.getOrgId());
         String orgCode = dept == null ? null : dept.getOrgCode();

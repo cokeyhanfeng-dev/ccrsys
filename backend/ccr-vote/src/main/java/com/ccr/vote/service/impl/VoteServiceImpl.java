@@ -1,5 +1,6 @@
 package com.ccr.vote.service.impl;
 
+import com.ccr.common.outbox.NodeReminderPublisher;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -65,6 +66,9 @@ public class VoteServiceImpl implements VoteService {
 
     /** 进行中批次状态(同一时间一个分项只允许处于一个进行中批次,服务层保证) */
     private static final List<String> IN_PROGRESS_ROUND_STATUS = List.of("CREATED", "VOTING", "COUNTING");
+
+    @Resource
+    private NodeReminderPublisher nodeReminderPublisher;
 
     @Resource
     private CcrVoteRoundMapper voteRoundMapper;
@@ -437,6 +441,8 @@ public class VoteServiceImpl implements VoteService {
         substitute.setSubstituteReason(reason);
         substitute.setStatus("PENDING");
         assignmentMapper.insert(substitute);
+        nodeReminderPublisher.publish(round.getApplicationId(), "SIX_PEOPLE_GROUP",
+                "SUBSTITUTE:" + roundId + ":" + toUserId, roundId, toUserId);
         log.info("批次 {} 委员 {} 被 {} 替补,原因: {}", roundId, fromUserId, toUserId, reason);
         return substitute;
     }
@@ -576,6 +582,7 @@ public class VoteServiceImpl implements VoteService {
             assignment.setStatus("PENDING");
             assignmentMapper.insert(assignment);
         }
+        nodeReminderPublisher.publish(applicationId, "SIX_PEOPLE_GROUP", "ROUND:" + round.getId(), round.getId(), null);
         log.info("申请 {} 表决批次 {} 创建,分项 {} 个", applicationId, round.getId(), pricingItemIds.size());
         return round;
     }
@@ -676,6 +683,9 @@ public class VoteServiceImpl implements VoteService {
                     0L, countNote + ",结果 " + ("PASS".equals(result.getResult()) ? "通过" : "未通过"),
                     PricingItemStatus.VOTING.getCode(), item.getStatus());
         }
+        if (pass) {
+            nodeReminderPublisher.publish(round.getApplicationId(), "PRESIDENT", "COUNT:" + round.getId(), round.getId(), null);
+        }
         // 小组否决 → 整单生成否决决议(决议书,不建承诺计划;整单化按锚定分项触发一次)
         if (!pass) {
             itemFinalizationService.afterItemTerminal(pricingItemId, "COMMITTEE_REJECT");
@@ -705,7 +715,7 @@ public class VoteServiceImpl implements VoteService {
         trail.setActionComment(comment);
         trail.setFromStatus(fromStatus);
         trail.setToStatus(toStatus);
-        trail.setOperationChannel("PC");
+        trail.setOperationChannel(com.ccr.common.core.util.OperationChannel.current());
         trail.setOperationTime(LocalDateTime.now());
         approvalActionTrailMapper.insert(trail);
     }

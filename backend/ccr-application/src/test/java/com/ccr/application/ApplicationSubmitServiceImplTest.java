@@ -78,6 +78,9 @@ import static org.mockito.Mockito.when;
 class ApplicationSubmitServiceImplTest {
 
     @Mock
+    private com.ccr.common.outbox.NodeReminderPublisher nodeReminderPublisher;
+
+    @Mock
     private CcrApplicationCreditSummaryMapper creditSummaryMapper;
     @Mock
     private CcrApplicationMapper applicationMapper;
@@ -659,9 +662,7 @@ class ApplicationSubmitServiceImplTest {
                 argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("rate_approval")
                         && p.contains("CCR20260806ABCD")));
         verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:APPLICANT"), anyString());
-        verify(outboxService).publish(eq("NOTIFY"), eq("SUBMIT:APP:1:BRANCH_MANAGER"),
-                argThat((String p) -> p.contains("BRANCH_MANAGER") && p.contains("\"orgId\":1001")
-                        && !p.contains("\"recipientType\":\"ROLE\"")));
+        verify(nodeReminderPublisher).publish(1L, "BRANCH_MANAGER", "SUBMIT", null, null);
     }
 
     // ---------- 幂等:重复提交返回既有结果 ----------

@@ -20,6 +20,8 @@ usage() {
   infra-down        停止 Docker MySQL/Redis，保留数据卷
   backend-run       用项目 JDK 启动本地后端，连接 Docker 基础设施
   frontend-run      用兼容的本机 Node 启动 Vite
+  mobile-run        启动移动前端，127.0.0.1:13001/mobile/
+  mobile-build      测试并构建独立移动产物 frontend/dist-mobile
   backend-test      执行后端全部单元测试
   frontend-test     npm ci 后执行前端生产构建
   verify            执行后端单测和前端构建
@@ -81,6 +83,17 @@ case "${command_name}" in
     cd "${CCR_PROJECT_ROOT}"
     exec java -jar backend/ccr-admin/target/ccr-admin.jar --spring.profiles.active=local
     ;;
+  mobile-build)
+    cd "${CCR_PROJECT_ROOT}/frontend"
+    ccr_npm ci
+    ccr_npm run test:mobile
+    ccr_npm run build:mobile
+    ;;
+  mobile-run)
+    cd "${CCR_PROJECT_ROOT}/frontend"
+    if [[ ! -d node_modules ]]; then ccr_npm ci; fi
+    ccr_npm run dev:mobile
+    ;;
   frontend-run)
     cd "${CCR_PROJECT_ROOT}/frontend"
     if [[ ! -d node_modules ]]; then
@@ -95,7 +108,10 @@ case "${command_name}" in
   frontend-test)
     cd "${CCR_PROJECT_ROOT}/frontend"
     ccr_npm ci
+    ccr_npm run test:auth
     ccr_npm run build
+    ccr_npm run test:mobile
+    ccr_npm run build:mobile
     ;;
   verify)
     "${CCR_PROJECT_ROOT}/dev" backend-test

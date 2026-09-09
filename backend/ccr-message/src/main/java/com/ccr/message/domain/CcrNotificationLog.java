@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 /**
  * 通知日志(ccr_notification_log)——唯一 message_key 幂等防重(§11.4)
  * status(继承): SENDING/SENT/FAILED/RECEIVED/ARCHIVED
- * send_status: PENDING(待发送,外部模块落库契约)/SUCCESS/FAILED/RETRYING
+ * send_status: PENDING(待发送,外部模块落库契约)/PROCESSING(企业微信认领中)/SUCCESS/FAILED/RETRYING
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -38,7 +38,7 @@ public class CcrNotificationLog extends BaseEntity {
     /** 消息内容 */
     private String messageContent;
 
-    /** PENDING/SUCCESS/FAILED/RETRYING */
+    /** PENDING/PROCESSING/SUCCESS/FAILED/RETRYING */
     private String sendStatus;
 
     /** 重试次数 */
