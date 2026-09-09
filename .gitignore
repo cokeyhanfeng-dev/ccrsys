@@ -54,3 +54,8 @@ frontend/src/dist/
 
 # 本地交互原型（虚构数据，仅用于方案预览）
 /local-demos/
+
+# 本机历史误产物/旧打包(不入库;2026-09-09 补 ignore 清理工作区,勿 add)
+backend;C
+backend_20260902.zip
+frontend/dist.tar
