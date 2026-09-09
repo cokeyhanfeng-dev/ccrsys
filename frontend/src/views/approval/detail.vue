@@ -71,11 +71,11 @@
       </div>
       <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示)
            2026-09-04 用户要求与授信总额字段区对齐:局部拉满卡片宽(覆盖全局 .table fit-content 收缩)
-           2026-09-09 表头与内容对齐:金额/利率数据格为 .num 右对齐,表头左对齐致标题与数字右缘错位,数字列表头同右对齐 -->
+           2026-09-09 表头与内容错位根因=数据格 .num 右对齐、表头左对齐;用户拍板全列统一左对齐(勿回右对齐) -->
       <table class="table detail-items" style="margin-top:12px">
         <thead><tr>
-          <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th class="num">金额(万元)</th>
-          <th class="num">原利率</th><th class="num">申请利率</th><th class="num">测算利率</th><th>授信协议</th>
+          <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
+          <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
           <th>当前节点</th><th>状态</th>
         </tr></thead>
         <tbody>
@@ -2181,6 +2181,8 @@ onMounted(load)
 .sub-table__title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 /* 申请内容卡分项表:与授信总额字段区同宽铺满(覆盖全局 .table fit-content 收缩,2026-09-04 用户要求;勿回改) */
 .detail-items { display: table; width: 100%; table-layout: auto; }
+/* 表头与内容统一左对齐(2026-09-09 用户拍板):覆盖全局 .num 右对齐,数字列保持等宽字体防列内跳动 */
+.detail-items .num { text-align: left; font-variant-numeric: tabular-nums; }
 /* 申请内容卡分项表担保明细行内展开(2026-09-04,与档案授信分项卡同款) */
 .expand-toggle { color: var(--color-primary); cursor: pointer; user-select: none; white-space: nowrap; }
 .expand-toggle:hover { text-decoration: underline; }
