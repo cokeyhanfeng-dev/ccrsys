@@ -89,7 +89,7 @@
               </td>
               <td>{{ fmtAmount(it.pricingAmount) }}</td>
               <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
-              <td>{{ fmtRate(it.requestedRate) }}</td>
+              <td class="rate-req">{{ fmtRate(it.requestedRate) }}</td>
               <td>{{ fmtRate(it.calculatedRate) }}</td>
               <td>{{ agreementNos.join('、') || '—' }}</td>
               <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
@@ -2185,6 +2185,8 @@ onMounted(load)
    全局 .table .num 的 text-align:right 优先级会顶掉 scoped 覆盖(实测金额仍右),直接去类走默认
    text-align:left 与表头同侧;等宽数字经本规则保留,便于同列纵向对齐。勿改回右对齐 */
 .detail-items td { font-variant-numeric: tabular-nums; }
+/* 申请利率强调(2026-09-09 用户要求):分项表申请利率加粗标红醒目展示 */
+.detail-items td.rate-req { font-weight: 700; color: var(--color-danger); }
 /* 申请内容卡分项表担保明细行内展开(2026-09-04,与档案授信分项卡同款) */
 .expand-toggle { color: var(--color-primary); cursor: pointer; user-select: none; white-space: nowrap; }
 .expand-toggle:hover { text-decoration: underline; }
