@@ -87,10 +87,10 @@
                 <span v-if="hasMeasureRows(it)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(it)" @keydown.enter="toggleExpand(it)">{{ guaranteesText(it.guarantees) }}<span class="chev">{{ isExpanded(it) ? '▲' : '▼' }}</span></span>
                 <span v-else>{{ guaranteesText(it.guarantees) }}</span>
               </td>
-              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-              <td class="num">{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
-              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-              <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+              <td>{{ fmtAmount(it.pricingAmount) }}</td>
+              <td>{{ it.originalRate != null ? fmtRate(it.originalRate) : '新增业务' }}</td>
+              <td>{{ fmtRate(it.requestedRate) }}</td>
+              <td>{{ fmtRate(it.calculatedRate) }}</td>
               <td>{{ agreementNos.join('、') || '—' }}</td>
               <td>{{ it.currentNodeCode ? nodeLabel(it.currentNodeCode) : '—' }}</td>
               <td>{{ itemStatusText(it.status) }}</td>
@@ -105,7 +105,7 @@
                     <tbody>
                       <tr v-for="(g, gi) in measureRows(it)" :key="gi">
                         <td>{{ measureTypeText(g.measureType) }}</td>
-                        <td class="num">{{ fmtAmount(g.guaranteeAmount) }}</td>
+                        <td>{{ fmtAmount(g.guaranteeAmount) }}</td>
                         <td class="hash-cell">{{ extText(g) }}</td>
                       </tr>
                     </tbody>
@@ -2181,8 +2181,10 @@ onMounted(load)
 .sub-table__title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 /* 申请内容卡分项表:与授信总额字段区同宽铺满(覆盖全局 .table fit-content 收缩,2026-09-04 用户要求;勿回改) */
 .detail-items { display: table; width: 100%; table-layout: auto; }
-/* 表头与内容统一左对齐(2026-09-09 用户拍板):覆盖全局 .num 右对齐,数字列保持等宽字体防列内跳动 */
-.detail-items .num { text-align: left; font-variant-numeric: tabular-nums; }
+/* 表头与内容统一左对齐(2026-09-09 用户拍板):金额/利率数据格在模板上不带 .num——
+   全局 .table .num 的 text-align:right 优先级会顶掉 scoped 覆盖(实测金额仍右),直接去类走默认
+   text-align:left 与表头同侧;等宽数字经本规则保留,便于同列纵向对齐。勿改回右对齐 */
+.detail-items td { font-variant-numeric: tabular-nums; }
 /* 申请内容卡分项表担保明细行内展开(2026-09-04,与档案授信分项卡同款) */
 .expand-toggle { color: var(--color-primary); cursor: pointer; user-select: none; white-space: nowrap; }
 .expand-toggle:hover { text-decoration: underline; }
