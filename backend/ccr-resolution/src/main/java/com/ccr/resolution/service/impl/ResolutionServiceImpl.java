@@ -337,9 +337,17 @@ public class ResolutionServiceImpl implements ResolutionService {
             String k = customerName.trim();
             // 客户名称真子串:客户快照 customerName/集团快照 groupName。两列为 MySQL JSON 类型,
             // 入库被规范化为 "key": "value"(键后带空格),锚定原始文本会恒失配;统一 JSON_EXTRACT 取值后
-            // LIKE '%k%'(与展示端 extractJsonName 正则容忍空格口径一致,同时满足需求「子串模糊」)
+            // LIKE '%k%'(与展示端 extractJsonName 正则容忍空格口径一致,同时满足需求「子串模糊」)。
+            // 存量集团 group_info_json 仅存 group_no,集团名在手工 ccr_group/数仓 dw 主数据 → 追加
+            // group_no IN (名称 LIKE 子查询),按集团名查询同样可命中(与显示列集团名兜底同源;§2026-09-09)
             where.append(" AND (JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')) LIKE ?"
-                    + " OR JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')) LIKE ?)");
+                    + " OR JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')) LIKE ?"
+                    + " OR a.group_no IN (SELECT g.group_no FROM ccr_group g WHERE g.del_flag = '0' AND g.group_name LIKE ?)"
+                    + " OR a.group_no IN (SELECT d.group_no FROM dw_customer_group_snapshot d"
+                    + "   WHERE d.group_name LIKE ?"
+                    + "     AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2)))");
+            params.add("%" + k + "%");
+            params.add("%" + k + "%");
             params.add("%" + k + "%");
             params.add("%" + k + "%");
         }
@@ -367,8 +375,16 @@ public class ResolutionServiceImpl implements ResolutionService {
                        r.issue_time issueTime,
                        a.id applicationId, a.application_no applicationNo, a.business_type businessType,
                        a.customer_no customerNo, a.group_no groupNo,
-                       COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
-                                JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName'))) customerName,
+                       -- 客户/集团显示名称(与档案 detail 同口径:客户快照 customerName → 集团快照 groupName
+                       -- → 手工集团表 ccr_group → 数仓 dw_customer_group_snapshot(按 group_no 最新批)→ 集团号兜底;§2026-09-09)
+                       COALESCE(
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
+                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')), ''),
+                         (SELECT g.group_name FROM ccr_group g WHERE g.group_no = a.group_no AND g.del_flag = '0' LIMIT 1),
+                         (SELECT d.group_name FROM dw_customer_group_snapshot d WHERE d.group_no = a.group_no
+                           AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2 WHERE d2.group_no = a.group_no)
+                          LIMIT 1),
+                         a.group_no) customerName,
                        (SELECT e.execution_status FROM ccr_resolution_execution e
                          WHERE e.resolution_id = r.id AND e.del_flag = '0' ORDER BY e.id DESC LIMIT 1) executionStatus
                 """;

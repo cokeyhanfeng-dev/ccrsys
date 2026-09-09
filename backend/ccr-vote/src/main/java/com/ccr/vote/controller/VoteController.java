@@ -56,10 +56,17 @@ public class VoteController {
                 SELECT pi.application_id applicationId, a.application_no applicationNo,
                        a.business_type businessType, pi.pricing_customer_no customerNo,
                        a.submit_time submitTime,
-                       -- 客户/集团显示名称(与审批待办同口径:客户快照 customerName,集团回退 groupName;§2026-09-02)
+                       -- 客户/集团显示名称(与档案 detail 同口径:客户快照 customerName → 集团快照 groupName
+                       -- → 手工集团表 ccr_group → 数仓 dw_customer_group_snapshot(按 group_no 最新批)→ 集团号兜底;
+                       -- 单户 group_no 为空再回退客户号,集团不回退成员号;§2026-09-09)
                        COALESCE(
                          NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
                          NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')), ''),
+                         (SELECT g.group_name FROM ccr_group g WHERE g.group_no = a.group_no AND g.del_flag = '0' LIMIT 1),
+                         (SELECT d.group_name FROM dw_customer_group_snapshot d WHERE d.group_no = a.group_no
+                           AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2 WHERE d2.group_no = a.group_no)
+                          LIMIT 1),
+                         a.group_no,
                          pi.pricing_customer_no) customerName,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.requested_rate requestedRate, pi.current_approval_rate approvalRate,
@@ -130,10 +137,17 @@ public class VoteController {
                 SELECT va.round_id roundId, va.voter_anonym_no anonymNo, va.status assignStatus,
                        pi.application_id applicationId, a.application_no applicationNo,
                        a.business_type businessType, pi.pricing_customer_no customerNo,
-                       -- 客户/集团显示名称(与行长/审批待办同口径:客户快照 customerName,集团回退 groupName;§2026-09-05)
+                       -- 客户/集团显示名称(与档案 detail 同口径:客户快照 customerName → 集团快照 groupName
+                       -- → 手工集团表 ccr_group → 数仓 dw_customer_group_snapshot(按 group_no 最新批)→ 集团号兜底;
+                       -- 单户 group_no 为空再回退客户号,集团不回退成员号;§2026-09-09)
                        COALESCE(
                          NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.customerName')), ''),
                          NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.groupName')), ''),
+                         (SELECT g.group_name FROM ccr_group g WHERE g.group_no = a.group_no AND g.del_flag = '0' LIMIT 1),
+                         (SELECT d.group_name FROM dw_customer_group_snapshot d WHERE d.group_no = a.group_no
+                           AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2 WHERE d2.group_no = a.group_no)
+                          LIMIT 1),
+                         a.group_no,
                          pi.pricing_customer_no) customerName,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
                        pi.requested_rate requestedRate, pi.original_rate originalRate,

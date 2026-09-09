@@ -195,7 +195,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         return result;
     }
 
-    /** 待办分项客户/集团显示名称:按 applicationId 批量取申请,复用历史列表快照解析口径(客户快照 customerName,集团回退 groupName;§2026-09-01) */
+    /** 待办分项客户/集团显示名称:按 applicationId 批量取申请,显示名由 fillDisplayCustomerName 统一补齐
+     *  (客户快照 → 集团快照 → 手工集团表 ccr_group → 数仓 dw_customer_group_snapshot;§2026-09-09) */
     private void fillTodoCustomerName(List<CcrPricingItem> items) {
         if (items == null || items.isEmpty()) {
             return;
@@ -208,27 +209,10 @@ public class ApprovalServiceImpl implements ApprovalService {
         List<CcrApplication> apps = applicationMapper.selectList(new LambdaQueryWrapper<CcrApplication>()
                 .in(CcrApplication::getId, appIds));
         fillDisplayCustomerName(apps);
-        // 集团申请快照缺 groupName(仅存 groupNo)时回退手工集团表名称(§2026-09-01)
-        Map<Long, String> groupFallback = new HashMap<>();
-        for (CcrApplication a : apps) {
-            if (StrUtil.isBlank(a.getCustomerName()) && StrUtil.isNotBlank(a.getGroupInfoJson())) {
-                String groupNo = extractJsonName(a.getGroupInfoJson(), "groupNo");
-                if (StrUtil.isNotBlank(groupNo)) {
-                    // queryForList 而非 queryForObject:查无记录不抛 EmptyResultDataAccessException
-                    List<String> names = jdbcTemplate.queryForList(
-                            "SELECT group_name FROM ccr_group WHERE group_no = ? AND del_flag = '0' LIMIT 1",
-                            String.class, groupNo);
-                    if (!names.isEmpty() && StrUtil.isNotBlank(names.get(0))) {
-                        groupFallback.put(a.getId(), names.get(0));
-                    }
-                }
-            }
-        }
         // 手动循环而非 Collectors.toMap:toMap 对 null value(未解析到名称)抛 NPE
         Map<Long, String> nameByApp = new HashMap<>();
         for (CcrApplication a : apps) {
-            nameByApp.put(a.getId(),
-                    StrUtil.isNotBlank(a.getCustomerName()) ? a.getCustomerName() : groupFallback.get(a.getId()));
+            nameByApp.put(a.getId(), a.getCustomerName());
         }
         for (CcrPricingItem item : items) {
             if (item.getApplicationId() != null) {
@@ -905,14 +889,93 @@ public class ApprovalServiceImpl implements ApprovalService {
         return data;
     }
 
-    /** 历史列表客户/集团显示名称:优先客户快照 customerName,集团申请回退 group_info_json.groupName(§2026-08-26) */
+    /** 历史/待办列表客户/集团显示名称(与档案 detail 集团名兜底同源,§2026-09-09):
+     *  客户快照 customerName → 集团快照 group_info_json.groupName → 手工集团表 ccr_group →
+     *  数仓 dw_customer_group_snapshot(存量集团,按 group_no 最新批)。group_name 反查一次 IN 批量,避免 N+1。
+     *  快照与两表均解析不到时留空,由调用方展示端回退客户号/集团号(不回退到成员号)。 */
     private void fillDisplayCustomerName(List<CcrApplication> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        // 集团申请若无名快照(groupName),记 groupNo 待反查:一次性收集后 IN 批量兜底。
+        // groupNo 双源:ccr_application.group_no 列优先,空则回退快照 groupInfoJson.groupNo(兼容存量旧数据),
+        // 并以 recordId → groupNo 记录,保证回填与查询同源
+        Map<String, String> groupNameByNo = null;
+        Map<Long, String> groupNoByRecord = new HashMap<>();
+        Set<String> needLookup = null;
         for (CcrApplication r : records) {
             String name = extractJsonName(r.getCustomerInfoJson(), "customerName");
             if (StrUtil.isBlank(name)) {
                 name = extractJsonName(r.getGroupInfoJson(), "groupName");
             }
             r.setCustomerName(name);
+            if (StrUtil.isBlank(name)) {
+                String groupNo = StrUtil.isNotBlank(r.getGroupNo()) ? r.getGroupNo()
+                        : extractJsonName(r.getGroupInfoJson(), "groupNo");
+                if (StrUtil.isNotBlank(groupNo)) {
+                    if (needLookup == null) {
+                        needLookup = new LinkedHashSet<>();
+                    }
+                    needLookup.add(groupNo);
+                    groupNoByRecord.put(r.getId(), groupNo);
+                }
+            }
+        }
+        if (needLookup == null || needLookup.isEmpty()) {
+            return;
+        }
+        groupNameByNo = new HashMap<>();
+        List<String> groupNos = new ArrayList<>(needLookup);
+        // 1) 手工集团表 ccr_group
+        StringBuilder in1 = new StringBuilder();
+        for (int i = 0; i < groupNos.size(); i++) {
+            if (i > 0) in1.append(',');
+            in1.append('?');
+        }
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT group_no, group_name FROM ccr_group WHERE del_flag = '0' AND group_no IN (" + in1 + ")",
+                groupNos.toArray())) {
+            Object gn = row.get("group_no"), nm = row.get("group_name");
+            if (gn != null && nm != null) {
+                groupNameByNo.put(String.valueOf(gn), String.valueOf(nm));
+            }
+        }
+        // 2) 仍缺名者(存量数仓集团不在手工表)按 group_no 最新批查数仓
+        List<Object> rest = new ArrayList<>();
+        for (String g : groupNos) {
+            if (!groupNameByNo.containsKey(g)) {
+                rest.add(g);
+            }
+        }
+        if (!rest.isEmpty()) {
+            StringBuilder in2 = new StringBuilder();
+            for (int i = 0; i < rest.size(); i++) {
+                if (i > 0) in2.append(',');
+                in2.append('?');
+            }
+            List<Map<String, Object>> dwRows = jdbcTemplate.queryForList(
+                    "SELECT g.group_no, g.group_name FROM dw_customer_group_snapshot g"
+                            + " JOIN (SELECT group_no, MAX(data_dt) data_dt FROM dw_customer_group_snapshot"
+                            + "        WHERE group_no IN (" + in2 + ") GROUP BY group_no) t"
+                            + "   ON t.group_no = g.group_no AND t.data_dt = g.data_dt",
+                    rest.toArray());
+            for (Map<String, Object> row : dwRows) {
+                Object gn = row.get("group_no"), nm = row.get("group_name");
+                if (gn != null && nm != null) {
+                    groupNameByNo.putIfAbsent(String.valueOf(gn), String.valueOf(nm));
+                }
+            }
+        }
+        for (CcrApplication r : records) {
+            if (StrUtil.isBlank(r.getCustomerName())) {
+                String groupNo = groupNoByRecord.get(r.getId());
+                if (groupNo != null) {
+                    String name = groupNameByNo.get(groupNo);
+                    if (StrUtil.isNotBlank(name)) {
+                        r.setCustomerName(name);
+                    }
+                }
+            }
         }
     }
 
