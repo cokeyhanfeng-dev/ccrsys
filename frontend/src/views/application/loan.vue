@@ -1519,6 +1519,9 @@ async function queryGroup() {
     form.fiveLevelClass = normalizeFiveLevelClass(g.group?.fiveLevelClass || '')
     // 集团属性自动带出(国企/非国企,可下拉修改)
     form.stateOwnedFlag = g.group?.stateOwnedFlag || ''
+    // 集团当前贡献度(2026-09-10):录入承诺时选指标自动带出「基线值」的数据源(按集团号口径取,
+    // 与审批详情集团贡献度一致);此前集团路径未赋值 → currentOf 恒「暂无数据」→ 基线恒空
+    contributionCurrent.value = g.contribution || []
   } catch {
     isNewGroup.value = true
     groupInfo.value = null
@@ -1531,6 +1534,8 @@ async function queryGroup() {
     form.fiveLevelClass = ''
     form.stateOwnedFlag = ''
     form.ucrCode = ''
+    // 数仓未收录(新增集团):清空上一集团的贡献度,避免选指标时带出旧集团基线值
+    contributionCurrent.value = []
   }
   groupQueried.value = true
   // 成员:数仓有效成员 + 已落表手工成员(§4.4);未收录则置空(新增集团可手工补录成员)

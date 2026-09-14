@@ -67,6 +67,10 @@ public class GroupQueryController {
         // 每行 group_credit_no 即一份「授信协议」;手工集团(数仓无授信)补录批复不构造协议——groupCredits 空,
         // 前端 EXISTING 渲染阻断提示(存量调息必须以数仓集团授信协议为依托)
         result.put("groupCredits", camelRows(dataWarehouseService.findGroupCredits(groupNo)));
+        // 集团当前贡献度(2026-09-10):申请页录入承诺时「基线值」自动带出用(前端 currentOf 按指标码取值)。
+        // 按集团号口径取数仓最新批次,与审批详情集团贡献度同款(排除 TOTAL);此前集团路径未带出,
+        // 选指标时基线恒为空,与单户行为不一致。
+        result.put("contribution", camelRows(dataWarehouseService.groupContribution(groupNo)));
         if (credit != null) {
             List<Map<String, Object>> limits = dataWarehouseService.memberLimitsByGroup(
                     credit.get("group_credit_no") == null ? null : String.valueOf(credit.get("group_credit_no")));

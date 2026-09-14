@@ -92,6 +92,19 @@ public class DataWarehouseService {
                 WHERE cust_no = ? AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric)""", customerNo);
     }
 
+    /**
+     * 集团当前贡献度(2026-09-10):按集团号(cust_no=group_no)取该集团自身最新批次,排除 TOTAL。
+     * 与审批详情 groupContributionMetrics 同口径——集团贡献度由数仓按集团号推分指标行,系统不做成员汇总;
+     * 批次取该集团自身的 MAX(data_dt) 而非全表,避免集团行批次落后时被筛空。
+     */
+    public List<Map<String, Object>> groupContribution(String groupNo) {
+        return jdbcTemplate.queryForList("""
+                SELECT * FROM dw_contribution_metric
+                WHERE cust_no = ? AND metric_code <> 'TOTAL'
+                  AND data_dt = (SELECT MAX(data_dt) FROM dw_contribution_metric
+                                 WHERE cust_no = ? AND metric_code <> 'TOTAL')""", groupNo, groupNo);
+    }
+
     /** 抵押物快照(最新批次) */
     public List<Map<String, Object>> mortgages(String customerNo) {
         return jdbcTemplate.queryForList("""
