@@ -541,7 +541,16 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setPricingItemId(resolvedItemId);
             commitment.setMetricCode(c.getMetricCode());
             commitment.setTargetType(c.getTargetType());
-            commitment.setBaselineValue(resolveBaseline(c, customerNo, applicationId));
+            BigDecimal baseline = resolveBaseline(c, customerNo, applicationId);
+            // 拟达成目标不得低于基线值(§2026-09-14 用户要求):基线=申请时点当前值,目标低于基线即负增长承诺,
+            // 前端提交校验同口径;此处兜底防绕过前端(直连 curl)提交。基线为空(数仓无数据/字典无该码)时不比较。
+            if (!isOther && baseline != null && c.getTargetValue() != null
+                    && c.getTargetValue().compareTo(baseline) < 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "承诺拟达成目标不得低于基线值(基线 " + baseline.stripTrailingZeros().toPlainString()
+                                + ",目标 " + c.getTargetValue().stripTrailingZeros().toPlainString() + ")");
+            }
+            commitment.setBaselineValue(baseline);
             commitment.setTargetValue(isOther ? null : c.getTargetValue());
             commitment.setUnit(StrUtil.blankToDefault(c.getUnit(), "WAN_YUAN"));
             commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));

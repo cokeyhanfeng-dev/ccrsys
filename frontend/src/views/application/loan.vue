@@ -2524,6 +2524,12 @@ function validateStep(s: number): string | null {
         }
         const tgt = Number(c.targetValue)
         if (Number.isNaN(tgt) || tgt < 0 || tgt > 999999999.99) return `第 ${i + 1} 条承诺目标值须在 0~999999999.99 之间(当前 ${c.targetValue})`
+        // 拟达成目标不得低于基线值(2026-09-14 用户要求):基线=申请时点当前贡献度,目标低于基线即负增长承诺;
+        // 基线可空(数仓无该指标数据/手工填写),为空时不比较;后端 saveCommitments 同口径兜底
+        const hasBaseline = c.baselineValue !== undefined && c.baselineValue !== null && c.baselineValue !== ''
+        if (hasBaseline && !Number.isNaN(bv) && tgt < bv) {
+          return `第 ${i + 1} 条承诺拟达成目标不得低于基线值(基线 ${c.baselineValue},目标 ${c.targetValue})`
+        }
       }
     }
   }
