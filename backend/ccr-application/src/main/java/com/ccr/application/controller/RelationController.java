@@ -1,5 +1,6 @@
 package com.ccr.application.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ccr.application.domain.CcrApplication;
@@ -14,8 +15,11 @@ import com.ccr.common.core.domain.R;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +41,7 @@ import java.util.Set;
  * 一个客户/集团——已绑定其他客户/集团返回冲突;同客户/集团幂等允许;暂不支持解绑。
  * 写库唯一键 uk_relation_cert(cert_type,cert_no,del_flag) 并发兜底。</p>
  */
+@Slf4j
 @RestController
 @RequestMapping("/ccr/relations")
 public class RelationController {
@@ -57,6 +62,9 @@ public class RelationController {
 
     @Resource
     private ApplicationAccessService applicationAccessService;
+
+    @Resource
+    private JdbcTemplate jdbcTemplate;
 
     /** 判重查询(§11.2 relations/check):返回证件号是否已绑定及绑定对象 */
     @GetMapping("/check")
@@ -168,6 +176,33 @@ public class RelationController {
                     .orderByDesc(CcrRelation::getBindTime)));
         }
         return R.ok(result);
+    }
+
+    /**
+     * 解除关联人绑定(§2026-09-14 运维出口)。
+     * <p>唯一绑定「暂不支持解绑」,而删除草稿曾不释放绑定(已修),历史脏数据(来源申请已删、证件号被
+     * 幽灵客户号占用)此前只能人工改库;本接口仅 admin 可调,解除后该证件号可重新绑定。</p>
+     * <p>物理删除:ccr_relation.del_flag 参与唯一键 uk_relation_cert(cert_type,cert_no,del_flag),
+     * 逻辑删除会让同一证件号第二次解绑撞唯一键,故直删。</p>
+     */
+    @DeleteMapping("/{id}")
+    @Transactional(rollbackFor = Exception.class)
+    @SaCheckRole("admin")
+    public R<Map<String, Object>> unbind(@PathVariable Long id) {
+        CcrRelation exist = relationMapper.selectById(id);
+        if (exist == null) {
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "绑定不存在:" + id);
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("certType", exist.getCertType());
+        detail.put("certNo", exist.getCertNo());
+        detail.put("relationName", exist.getRelationName());
+        detail.put("bindTarget", exist.getCustomerNo() != null ? exist.getCustomerNo() : exist.getGroupNo());
+        detail.put("bindApplicationNo", exist.getBindApplicationNo());
+        jdbcTemplate.update("DELETE FROM ccr_relation WHERE id = ?", id);
+        log.info("解除关联人绑定:id={} 证件={} 原绑定对象={} 来源申请={}",
+                id, exist.getCertNo(), detail.get("bindTarget"), exist.getBindApplicationNo());
+        return R.ok(detail);
     }
 
     // ---------- 私有 ----------

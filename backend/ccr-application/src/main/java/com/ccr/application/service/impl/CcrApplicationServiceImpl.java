@@ -566,8 +566,10 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             return null;
         }
         // 主客户该指标最近批次值(无数据构造空行供归并)
+        // §2026-09-14 修复:必须带出 metric_code——下游 ContributionMerger 按指标码收敛,缺该列会被整体移除,
+        // 致索引越界;仅数仓无数据走空行兜底时才由下方补码,故此处显式查询
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT metric_value metricValue, value_type valueType FROM dw_contribution_metric"
+                "SELECT metric_code metricCode, metric_value metricValue, value_type valueType FROM dw_contribution_metric"
                         + " WHERE cust_no = ? AND metric_code = ?"
                         + " AND data_dt = (SELECT MAX(d2.data_dt) FROM dw_contribution_metric d2"
                         + "   WHERE d2.cust_no = dw_contribution_metric.cust_no AND d2.metric_code = dw_contribution_metric.metric_code)"
@@ -591,6 +593,10 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
                 }
             }
             ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
+        }
+        // 归并后可能被指标字典收敛为空(指标码不在 ACTIVE 字典),此时基线留空,不阻断草稿保存
+        if (contribution.isEmpty()) {
+            return null;
         }
         Object value = contribution.get(0).get("metricValue");
         return value == null ? null : new BigDecimal(value.toString());
@@ -783,7 +789,38 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         }
         deleteChildren(id);
         jdbcTemplate.update("DELETE FROM ccr_application_attachment WHERE application_id = ?", id);
+        // 释放本申请产生的关联人唯一绑定(§2026-09-14 修复):此前只删申请/子表,ccr_relation 那行原样保留,
+        // 导致 bind_application_no 指向已删申请、证件号被"幽灵客户号"永久占用——后续任何申请绑同一关联人
+        // 都判 sameTarget 失败报「已绑定其他客户/集团」,且系统无解绑入口,只能人工改库。
+        releaseRelationBinding(app);
         applicationMapper.deleteById(id);
+    }
+
+    /**
+     * 释放本申请产生的关联人唯一绑定(ccr_relation)。
+     * <p>同客户/集团的多笔草稿共用同一行绑定(唯一键 cert_type+cert_no+del_flag,只存一行、记最早那笔申请号),
+     * 故仅当该客户/集团名下已无其他未删申请时才释放,避免误伤仍在编辑的兄弟草稿。</p>
+     * <p>物理删除:ccr_relation.del_flag 参与唯一键 uk_relation_cert,置 '1' 会让同一证件号下次解绑撞键,
+     * 故此处直接删除(del_flag 本就是解绑兜底预留字段)。</p>
+     */
+    private void releaseRelationBinding(CcrApplication app) {
+        boolean groupScope = "GROUP".equals(app.getCustomerScope());
+        String subjectNo = groupScope ? app.getGroupNo() : app.getCustomerNo();
+        if (StrUtil.isBlank(subjectNo)) {
+            return; // 无主体号的极老草稿,无法判定归属,不动绑定
+        }
+        Long others = applicationMapper.selectCount(new LambdaQueryWrapper<CcrApplication>()
+                .ne(CcrApplication::getId, app.getId())
+                .eq(groupScope ? CcrApplication::getGroupNo : CcrApplication::getCustomerNo, subjectNo));
+        if (others != null && others > 0) {
+            return; // 兄弟草稿仍在,绑定留用
+        }
+        int released = jdbcTemplate.update(
+                "DELETE FROM ccr_relation WHERE del_flag = '0' AND bind_application_no = ?",
+                app.getApplicationNo());
+        if (released > 0) {
+            log.info("删除草稿释放关联人绑定:申请 {} 主体 {} 释放 {} 行", app.getApplicationNo(), subjectNo, released);
+        }
     }
 
     @Override
