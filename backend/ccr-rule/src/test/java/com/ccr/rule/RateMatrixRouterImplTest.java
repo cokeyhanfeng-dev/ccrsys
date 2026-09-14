@@ -261,6 +261,29 @@ class RateMatrixRouterImplTest {
     }
 
     @Test
+    void 秘书岗_新增授信_金额达标且利率低于2_6_必经秘书岗() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeNew1yChain());
+        // 新增2000万(≥1000万)、申请2.5%(<2.6%)→ 分管行长后插贷审会秘书岗(需求四);
+        // 低于小组线触发行长决策,链尾追加 PRESIDENT
+        RouteResult result = router.calcRoute(loanInput("LOAN_PUBLIC", "NEW", "NON_SOE", "2000", 12, "2.5"));
+        assertEquals(List.of("BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT",
+                "SECRETARY", "SIX_PEOPLE_GROUP", "PRESIDENT"), result.getRouteChain());
+    }
+
+    @Test
+    void 秘书岗_存量调息_同条件不插秘书岗() {
+        stubCurrentLpr("3.0", "3.5");
+        when(matrixMapper.selectList(any())).thenReturn(nonSoeExistingChain());
+        // 存量调息2000万、申请2.5%(<2.6%)同条件上会小组,但存量不走秘书岗(§2026-09-14 拍板)
+        MatrixRouteInput in = loanInput("LOAN_PUBLIC", "EXISTING", "NON_SOE", "2000", 12, "2.5");
+        in.setOriginalRate(new BigDecimal("4.0"));
+        RouteResult result = router.calcRoute(in);
+        assertEquals("SIX_PEOPLE_GROUP", result.getFinalNodeCode());
+        assertFalse(result.getRouteChain().contains("SECRETARY"));
+    }
+
+    @Test
     void SPREAD存量行_绝对下限收紧GM边界() {
         stubCurrentLpr("3.0", "3.5");
         when(matrixMapper.selectList(any())).thenReturn(nonSoeExistingChain());

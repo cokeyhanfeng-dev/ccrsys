@@ -93,6 +93,7 @@ public class FlowMonitorService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT a.id applicationId, a.application_no applicationNo, a.business_type businessType,"
                         + " a.customer_scope customerScope, a.customer_no customerNo, a.group_no groupNo,"
+                        + " a.credit_info_json creditInfoJson,"
                         + " a.status, a.submit_time submitTime"
                         + " FROM ccr_application a WHERE " + where
                         + " ORDER BY a.submit_time DESC LIMIT ? OFFSET ?",
@@ -420,7 +421,9 @@ public class FlowMonitorService {
         String businessType = app.get("businessType") == null ? null : app.get("businessType").toString();
         String customerScope = app.get("customerScope") == null ? null : app.get("customerScope").toString();
         String routeCode = main.get("routeCode") == null ? null : main.get("routeCode").toString();
-        BigDecimal amount = toDecimal(main.get("pricingAmount"));
+        // 金额文案口径=总授信额度(与矩阵定档、秘书岗等门槛判定完全一致);此前直接取分项金额,
+        // 出现「文案写申请金额、实际按总授信额度判」的自相矛盾(2026-09-14 用户拍板统一为总授信额度)
+        BigDecimal amount = totalCreditOf(app, main);
         BigDecimal rate = toDecimal(main.get("requestedRate"));
         boolean isLoan = businessType != null && businessType.startsWith("LOAN");
 
@@ -432,7 +435,7 @@ public class FlowMonitorService {
                 ? "对公贷款标准审批链：支行行长→部门总经理→总行分管行长→六人小组"
                 : "存款/保证金业务简化链：支行行长→六人小组");
         if (chain.contains("SECRETARY")) {
-            rrs.add("申请金额¥" + fmt(amount) + "万元≥1000万元且申请利率" + fmt(rate) + "%<2.6%，"
+            rrs.add("总授信额度¥" + fmt(amount) + "万元≥1000万元且申请利率" + fmt(rate) + "%<2.6%，"
                     + "触发贷审会秘书岗审核（分管行长后必经）");
         }
         if (chain.contains("PRESIDENT")) {
@@ -464,7 +467,7 @@ public class FlowMonitorService {
             case "VICE_PRESIDENT":
                 return "按权限矩阵由部门总经理上送「总行分管行长」审批";
             case "SECRETARY":
-                return "申请金额¥" + fmt(amount) + "万元≥1000万元且申请利率" + fmt(rate) + "%<2.6%，"
+                return "总授信额度¥" + fmt(amount) + "万元≥1000万元且申请利率" + fmt(rate) + "%<2.6%，"
                         + "触发「贷审会秘书岗」审核";
             case "SIX_PEOPLE_GROUP":
                 return "终审权限需「六人小组」集体表决（通过线≥4票）";
@@ -473,6 +476,26 @@ public class FlowMonitorService {
             default:
                 return "第" + (idx + 1) + "步/共" + total + "步，当前处于「" + NODE_LABEL.getOrDefault(curNode, curNode) + "」";
         }
+    }
+
+    /**
+     * 总授信额度(金额定档/门槛判定口径):申请授信快照 {@code credit_info_json.totalCredit}——
+     * 存量=数仓授信协议金额合计自动带出、新增=手工录入;快照缺失(旧申请)回退主分项金额。
+     * 与 {@code ApplicationSubmitServiceImpl.totalCreditOf}、审批调价重算 {@code ApprovalServiceImpl.routeTotalCredit} 同口径。
+     */
+    private BigDecimal totalCreditOf(Map<String, Object> app, Map<String, Object> main) {
+        Object json = app.get("creditInfoJson");
+        if (json != null && StrUtil.isNotBlank(json.toString())) {
+            try {
+                BigDecimal tc = JSONUtil.parseObj(json.toString()).getBigDecimal("totalCredit");
+                if (tc != null) {
+                    return tc;
+                }
+            } catch (Exception ignored) {
+                // 快照解析失败按分项金额回退
+            }
+        }
+        return toDecimal(main.get("pricingAmount"));
     }
 
     private BigDecimal toDecimal(Object v) {

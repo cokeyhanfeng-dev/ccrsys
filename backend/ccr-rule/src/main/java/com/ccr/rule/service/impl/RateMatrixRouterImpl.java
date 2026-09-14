@@ -384,15 +384,19 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
      * 秘书岗审核后再往六人小组/行长方向走;秘书岗为中间必经节点,不影响终审岗位与利率边界。
      * 链路不含 VICE_PRESIDENT(如支行行长权限内终审)时退化为在链路末位前插入,保证必经;
      * 触发不命中或已含秘书岗节点时原样返回。
+     * <p>§2026-09-14 用户拍板:秘书岗只服务<b>新增授信</b>上会,存量贷款调息不插秘书岗。
+     * 存量/新增判定口径与提交路由、审批调价重算一致(newOrExisting:申请授信快照 businessType,
+     * 回退原执行利率非空即存量);未判定(null)时保持原行为(仍插秘书岗),避免漏审。</p>
      */
     private RouteResult applySecretaryGate(RouteResult result, MatrixRouteInput input) {
         if (result == null || input == null || result.getRouteChain() == null || result.getRouteChain().isEmpty()) {
             return result;
         }
         boolean isLoan = input.getBusinessBigType() != null && input.getBusinessBigType().startsWith("LOAN");
+        boolean isNewCredit = !"EXISTING".equals(input.getNewOrExisting());
         BigDecimal amount = input.getAmount();
         BigDecimal rate = input.getRequestedRate();
-        boolean hit = isLoan
+        boolean hit = isLoan && isNewCredit
                 && amount != null && amount.compareTo(SECRETARY_MIN_AMOUNT) >= 0
                 && rate != null && rate.compareTo(SECRETARY_RATE_GATE) < 0;
         if (!hit || result.getRouteChain().contains(SECRETARY_NODE)) {
