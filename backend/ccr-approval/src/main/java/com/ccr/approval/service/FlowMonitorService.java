@@ -39,9 +39,10 @@ public class FlowMonitorService {
     /** 在途分项状态(排除终态):路由中/表决中/已过会待行长决策/行长决策 */
     private static final List<String> IN_FLIGHT = List.of("ROUTING", "VOTING", "COMMITTEE_PASS", "PRESIDENT_DECISION");
 
-    /** 节点中文名(审批进度可视化;含贷审会秘书岗/总行行长) */
+    /** 节点中文名(审批进度可视化;含贷审会秘书岗/总行行长/综合支行行长) */
     private static final Map<String, String> NODE_LABEL = Map.of(
             "BRANCH_MANAGER", "支行行长",
+            "PARENT_BRANCH_MANAGER", "综合支行行长",
             "DEPT_GENERAL_MANAGER", "部门总经理",
             "VICE_PRESIDENT", "总行分管行长",
             "SECRETARY", "贷审会秘书岗",
@@ -50,12 +51,13 @@ public class FlowMonitorService {
 
     /** 节点规范顺序(与流程定义 flow_node 一致;多分项链路并集后按此重排,避免缺失节点被 append 到链尾错位) */
     private static final List<String> NODE_ORDER = List.of(
-            "BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT", "SECRETARY",
-            "SIX_PEOPLE_GROUP", "PRESIDENT");
+            "BRANCH_MANAGER", "PARENT_BRANCH_MANAGER", "DEPT_GENERAL_MANAGER", "VICE_PRESIDENT",
+            "SECRETARY", "SIX_PEOPLE_GROUP", "PRESIDENT");
 
     /** 终审岗位中文名(route_code 截断文案用) */
     private static final Map<String, String> FINAL_ROLE_LABEL = Map.of(
             "BRANCH_MANAGER", "支行行长",
+            "PARENT_BRANCH_MANAGER", "综合支行行长",
             "DEPT_GENERAL_MANAGER", "部门总经理",
             "VICE_PRESIDENT", "总行分管行长",
             "SIX_PEOPLE_GROUP", "六人小组");
