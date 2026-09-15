@@ -2136,10 +2136,13 @@ function onCustomerScopeChange() {
     // 切到集团:清空上一集团成员页签残留(选中集团后由成员勾选重新生成分项)
     activeMemberTabRaw.value = ''
   }
-  // 贷款产品默认值跟随客户类型:仅补未选择产品的分项(已选产品不覆盖)
+  // 贷款产品默认值跟随客户类型:切换类型时整行重置。
+  // 贷款产品仅 LOAN_A/LOAN_P 且与客户类型一一对应(个人→LOAN_P,对公/集团→LOAN_A),
+  // 不存在"保留已选产品"的场景;原"仅补空值"写法会把上一类型留下的默认值当成用户已选而永久残留,
+  // 导致个人客户的分项挂成对公贷款(2026-09-15 修复)
   const defaultProduct = defaultProductByScope(form.customerScope)
   for (const g of form.guarantees) {
-    if (!g.productCode) g.productCode = defaultProduct
+    g.productCode = defaultProduct
   }
 }
 
