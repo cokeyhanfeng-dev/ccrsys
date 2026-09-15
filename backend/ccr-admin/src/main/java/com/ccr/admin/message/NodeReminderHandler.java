@@ -1,13 +1,18 @@
 package com.ccr.admin.message;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.ccr.application.domain.CcrApplication;
 import com.ccr.application.mapper.CcrApplicationMapper;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.message.service.NotificationService;
 import com.ccr.message.service.dto.NotificationMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +22,7 @@ import java.util.Map;
 /** 消费节点提醒，收件人与实际审批指派、冻结表决席位保持一致。 */
 @Component
 public class NodeReminderHandler {
+    private static final Logger log = LoggerFactory.getLogger(NodeReminderHandler.class);
     private static final Map<String, String> NODE_NAMES = Map.of(
             "BRANCH_MANAGER", "支行行长审批", "PARENT_BRANCH_MANAGER", "管理综合支行行长审批",
             "DEPT_GENERAL_MANAGER", "部门总经理审批", "VICE_PRESIDENT", "分管行长审批",
@@ -59,11 +65,67 @@ public class NodeReminderHandler {
         // 建批事件延迟消费时可能已发生替补，两种事件对同一批次同一人共享幂等键。
         String baseKey = "SIX_PEOPLE_GROUP".equals(node)
                 ? "VOTE:" + applicationId + ":" + payload.getLong("roundId") : payload.getStr("messageKey");
-        String content = "【客户利率审批系统】定价申请 " + app.getApplicationNo()
-                + " 已到达“" + NODE_NAMES.get(node) + "”节点，请登录系统处理。";
+        String content = buildContent(app);
         for (Long userId : recipients.stream().distinct().toList()) {
             send(baseKey, userId, "SYSTEM", content);
             if (wechat.isEnabled()) send(baseKey, userId, "WECHAT", content);
+        }
+    }
+
+    /**
+     * 待办提醒文案：【客户利率审批系统】xx支行客户xx的利率申请需要您审批，请及时审批。（申请号 xxx）
+     * 支行取申请支行（apply_branch_code，与支行行长解析同一列），客户名主表可能为空，回退提交时的要素快照。
+     */
+    private String buildContent(CcrApplication app) {
+        String branch = branchShortName(app.getApplyBranchCode());
+        String customer = customerDisplayName(app);
+        return "【客户利率审批系统】" + (branch == null ? "" : branch) + "客户"
+                + (customer == null ? "" : customer)
+                + "的利率申请需要您审批，请及时审批。（申请号 " + app.getApplicationNo() + "）";
+    }
+
+    /** 申请支行简称：机构名剥掉行名前缀（"江苏宜兴农村商业银行官林支行"→"官林支行"）；查不到或查询异常返回 null。 */
+    private String branchShortName(String applyBranchCode) {
+        if (StrUtil.isBlank(applyBranchCode)) return null;
+        try {
+            List<String> names = jdbc.queryForList("""
+                    SELECT d.dept_name FROM ccr_sys_dept d
+                    WHERE d.del_flag = '0' AND d.org_type = 'BRANCH'
+                      AND d.branch_code IS NOT NULL AND TRIM(d.branch_code) <> ''
+                      AND LEFT(?, CHAR_LENGTH(d.branch_code)) = d.branch_code
+                    ORDER BY CHAR_LENGTH(d.branch_code) DESC LIMIT 1
+                    """, String.class, applyBranchCode.trim());
+            if (names.isEmpty() || StrUtil.isBlank(names.get(0))) return null;
+            String full = names.get(0).trim();
+            // 剥掉"…银行"（含"银行股份有限公司"写法）之前的部分，剥完为空则保留全称。
+            String shortName = full.replaceFirst("^.*?银行(?:股份有限公司)?", "").trim();
+            return StrUtil.isBlank(shortName) ? full : shortName;
+        } catch (DataAccessException e) {
+            log.warn("解析申请支行名称失败，applyBranchCode={}：{}", applyBranchCode, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 消息展示用客户名：主表为空时依次回退 客户信息快照→集团信息快照→集团号→客户号（与审批列表口径一致）；
+     * 全空返回 null，由调用方省略，避免拼出"客户该客户"这类重复。
+     */
+    private String customerDisplayName(CcrApplication app) {
+        if (StrUtil.isNotBlank(app.getCustomerName())) return app.getCustomerName();
+        String name = jsonName(app.getCustomerInfoJson(), "customerName");
+        if (StrUtil.isNotBlank(name)) return name;
+        name = jsonName(app.getGroupInfoJson(), "groupName");
+        if (StrUtil.isNotBlank(name)) return name;
+        if (StrUtil.isNotBlank(app.getGroupNo())) return app.getGroupNo();
+        return StrUtil.isBlank(app.getCustomerNo()) ? null : app.getCustomerNo();
+    }
+
+    private String jsonName(String json, String key) {
+        if (StrUtil.isBlank(json)) return null;
+        try {
+            return JSONUtil.parseObj(json).getStr(key);
+        } catch (Exception e) {
+            return null;
         }
     }
 
