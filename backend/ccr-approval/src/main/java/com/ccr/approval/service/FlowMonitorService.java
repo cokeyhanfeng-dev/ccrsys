@@ -299,7 +299,8 @@ public class FlowMonitorService {
         Map<String, Map<String, Object>> lastByNode = new HashMap<>();
         Set<String> handledNodes = new LinkedHashSet<>();
         for (Map<String, Object> a : jdbcTemplate.queryForList(
-                "SELECT a.node_code nodeCode, a.operation_time operationTime, u.nick_name operatorName"
+                "SELECT a.node_code nodeCode, a.operation_time operationTime, u.nick_name operatorName,"
+                        + " a.action_type actionType, a.action_comment actionComment"
                         + " FROM ccr_approval_action a LEFT JOIN ccr_sys_user u ON u.id = a.operator_id"
                         + " WHERE a.pricing_item_id IN (" + in + ") AND a.action_type IN ('APPROVE','REJECT','VETO','ESCALATE')"
                         + " AND a.del_flag = '0' ORDER BY a.operation_time")) {
@@ -388,6 +389,10 @@ public class FlowMonitorService {
                 if (last != null) {
                     node.put("operatorName", last.get("operatorName"));
                     node.put("operationTime", last.get("operationTime"));
+                    // 动作类型与审批意见(2026-09-15):此前仅带操作人/时间,进度上看不出该节点是
+                    // 通过还是否决(否决点只能靠「已处理」猜);六人小组/行长节点各有 result/decision,不走本分支
+                    node.put("actionType", last.get("actionType"));
+                    node.put("comment", last.get("actionComment"));
                 }
             } else if (i == curIdx && anyRouting) {
                 node.put("status", "CURRENT");

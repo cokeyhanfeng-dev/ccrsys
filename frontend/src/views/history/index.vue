@@ -67,18 +67,19 @@
             <span :class="appStatusBadge(progress.currentStatus)">{{ statusText(progress.currentStatus) }}</span>
           </div>
           <div v-if="progress.nodes && progress.nodes.length" class="progress-nodes">
-            <div v-for="(n, i) in progress.nodes" :key="n.nodeCode" class="progress-node" :class="'node--' + n.status">
+            <div v-for="(n, i) in displayNodes" :key="n.nodeCode" class="progress-node" :class="'node--' + n.status">
               <div class="node-rail">
                 <span class="node-dot"></span>
-                <span v-if="i < progress.nodes.length - 1" class="node-line"></span>
+                <span v-if="i < displayNodes.length - 1" class="node-line"></span>
               </div>
               <div class="node-body">
                 <div class="node-title">
                   <span>{{ n.label }}</span>
                   <span class="node-state" :class="'state--' + n.status">{{ nodeStatusText(n) }}</span>
                 </div>
-                <div v-if="n.status === 'DONE' && (n.operatorName || n.operationTime || n.result || n.decision)" class="node-meta">
+                <div v-if="n.status === 'DONE' && (n.operatorName || n.operationTime || n.result || n.decision || n.actionType)" class="node-meta">
                   <span v-if="n.operatorName">{{ n.operatorName }}</span>
+                  <span v-if="n.actionType" class="node-action" :class="'action--' + n.actionType">{{ actionText(n.actionType) }}</span>
                   <span v-if="n.operationTime">{{ fmtTime(n.operationTime) }}</span>
                   <span v-if="n.result">计票 {{ n.result }}</span>
                   <span v-if="n.decision">决策 {{ n.decision }}</span>
@@ -87,10 +88,12 @@
                   <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'var(--color-primary)'" />
                   <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
                 </div>
+                <div v-if="n.status === 'DONE' && n.comment" class="node-comment">意见：{{ n.comment }}</div>
               </div>
             </div>
           </div>
           <div v-else class="empty-line">暂无进度数据</div>
+          <div v-if="nodesTruncated" class="node-truncated">流程已终止，后续节点不再流转</div>
           </template>
         </template>
       </div>
@@ -105,7 +108,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { pageHistory, getApprovalProgress, downloadResolutionDoc } from '@/api/history'
 import { del } from '@/api/request'
-import { appStatusText, businessTypeText, appStatusBadge } from '@/utils/dict'
+import { appStatusText, businessTypeText, appStatusBadge, actionText } from '@/utils/dict'
 import { fmtDateTime } from '@/utils/format'
 
 const router = useRouter()
@@ -230,6 +233,22 @@ function nodeStatusText(n: any) {
   if (n.status === 'SKIPPED') return '跳过'
   return '待处理'
 }
+// 否决终态后的进度截断(2026-09-15):后端 buildNodes 的在途判定 anyRouting 只在有分项处于
+// ROUTING/VOTING/COMMITTEE_PASS/PRESIDENT_DECISION 时为真;整单否决后全部分项一并置 REJECTED,
+// 于是 anyRouting=false → 否决点之后的节点既非 DONE 也非 CURRENT,前端一律显示「待处理」,
+// 整条链铺开看着像流程还在往下走。此处按「否决类终态」截到最后处理过的节点为止。
+const REJECT_TERMINAL_STATUS = ['REJECTED', 'VETOED']
+const displayNodes = computed<any[]>(() => {
+  const ns: any[] = progress.value?.nodes ?? []
+  if (!REJECT_TERMINAL_STATUS.includes(progress.value?.currentStatus)) return ns
+  let last = -1
+  ns.forEach((n, i) => {
+    if (n.status === 'DONE' || n.status === 'CURRENT') last = i
+  })
+  // 无任何已处理节点(数据异常)时原样返回,避免把整条链截空
+  return last < 0 ? ns : ns.slice(0, last + 1)
+})
+const nodesTruncated = computed(() => displayNodes.value.length < (progress.value?.nodes?.length ?? 0))
 function votePct(n: any) {
   if (!n.voterCount) return 0
   return Math.round(((n.submittedCount || 0) / n.voterCount) * 100)
@@ -288,7 +307,12 @@ onMounted(() => {
 .state--DONE { color: var(--color-success); background: var(--color-success-light); }
 .state--CURRENT { color: var(--color-primary); background: var(--color-primary-light); }
 .state--PENDING, .state--SKIPPED { color: var(--color-text-sub); background: rgba(144, 147, 153, 0.12); }
+.node-truncated { padding: 2px 0 4px 36px; font-size: 12px; color: var(--color-text-sub); }
 .node-meta { margin-top: 4px; font-size: 12px; color: var(--color-text-sub); display: flex; gap: 12px; }
+.node-action { font-weight: 500; }
+.action--APPROVE { color: var(--color-success); }
+.action--REJECT, .action--VETO { color: var(--color-danger); }
+.node-comment { margin-top: 4px; font-size: 12px; color: var(--color-text-sub); }
 .node-meta.vote { display: block; margin-top: 8px; }
 .vote-text { font-size: 12px; color: #606266; margin-top: 4px; display: inline-block; }
 </style>
