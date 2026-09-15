@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,33 +42,39 @@ public class AuditController {
     private JdbcTemplate jdbcTemplate;
 
     /**
-     * 实际投票人查询(仅审计):返回 分项/真实投票人/票型/时间/匿名码
+     * 实际投票人查询(仅审计):返回 批次/分项/真实投票人/票型/时间/匿名码
      *
-     * @param roundId       表决批次id(必填)
+     * @param roundId       表决批次主键 或 申请号(必填;填申请号时反查该申请下全部批次)
      * @param pricingItemId 分项id(可选,缺省整批)
      */
     @GetMapping("/ballot-detail")
-    public R<Map<String, Object>> ballotDetail(@RequestParam Long roundId,
+    public R<Map<String, Object>> ballotDetail(@RequestParam String roundId,
                                                @RequestParam(required = false) Long pricingItemId,
                                                @RequestParam(defaultValue = "1") int pageNum,
                                                @RequestParam(defaultValue = "20") int pageSize) {
         SysUserRead auditor = currentLoginUser.requireCurrentUser();
         currentLoginUser.requireAnyRole(CurrentLoginUser.ROLE_AUDITOR);
 
-        // 批次名单(含替补):确定性哈希 sha256(userId) → 投票人(匿名码/真实身份)
-        List<Map<String, Object>> assignments = jdbcTemplate.queryForList(
-                "SELECT voter_user_id voterUserId, voter_anonym_no anonymNo"
-                        + " FROM ccr_vote_assignment WHERE round_id = ? AND del_flag = '0'", roundId);
+        List<Long> roundIds = resolveRoundIds(roundId);
         Map<String, Map<String, Object>> hashToVoter = new HashMap<>();
-        for (Map<String, Object> assignment : assignments) {
-            Long uid = ((Number) assignment.get("voterUserId")).longValue();
-            // 与 VoteServiceImpl.voterHash 同口径:DigestUtil.sha256Hex(String.valueOf(userId))
-            hashToVoter.putIfAbsent(DigestUtil.sha256Hex(String.valueOf(uid)), assignment);
+        if (!roundIds.isEmpty()) {
+            // 批次名单(含替补):确定性哈希 sha256(userId) → 投票人(匿名码/真实身份)
+            List<Map<String, Object>> assignments = jdbcTemplate.queryForList(
+                    "SELECT voter_user_id voterUserId, voter_anonym_no anonymNo"
+                            + " FROM ccr_vote_assignment WHERE round_id IN (" + placeholders(roundIds.size()) + ")"
+                            + " AND del_flag = '0'", roundIds.toArray());
+            for (Map<String, Object> assignment : assignments) {
+                Long uid = ((Number) assignment.get("voterUserId")).longValue();
+                // 与 VoteServiceImpl.voterHash 同口径:DigestUtil.sha256Hex(String.valueOf(userId))
+                hashToVoter.putIfAbsent(DigestUtil.sha256Hex(String.valueOf(uid)), assignment);
+            }
         }
 
-        StringBuilder where = new StringBuilder(" WHERE b.round_id = ? AND b.del_flag = '0'");
-        List<Object> args = new ArrayList<>();
-        args.add(roundId);
+        // 申请号查不到批次时用 1=0 保持返回结构一致(空结果而非报错)
+        StringBuilder where = new StringBuilder(roundIds.isEmpty()
+                ? " WHERE 1 = 0"
+                : " WHERE b.round_id IN (" + placeholders(roundIds.size()) + ") AND b.del_flag = '0'");
+        List<Object> args = new ArrayList<>(roundIds);
         if (pricingItemId != null) {
             where.append(" AND b.pricing_item_id = ?");
             args.add(pricingItemId);
@@ -80,9 +87,10 @@ public class AuditController {
         pageArgs.add(size);
         pageArgs.add((page - 1) * size);
         List<Map<String, Object>> ballots = jdbcTemplate.queryForList(
-                "SELECT b.pricing_item_id pricingItemId, b.voter_user_hash voterUserHash,"
+                "SELECT b.round_id roundId, b.pricing_item_id pricingItemId, b.voter_user_hash voterUserHash,"
                         + " b.vote_choice voteChoice, b.vote_comment voteComment, b.submit_time submitTime"
-                        + " FROM ccr_ballot b" + where + " ORDER BY b.pricing_item_id, b.submit_time LIMIT ? OFFSET ?",
+                        + " FROM ccr_ballot b" + where
+                        + " ORDER BY b.round_id, b.pricing_item_id, b.submit_time LIMIT ? OFFSET ?",
                 pageArgs.toArray());
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -90,24 +98,44 @@ public class AuditController {
             Map<String, Object> voter = hashToVoter.get(String.valueOf(ballot.get("voterUserHash")));
             Long voterUserId = voter == null ? null : ((Number) voter.get("voterUserId")).longValue();
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("roundId", ballot.get("roundId"));
             row.put("pricingItemId", ballot.get("pricingItemId"));
             row.put("voterUserId", voterUserId);
             row.put("voterName", voterUserId == null ? null : voterName(voterUserId));
-            row.put("anonymNo", voter == null ? null : voter.get("anonymNo"));
-            row.put("voteChoice", ballot.get("voteChoice"));
+            row.put("anonymousCode", voter == null ? null : voter.get("anonymNo"));
+            row.put("ballotType", ballot.get("voteChoice"));
             row.put("voteComment", ballot.get("voteComment"));
-            row.put("submitTime", ballot.get("submitTime"));
+            row.put("voteTime", ballot.get("submitTime"));
             result.add(row);
         }
 
         // 反查动作留痕(§11.10/§15.3)
         writeAuditLog("BALLOT_DETAIL", String.valueOf(roundId),
-                "票据反查:批次=" + roundId + (pricingItemId == null ? "" : ",分项=" + pricingItemId)
+                "票据反查:输入=" + roundId + ",命中批次 " + roundIds.size() + " 个"
+                        + (pricingItemId == null ? "" : ",分项=" + pricingItemId)
                         + ",还原票据 " + result.size() + " 张", auditor);
         Map<String, Object> data = new HashMap<>();
         data.put("total", total == null ? 0L : total);
         data.put("records", result);
         return R.ok(data);
+    }
+
+    /** 批次入参解析:纯数字视为批次主键,否则按申请号(CCR+yyyyMMdd+4位随机)反查该申请下全部批次。 */
+    private List<Long> resolveRoundIds(String input) {
+        String value = StrUtil.trim(input);
+        if (StrUtil.isBlank(value)) return List.of();
+        if (value.matches("\\d+")) return List.of(Long.valueOf(value));
+        return jdbcTemplate.queryForList("""
+                SELECT r.id FROM ccr_vote_round r
+                JOIN ccr_application a ON a.id = r.application_id AND a.del_flag = '0'
+                WHERE a.application_no = ? AND r.del_flag = '0'
+                ORDER BY r.id
+                """, Long.class, value);
+    }
+
+    /** SQL IN 占位符(?,?,…) */
+    private String placeholders(int count) {
+        return String.join(",", Collections.nCopies(count, "?"));
     }
 
     /** 导出记录查询(auditor/admin;可按申请过滤,分页) */

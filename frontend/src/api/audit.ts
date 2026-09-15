@@ -4,6 +4,7 @@ import { get } from './request'
 
 /** 实际投票人反查结果行(真实投票人/票型/匿名码对照;敏感查询后端留痕) */
 export interface BallotDetailRow {
+  roundId?: number | string
   voterName?: string
   userName?: string
   postName?: string

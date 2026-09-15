@@ -17,6 +17,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 /**
@@ -81,6 +82,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public R<Void> handleMissingParameter(MissingServletRequestParameterException e) {
         return R.fail(ErrorCode.BAD_REQUEST.getCode(), "缺少必填参数:" + e.getParameterName());
+    }
+
+    /**
+     * 参数类型不匹配(如把申请号填进要求数字主键的查询框)。
+     * 属用户输入问题,返回 400 并指明参数名;不再落兜底 Exception 打 ERROR 全堆栈污染生产监控。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public R<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e, HttpServletRequest request) {
+        log.warn("参数类型不匹配 path={}, name={}, value={}", request.getRequestURI(), e.getName(), e.getValue());
+        return R.fail(ErrorCode.BAD_REQUEST.getCode(), "参数「" + e.getName() + "」格式不正确");
     }
 
     /** 路径存在但 HTTP 方法不受支持 */

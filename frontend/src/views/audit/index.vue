@@ -29,8 +29,8 @@
       />
       <div class="query-bar">
         <div class="query-field">
-          <label class="query-label">表决批次</label>
-          <el-input v-model="ballotQuery.roundId" placeholder="表决批次主键" clearable class="query-input" />
+          <label class="query-label">申请号 / 批次</label>
+          <el-input v-model="ballotQuery.roundId" placeholder="申请号(CCR…)或批次主键" clearable class="query-input" />
         </div>
         <div class="query-field">
           <label class="query-label">分项主键</label>
@@ -46,11 +46,12 @@
       <table class="table table--full" v-if="ballotRows.length">
         <thead>
           <tr>
-            <th>真实投票人</th><th>岗位</th><th>机构</th><th>票型</th><th>匿名码对照</th><th>投票时间</th>
+            <th>批次</th><th>真实投票人</th><th>岗位</th><th>机构</th><th>票型</th><th>匿名码对照</th><th>投票时间</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, i) in ballotRows" :key="i">
+            <td>{{ row.roundId ?? '—' }}</td>
             <td>{{ row.voterName || row.userName || '—' }}</td>
             <td>{{ row.postName || '—' }}</td>
             <td>{{ row.orgName || '—' }}</td>
@@ -283,7 +284,7 @@ const ballotQueried = ref(false)
 
 async function queryBallot() {
   if (!ballotQuery.roundId && !ballotQuery.pricingItemId) {
-    ElMessage.warning('请至少输入表决批次或分项之一')
+    ElMessage.warning('请至少输入申请号/批次或分项之一')
     return
   }
   ballotLoading.value = true
@@ -437,6 +438,7 @@ function exportCsv(rows: any[], cols: CsvCol[], name: string) {
 }
 // 各页签导出列(值取原始字段;fmt 用于枚举→中文)
 const ballotCsvCols: CsvCol[] = [
+  { title: '批次', key: 'roundId' },
   // §UI审查:导出与表格同口径兜底 voterName || userName(不再只取 voterName)
   { title: '真实投票人', key: 'voterName', fmt: r => r.voterName || r.userName || '—' },
   { title: '岗位', key: 'postName' },
