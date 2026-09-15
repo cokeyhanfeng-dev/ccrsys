@@ -164,7 +164,10 @@
               <td class="file-name" :title="a.fileName">{{ a.fileName }} <span v-if="a.sourceType === 'MINIAPP_CREDIT_RESOLUTION'" class="badge badge--info">授信决议 {{ a.sourceResolutionNo }}</span></td>
               <td class="num">{{ fmtSize(a.fileSize) }}</td>
               <td>{{ fmtTime(a.createTime) }}</td>
-              <td><button class="btn btn--text" @click="downloadAttachment(a)">下载</button></td>
+              <td>
+                <button v-if="canPreviewAttachment(a)" class="btn btn--text" @click="previewAttachment(a)">预览</button>
+                <button class="btn btn--text" @click="downloadAttachment(a)">下载</button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -475,9 +478,27 @@
       <div v-else class="empty">暂无数据</div>
     </div>
   </div>
+
+  <!-- 附件预览(2026-09-15:与审批详情同口径,图片/PDF 弹窗内直接查看,免下载后再打开;Office/其它不显示预览按钮) -->
+  <el-dialog v-model="previewOpen" :title="previewName ? '附件预览 · ' + previewName : '附件预览'" width="min(860px, 92vw)" top="6vh" @closed="releasePreview">
+    <div v-loading="previewBusy" class="preview-content">
+      <div v-if="previewError" role="alert" class="preview-message">
+        {{ previewError }}<button class="btn btn--secondary" style="margin-left:10px" @click="retryPreview">重试</button>
+      </div>
+      <iframe v-else-if="previewUrl && previewMime === 'application/pdf'" :src="previewUrl" title="附件 PDF" />
+      <img v-else-if="previewUrl && previewMime.startsWith('image/')" :src="previewUrl" :alt="previewName" />
+      <div v-else-if="previewUrl" class="preview-message">此格式暂不支持在线预览，请点「下载」查看</div>
+      <div v-else class="preview-message">{{ previewBusy ? '正在读取附件…' : '' }}</div>
+    </div>
+    <template #footer>
+      <a v-if="previewUrl && previewTarget" class="btn btn--secondary" :href="previewUrl" :download="previewName">下载</a>
+      <button class="btn btn--primary" @click="previewOpen = false">关闭</button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
+import axios from 'axios'
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -647,6 +668,82 @@ function extText(g: any): string {
 }
 function downloadAttachment(a: any) {
   download(`/ccr/applications/${applicationId}/attachments/${a.id}/download`)
+}
+
+// ---- 附件预览(2026-09-15:与审批详情同口径,图片/PDF 点「预览」弹窗内联展示,免下载后打开) ----
+// 同一后端下载接口,此处自行取 blob 而非走 download() 封装(后者直接触发保存)
+const previewOpen = ref(false)
+const previewBusy = ref(false)
+const previewUrl = ref('')
+const previewMime = ref('')
+const previewName = ref('')
+const previewError = ref('')
+let previewTarget: any = null
+let previewSeq = 0
+
+/** 可预览判定:仅图片/PDF(按上传存的 contentType(fileType)判定,兜底扩展名;Office/其它不显示预览) */
+function canPreviewAttachment(a: any): boolean {
+  const t = String(a.fileType || '').toLowerCase()
+  const n = String(a.fileName || '').toLowerCase()
+  if (t.startsWith('image/') || t === 'application/pdf') return true
+  return /\.(png|jpe?g|gif|webp|bmp|pdf)$/.test(n)
+}
+
+function releasePreview() {
+  previewSeq++
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewMime.value = ''
+  previewBusy.value = false
+}
+
+async function loadPreview(a: any) {
+  releasePreview()
+  previewError.value = ''
+  previewTarget = a
+  previewName.value = a.fileName || ''
+  previewOpen.value = true
+  previewBusy.value = true
+  const current = previewSeq
+  try {
+    const token = sessionStorage.getItem('ccr_token')
+    const resp = await axios.get(`/api/ccr/applications/${applicationId}/attachments/${a.id}/download`, {
+      responseType: 'blob', timeout: 60000,
+      headers: token ? { Authorization: token } : {}
+    })
+    const blob = resp.data as Blob
+    // 后端出错返回 R JSON 包装(与 download 封装同判定)
+    if (blob.type.includes('json')) {
+      const result = JSON.parse(await blob.text())
+      throw new Error(result.msg || '附件读取失败，请重新登录或重试')
+    }
+    if (current !== previewSeq || !previewOpen.value) return
+    previewMime.value = blob.type.split(';')[0] || ''
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch (err: any) {
+    if (current !== previewSeq || !previewOpen.value) return
+    const data = err.response?.data
+    if (data instanceof Blob && data.type.includes('json')) {
+      try {
+        const message = JSON.parse(await data.text()).msg || '附件读取失败'
+        previewError.value = message
+      } catch {
+        previewError.value = '附件读取失败，请重试'
+      }
+    } else {
+      previewError.value = err.message || '附件读取失败，请重试'
+    }
+  } finally {
+    if (current === previewSeq) previewBusy.value = false
+  }
+}
+
+function previewAttachment(a: any) {
+  if (canPreviewAttachment(a)) loadPreview(a)
+}
+
+async function retryPreview() {
+  if (previewTarget) await loadPreview(previewTarget)
 }
 
 /** 多键取值(后端档案 Map 混用 snake/camel;空值显示暂无口径) */
@@ -836,4 +933,10 @@ onMounted(load)
 .org-perf__bar-inner.rate-ok { background: var(--color-success); }
 .org-perf__bar-inner.rate-warn { background: var(--color-warning); }
 .org-perf__bar-inner.rate-bad { background: var(--color-danger); }
+
+/* 附件预览弹窗内容区(2026-09-15):PDF 铺满内滚、图片居中自适应,加载/错误提示同弹窗风格 */
+.preview-content { height: 65vh; overflow: auto; background: #f3f5f8; border: 1px solid #e5e7eb; border-radius: 8px; }
+.preview-content iframe { width: 100%; height: 100%; border: 0; }
+.preview-content img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.preview-message { padding: 32px 16px; text-align: center; color: #606266; }
 </style>
