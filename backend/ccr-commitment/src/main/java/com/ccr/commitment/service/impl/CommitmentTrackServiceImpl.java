@@ -431,6 +431,22 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
                     custNo, custNo);
             if (!indv.isEmpty() && indv.get(0).get("cust_nm") != null) {
                 names.put(custNo, indv.get(0).get("cust_nm").toString());
+                continue;
+            }
+            // 集团兜底:单户两张表都查不到时按集团号解析,否则前端只能退回显示集团号。
+            // 口径与审批列表/决议书查询一致(§2026-09-09):手工集团表 ccr_group → 数仓 dw_customer_group_snapshot 最新批。
+            List<Map<String, Object>> group = jdbcTemplate.queryForList(
+                    "SELECT group_name FROM ccr_group WHERE group_no = ? AND del_flag = '0'", custNo);
+            if (!group.isEmpty() && group.get(0).get("group_name") != null) {
+                names.put(custNo, group.get(0).get("group_name").toString());
+                continue;
+            }
+            List<Map<String, Object>> dwGroup = jdbcTemplate.queryForList(
+                    "SELECT group_name FROM dw_customer_group_snapshot WHERE group_no = ? "
+                            + "AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
+                    custNo, custNo);
+            if (!dwGroup.isEmpty() && dwGroup.get(0).get("group_name") != null) {
+                names.put(custNo, dwGroup.get(0).get("group_name").toString());
             }
         }
         return names;
