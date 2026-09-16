@@ -43,6 +43,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -69,6 +71,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 /**
@@ -569,14 +572,22 @@ class ApplicationSubmitServiceImplTest {
 
     // ---------- 提交成功:快照绑定 + 版本冻结 + 分项置 ROUTING/BRANCH_MANAGER ----------
 
-    @Test
-    void submitFreezesSnapshotAndVersionsThenRoutesItems() {
+    @ParameterizedTest
+    @CsvSource({
+            "CORP001, FOUND, CORP001",
+            "EXTERNAL001, FOUND, CORP001",
+            "NEW000001, FOUND, CORP001",
+            "EXTERNAL001, MISSING, NEWT0001X",
+            "EXTERNAL001, NULL_CUSTOMER_NO, NEWT0001X"
+    })
+    void submitFreezesSnapshotAndVersionsThenRoutesItems(String enteredNo, String lookup,
+                                                         String expectedNo) {
         CcrApplication app = new CcrApplication();
         app.setId(1L);
         app.setApplicationNo("CCR20260806ABCD");
         app.setBusinessType("LOAN");
         app.setCustomerScope("CORPORATE_SINGLE");
-        app.setCustomerNo("CORP001");
+        app.setCustomerNo(enteredNo);
         // §2026-09-02 单户主客户证件号码必填(checkCompleteness),测试补客户信息快照证件号
         app.setCustomerInfoJson("{\"ucrCode\":\"91330100TEST0001X\"}");
         app.setApplicantUserId(1000L);
@@ -584,7 +595,12 @@ class ApplicationSubmitServiceImplTest {
         app.setStatus("DRAFT");
         app.setVersionNo(1);
         CcrPricingItem item = loanItem(11L, null);
-        item.setPricingCustomerNo("CORP001");
+        item.setPricingCustomerNo(enteredNo);
+        Map<String, Object> warehouseCustomer = "MISSING".equals(lookup) ? null : new HashMap<>();
+        if (warehouseCustomer != null) {
+            warehouseCustomer.put("cust_no", "FOUND".equals(lookup) ? "CORP001" : null);
+        }
+        when(dataWarehouseService.findCorpByCertNo("91330100TEST0001X")).thenReturn(warehouseCustomer);
 
         when(applicationMapper.selectById(1L)).thenReturn(app);
         when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
@@ -639,9 +655,29 @@ class ApplicationSubmitServiceImplTest {
         // 中间态:主申请先置 SUBMITTED(§7.2 步骤6),再置 ROUTING
         ArgumentCaptor<LambdaUpdateWrapper<CcrApplication>> wrapperCaptor =
                 ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(applicationMapper).update(isNull(), wrapperCaptor.capture());
-        assertTrue(wrapperCaptor.getValue().getSqlSet().contains("status"));
-        assertTrue(wrapperCaptor.getValue().getParamNameValuePairs().containsValue("SUBMITTED"));
+        // 客户号定稿、客户 JSON 同步、SUBMITTED 各一次；每次更新仍按主键限定。
+        verify(applicationMapper, times(3)).update(isNull(), wrapperCaptor.capture());
+        List<LambdaUpdateWrapper<CcrApplication>> updates = wrapperCaptor.getAllValues();
+        for (LambdaUpdateWrapper<CcrApplication> update : updates) {
+            assertTrue(update.getSqlSegment().contains("id"));
+            assertTrue(update.getParamNameValuePairs().containsValue(1L));
+        }
+        List<LambdaUpdateWrapper<CcrApplication>> statusUpdates = updates.stream()
+                .filter(w -> w.getSqlSet().startsWith("status=")).toList();
+        assertEquals(1, statusUpdates.size());
+        assertTrue(statusUpdates.get(0).getParamNameValuePairs().containsValue("SUBMITTED"));
+        List<LambdaUpdateWrapper<CcrApplication>> customerUpdates = updates.stream()
+                .filter(w -> w.getSqlSet().startsWith("customer_no=")).toList();
+        assertEquals(1, customerUpdates.size());
+        assertTrue(customerUpdates.get(0).getParamNameValuePairs().containsValue(expectedNo));
+        List<LambdaUpdateWrapper<CcrApplication>> infoUpdates = updates.stream()
+                .filter(w -> w.getSqlSet().startsWith("customer_info_json=")).toList();
+        assertEquals(1, infoUpdates.size());
+        assertTrue(infoUpdates.get(0).getParamNameValuePairs().containsValue(app.getCustomerInfoJson()));
+        verify(dataWarehouseService).findCorpByCertNo("91330100TEST0001X");
+        assertEquals(expectedNo, app.getCustomerNo());
+        assertEquals(expectedNo, item.getPricingCustomerNo());
+        assertEquals(expectedNo, cn.hutool.json.JSONUtil.parseObj(app.getCustomerInfoJson()).getStr("customerNo"));
 
         // 主单:ROUTING + 冻结 LPR 版本 + 快照包 + 提交时间
         ArgumentCaptor<CcrApplication> appCaptor = ArgumentCaptor.forClass(CcrApplication.class);
