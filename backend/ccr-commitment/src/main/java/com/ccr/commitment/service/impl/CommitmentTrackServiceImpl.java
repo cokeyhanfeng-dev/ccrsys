@@ -2,6 +2,7 @@ package com.ccr.commitment.service.impl;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ccr.commitment.domain.CcrCommitmentTrack;
@@ -23,6 +24,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -189,11 +191,7 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         }
         w.orderByDesc(CcrCommitmentTrack::getCreateTime);
         List<CcrCommitmentTrack> rows = trackMapper.selectList(w);
-        Set<String> customerNos = new LinkedHashSet<>();
-        for (CcrCommitmentTrack t : rows) {
-            customerNos.add(StrUtil.blankToDefault(t.getMemberCustomerNo(), t.getCustomerNo()));
-        }
-        Map<String, String> names = resolveCustomerNames(customerNos);
+        Map<String, String> names = resolveCustomerNames(rows);
         List<Map<String, Object>> result = new ArrayList<>();
         for (CcrCommitmentTrack t : rows) {
             result.add(toView(t, names));
@@ -208,9 +206,7 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         if (t == null) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "承诺跟踪记录不存在: " + trackId);
         }
-        Set<String> customerNos = new LinkedHashSet<>();
-        customerNos.add(StrUtil.blankToDefault(t.getMemberCustomerNo(), t.getCustomerNo()));
-        Map<String, Object> view = toView(t, resolveCustomerNames(customerNos));
+        Map<String, Object> view = toView(t, resolveCustomerNames(List.of(t)));
         // 所属申请摘要(业务类型/状态/金额)
         if (t.getApplicationId() != null) {
             List<Map<String, Object>> app = jdbcTemplate.queryForList(
@@ -407,49 +403,119 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         return nos == null ? List.of() : nos;
     }
 
-    /** 客户名批查:对公/个人主数据最新批次(按客户自身最新 data_dt) */
-    private Map<String, String> resolveCustomerNames(Set<String> customerNos) {
+    /**
+     * 客户名批查(§2026-09-16 重排口径):申请单 JSON 快照 → 数仓单户主数据 → 集团兜底。
+     * 快照最先——它由申请时人工确认,且审批详情/历史列表(pageHistory)同为快照优先,保持全系统一致;
+     * 后两级只用于快照缺失时尽量给出名字。实测 ECM… 等手工/外部客户号在数仓与集团表往往都无行,
+     * 原口径(只查后两级)会直接落到前端回退显示客户号。
+     */
+    private Map<String, String> resolveCustomerNames(List<CcrCommitmentTrack> tracks) {
         Map<String, String> names = new LinkedHashMap<>();
-        if (customerNos.isEmpty()) {
+        if (tracks.isEmpty()) {
             return names;
         }
-        for (String custNo : customerNos) {
-            if (StrUtil.isBlank(custNo)) {
+        Map<Long, String> snapNames = snapshotNames(tracks);
+        for (CcrCommitmentTrack t : tracks) {
+            String custNo = StrUtil.blankToDefault(t.getMemberCustomerNo(), t.getCustomerNo());
+            if (StrUtil.isBlank(custNo) || names.containsKey(custNo)) {
                 continue;
             }
-            List<Map<String, Object>> corp = jdbcTemplate.queryForList(
-                    "SELECT cust_name FROM caps_corp_cust_basic_info WHERE cust_no = ? "
-                            + "AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info WHERE cust_no = ?)",
-                    custNo, custNo);
-            if (!corp.isEmpty() && corp.get(0).get("cust_name") != null) {
-                names.put(custNo, corp.get(0).get("cust_name").toString());
-                continue;
+            // 1) 申请单快照(客户名 → 集团名)
+            String name = snapNames.get(t.getApplicationId());
+            // 2) 数仓单户主数据最新批次
+            if (StrUtil.isBlank(name)) {
+                name = singleCustomerName(custNo);
             }
-            List<Map<String, Object>> indv = jdbcTemplate.queryForList(
-                    "SELECT cust_nm FROM caps_indv_cust_basic_info WHERE cust_no = ? "
-                            + "AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info WHERE cust_no = ?)",
-                    custNo, custNo);
-            if (!indv.isEmpty() && indv.get(0).get("cust_nm") != null) {
-                names.put(custNo, indv.get(0).get("cust_nm").toString());
-                continue;
+            // 3) 集团兜底:手工集团表 → 数仓集团快照
+            if (StrUtil.isBlank(name)) {
+                name = groupCustomerName(custNo);
             }
-            // 集团兜底:单户两张表都查不到时按集团号解析,否则前端只能退回显示集团号。
-            // 口径与审批列表/决议书查询一致(§2026-09-09):手工集团表 ccr_group → 数仓 dw_customer_group_snapshot 最新批。
-            List<Map<String, Object>> group = jdbcTemplate.queryForList(
-                    "SELECT group_name FROM ccr_group WHERE group_no = ? AND del_flag = '0'", custNo);
-            if (!group.isEmpty() && group.get(0).get("group_name") != null) {
-                names.put(custNo, group.get(0).get("group_name").toString());
-                continue;
-            }
-            List<Map<String, Object>> dwGroup = jdbcTemplate.queryForList(
-                    "SELECT group_name FROM dw_customer_group_snapshot WHERE group_no = ? "
-                            + "AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
-                    custNo, custNo);
-            if (!dwGroup.isEmpty() && dwGroup.get(0).get("group_name") != null) {
-                names.put(custNo, dwGroup.get(0).get("group_name").toString());
+            if (StrUtil.isNotBlank(name)) {
+                names.put(custNo, name);
             }
         }
         return names;
+    }
+
+    /** 申请单 JSON 快照客户名(按 application_id):customer_info_json.customerName → group_info_json.groupName */
+    private Map<Long, String> snapshotNames(List<CcrCommitmentTrack> tracks) {
+        Set<Long> appIds = new LinkedHashSet<>();
+        for (CcrCommitmentTrack t : tracks) {
+            if (t.getApplicationId() != null) {
+                appIds.add(t.getApplicationId());
+            }
+        }
+        Map<Long, String> byApp = new HashMap<>();
+        if (appIds.isEmpty()) {
+            return byApp;
+        }
+        StringBuilder in = new StringBuilder();
+        for (int i = 0; i < appIds.size(); i++) {
+            if (i > 0) {
+                in.append(',');
+            }
+            in.append('?');
+        }
+        for (Map<String, Object> r : jdbcTemplate.queryForList(
+                "SELECT id, customer_info_json customerInfoJson, group_info_json groupInfoJson"
+                        + " FROM ccr_application WHERE del_flag = '0' AND id IN (" + in + ")",
+                appIds.toArray())) {
+            if (r.get("id") == null) {
+                continue;
+            }
+            String name = jsonName(r.get("customerInfoJson"), "customerName");
+            if (StrUtil.isBlank(name)) {
+                name = jsonName(r.get("groupInfoJson"), "groupName");
+            }
+            if (StrUtil.isNotBlank(name)) {
+                byApp.put(Long.valueOf(r.get("id").toString()), name);
+            }
+        }
+        return byApp;
+    }
+
+    /** 数仓单户主数据最新批次客户名(对公 cust_name / 个人 cust_nm) */
+    private String singleCustomerName(String custNo) {
+        List<Map<String, Object>> corp = jdbcTemplate.queryForList(
+                "SELECT cust_name FROM caps_corp_cust_basic_info WHERE cust_no = ? "
+                        + "AND data_dt = (SELECT MAX(data_dt) FROM caps_corp_cust_basic_info WHERE cust_no = ?)",
+                custNo, custNo);
+        if (!corp.isEmpty() && corp.get(0).get("cust_name") != null) {
+            return corp.get(0).get("cust_name").toString();
+        }
+        List<Map<String, Object>> indv = jdbcTemplate.queryForList(
+                "SELECT cust_nm FROM caps_indv_cust_basic_info WHERE cust_no = ? "
+                        + "AND data_dt = (SELECT MAX(data_dt) FROM caps_indv_cust_basic_info WHERE cust_no = ?)",
+                custNo, custNo);
+        return !indv.isEmpty() && indv.get(0).get("cust_nm") != null
+                ? indv.get(0).get("cust_nm").toString() : null;
+    }
+
+    /** 集团名兜底:手工集团表 ccr_group → 数仓 dw_customer_group_snapshot 最新批(口径同审批列表/决议书查询) */
+    private String groupCustomerName(String custNo) {
+        List<Map<String, Object>> group = jdbcTemplate.queryForList(
+                "SELECT group_name FROM ccr_group WHERE group_no = ? AND del_flag = '0'", custNo);
+        if (!group.isEmpty() && group.get(0).get("group_name") != null) {
+            return group.get(0).get("group_name").toString();
+        }
+        List<Map<String, Object>> dwGroup = jdbcTemplate.queryForList(
+                "SELECT group_name FROM dw_customer_group_snapshot WHERE group_no = ? "
+                        + "AND data_dt = (SELECT MAX(data_dt) FROM dw_customer_group_snapshot WHERE group_no = ?)",
+                custNo, custNo);
+        return !dwGroup.isEmpty() && dwGroup.get(0).get("group_name") != null
+                ? dwGroup.get(0).get("group_name").toString() : null;
+    }
+
+    /** 从 JSON 快照提取指定 key(解析失败按空处理,不影响视图构建主流程) */
+    private String jsonName(Object json, String key) {
+        if (json == null || StrUtil.isBlank(json.toString())) {
+            return null;
+        }
+        try {
+            return JSONUtil.parseObj(json.toString()).getStr(key);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 数仓取值结果:最近批次值 + 批次日期 */
