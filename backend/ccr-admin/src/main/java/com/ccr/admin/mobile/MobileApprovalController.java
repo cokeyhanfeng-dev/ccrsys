@@ -4,14 +4,10 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.ccr.admin.controller.AuthController;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.application.controller.AttachmentController;
-import com.ccr.application.domain.CcrPricingItem;
-import com.ccr.application.mapper.CcrPricingItemMapper;
-import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.approval.controller.ApprovalController;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.exception.ServiceException;
 import com.ccr.vote.controller.VoteController;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -33,8 +29,7 @@ public class MobileApprovalController {
     @Resource private ApprovalController approval;
     @Resource private VoteController vote;
     @Resource private AttachmentController attachments;
-    @Resource private ApplicationAccessService objects;
-    @Resource private CcrPricingItemMapper items;
+    @Resource private MobileApprovalCommandService commands;
     @Resource private MobileQueryService queries;
 
     public record Login(@NotBlank @Size(max=4096) String token) {
@@ -95,26 +90,14 @@ public class MobileApprovalController {
         return result;
     }
     @PostMapping("/approve") public R<?> approve(@RequestHeader("Idempotency-Key") @NotBlank @Size(max=40) String key,@Valid @RequestBody Approval body) {
-        objects.requireView(body.applicationId());
-        if(body.rateAdjustments()!=null&&!body.rateAdjustments().isEmpty()) {
-            var rows=items.selectList(new LambdaQueryWrapper<CcrPricingItem>().eq(CcrPricingItem::getApplicationId,body.applicationId()).eq(CcrPricingItem::getDelFlag,"0"));
-            for(var entry:body.rateAdjustments().entrySet()) {
-                var item=rows.stream().filter(i->i.getId().equals(entry.getKey())).findFirst().orElseThrow(()->new ServiceException(403,"调价分项不属于本申请"));
-                validateBp(item.getCurrentApprovalRate()==null?item.getRequestedRate():item.getCurrentApprovalRate(),entry.getValue());
-            }
-        }
-        return approval.approve(key,approvalBody(body));
+        return commands.approve(key,body);
     }
     static void validateBp(BigDecimal before,BigDecimal after) {
         if(before==null||after.subtract(before).movePointRight(2).stripTrailingZeros().scale()>0)
             throw new ServiceException(400,"请按 1 BP（0.01 个百分点）的整数倍调整利率");
     }
-    private Map<String,Object> approvalBody(Approval body) {
-        Map<String,Object> data=new LinkedHashMap<>();data.put("applicationId",body.applicationId());data.put("nodeCode",body.nodeCode());
-        data.put("versionNo",body.versionNo());data.put("comment",body.comment());data.put("rateAdjustments",body.rateAdjustments());return data;
-    }
     @PostMapping("/reject") public R<?> reject(@RequestHeader("Idempotency-Key") @NotBlank @Size(max=40) String key,@Valid @RequestBody Approval body) {
-        requireReason(body.comment());return approval.reject(key,approvalBody(body));
+        requireReason(body.comment());return commands.reject(key,body);
     }
     @PostMapping("/vote-rounds/{roundId}/ballots") public R<?> ballot(@PathVariable Long roundId,@RequestHeader("Idempotency-Key") @NotBlank @Size(max=40) String key,@Valid @RequestBody Ballot body) {
         if("REJECT".equals(body.choice()))requireReason(body.comment());

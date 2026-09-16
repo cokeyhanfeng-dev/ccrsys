@@ -118,6 +118,10 @@ public class ApplicationAccessService {
                 || hasHistoricalParticipation(application.getId(), user.getId()))) {
             return;
         }
+        // 主角色为秘书的账号同样可回看本人经办申请；仅允许有实际审批轨迹的对象。
+        if (AppLoginUser.ROLE_SECRETARY.equals(role) && hasHistoricalParticipation(application.getId(), user.getId())) {
+            return;
+        }
         // 秘书岗(兼岗,§需求四:贷审会秘书由计划财务部总经理兼任,主角色 dept_gm):
         // 分项当前在 SECRETARY 节点且本人在该节点指派内即可查看——兼岗节点不在主角色节点映射内,需单独放行
         if (isSecretaryNodeAssignee(user, application, requestedItem)) {

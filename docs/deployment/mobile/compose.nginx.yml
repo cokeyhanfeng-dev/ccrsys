@@ -1,0 +1,25 @@
+# 合并到用户现有 Compose，沿用原 Compose 项目名。不要另外启动同名容器。
+services:
+  nginx:
+    container_name: nginx-nextcloud
+    image: ${CCR_NGINX_IMAGE:?请填写服务器现有完整Nginx镜像名}
+    volumes:
+      - /data/ccr/frontend:/var/www/frontend
+      - /data/ccr/mobile:/var/www/mobile:ro
+      - /data/nginx/config/nginx.conf:/etc/nginx/nginx.conf
+      - /data/nginx/config/ccr-mobile-8090.conf:/etc/nginx/ccr-mobile-8090.conf:ro
+      - /data/nginx/log:/var/log/nginx
+      - /etc/localtime:/etc/localtime:ro
+    privileged: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "80:80"
+      - "50001:50001"
+      - "51000:51000"
+      - "8086:8086"
+      - "8090:8090"
+    environment:
+      TZ: Asia/Shanghai
+      LANG: en_US.UTF-8
+    restart: always

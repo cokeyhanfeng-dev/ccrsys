@@ -145,6 +145,20 @@ class ApplicationAccessServiceTest {
     }
 
     @Test
+    void requireView_secretaryMayReadOwnHistoryAfterNodeMoves() {
+        when(appLoginUser.requireCurrentUser()).thenReturn(user(1010L, AppLoginUser.ROLE_SECRETARY, 1003L));
+        when(jdbcTemplate.queryForObject(contains("ccr_approval_action"), eq(Integer.class), eq(30L), eq(1010L)))
+                .thenReturn(1);
+        assertDoesNotThrow(() -> accessService.requireView(30L));
+    }
+
+    @Test
+    void requireView_secretaryWithoutParticipationCannotReadAnotherApplication() {
+        when(appLoginUser.requireCurrentUser()).thenReturn(user(1010L, AppLoginUser.ROLE_SECRETARY, 1003L));
+        assertEquals(403, assertThrows(ServiceException.class, () -> accessService.requireView(30L)).getCode());
+    }
+
+    @Test
     void requireView_allowsConcurrentCommitteeMemberByVoteAssignment() {
         // 兼岗委员:主角色 vice_president(由分管行长兼任小组委员),无历史经办,
         // 仅凭该申请本人表决指派即可查看——授权以表决指派为权威,不依赖主角色

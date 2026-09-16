@@ -150,7 +150,7 @@ public class VoteController {
                          a.group_no,
                          pi.pricing_customer_no) customerName,
                        pi.id pricingItemId, pi.pricing_item_no pricingItemNo,
-                       pi.requested_rate requestedRate, pi.original_rate originalRate,
+                       pi.requested_rate requestedRate, pi.current_approval_rate currentApprovalRate, pi.original_rate originalRate,
                        pi.pricing_amount pricingAmount, pi.product_code productCode,
                        pi.current_node_code currentNodeCode, pi.create_time createTime,
                        (SELECT gp.main_guarantee_type FROM ccr_guarantee_package gp

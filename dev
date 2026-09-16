@@ -22,10 +22,13 @@ usage() {
   frontend-run      用兼容的本机 Node 启动 Vite
   mobile-run        启动移动前端，127.0.0.1:13001/mobile/
   mobile-build      测试并构建独立移动产物 frontend/dist-mobile
+  mobile-api-test   真实 HTTP 移动接口回归（隔离 MySQL/Redis、虚构验票服务）
+  mobile-nginx-test 在测试前端容器内验证独立移动 Nginx 配置
+  release-test      临时目录验证发布模式、备份、回滚和目录隔离
   backend-test      执行后端全部单元测试
   frontend-test     npm ci 后执行前端生产构建
   verify            执行后端单测和前端构建
-  release [1|2|12]  生成生产更新包:1 后端、2 前端、12 全部；不传参数时交互选择
+  release [模式]    更新包:1 后端、2 电脑端、3 移动端；支持 12/13/23/123 组合
 
 容器测试环境:
   app-up            构建并启动 MySQL/Redis/后端/前端完整测试栈
@@ -94,6 +97,14 @@ case "${command_name}" in
     if [[ ! -d node_modules ]]; then ccr_npm ci; fi
     ccr_npm run dev:mobile
     ;;
+  mobile-api-test)
+    ccr_compose up -d --wait mysql redis
+    cd "${CCR_PROJECT_ROOT}/backend"
+    ccr_mvn -B -pl ccr-admin -am -Dtest=MobileApiIT -Dsurefire.failIfNoSpecifiedTests=false test
+    ;;
+  mobile-nginx-test)
+    bash "${CCR_DEV_DIR}/mobile-nginx-test.sh" "$@"
+    ;;
   frontend-run)
     cd "${CCR_PROJECT_ROOT}/frontend"
     if [[ ! -d node_modules ]]; then
@@ -116,6 +127,9 @@ case "${command_name}" in
   verify)
     "${CCR_PROJECT_ROOT}/dev" backend-test
     "${CCR_PROJECT_ROOT}/dev" frontend-test
+    ;;
+  release-test)
+    python3 "${CCR_PROJECT_ROOT}/scripts/tests/mobile-release-test.py"
     ;;
   release)
     "${CCR_PROJECT_ROOT}/scripts/package-release.sh" "$@"

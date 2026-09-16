@@ -7,3 +7,10 @@ export function previewType(bytes){
   if(starts([71,73,70,56])&&(b[4]===55||b[4]===57)&&b[5]===97)return 'image/gif';
   return null;
 }
+
+/** 扩展名仅用于列表图标；实际预览仍校验文件签名。 */
+export function attachmentKind(name=''){
+  const extension=String(name).trim().split('.').pop().toLowerCase();
+  if(extension==='pdf')return 'pdf';
+  return ['jpg','jpeg','png','gif','webp','bmp','heic','heif','tif','tiff'].includes(extension)?'image':'file';
+}

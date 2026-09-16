@@ -1,7 +1,7 @@
 ﻿# Windows PowerShell 5.1+ 打包入口；UTF-8 BOM 保证旧版 PowerShell 正确读取中文。
 [CmdletBinding()]
 param(
-    [ValidateSet('1', '2', '12')][string]$Mode,
+    [ValidateSet('1', '2', '3', '12', '13', '23', '123')][string]$Mode,
     [switch]$CheckOnly,
     [switch]$SkipTests
 )
@@ -22,11 +22,11 @@ function Write-Lf([string]$Path, [string]$Content) {
     [System.IO.File]::WriteAllText($Path, ($Content -replace "`r`n", "`n"), $utf8)
 }
 try {
-    if (!$Mode) { $Mode = Read-Host '请选择打包内容：1=后端，2=前端，12=全部' }
-    if ($Mode -notin @('1', '2', '12')) { throw '请输入 1、2 或 12。' }
+    if (!$Mode) { $Mode = Read-Host '请选择打包内容：1=后端，2=电脑端，3=移动端，13=后端+移动，123=全部' }
+    if ($Mode -notin @('1', '2', '3', '12', '13', '23', '123')) { throw '请输入 1、2、3、12、13、23 或 123。' }
     $tar = (Get-Command tar.exe -ErrorAction Stop).Source
     $git = (Get-Command git.exe -ErrorAction Stop).Source
-    if ($Mode -in @('1', '12')) {
+    if ($Mode.Contains('1')) {
         # 仅修改当前进程环境；不安装工具、不修改全局配置。
         $jdk = Join-Path $root '.tools\jdk-17'
         if ($env:CCR_JAVA_HOME) { $jdk = $env:CCR_JAVA_HOME }
@@ -47,7 +47,7 @@ try {
             throw 'Maven 3.9.x is required (.tools\maven or existing mvn.cmd).'
         }
     }
-    if ($Mode -in @('2', '12')) {
+    if (($Mode.Contains('2') -or $Mode.Contains('3'))) {
         $node = (Get-Command node.exe -ErrorAction Stop).Source
         $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
         $nodeVersion = & $node --version
@@ -58,7 +58,7 @@ try {
     Write-Host '工具检查通过，未修改全局配置。'
     if ($CheckOnly) { return }
 
-    if ($Mode -in @('1', '12')) {
+    if ($Mode.Contains('1')) {
         $mavenArgs = @('-B', '-f', (Join-Path $root 'backend\pom.xml'),
             "-Dmaven.repo.local=$(Join-Path $root '.cache\m2\repository')",
             '-pl', 'ccr-admin', '-am', 'clean', 'package')
@@ -72,17 +72,24 @@ try {
             throw 'Missing or empty ccr-admin.jar.'
         }
     }
-    if ($Mode -in @('2', '12')) {
+    if (($Mode.Contains('2') -or $Mode.Contains('3'))) {
         Push-Location (Join-Path $root 'frontend')
         try {
             Run-Native $npm @('ci', '--cache', (Join-Path $root '.cache\npm'))
-            Run-Native $npm @('run', 'build', '--cache', (Join-Path $root '.cache\npm'))
+            if ($Mode.Contains('2')) {
+                Run-Native $npm @('run', 'test:auth', '--cache', (Join-Path $root '.cache\npm'))
+                Run-Native $npm @('run', 'build', '--cache', (Join-Path $root '.cache\npm'))
+            }
+            if ($Mode.Contains('3')) {
+                Run-Native $npm @('run', 'test:mobile', '--cache', (Join-Path $root '.cache\npm'))
+                Run-Native $npm @('run', 'build:mobile', '--cache', (Join-Path $root '.cache\npm'))
+            }
         } finally { Pop-Location }
-        if (!(Test-Path -LiteralPath (Join-Path $root 'frontend\dist\index.html'))) {
+        if ($Mode.Contains('2') -and !(Test-Path -LiteralPath (Join-Path $root 'frontend\dist\index.html'))) {
             throw 'Missing frontend/dist/index.html.'
         }
     }
-    $label = @{ '1' = 'backend'; '2' = 'frontend'; '12' = 'full' }[$Mode]
+    $label = @{ '1' = 'backend'; '2' = 'frontend'; '12' = 'full'; '3' = 'mobile'; '13' = 'backend-mobile'; '23' = 'web-mobile'; '123' = 'all' }[$Mode]
     $buildTime = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $name = "ccr-release-$buildTime-$label"
     $release = Join-Path $root 'release'
@@ -91,10 +98,15 @@ try {
     foreach ($dir in @($release, (Join-Path $bundle 'backend'), (Join-Path $bundle 'frontend'))) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
-    if ($Mode -in @('1', '12')) { Copy-Item -LiteralPath $jar -Destination (Join-Path $bundle 'backend\ccr-admin.jar') }
-    if ($Mode -in @('2', '12')) {
+    if ($Mode.Contains('1')) { Copy-Item -LiteralPath $jar -Destination (Join-Path $bundle 'backend\ccr-admin.jar') }
+    if ($Mode.Contains('2')) {
         Copy-Item -LiteralPath (Join-Path $root 'frontend\dist') -Destination (Join-Path $bundle 'frontend\dist') -Recurse
     }
+    if ($Mode.Contains('3')) {
+        if (!(Test-Path -LiteralPath (Join-Path $root 'frontend\dist-mobile\index.html'))) { throw 'Missing mobile index.html.' }
+        Copy-Item -LiteralPath (Join-Path $root 'frontend\dist-mobile') -Destination (Join-Path $bundle 'frontend\dist-mobile') -Recurse
+    }
+    Copy-Item -LiteralPath (Join-Path $root 'docs\deployment\mobile') -Destination (Join-Path $bundle 'deployment') -Recurse
     # Git for Windows 可能检出 CRLF；交付服务器的脚本统一为 UTF-8 无 BOM/LF。
     $deploy = [System.IO.File]::ReadAllText((Join-Path $root 'scripts\deploy-release.sh'))
     Write-Lf (Join-Path $bundle 'deploy-release.sh') $deploy
@@ -103,7 +115,7 @@ try {
     $dirty = & $git -C $root status --porcelain --untracked-files=no
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git status.' }
     Write-Lf (Join-Path $bundle 'MANIFEST') "package=$name`nmode=$Mode`nbuild_time=$buildTime`ngit_commit=$commit`ntracked_dirty=$([bool]$dirty)`n"
-    $hashes = foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $bundle 'backend'), (Join-Path $bundle 'frontend') -Recurse -File | Sort-Object FullName)) {
+    $hashes = foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $bundle 'backend'), (Join-Path $bundle 'frontend'), (Join-Path $bundle 'deployment') -Recurse -File | Sort-Object FullName)) {
         $relative = $file.FullName.Substring($bundle.Length + 1).Replace('\', '/')
         (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $relative
     }
@@ -116,7 +128,7 @@ try {
     $partial = $null
     Write-Lf (Join-Path $release 'deploy-release.sh') $deploy
     Write-Host "发布包已生成：$archive"
-    Write-Host "上传发布包及 release\deploy-release.sh 到 /tmp 后执行：bash /tmp/deploy-release.sh $Mode"
+    Write-Host "上传发布包及 release\deploy-release.sh 到 /tmp 后执行：bash /tmp/deploy-release.sh $Mode /tmp/$name.tar.gz"
 } catch {
     Write-Error $_ -ErrorAction Continue
     exit 1

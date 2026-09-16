@@ -37,6 +37,9 @@ class NodeReminderHandlerTest {
     }
 
     @Test void resolvesDepartmentAndDeduplicatesUsersWithSeparateStableChannelKeys() {
+        app.setApplyBranchCode("TEST_BRANCH"); app.setCustomerName("虚构测试客户");
+        when(jdbc.queryForList(contains("SELECT d.dept_name"), eq(String.class), eq("TEST_BRANCH")))
+                .thenReturn(List.of("示例农村商业银行测试支行"));
         when(assignees.resolveUserIds("DEPT_GENERAL_MANAGER", 2L, "DEPT_TEST")).thenReturn(List.of(11L, 11L, 12L));
         handler.handle(payload); handler.handle(payload);
         ArgumentCaptor<NotificationMessage> messages = ArgumentCaptor.forClass(NotificationMessage.class);
@@ -44,8 +47,37 @@ class NodeReminderHandlerTest {
         List<NotificationMessage> sent = messages.getAllValues();
         assertEquals(List.of("SYSTEM", "WECHAT", "SYSTEM", "WECHAT"), sent.subList(0, 4).stream().map(NotificationMessage::getChannel).toList());
         assertEquals(4, sent.stream().map(NotificationMessage::getMessageKey).distinct().count());
-        assertTrue(sent.stream().allMatch(m -> m.getMessageKey().length() <= 64 && m.getContent().contains("部门总经理审批")));
+        assertTrue(sent.stream().allMatch(m -> m.getMessageKey().length() <= 64));
+        assertTrue(sent.stream().allMatch(m -> "【客户利率审批系统】测试支行客户虚构测试客户的利率申请需要您审批，请及时审批。（申请号 TEST001）".equals(m.getContent())));
         assertEquals(sent.get(0).getMessageKey(), sent.get(4).getMessageKey());
+    }
+
+    @Test void reminderCustomerFallsBackToSnapshotsThenIdentifiers() {
+        when(assignees.resolveUserIds(anyString(), anyLong(), anyString())).thenReturn(List.of(11L));
+        app.setCustomerInfoJson("{\"customerName\":\"虚构单户\"}");
+        app.setGroupInfoJson("{\"groupName\":\"虚构集团\"}");
+        app.setGroupNo("GROUP_TEST"); app.setCustomerNo("CUSTOMER_TEST");
+        handler.handle(payload);
+        app.setCustomerInfoJson("invalid"); handler.handle(payload);
+        app.setGroupInfoJson("invalid"); handler.handle(payload);
+        app.setGroupNo(null); handler.handle(payload);
+        app.setCustomerNo(null); handler.handle(payload);
+        ArgumentCaptor<NotificationMessage> messages = ArgumentCaptor.forClass(NotificationMessage.class);
+        verify(notifications, times(10)).sendNotification(messages.capture());
+        assertEquals(List.of("虚构单户", "虚构集团", "GROUP_TEST", "CUSTOMER_TEST", "").stream()
+                        .flatMap(name -> java.util.stream.Stream.of(name, name))
+                        .map(name -> "【客户利率审批系统】客户" + name + "的利率申请需要您审批，请及时审批。（申请号 TEST001）").toList(),
+                messages.getAllValues().stream().map(NotificationMessage::getContent).toList());
+    }
+
+    @Test void unavailableBranchNameStillSendsReminderWithCustomerAndApplication() {
+        app.setApplyBranchCode("TEST_BRANCH"); app.setCustomerName("虚构测试客户");
+        when(assignees.resolveUserIds(anyString(), anyLong(), anyString())).thenReturn(List.of(11L));
+        when(jdbc.queryForList(contains("SELECT d.dept_name"), eq(String.class), eq("TEST_BRANCH")))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("隔离测试查询失败"));
+        handler.handle(payload);
+        verify(notifications, times(2)).sendNotification(argThat(m ->
+                "【客户利率审批系统】客户虚构测试客户的利率申请需要您审批，请及时审批。（申请号 TEST001）".equals(m.getContent())));
     }
 
     @Test void disabledGatewayKeepsSystemReminder() {

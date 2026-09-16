@@ -16,9 +16,15 @@ export function tasks(data) {
     node:a.kind==='vote'?'SIX_PEOPLE_GROUP':a.kind==='president'?'PRESIDENT':a.items[0]?.currentNodeCode,
     rates:a.items.map(i=>i.currentApprovalRate??i.approvalRate??i.requestedRate).filter(v=>v!=null)}));
 }
-export function detail(data,id){const application=first(data.application),customer=first(data.customer);return {...data,id:String(id),application,customer,
-  items:uniqueItems(asList(data.siblingItems)),loan:!String(application.businessType||'').includes('DEPOSIT'),
-  name:customer.customerName||customer.groupName||application.customerNo||application.groupNo||'申请',node:application.currentNodeCode};}
+export function detail(data,id){
+  const application=first(data.application),customer=first(data.customer);
+  const status=application.applicationStatus,node=application.currentNodeCode;
+  // 结束后的申请会保留历史节点；状态展示和操作入口以主单终态为准。
+  const finished=['APPROVED','REJECTED','CLOSED','FINAL','VETOED'].includes(status);
+  return {...data,id:String(id),application,customer,finished,badgeCode:finished?status:node||status,
+    items:uniqueItems(asList(data.siblingItems)),otherLoans:[...asList(data.otherLoans),...asList(data.appOtherLoans)],loan:!String(application.businessType||'').includes('DEPOSIT'),
+    name:customer.customerName||customer.groupName||application.customerNo||application.groupNo||'申请',node};
+}
 export function range(rates){if(!rates.length)return '—';const min=Math.min(...rates.map(Number)),max=Math.max(...rates.map(Number));return min===max?rate(min):`${rate(min)}–${rate(max)}`;}
 export function validateRates(items,values){const changes={};for(const i of items){const base=Number(i.currentApprovalRate??i.requestedRate);const raw=values[String(i.id)];const v=Number(raw);if(raw===''||raw==null||!Number.isFinite(v)||v<=0||v>36)throw Error('请输入大于 0 且不超过 36% 的利率');const delta=(v-base)*100;if(Math.abs(delta-Math.round(delta))>1e-6)throw Error('请按 1 BP（0.01 个百分点）的整数倍调价');if(v!==base)changes[String(i.id)]=v;}return changes;}
 

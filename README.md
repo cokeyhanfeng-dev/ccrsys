@@ -29,7 +29,7 @@ ccr/
 
 ## 隔离环境快速开始
 
-Windows 同事可在项目根目录运行 `release.cmd 1`（后端）、`release.cmd 2`（前端）、`release.cmd 12`（全部），也可双击后选择。首次使用请按 [Windows 打包说明](docs/31_离线增量部署手册.md#30a-windows-开发机打包) 准备工具；脚本不安装工具或修改系统配置。
+Windows 同事可在项目根目录运行 `release.cmd 1`（后端）、`release.cmd 2`（前端）、`release.cmd 12`（后端+电脑端），也可双击后选择。首次使用请按 [Windows 打包说明](docs/31_离线增量部署手册.md#30a-windows-开发机打包) 准备工具；脚本不安装工具或修改系统配置。
 
 ```bash
 ./dev setup
@@ -111,6 +111,8 @@ JDK 17 位于项目 `.tools/`；Maven、npm 缓存位于项目 `.cache/`；兼�
 
 正式移动入口位于 `frontend/mobile`，沿用已确认 UI，独立构建、Nginx 直连 CCR，支持 OA 票据与有度免密登录，仅审批人员可访问。`./dev mobile-run` 启动 `http://127.0.0.1:13001/mobile/`；`./dev mobile-build` 输出 `frontend/dist-mobile`。完整测试栈入口为 `http://127.0.0.1:13000/mobile/`。OA/有度默认关闭，需由部署环境分别注入验票配置后联调；普通浏览器不提供密码登录。详见 [移动审批实现与联调](docs/40_移动审批实现与联调.md)。
 
+上线前执行 `./dev mobile-api-test`（真实 HTTP/隔离数据库，外部验票用回环夹具），以及 `./dev app-up && ./dev mobile-nginx-test && ./dev smoke`。两个 Maven 验证命令应顺序执行，避免同时编译同一 `target`。当前结论及生产待验项见 [移动端上线前校验](docs/43_移动端上线前校验_20260912.md)。
+
 ## Authing code 单点登录
 
 电脑端支持平台携 `code` 进入，后端兑换令牌并核验本地账号后建立 CCRSYS 会话，原账号密码登录继续可用。新能力默认关闭，需配置两个网关 URL；已按最新网关接入两步 GET：直接读取令牌文本，再按 `loginUserId` 匹配账号；免密独立使用 `CCR_INTEGRATION_AUTH_CODE_APP_CODE=rate-approval`；配置、回归和联调边界见 [Authing code 接入说明](docs/41_Authing_code单点登录.md)。
@@ -120,3 +122,22 @@ JDK 17 位于项目 `.tools/`；Maven、npm 缓存位于项目 `.cache/`；兼�
 审批节点到达、六人表决建批/替补及转行长决策已接入异步提醒，保留站内信。部署环境配置 `CCR_INTEGRATION_WECHAT_ENABLED=true` 与 `CCR_INTEGRATION_WECHAT_URL`，网关凭证复用统一认证。默认关闭，接收账号按本地登录名（绩效码）解析。契约、重试及联调边界见 [企业微信节点提醒](docs/42_企业微信节点提醒.md)。
 
 Authing 密码认证、code 登录与企业微信提醒的合并 `.env` / Compose 模板见 [部署模板](docs/deployment/README.md)，填入现有凭证和实际网关地址后合并到服务器配置。
+
+## 2026-09-16 移动端独立发布（8090）
+
+发布模式统一为 1 后端、2 电脑端、3 移动端；支持 12/13/23/123 组合，原 12 含义保持后端+电脑端。
+Mac/Linux：`./dev release 13` 首次打包后端+移动端，`./dev release 3` 仅移动端；Windows 对应 `release.cmd 13` / `release.cmd 3`。
+后端默认运行测试（macOS 原跳过测试行为已取消）。移动产物进入包内 `frontend/dist-mobile`，配置模板进入 `deployment`。
+上传发布包和 `release/deploy-release.sh` 后，后端机运行 `bash /tmp/deploy-release.sh 1 /tmp/实际包.tar.gz`，移动站点机运行 `bash /tmp/deploy-release.sh 3 /tmp/实际包.tar.gz`。
+异机部署分别执行，不在两台机器上都执行组合模式。移动默认目录 `/data/ccr/mobile`，默认健康入口 `http://127.0.0.1:8090/mobile/`；可通过 `CCR_MOBILE_DIR` / `CCR_MOBILE_HEALTH_URL` 覆盖。
+移动发布要求显式指定包，并校验 HTML/JS 与包一致及匿名 session 401；失败恢复旧移动文件。电脑目录和移动/备份目录禁止重叠；同时发布通过目录锁拒绝。
+完整配置、首次上线、后端认证和回退步骤见 [8090 发布手册](docs/deployment/mobile/README.md)。
+`./dev release-test` 用 Python 3 标准库与回环 HTTP 验证发布脚本（构建为合成夹具）；`./dev mobile-nginx-test 8090` 在现有 ccrsys-test 前端容器内验证实际8090站点配置，临时监听仅容器内，不新增宿主机端口。
+
+安装脚本显示阶段进度条，明细保留在独立安装日志；完成或失败时均列出安装包全名、完整路径、实际备份文件路径及日志查看命令。详见 `docs/deployment/mobile/README.md`。
+
+### 自动选包与部署确认（2026-09-16）
+
+所有部署模式均可省略包路径，例如 `bash /tmp/deploy-release.sh 3`。脚本从 `/tmp`（可用 `CCR_RELEASE_DIR` 覆盖）按文件修改时间选取包含本次全部所选组件的最新包，以包内实际产物判断，跳过不匹配或不可读的归档；完整性校验失败仍终止，不自动换包继续。显式传入路径则使用该包。
+
+无论自动或显式选包，均先展示包全名、绝对路径、大小、部署组件和目标目录/容器，输入 `y` 或 `yes` 后才开始解压校验、备份和替换；回车、其他输入或 EOF 均取消，不修改服务文件。若需切换旧版包，取消后带指定路径重新执行。新增端口/挂载仍须先配置 Nginx。

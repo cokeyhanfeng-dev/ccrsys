@@ -11,13 +11,16 @@ export async function request(path,{method='GET',body,key,binary=false,signal}={
     const response=await fetch(`${import.meta.env?.BASE_URL||'/mobile/'}api/mobile${path}`,{method,signal:controller.signal,cache:'no-store',
       headers:{...(token?{Authorization:token}:{}),...(body?{'Content-Type':'application/json'}:{}),...(key?{'Idempotency-Key':key}:{})},
       body:body?JSON.stringify(body):undefined});
-    if(binary&&response.ok&&(response.headers.has('content-disposition')||!response.headers.get('content-type')?.includes('application/json')))return await response.blob();
+    if(binary&&response.ok&&response.headers.has('content-disposition'))return await response.blob();
     const data=await response.json().catch(()=>null);
-    const code=data?.code??response.status;
+    // 代理返回的 HTML、空对象或空响应不能作为审批成功，也不能当成附件下载。
+    const validEnvelope=data!==null&&typeof data==='object'&&!Array.isArray(data)&&Number.isInteger(data.code);
+    const code=validEnvelope?data.code:response.status;
     if(!response.ok||code!==200) {
       if(code===401){session.clear();window.dispatchEvent(new Event('mobile-session-expired'));}
       throw new ApiError(data?.msg||`请求失败（${code}）`,code,method==='POST'&&(response.status>=500||(Number(code)>=500&&Number(code)<600)));
     }
+    if(!validEnvelope||binary)throw new ApiError(binary?'附件响应异常，请重新读取':'接口响应格式异常，请刷新后核对办理状态',0,method==='POST');
     return data.data;
   } catch(error) {
     if(error instanceof ApiError)throw error;
