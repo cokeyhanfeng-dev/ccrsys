@@ -131,10 +131,14 @@
               @select="selectCustomer"
             />
           </div>
+          <!-- 客户号只读(2026-09-16):原为可手工填写的输入框,实测有客户经理把外部编号(如 ECM…)填进来,
+               该值自此与数仓脱钩——档案查不到客户、贡献度跟踪按该号读数仓恒为空。后端提交已改为一律
+               按证件号反查定稿(resolvePlaceholderCustomerNo),此处同步收口:只能由「选客户」带出;
+               新增客户留空即可,提交时按证件号自动生成 NEW 占位号。 -->
           <div class="form-field">
             <label class="form-field__label">客户号</label>
-            <input class="form-input" v-model="form.customerNo" />
-            <div class="form-hint">数仓带出,可修改;新增客户可手工填写</div>
+            <div class="form-static">{{ form.customerNo || '选择客户后带出' }}</div>
+            <div class="form-hint">由所选客户带出,不可手工修改;新增客户留空,提交时按证件号自动生成</div>
           </div>
 
           <!-- 单户基本信息(数仓带出,可改;并入同一 form-grid:个人/企业全部字段 span1 等宽 4 列;开户机构/开户日期/基本户账户申请页不展示,由审批页数仓同步展示(§2026-08-26)) -->

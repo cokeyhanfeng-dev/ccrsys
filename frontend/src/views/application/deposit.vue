@@ -39,9 +39,11 @@
               @select="selectCustomer"
             />
           </div>
+          <!-- 客户号只读(2026-09-16):原为可手工填写的输入框,与贷款申请页同口径收口;
+               只能由「选客户」带出,后端提交时按证件号反查定稿(resolvePlaceholderCustomerNo) -->
           <div class="form-field">
             <label class="form-field__label">客户号</label>
-            <input class="form-input" v-model="form.customerNo" placeholder="数仓带出,可修改;新增客户可手工填写" />
+            <div class="form-static">{{ form.customerNo || '选择客户后带出' }}</div>
           </div>
         </template>
 

@@ -608,30 +608,33 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /**
-     * b0) 新增客户无客户号支持(2026-08-20 #017):
-     * 单户场景 customer_no 为空时,按 customer_info_json 证件号反查数仓 caps_*_cust_basic_info.cert_no:
-     *   - 命中 → 回填真实客户号(ccr_application.customer_no + 各分项 pricing_customer_no),快照/审批/决议/承诺全链路一致
+     * b0) 单户客户号定稿:按 customer_info_json 证件号反查数仓 caps_*_cust_basic_info.cert_no,
+     * 以反查结果为准覆盖录入值(2026-08-20 #017 立,2026-09-16 收口):
+     *   - 命中 → 数仓真实客户号(ccr_application.customer_no + 各分项 pricing_customer_no),快照/审批/决议/承诺全链路一致
      *   - 未命中 → 回填占位号(NEW+证件后6位),走人工快照(MANUAL)通道,WARN 放行
+     *
+     * <p>§2026-09-16 手填号收口:此前只有「空号 / NEW 占位号」才走本方法,非空且非 NEW 的录入值被当作
+     * "已是真实号"免检放行——实测有客户经理把外部编号(如 ECM…)填进客户号输入框,该值自此与数仓
+     * 完全脱钩:档案查不到客户、贡献度跟踪按该号读数仓恒为空。§2026-09-02 已拍板"手动回填取消,
+     * 占位→真实的唯一通道是按证件号反查",此处落实该口径:单户一律以反查结果为准,不再信任录入值;
+     * 申请页(贷款/存款)客户号输入框同步改只读,录入侧不再产生手填号。</p>
+     *
      * 集团场景成员客户号必填,无此问题。补号在 checkCompleteness 之前,使"单户场景客户号必填"校验自然通过。
      */
     private void resolvePlaceholderCustomerNo(CcrApplication app, List<CcrPricingItem> items) {
         if ("GROUP".equals(app.getCustomerScope())) {
             return; // 集团(成员号必填),占位处理走 resolveGroupMemberPlaceholder
         }
-        // §2026-09-02 占位主体贯穿:建档起主单即占位号(NEW 前缀),提交时仍须按证件号反查替换真实号;
-        // 已有真实客户号则无需处理。
-        String currentNo = app.getCustomerNo();
-        if (StrUtil.isNotBlank(currentNo) && !CustomerNoUtil.isPlaceholder(currentNo)) {
-            return;
-        }
         String certNo = CustomerNoUtil.certNoFromInfoJson(app.getCustomerInfoJson(), app.getCustomerScope());
         if (StrUtil.isBlank(certNo)) {
-            return; // 无客户号也无证件号:后续 checkCompleteness 拦截提示"客户号必填"
+            return; // 无证件号:后续 checkCompleteness 拦截提示"证件号码必填"
         }
         Map<String, Object> dw = "INDIVIDUAL".equals(app.getCustomerScope())
                 ? dataWarehouseService.findIndvByCertNo(certNo)
                 : dataWarehouseService.findCorpByCertNo(certNo);
-        String resolvedNo = dw == null ? CustomerNoUtil.placeholderCustomerNo(certNo)
+        // 数仓主档取到 cust_no 才算命中;dw 非空但 cust_no 为 null 时若直接 String.valueOf 会写成字面量 "null"
+        String resolvedNo = (dw == null || dw.get("cust_no") == null)
+                ? CustomerNoUtil.placeholderCustomerNo(certNo)
                 : String.valueOf(dw.get("cust_no"));
 
         // 回填主申请 customer_no
@@ -640,9 +643,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 .eq(CcrApplication::getId, app.getId())
                 .set(CcrApplication::getCustomerNo, resolvedNo));
 
-        // 同步分项 pricing_customer_no(保存草稿时已生成占位号,替换为真实号/确认占位号)
+        // 同步分项 pricing_customer_no:单户场景分项定价客户号恒等于主单客户号,一律对齐反查结果
+        // (原仅改占位号,手填号的分项会漏改而与主单不一致)
         for (CcrPricingItem item : items) {
-            if (CustomerNoUtil.isPlaceholder(item.getPricingCustomerNo())) {
+            if (!resolvedNo.equals(item.getPricingCustomerNo())) {
                 item.setPricingCustomerNo(resolvedNo);
                 pricingItemMapper.updateById(item);
             }
