@@ -477,24 +477,26 @@
       </template>
       <div v-else class="empty">暂无数据</div>
     </div>
-  </div>
 
-  <!-- 附件预览(2026-09-15:与审批详情同口径,图片/PDF 弹窗内直接查看,免下载后再打开;Office/其它不显示预览按钮) -->
-  <el-dialog v-model="previewOpen" :title="previewName ? '附件预览 · ' + previewName : '附件预览'" width="min(860px, 92vw)" top="6vh" @closed="releasePreview">
-    <div v-loading="previewBusy" class="preview-content">
-      <div v-if="previewError" role="alert" class="preview-message">
-        {{ previewError }}<button class="btn btn--secondary" style="margin-left:10px" @click="retryPreview">重试</button>
+    <!-- 附件预览(2026-09-15:与审批详情同口径,图片/PDF 弹窗内直接查看,免下载后再打开;Office/其它不显示预览按钮)
+         必须留在根 div 内部:layout 用 <transition mode="out-in"> 包路由组件,本页一旦成为多根节点,
+         过渡的 leave 回调不再触发、状态机卡死,离开本页后所有菜单都渲染空白(2026-09-16 修复) -->
+    <el-dialog v-model="previewOpen" :title="previewName ? '附件预览 · ' + previewName : '附件预览'" width="min(860px, 92vw)" top="6vh" @closed="releasePreview">
+      <div v-loading="previewBusy" class="preview-content">
+        <div v-if="previewError" role="alert" class="preview-message">
+          {{ previewError }}<button class="btn btn--secondary" style="margin-left:10px" @click="retryPreview">重试</button>
+        </div>
+        <iframe v-else-if="previewUrl && previewMime === 'application/pdf'" :src="previewUrl" title="附件 PDF" />
+        <img v-else-if="previewUrl && previewMime.startsWith('image/')" :src="previewUrl" :alt="previewName" />
+        <div v-else-if="previewUrl" class="preview-message">此格式暂不支持在线预览，请点「下载」查看</div>
+        <div v-else class="preview-message">{{ previewBusy ? '正在读取附件…' : '' }}</div>
       </div>
-      <iframe v-else-if="previewUrl && previewMime === 'application/pdf'" :src="previewUrl" title="附件 PDF" />
-      <img v-else-if="previewUrl && previewMime.startsWith('image/')" :src="previewUrl" :alt="previewName" />
-      <div v-else-if="previewUrl" class="preview-message">此格式暂不支持在线预览，请点「下载」查看</div>
-      <div v-else class="preview-message">{{ previewBusy ? '正在读取附件…' : '' }}</div>
-    </div>
-    <template #footer>
-      <a v-if="previewUrl && previewTarget" class="btn btn--secondary" :href="previewUrl" :download="previewName">下载</a>
-      <button class="btn btn--primary" @click="previewOpen = false">关闭</button>
-    </template>
-  </el-dialog>
+      <template #footer>
+        <a v-if="previewUrl && previewTarget" class="btn btn--secondary" :href="previewUrl" :download="previewName">下载</a>
+        <button class="btn btn--primary" @click="previewOpen = false">关闭</button>
+      </template>
+    </el-dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
