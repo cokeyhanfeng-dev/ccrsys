@@ -1767,9 +1767,12 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> custList = (List<Map<String, Object>>) result.get("customer");
-        if (custList == null) {
-            custList = new ArrayList<>();
-        }
+        // §2026-09-16 上游空结果用 List.of() 返回(不可变;snapshotCustomer 三条出口与 realtimeCustomer
+        // 空号分支皆是),原仅兜 null,非空但不可变时下方 custList.add(row) 抛 UnsupportedOperationException。
+        // 触发场景=快照包按客户号匹配不到(subject_id 是数仓真实号,申请落的却是手工号/占位号)且
+        // customer_info_json 有人工值 → 档案页 500;新增客户(NEW 占位号)同此。
+        // 统一复制为可写列表;元素引用不变,row 上的覆写仍作用于 result 原有行。
+        custList = custList == null ? new ArrayList<>() : new ArrayList<>(custList);
         boolean manualOnly = custList.isEmpty()
                 || "MANUAL".equals(custList.get(0).get("dataSource"));
         Map<String, Object> row = manualOnly ? new LinkedHashMap<>() : custList.get(0);
