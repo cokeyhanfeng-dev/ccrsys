@@ -321,9 +321,21 @@ public class ApprovalServiceImpl implements ApprovalService {
 
         // 整单链锚定:贷款=当前在途分项中有效利率最低者;存款=原流程(首个分项)。
         // 调价后或历史申请整单链为空 → 按锚定分项要素重算并刷新申请单冻结字段(§8.6 重锚定)
+        //
+        // 存量新增(§docs/43):整单链由<b>新增分项</b>锚定——存量行(source_split_no 非空)不匹配矩阵、
+        // 只是搭链上送,若其利率最低而被选为锚点,会拿存量行要素算出另一条链,与提交冻结链分叉。
         CcrPricingItem anchor = routingItems.get(0);
         if (!deposit) {
-            for (CcrPricingItem i : routingItems) {
+            List<CcrPricingItem> anchorCandidates = routingItems;
+            if (isMixedExistingNew(application)) {
+                List<CcrPricingItem> newOnly = routingItems.stream()
+                        .filter(i -> StrUtil.isBlank(i.getSourceSplitNo())).toList();
+                if (!newOnly.isEmpty()) {
+                    anchorCandidates = newOnly;
+                    anchor = newOnly.get(0);
+                }
+            }
+            for (CcrPricingItem i : anchorCandidates) {
                 if (effectiveRates.get(i.getId()) != null
                         && effectiveRates.get(i.getId()).compareTo(effectiveRates.get(anchor.getId())) < 0) {
                     anchor = i;
@@ -2355,11 +2367,16 @@ public class ApprovalServiceImpl implements ApprovalService {
         return "INDIVIDUAL".equals(app.getCustomerScope()) ? "LOAN_PERSONAL" : "LOAN_PUBLIC";
     }
 
-    /** 存量/新增判定:优先申请授信快照 businessType(NEW/EXISTING),回退原执行利率非空即存量 */
+    /** 存量/新增判定:优先申请授信快照 businessType(NEW/EXISTING),回退原执行利率非空即存量。
+     *  <p>EXISTING_NEW(存量新增,docs/43):整单按新增;须与提交路由 resolveNewOrExisting 同口径,
+     *  否则审批调价重算链与提交冻结链分叉。</p> */
     private String routeNewOrExisting(CcrApplication app, CcrPricingItem item) {
         if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
             try {
                 String bt = JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType");
+                if ("EXISTING_NEW".equals(bt)) {
+                    return "NEW";
+                }
                 if ("NEW".equals(bt) || "EXISTING".equals(bt)) {
                     return bt;
                 }
@@ -2368,6 +2385,19 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
         }
         return item.getOriginalRate() != null ? "EXISTING" : "NEW";
+    }
+
+    /** 是否「存量新增」申请(§docs/43):credit_info_json.businessType = EXISTING_NEW。
+     *  <p>该类单整单链由新增分项(手工录入,source_split_no 空)锚定;存量行(数仓带出)不匹配矩阵、搭链上送。</p> */
+    private boolean isMixedExistingNew(CcrApplication app) {
+        if (StrUtil.isBlank(app.getCreditInfoJson())) {
+            return false;
+        }
+        try {
+            return "EXISTING_NEW".equals(JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType"));
+        } catch (Exception ignore) {
+            return false;
+        }
     }
 
     /** 客户类型:PERSONAL 个人;申请提交的企业性质优先,数仓带出兜底,缺省 NON_SOE */

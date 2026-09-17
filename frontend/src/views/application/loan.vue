@@ -525,8 +525,12 @@
           <select class="form-select" v-model="form.businessType" @change="onBusinessTypeChange">
             <option value="EXISTING">存量调息(现有贷款合同)</option>
             <option value="NEW">新增授信(拟签合同)</option>
+            <!-- 存量新增(§docs/43):存量协议下混合存量分项(数仓带出)+新增分项(手工录入),整单按新增审批 -->
+            <option value="EXISTING_NEW">存量新增(原协议下新增授信分项)</option>
           </select>
         </div>
+        <!-- 仅存量调息:本块是「协议额度只读展示」。存量新增不纳入——其定档金额按口径手工录入(§docs/43 口径3),
+             须走下方 else 分支显示「总授信额度」输入框,否则客户经理无处录入本次总授信额度 -->
         <template v-if="form.businessType === 'EXISTING'">
           <!-- 存量调息授信概览只保留授信总金额(选中协议后=协议额度,只读带出),去掉拆分细项合计(§2026-08-25 精简展示;超限仍走协议区 warning 条) -->
           <div class="credit-overview__item credit-overview__item--static">
@@ -545,7 +549,7 @@
       </div>
 
       <!-- 新增授信(NEW)申请综合利率(§2026-09-03 用户要求:存量协议区已展示原/申请综合;NEW 无原执行利率,仅展示本次申请的加权综合利率,随分项金额/利率实时联动;总额=手工录入授信总额,未录显示 —) -->
-      <div v-if="form.businessType === 'NEW'" class="agreement-blend">
+      <div v-if="!isExistingLike" class="agreement-blend">
         <div class="agreement-blend__label">申请综合利率 <span class="agreement-blend__formula" title="综合利率 = (分项1金额×分项1申请利率 + 分项2金额×分项2申请利率 + …) ÷ 本次总授信额度">按分项加权</span></div>
         <div class="agreement-blend__rates">
           <span>申请综合 <b>{{ blendRequestedRateText }}</b></span>
@@ -554,7 +558,7 @@
       </div>
 
       <!-- 存量授信协议(需求六:每份协议独立申请不可合并;2026-09-03 用户确认版式:表内选择——选择框嵌在「授信协议编号」列,选中后同行带出总额/日期/状态/到期,选项只放协议号;数仓无协议(含集团,集团查询不带协议)→手工补录三字段;综合利率块保留原位) -->
-      <div v-if="form.businessType === 'EXISTING'" class="agreement-block">
+      <div v-if="isExistingLike" class="agreement-block">
         <template v-if="creditAgreements.length">
           <div class="agreement-table">
             <table>
@@ -645,7 +649,7 @@
       </template>
 
       <!-- 需求(2026-09-01 用户拍板):存量调息自动带入数仓拆分项(全部有效拆分项渲染为分项卡,可删除/改利率/不调息);新增仍手工录入 -->
-      <div v-if="form.businessType === 'EXISTING' && (creditSplits.length || (isGroup && groupSplits.length))" class="split-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div v-if="isExistingLike && (creditSplits.length || (isGroup && groupSplits.length))" class="split-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span class="stat-card__sub">{{ isGroup
           ? `集团协议成员拆分项共 ${groupSplits.length} 项,当前协议「${currentAgreementNo || '未选'}」`
           : `数仓拆分项共 ${creditSplits.length} 项,当前协议「${currentAgreementNo || '未选'}」名下 ${agreementSplits.length} 项` }}</span>
@@ -659,6 +663,9 @@
             授信方案分项{{ cnOrdinal(idx + 1) }}
             <span v-if="isGroup && g.memberCustomerNo" class="guarantee-item__member">{{ memberNameOf(g.memberCustomerNo) }}</span>
             <span class="badge badge--info">{{ guaranteeTypeText(g.guaranteeType) }}</span>
+            <!-- 来源标记(§docs/43):数仓带出的存量拆分项标「存量」、客户经理手工录入行标「新增」。
+                 纯展示标识,不承载编辑权限,也不参与矩阵/链路判定(整单按新增走) -->
+            <span class="badge" :class="g.sourceSplitNo ? 'badge--neutral' : 'badge--info'">{{ g.sourceSplitNo ? '存量' : '新增' }}</span>
             <span v-if="g.sourceSplitNo" class="badge badge--info">拆分项 {{ g.sourceSplitNo }}</span>
             <span v-if="g.guaranteeType === 'MORTGAGE'" class="badge badge--neutral">抵押物 {{ g.mortgages.length }} 项</span>
             <span v-else-if="g.guaranteeType === 'GUARANTEE'" class="badge badge--neutral">保证人 {{ g.guarantors.length }} 人</span>
@@ -691,7 +698,7 @@
             <label class="form-field__label">授信金额(万元) <span class="req">*</span></label>
             <input class="form-input form-input--amount" v-model="g.amount" type="number" min="0" max="999999999.99" step="0.0001" @keydown="onNumKeydown" />
           </div>
-          <div class="form-field" v-if="form.businessType === 'EXISTING'">
+          <div class="form-field" v-if="isExistingLike">
             <label class="form-field__label">原利率(%)</label>
             <input class="form-input form-input--amount" v-model="g.originalRate" type="number" min="0" max="100" step="0.000001" @keydown="onNumKeydown" />
             <div class="form-hint">数仓带出,可修改</div>
@@ -841,7 +848,9 @@
             </div>
             <div class="form-field">
               <label class="form-field__label">基线值</label>
-              <input v-if="c.metricCode !== 'OTHER'" class="form-input form-input--amount" v-model="c.baselineValue" type="number" min="0" step="0.0001" placeholder="默认带出当前贡献度，可修改" @keydown="onNumKeydown" />
+              <!-- 只读(§2026-09-16 用户拍板:基线一律以数仓为准,客户经理不可手工修改)。
+                   此前可编辑 + 后端「前端传值优先」→ 可改小基线绕过「目标须高于基线」校验。 -->
+              <div v-if="c.metricCode !== 'OTHER'" class="commitment-static commitment-baseline">{{ baselineText(c) }}</div>
               <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
@@ -874,20 +883,13 @@
                 <option value="%">%</option>
               </select>
             </div>
-            <!-- 适用范围不再手动选择(§2026-08-26 用户要求:按客户已填关联人自动匹配,addCommitment 时判定) -->
-            <div class="form-field" v-if="form.customerScope === 'GROUP'">
-              <label class="form-field__label">成员</label>
-              <select class="form-select" v-model="c.memberCustomerNo">
-                <option value="">集团整体</option>
-                <option v-for="m in selectedMembers" :key="m.memberCustomerNo" :value="m.memberCustomerNo">
-                  {{ m.memberName || m.memberCustomerNo }}
-                </option>
-              </select>
-            </div>
+            <!-- 原「成员」归属下拉已删除(§2026-09-16 用户拍板):集团承诺一律按集团编号判断。
+                 数仓 dw_contribution_metric 已按集团号汇总分指标行,集团承诺直接按集团号取基线,
+                 与申请页集团贡献度面板同口径;不再需要把承诺拆到成员头上。 -->
           </div>
         </div>
       </div>
-      <div class="empty-line" v-else>暂未录入承诺,可点击下方按钮添加</div>
+      <div class="empty-line" v-else>暂未录入承诺，请点击下方「添加承诺指标」至少录入一条</div>
       <button class="btn btn--secondary" style="margin-top:8px" @click="addCommitment">＋ 添加承诺指标</button>
 
       <!-- 材料附件(他行融资 Excel 导入在融资情况步;其他附件前端暂存,随草稿/提交上传) -->
@@ -1162,7 +1164,6 @@ interface CommitmentRow {
   /** 承诺类型"其它"手工目标描述(金额或文本,§6.4;后端 application_commitment 未接收字段,登记依赖) */
   commitmentDesc: string
   unit: string
-  memberCustomerNo: string
   /** 承诺完成截止日期(在什么时间点内完成,审批端拟达成贡献度同步展示) */
   endDate: string
 }
@@ -1193,8 +1194,8 @@ const form = reactive({
   customerName: '',
   customerNo: '',
   loanType: 'CORP_LOAN',
-  businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信
-  totalCredit: '', // 总授信额度(存量=所选授信协议额度自动带出;新增=手工录入)
+  businessType: 'NEW', // EXISTING 存量调息 / NEW 新增授信 / EXISTING_NEW 存量新增(§docs/43,整单按新增)
+  totalCredit: '', // 总授信额度(存量调息=所选授信协议额度自动带出;新增授信/存量新增=手工录入)
   creditAgreementNo: '', // 授信协议编号(存量=选中协议)
   creditInfo: initialCreditInfo(), // 授信协议补录/修正要素(存量带出可改;新增手工补录,协议号可空)
   amountTier: 'LT_5000',
@@ -1329,7 +1330,7 @@ const confirmSummary = computed(() => [
   { label: '客户名称', value: form.customerScope === 'GROUP' ? (form.groupName || '—') : (form.customerName || '—') },
   { label: '客户号', value: form.customerScope === 'GROUP' ? (form.groupNo || '—') : (form.customerNo || '—') },
   { label: '申请号', value: draft.applicationNo || '—' },
-  { label: '业务类型', value: form.businessType === 'EXISTING' ? '存量调息' : '新增授信' },
+  { label: '业务类型', value: businessTypeText.value },
   { label: '授信总额(万元)', value: applyTotalCreditText.value },
   { label: '申请利率', value: confirmRateText.value },
   { label: '额度笔数', value: `${form.guarantees.length} 笔` },
@@ -1452,7 +1453,8 @@ async function loadCustomerDetail() {
       // 需求(2026-09-01 用户拍板):存量调息自动带入数仓授信拆分项——全部有效拆分项渲染为分项卡
       // (担保方式/金额/原利率/措施带出,可删可不调息),不再手工逐条录入
       if (creditSplits.value.length && !userPickedBusinessType.value) {
-        if (form.businessType !== 'EXISTING') form.businessType = 'EXISTING'
+        // 存量类(存量调息/存量新增)保持已选值不动——勿把「存量新增」覆盖成「存量调息」(§docs/43)
+        if (!isExistingLike.value) form.businessType = 'EXISTING'
         ensureGuaranteeRows()
         selectedAgreementNo.value = ''
         autoSelectAgreement()
@@ -1663,10 +1665,22 @@ const creditTotalText = computed(() => {
   const n = Number(src)
   return n > 0 ? String(n) : '—'
 })
+/** 存量类业务类型:存量调息(EXISTING) / 存量新增(EXISTING_NEW,§docs/43)。
+ *  两者共用「协议选择、数仓拆分项带出、协议必选校验、集团存量恢复」等存量专属逻辑。
+ *  钱与流程(定档金额/矩阵匹配/审批链)则一律走新增侧——存量新增整单按新增算
+ *  (后端 resolveNewOrExisting 对 EXISTING_NEW 恒返 NEW,不做分项级区分)。 */
+const isExistingLike = computed(() =>
+  form.businessType === 'EXISTING' || form.businessType === 'EXISTING_NEW')
+/** 业务类型展示文案(含第三种「存量新增」,§docs/43) */
+const businessTypeText = computed(() => {
+  if (form.businessType === 'EXISTING') return '存量调息'
+  if (form.businessType === 'EXISTING_NEW') return '存量新增'
+  return '新增授信'
+})
 /** 授信总额(万元):存量=所选协议/手工补录额度;新增=申请页手工录入的总授信额度(form.totalCredit)。
  *  §2026-08-27 修复:提交确认弹窗原取分项金额合计,集团/多分项时与「申请页填的总授信额度」不一致 */
 const applyTotalCreditText = computed(() => {
-  if (form.businessType === 'EXISTING') return creditTotalText.value
+  if (isExistingLike.value) return creditTotalText.value
   const n = Number(form.totalCredit)
   return n > 0 ? String(n) : '—'
 })
@@ -1737,7 +1751,7 @@ function selectCreditAgreement(a: any, opts?: { skipAuto?: boolean }) {
   if (!skipAuto) {
     form.guarantees = form.guarantees.filter((g) => !g.sourceSplitNo)
   }
-  if (form.customerScope === 'GROUP' && form.businessType === 'EXISTING') {
+  if (form.customerScope === 'GROUP' && isExistingLike.value) {
     if (skipAuto) void loadGroupSplitsOnly(a.agreementNo)
     else void loadAndApplyGroupSplits(a.agreementNo)
   } else if (!skipAuto) {
@@ -1752,7 +1766,7 @@ function selectCreditAgreement(a: any, opts?: { skipAuto?: boolean }) {
 async function loadGroupSplitsOnly(groupCreditNo: string) {
   groupSplits.value = []
   groupSplitsLoaded.value = false
-  if (form.customerScope !== 'GROUP' || form.businessType !== 'EXISTING' || !form.groupNo || !groupCreditNo) return
+  if (form.customerScope !== 'GROUP' || !isExistingLike.value || !form.groupNo || !groupCreditNo) return
   try {
     const rows: any = await getGroupSplits(form.groupNo, groupCreditNo)
     groupSplits.value = Array.isArray(rows) ? rows : []
@@ -1778,6 +1792,8 @@ function autoSelectAgreement() {
 }
 /** 分项合计超过所选协议额度 → 软提示(集团无协议维度不适用;不拦截提交,以服务端提交校验为准) */
 const overAgreementCredit = computed(() => {
+  // 仅存量调息:分项合计=协议内拆分项,超协议额度才是异常。存量新增不纳入——
+  // 其分项合计=存量分项(≤协议额度)+ 本次新增分项(额外),必然可能超协议额度,纳入会误报
   if (form.businessType !== 'EXISTING' || form.customerScope === 'GROUP') return false
   const limit = Number(selectedAgreement.value?.creditAmount)
   return Number.isFinite(limit) && guaranteesTotalAmount.value > limit
@@ -1816,7 +1832,7 @@ watch(step, (s) => {
     loadExternalCreditResolution(false)
     // §2026-09-07 集团存量(docs/38):经理可能先切存量(协议自动选/未带出)后回客户信息步勾选成员再进本步,
     // 协议拆分项槽未带或新勾选成员名下拆分项未入 → 补一次带出(selectAllSplits 按 sourceSplitNo 去重幂等)
-    if (form.customerScope === 'GROUP' && form.businessType === 'EXISTING') {
+    if (form.customerScope === 'GROUP' && isExistingLike.value) {
       const gcNo = currentAgreementNo.value
       if (gcNo) {
         if (groupSplitsLoaded.value) selectAllSplits()
@@ -1884,7 +1900,7 @@ function generateMemberGuarantees() {
 
 /** 需求②(2026-08-24):存量按担保项拆分,不再按协议/合同自动生成分项(原 autoItemsFromContracts 已移除) */
 function onBusinessTypeChange() {
-  if (form.businessType === 'EXISTING') {
+  if (isExistingLike.value) {
     form.totalCredit = ''
     form.creditAgreementNo = ''
     form.creditInfo = initialCreditInfo()
@@ -1907,7 +1923,9 @@ function onBusinessTypeChange() {
       autoSelectAgreement()
       syncTotalCredit()
     }
-    ElMessage.info('存量调息:已自动带入数仓拆分项与担保措施,可调整利率或删除不需要的分项')
+    ElMessage.info(form.businessType === 'EXISTING_NEW'
+      ? '存量新增:已自动带入数仓拆分项与担保措施,可调整利率、删除分项或手工录入新增分项;整单按新增授信审批'
+      : '存量调息:已自动带入数仓拆分项与担保措施,可调整利率或删除不需要的分项')
   } else {
     // 新增授信:移除「存量自动带入的数仓拆分项」行(sourceSplitNo 非空,存量的拆分来源不应残留到新增),
     // 保留客户经理手工录入行(无 sourceSplitNo);仅当无分项时补一条空白。
@@ -2156,7 +2174,15 @@ function currentOf(code: string) {
   return m?.metricValue ?? '暂无数据'
 }
 /**
- * 选择承诺指标时,自动把当前贡献度值带出到基线值(可手工改)。
+ * 基线值只读展示(§2026-09-16 用户拍板:基线一律以数仓为准,客户经理不可手工修改)。
+ * 数值由选择指标时从当前贡献度带出;数仓无该指标数据时显示「暂无数据」(此时后端也不做基线比较)。
+ * 仍随草稿/提交上报,后端 saveCommitments 以 resolveBaseline 重算落库 → 展示值、校验值、落库值同源。
+ */
+function baselineText(c: CommitmentRow) {
+  return c.baselineValue === '' || c.baselineValue == null ? '暂无数据' : String(c.baselineValue)
+}
+/**
+ * 选择承诺指标时,自动把当前贡献度值带出到基线值(只读,不可手工改)。
  * 切到无带出指标/「其它」时须清空上一指标残留的基线值,否则旧指标基限误导当前指标(2026-09-02 bug)。
  */
 function onMetricChange(c: CommitmentRow) {
@@ -2186,7 +2212,8 @@ function addCommitment() {
     metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'BALANCE',
     baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
     // 适用范围概念已删除(§2026-08-26 用户要求):后台按客户号/证件号匹配,承诺不再携带 metricScope
-    memberCustomerNo: '', endDate: ''
+    // 成员归属概念已删除(§2026-09-16):集团承诺一律按集团号判断,不再携带 memberCustomerNo
+    endDate: ''
   })
 }
 /** 承诺截止日期可选项:今天 ~ 今天+12个月(2026-09-01 用户要求:拟达成目标截止日期只能在12个月内) */
@@ -2379,15 +2406,18 @@ function creditTotalAmount(): number {
   const n = Number(src)
   return Number.isFinite(n) && n > 0 ? n : 0
 }
-/** 集团本次申请额度(万元):新增授信(NEW)=本次手工录入的授信总额(form.totalCredit)优先(§2026-09-03 用户拍板:
- *  新增授信直接按本次填的授信走,不走数仓既有批复,GROUP001 手工 3000 不得被批复 10000 顶掉);
+/** 集团本次申请额度(万元):新增授信(NEW)与存量新增(EXISTING_NEW)=本次手工录入的授信总额(form.totalCredit)优先
+ *  (§2026-09-03 用户拍板:新增授信直接按本次填的授信走,不走数仓既有批复,GROUP001 手工 3000 不得被批复 10000 顶掉;
+ *   §docs/43 存量新增整单按新增,定档金额同为手工录入);
  *  存量调息(EXISTING)=所选集团授信协议额度优先(协议必选,§2026-09-03:协议=数仓 dw_group_credit_snapshot 集团授信行,
  *  creditAmount=该行批复总额;选中后授信总额=所选协议额度,与单户一致),回退既有批复总额/手工录入(兼容旧草稿);
  *  勾稽条 groupApplyAmount / 授信上下文校验 validateCreditContext / 落库 serializeGroupInfo 三处同口径。 */
 function groupApplyTotalAmount(): number {
   const approved = Number(groupCredit.value?.approvedTotalAmount)
   const manual = Number(form.totalCredit)
-  if (form.businessType === 'NEW') return manual > 0 ? manual : approved > 0 ? approved : 0
+  // 非存量调息(含 NEW 与 EXISTING_NEW)一律手工录入优先——必须用 `!== 'EXISTING'` 判定,
+  // 不能用 isExistingLike:那会把存量新增判进下方存量侧,定档金额被协议/批复额度顶掉(§docs/43 口径3)
+  if (form.businessType !== 'EXISTING') return manual > 0 ? manual : approved > 0 ? approved : 0
   // EXISTING:所选集团授信协议额度优先(creditAmount=该协议批复总额)
   const sel = Number(selectedAgreement.value?.creditAmount)
   return sel > 0 ? sel : approved > 0 ? approved : manual > 0 ? manual : 0
@@ -2408,9 +2438,9 @@ function validateGuaranteeTotal(): string | null {
     for (let i = 0; i < form.guarantees.length; i++) {
       if (isBlank(form.guarantees[i].memberCustomerNo)) return `第 ${i + 1} 条授信分项未选择涉及成员`
     }
-    // 集团存量调息(EXISTING)协议必选(§2026-09-03 对齐单户):协议=数仓 dw_group_credit_snapshot 集团授信行,
+    // 集团存量调息(EXISTING)/存量新增(EXISTING_NEW)协议必选(§2026-09-03 对齐单户):协议=数仓 dw_group_credit_snapshot 集团授信行,
     // 无集团授信行 → 不算有存量授信,不能走存量;有行但未选择 → 提示先选
-    if (form.businessType === 'EXISTING') {
+    if (isExistingLike.value) {
       if (!creditAgreements.value.length) return '该集团无存量授信协议(数仓未推送集团授信),不能按存量调息申请,请改选「新增授信」'
       if (isBlank(selectedAgreementNo.value)) return '请选择存量授信协议(集团授信协议编号)'
     }
@@ -2471,6 +2501,12 @@ function validateStep(s: number): string | null {
     // 分项金额勾稽(§2026-09-07):单户/集团分项申请金额合计不得超过授信总额,超过不能进入下一步
     const gErr = validateGuaranteeTotal()
     if (gErr) return gErr
+    // 存量新增(§docs/43):整单审批链由新增分项锚定,数仓带出的存量拆分项只是搭链上送、不匹配矩阵;
+    // 若全是存量行则无链可搭 —— 与后端 ApplicationSubmitServiceImpl 提交拦截同口径,前端先拦避免白填到提交
+    if (form.businessType === 'EXISTING_NEW' && form.guarantees.length
+        && !form.guarantees.some((g) => isBlank(g.sourceSplitNo))) {
+      return '存量新增须至少录入一个新增授信分项(数仓带出的存量拆分项不参与审批链定档);若本次仅调整存量分项,请改选「存量调息」'
+    }
     // 存量调息申请利率上限(§2026-09-07):贷款存量(EXISTING)申请利率不得高于原利率,进入下一步即拦
     const rErr = validateExistingRateCap()
     if (rErr) return rErr
@@ -2514,6 +2550,9 @@ function validateStep(s: number): string | null {
     }
   }
   if (s === 4) {
+    // 至少一条(§2026-09-16 用户要求):承诺为空放行会导致「无承诺申请」直达审批;
+    // 草稿保存走 autoSaveDraft 不经 validateStep,仍是「草稿宽松、提交把关」口径(后端 checkCommitmentCompleteness 同口径兜底)
+    if (commitments.value.length === 0) return '请至少录入一条拟达成贡献度承诺'
     for (let i = 0; i < commitments.value.length; i++) {
       const c = commitments.value[i]
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
@@ -2531,11 +2570,12 @@ function validateStep(s: number): string | null {
         }
         const tgt = Number(c.targetValue)
         if (Number.isNaN(tgt) || tgt < 0 || tgt > 999999999.99) return `第 ${i + 1} 条承诺目标值须在 0~999999999.99 之间(当前 ${c.targetValue})`
-        // 拟达成目标不得低于基线值(2026-09-14 用户要求):基线=申请时点当前贡献度,目标低于基线即负增长承诺;
-        // 基线可空(数仓无该指标数据/手工填写),为空时不比较;后端 saveCommitments 同口径兜底
+        // 拟达成目标须高于基线值(§2026-09-16 用户拍板收紧:原为"不得低于",等于基线即零增长承诺,现严格大于);
+        // 基线=申请时点当前贡献度(只读带出,数仓口径;集团申请按集团号,与后端 resolveBaseline 同口径),
+        // 为空(数仓无该指标数据)时不比较;后端 saveCommitments 同口径兜底
         const hasBaseline = c.baselineValue !== undefined && c.baselineValue !== null && c.baselineValue !== ''
-        if (hasBaseline && !Number.isNaN(bv) && tgt < bv) {
-          return `第 ${i + 1} 条承诺拟达成目标不得低于基线值(基线 ${c.baselineValue},目标 ${c.targetValue})`
+        if (hasBaseline && !Number.isNaN(bv) && tgt <= bv) {
+          return `第 ${i + 1} 条承诺拟达成目标须高于基线值(基线 ${c.baselineValue},目标 ${c.targetValue})`
         }
       }
     }
@@ -2758,7 +2798,6 @@ function buildPayload(): ApplicationPayload {
       targetValue: c.metricCode === 'OTHER' ? undefined : c.targetValue,
       commitmentDesc: c.metricCode === 'OTHER' ? c.commitmentDesc : undefined,
       unit: c.unit || 'WAN_YUAN',
-      memberCustomerNo: isBlank(c.memberCustomerNo) ? undefined : c.memberCustomerNo,
       endDate: isBlank(c.endDate) ? undefined : c.endDate
     })),
     applicantUserId: userStore.userInfo?.userId,
@@ -3209,12 +3248,19 @@ async function loadDraftIntoForm(id: number | string) {
   }
   // 已上传附件回显(材料附件步骤)
   try { await refreshAttachmentRows() } catch { /* 忽略 */ }
-  form.businessType = hasPlanned ? 'NEW' : 'EXISTING'
+  // 业务类型:优先读提交快照(§docs/43)。原实现只按"拟签合同"标志推断,存量新增是混合单
+  // (存量分项+手工新增分项) → hasPlanned 恒 true → 草稿一恢复就被静默还原成「新增授信」,类型丢失。
+  // 快照缺失或为老草稿时才回退原推断。
+  const savedBusinessType = parseExtJson(app.creditInfoJson)?.businessType
+  form.businessType = (savedBusinessType === 'EXISTING' || savedBusinessType === 'NEW'
+    || savedBusinessType === 'EXISTING_NEW')
+    ? savedBusinessType
+    : (hasPlanned ? 'NEW' : 'EXISTING')
   // 集团存量草稿协议态回显(§2026-09-03 协议必选):queryGroup 已把 dw_group_credit_snapshot 集团授信行注入
   // creditAgreements,按保存快照的协议号恢复选中态并重填 creditInfo,否则协议必选校验在草稿重提时误拦。
   // §2026-09-07 skipAuto:form.guarantees 已按明细恢复(含经理删除取舍),不能再 filter 重拉整单
   // (恢复即复活已删除拆分项)——只恢复协议态 + 拉协议拆分项槽供工具栏补带
-  if (form.customerScope === 'GROUP' && form.businessType === 'EXISTING') {
+  if (form.customerScope === 'GROUP' && isExistingLike.value) {
     const ci = parseExtJson(app.creditInfoJson)
     const savedNo = ci?.agreementNo || ''
     if (savedNo) {
@@ -3245,7 +3291,6 @@ async function loadDraftIntoForm(id: number | string) {
     targetValue: c.targetValue != null ? String(c.targetValue) : '',
     commitmentDesc: c.commitmentDesc || '',
     unit: c.unit || 'WAN_YUAN',
-    memberCustomerNo: c.memberCustomerNo || '',
     endDate: c.endDate ? String(c.endDate).slice(0, 10) : ''
   }))
 
@@ -3461,6 +3506,8 @@ async function loadDraftIntoForm(id: number | string) {
   .commitment-card__grid { grid-template-columns: 1fr; }
 }
 .commitment-static { min-height: 36px; display: flex; align-items: center; }
+/* 基线值只读展示:与同排控件同高对齐,等宽数字防抖动 */
+.commitment-baseline { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--color-text-main); }
 
 /* 外部授信决议：第四环节只读展示，临时下载地址始终留在服务端。 */
 .external-resolution-card {

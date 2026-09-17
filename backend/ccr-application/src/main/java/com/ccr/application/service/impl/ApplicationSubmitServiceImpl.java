@@ -535,13 +535,26 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
 
         // h) 逐分项算路由:置 ROUTING + 首节点 BRANCH_MANAGER + 终审岗位 + 冻结边界/矩阵行号(§8.6)
         //    整单交付改造:分项路由字段保留冻结(审计溯源),审批推进以申请单整单链为准
+        //
+        //    存量新增(§docs/43):单内分项按来源分两类处理——
+        //      · 新增行(source_split_no 空,客户经理手工录入)= 匹配 NEW 矩阵,并从中锚定整单链;
+        //      · 存量行(source_split_no 非空,数仓协议带出)= <b>不匹配矩阵、不参与定链</b>,
+        //        待整单链确定后原样搭链上送(路由字段与申请单整单链完全一致)。
+        //    故存量行没有自身的矩阵行号/边界语义,其 matched_matrix_no 即新增锚定出的那一行。
+        boolean mixedExistingNew = isMixedExistingNew(app);
         Map<String, Map<String, Object>> corpCache = new HashMap<>();
+        Map<Long, SubmitResponse.ItemRoute> routeByItemId = new HashMap<>();
         List<SubmitResponse.ItemRoute> itemRoutes = new ArrayList<>();
+        List<CcrPricingItem> carriedItems = new ArrayList<>();
         CcrPricingItem chainAnchorItem = null;
         RouteResult chainAnchorRoute = null;
         BigDecimal anchorRate = null;
         boolean isLoan = "LOAN".equals(app.getBusinessType());
         for (CcrPricingItem item : items) {
+            if (mixedExistingNew && StrUtil.isNotBlank(item.getSourceSplitNo())) {
+                carriedItems.add(item);
+                continue; // 存量行:不匹配矩阵,待整单链冻结后回填
+            }
             RouteResult route = rateMatrixRouter.calcRoute(buildRouteInput(app, item, groupCreditTotal, corpCache));
             item.setStatus(PricingItemStatus.ROUTING.getCode());
             item.setStartNodeCode(route.getStartNodeCode());
@@ -554,7 +567,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             // 完整审批链路冻结(§8.6):审批推进沿此链,保证与提交预览一致(矩阵驱动,可跳过无权限节点如GM)
             item.setRouteChain(JSONUtil.toJsonStr(route.getRouteChain()));
             pricingItemMapper.updateById(item);
-            itemRoutes.add(toItemRoute(item, route.getRouteChain()));
+            routeByItemId.put(item.getId(), toItemRoute(item, route.getRouteChain()));
             // 整单定链分项:贷款取利率最低分项(流程最深),存款取任一(链相同,取首个即可)
             if (chainAnchorItem == null) {
                 chainAnchorItem = item;
@@ -565,6 +578,32 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 chainAnchorItem = item;
                 chainAnchorRoute = route;
                 anchorRate = item.getRequestedRate();
+            }
+        }
+        // 存量新增:必须至少有一个新增分项——整单链由新增分项锚定,全是存量行则无链可搭(§docs/43)
+        if (mixedExistingNew && chainAnchorRoute == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "存量新增须至少录入一个新增授信分项(数仓带出的存量拆分项不参与审批链定档);"
+                            + "若本次仅调整存量分项,请改选「存量调息」");
+        }
+        // 存量行搭链:路由字段原样取新增锚定出的整单链,不匹配矩阵、无自身矩阵行号语义
+        for (CcrPricingItem item : carriedItems) {
+            item.setStatus(PricingItemStatus.ROUTING.getCode());
+            item.setStartNodeCode(chainAnchorRoute.getStartNodeCode());
+            item.setCurrentNodeCode(chainAnchorRoute.getStartNodeCode());
+            item.setRouteCode(chainAnchorRoute.getFinalNodeCode());
+            item.setBoundaryRate(chainAnchorRoute.getBoundaryRate());
+            item.setMatchedMatrixNo(chainAnchorRoute.getMatchedMatrixNo());
+            item.setDeptCode(chainAnchorRoute.getDeptCode());
+            item.setRouteChain(JSONUtil.toJsonStr(chainAnchorRoute.getRouteChain()));
+            pricingItemMapper.updateById(item);
+            routeByItemId.put(item.getId(), toItemRoute(item, chainAnchorRoute.getRouteChain()));
+        }
+        // 提交响应按分项录入原顺序组装(前端展示顺序与录入顺序一致)
+        for (CcrPricingItem item : items) {
+            SubmitResponse.ItemRoute r = routeByItemId.get(item.getId());
+            if (r != null) {
+                itemRoutes.add(r);
             }
         }
         // 整单链冻结到申请单(贷款=利率最低分项,存款=原流程;审批推进以此为准,§2026-08-29 整单交付)
@@ -1038,7 +1077,10 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         } catch (Exception ignore) {
             // 快照解析失败视为非存量调息,不拦截
         }
-        if ("EXISTING".equals(businessType) && StrUtil.isBlank(agreementNo)) {
+        // 存量新增(EXISTING_NEW,§docs/43)同属存量类,协议必选与存量调息同口径
+        // (申请页 validateStep 已用 isExistingLike 拦截,此处服务端兜底防绕过前端提交)
+        if (("EXISTING".equals(businessType) || "EXISTING_NEW".equals(businessType))
+                && StrUtil.isBlank(agreementNo)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                     "集团存量调息须选择存量授信协议(集团授信协议编号),请返回申请页选择后重新提交");
         }
@@ -1716,7 +1758,13 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     }
 
     /** 存量/新增判定:优先以申请授信快照中的授信业务类型(credit_info_json.businessType,NEW=新增授信/EXISTING=存量调息)为准;
-     *  该字段由前端申请页业务类型显式提交(§用户要求),不以分项原利率推断——原利率属存量贷款合同带出,不能代表授信新增/存量的判定口径 */
+     *  该字段由前端申请页业务类型显式提交(§用户要求),不以分项原利率推断——原利率属存量贷款合同带出,不能代表授信新增/存量的判定口径。
+     *
+     *  <p>EXISTING_NEW(存量新增,docs/43 §三):<b>恒返 NEW</b>。该返回值有两处作用——
+     *  其一,新增行据此按 NEW 匹配矩阵(存量行根本不过矩阵,由提交循环直接搭链上送,见 h 段);
+     *  其二,存量利率上限两道校验(existingRatePrecheck / checkExistingRateCap)首句均为
+     *  {@code if (!"EXISTING".equals(resolveNewOrExisting(...))) continue;},恒返 NEW 即整单跳过,
+     *  这正是「存量新增的存量行不受原执行利率上限约束」的口径实现(docs/43 口径 11)。</p> */
     private String resolveNewOrExisting(CcrApplication app, CcrPricingItem item) {
         // 存款按期限档设上限、D16b 无部门层级,矩阵无存量/新增之分,恒按新增路由
         // (存款存量账户反查带出的 originalRate 仅作展示,不得据此判 EXISTING 匹配不到矩阵行)
@@ -1726,6 +1774,11 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         if (StrUtil.isNotBlank(app.getCreditInfoJson())) {
             try {
                 String bt = JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType");
+                // 存量新增:恒返 NEW。必须显式判定,否则掉到下方逐分项回退——存量行(有 originalRate)返 EXISTING,
+                // 会反过来被存量利率上限校验拦住(口径:存量新增的存量行不受该约束)
+                if ("EXISTING_NEW".equals(bt)) {
+                    return "NEW";
+                }
                 if ("NEW".equals(bt) || "EXISTING".equals(bt)) {
                     return bt;
                 }
@@ -1734,6 +1787,20 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             }
         }
         return item.getOriginalRate() != null ? "EXISTING" : "NEW";
+    }
+
+    /** 是否「存量新增」申请(§docs/43):credit_info_json.businessType = EXISTING_NEW。
+     *  <p>该类单内分项按来源分两类:存量行(source_split_no 非空,数仓协议带出)不匹配矩阵、搭新增链上送;
+     *  新增行(source_split_no 空,客户经理手工录入)匹配 NEW 矩阵并锚定整单链。</p> */
+    private boolean isMixedExistingNew(CcrApplication app) {
+        if (StrUtil.isBlank(app.getCreditInfoJson())) {
+            return false;
+        }
+        try {
+            return "EXISTING_NEW".equals(JSONUtil.parseObj(app.getCreditInfoJson()).getStr("businessType"));
+        } catch (Exception ignore) {
+            return false;
+        }
     }
 
     /** 客户类型:PERSONAL/SOE/NON_SOE(申请提交的企业性质优先,数仓带出兜底,缺省 NON_SOE) */

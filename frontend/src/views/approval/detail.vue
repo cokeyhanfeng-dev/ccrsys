@@ -1244,7 +1244,8 @@ const applyBizTypeText = computed(() => {
   try {
     const raw = application.value.creditInfoJson
     const ci = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
-    return ci?.businessType === 'EXISTING' ? '存量调息' : ci?.businessType === 'NEW' ? '新增授信' : '—'
+    const bt = ci?.businessType
+    return bt === 'EXISTING' ? '存量调息' : bt === 'NEW' ? '新增授信' : bt === 'EXISTING_NEW' ? '存量新增' : '—'
   } catch {
     return '—'
   }
