@@ -889,12 +889,31 @@ public class ApprovalServiceImpl implements ApprovalService {
                 wrapper.in(CcrApplication::getStatus, statuses);
             }
         }
-        // 客户/集团名称模糊:匹配 JSON 快照键值(快照为系统序列化,键顺序/格式稳定;§2026-08-26)
+        // 客户/集团名称模糊(§2026-08-26;2026-09-17 修复恒不命中)
+        // 1) 必须用 JSON 函数取值再 LIKE:两列是 json 类型,JSON 列参与 LIKE 会被隐式转成 MySQL 的
+        //    JSON 序列化文本——冒号后带空格(形如 {"customerName": "xx"}),而这里拼的是无空格模式,
+        //    恒不命中(本地库实测 0 行,带空格 7 行)。JSON_EXTRACT 直接取值,不依赖序列化空格风格,
+        //    与决议书查询(ResolutionServiceImpl)同款写法。
+        // 2) 口径与 fillDisplayCustomerName 的展示同源:快照无名时列表名取自手工集团表 ccr_group /
+        //    数仓存量集团,查询须一并覆盖,否则「列表看得见名字、按名字搜不到」
+        //    (本地集团单 11/18 笔快照无 groupName)。
+        // 3) 两个 EXISTS 的内层表同样有 group_no 列,外层必须写全表名 ccr_application.group_no 限定,
+        //    否则列名优先解析成内层自身列,条件退化为恒真、误命中全部集团单。
         if (StrUtil.isNotBlank(keyword)) {
             String k = keyword.trim();
             wrapper.and(w -> w
-                    .like(CcrApplication::getCustomerInfoJson, "\"customerName\":\"" + k)
-                    .or().like(CcrApplication::getGroupInfoJson, "\"groupName\":\"" + k));
+                    .apply("JSON_UNQUOTE(JSON_EXTRACT(customer_info_json, '$.customerName'))"
+                            + " LIKE CONCAT('%', {0}, '%')", k)
+                    .or().apply("JSON_UNQUOTE(JSON_EXTRACT(group_info_json, '$.groupName'))"
+                            + " LIKE CONCAT('%', {0}, '%')", k)
+                    .or().apply("EXISTS (SELECT 1 FROM ccr_group g WHERE g.del_flag = '0'"
+                            + " AND g.group_no = ccr_application.group_no"
+                            + " AND g.group_name LIKE CONCAT('%', {0}, '%'))", k)
+                    .or().apply("EXISTS (SELECT 1 FROM dw_customer_group_snapshot d"
+                            + " WHERE d.group_no = ccr_application.group_no"
+                            + " AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2"
+                            + " WHERE d2.group_no = d.group_no)"
+                            + " AND d.group_name LIKE CONCAT('%', {0}, '%'))", k));
         }
         wrapper.orderByDesc(CcrApplication::getCreateTime);
         Page<CcrApplication> result = applicationMapper.selectPage(page, wrapper);
