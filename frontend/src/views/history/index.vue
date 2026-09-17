@@ -87,7 +87,9 @@
                 </div>
                 <div v-else-if="n.submittedCount != null" class="node-meta vote">
                   <el-progress :percentage="votePct(n)" :stroke-width="8" :show-text="false" :stroke-color="'var(--color-primary)'" />
-                  <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }} · 同意 {{ n.approveCount ?? '—' }} 票(通过线 ≥{{ n.requiredCount }})</span>
+                  <!-- 投票文案精简(§2026-09-17 用户要求):只留「已投 n/m」表示当前审了几人,
+                       去掉「同意 x 票(通过线 ≥y)」——票数与通过线不在客户经理侧展示 -->
+                  <span class="vote-text">已投 {{ n.submittedCount }}/{{ n.voterCount }}</span>
                 </div>
                 <div v-if="n.status === 'DONE' && n.comment" class="node-comment">意见：{{ n.comment }}</div>
               </div>
