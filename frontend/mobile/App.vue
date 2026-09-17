@@ -1,5 +1,5 @@
 <template><div class="mobile-shell">
-<header v-if="profile" class="app-head compact-head" :inert="choice||file ? '' : undefined"><button v-if="selected||page==='messages'" class="icon-button" aria-label="返回" @click="selected?back():navigate('home')"><AppIcon name="back"/></button><div class="head-title"><AppIcon v-if="!selected&&page==='home'" name="home" class="head-home-icon"/><span>{{selected?'审批详情':page==='home'?'审批工作台':page==='mine'?'我的账户':page==='messages'?'我的消息':page==='done'?'已办申请':'待办申请'}}</span></div><div v-if="!selected" class="head-actions"><button v-if="page!=='messages'" class="icon-button" aria-label="消息" @click="navigate('messages')"><AppIcon name="messages"/></button><button v-if="page!=='mine'" class="icon-button" aria-label="刷新" :disabled="loading" @click="refresh"><AppIcon name="refresh" :class="{'is-spinning':loading}"/></button></div></header>
+<header v-if="profile" class="app-head compact-head" :inert="choice||file ? '' : undefined"><button v-if="selected||page==='messages'" class="icon-button" aria-label="返回" @click="selected?back():navigate('home')"><AppIcon name="back"/></button><div class="head-title"><AppIcon v-if="!selected&&page!=='messages'" :name="page" class="head-home-icon"/><span>{{selected?'审批详情':page==='home'?'审批工作台':page==='mine'?'我的账户':page==='messages'?'我的消息':page==='done'?'已办申请':'待办申请'}}</span></div><div v-if="!selected" class="head-actions"><button v-if="page!=='messages'" class="icon-button" aria-label="消息" @click="navigate('messages')"><AppIcon name="messages"/></button><button v-if="page!=='mine'" class="icon-button" aria-label="刷新" :disabled="loading" @click="refresh"><AppIcon name="refresh" :class="{'is-spinning':loading}"/></button></div></header>
 <main v-if="!profile" class="scroll-body"><div v-if="showAuthLoading(booting,authBusy)" class="auth-loading" role="status" aria-live="polite"><span class="auth-spinner"></span><h1>正在安全登录</h1><p>正在验证身份，请稍候…</p></div><div v-else class="login-panel"><div class="brand-mark">审</div><h1>{{authDenied?'暂无审批权限':'登录未完成'}}</h1><div v-if="error" class="error-box" role="alert">{{error}}</div><template v-if="!authDenied"><p v-if="authMode==='oa'" class="subtext">请从 OA 工作台重新打开本应用。</p><button v-else class="primary full-width" @click="login">重新验证有度身份</button></template></div></main>
 <template v-else>
 <main class="scroll-body" ref="scroller" :inert="choice||file ? '' : undefined"><div v-if="error" class="error-box" role="alert">{{error}}</div><p v-if="loading" class="loading">正在加载…</p>
@@ -10,7 +10,7 @@
 <template v-else>
 <template v-if="page==='home'"><div class="role-line"><div><div class="greeting">{{profile.nickName||profile.userName}}，您好</div><p class="subtext">{{profile.orgName}}</p></div><div class="avatar">{{profile.nickName?.slice(-1)||'审'}}</div></div><section class="summary-card summary-compact"><div class="summary-primary"><span>待我审批</span><div><b>{{loaded?pending.length:'—'}}</b><span>笔申请</span></div></div><div class="summary-types"><button @click="filter='loan';navigate('todo')"><span>贷款</span><b>{{loaded?pending.filter(t=>t.loan).length:'—'}}</b><span>›</span></button><button @click="filter='deposit';navigate('todo')"><span>存款</span><b>{{loaded?pending.filter(t=>!t.loan).length:'—'}}</b><span>›</span></button></div></section><div class="section-heading"><h2>待办申请</h2><button class="text-link" @click="navigate('todo')">查看全部 ›</button></div></template>
 <div v-else class="list-toolbar"><label class="list-search"><AppIcon name="search"/><input v-model="query" type="search" aria-label="搜索申请" placeholder="客户名称 / 申请编号"></label><select v-if="page==='todo'" v-model="filter" aria-label="业务类型筛选"><option value="all">全部类型</option><option value="loan">贷款</option><option value="deposit">存款</option></select></div>
-<button v-for="item in visible" :key="item.kind+item.id" class="task" @click="open(item)"><div class="task-identity"><h3>{{item.name}}</h3><span class="task-number">{{item.applicationNo}}</span></div><div class="task-context"><span class="business-badge" :class="item.loan?'business-loan':'business-deposit'">{{item.loan?'贷款':'存款'}}</span><span class="tag">{{page==='done'?(stateNames[item.status]||item.status):(nodeNames[item.node]||'待审批')}}</span></div><div class="task-values"><div><div class="value-caption">申请金额（万元）</div><div class="numeric">{{fmt(item.amount)}}</div></div><div><div class="value-caption">{{page==='done'?'办理时间':'申请利率'}}</div><div class="numeric rate-blue" :class="{'small-value':page==='done'}">{{page==='done'?date(item.operationTime):range(item.rates)}}</div></div></div><div class="task-foot"><span>{{page==='done'?'已办记录':`${item.items.length} 个分项`}}</span><span>查看详情 ›</span></div></button>
+<button v-for="item in visible" :key="item.kind+item.id" class="task" @click="open(item)"><div class="task-identity"><h3>{{item.name}}<span class="business-badge" :class="item.loan?'business-loan':'business-deposit'">{{item.loan?'贷款':'存款'}}</span></h3><span class="task-number">{{item.applicationNo}}</span></div><div class="task-values"><div><div class="value-caption">申请金额（万元）</div><div class="numeric">{{fmt(item.amount)}}</div></div><div><div class="value-caption">{{page==='done'?'办理时间':'申请利率'}}</div><div class="numeric rate-blue" :class="{'small-value':page==='done'}">{{page==='done'?date(item.operationTime):range(item.rates)}}</div></div></div><div class="task-foot"><span v-if="page==='done'" class="tag">{{stateNames[item.status]||item.status||'已办记录'}}</span><span v-else>{{item.items.length}} 个分项</span><span>查看详情 ›</span></div></button>
 <div v-if="!loading&&!visible.length" class="empty">{{error?'暂未取得数据，请刷新重试':query?'没有匹配的申请':page==='done'?'暂无已办申请':'暂无待办申请'}}</div><button v-if="page==='done'&&done.length<doneTotal" class="secondary full-width" :disabled="loading" @click="loadDone(true)">加载更多（{{done.length}} / {{doneTotal}}）</button>
 </template></div>
 </main>
@@ -23,17 +23,18 @@
 </div></template>
 <script setup>
 import {ref,computed,onMounted,onBeforeUnmount} from 'vue';
+import {restoreOaToken} from './oa.mjs';
 import {authFailure,showAuthLoading} from './auth-presentation.mjs';
 import {request,session} from './api.mjs';import {getYouduToken} from './youdu.mjs';
 import {tasks,detail,fmt,date,range} from './data.mjs';
-import {NODE_LABELS as nodeNames,APP_STATUS as stateNames} from '../src/utils/dict';
+import {APP_STATUS as stateNames} from '../src/utils/dict';
 import AppIcon from './components/AppIcon.vue';import ProfileView from './components/ProfileView.vue';
 import MessageList from './components/MessageList.vue';
 import DetailView from './components/DetailView.vue';import ActionSheet from './components/ActionSheet.vue';import FilePreview from './components/FilePreview.vue';
 const props=defineProps({oaCallback:{type:Object,default:()=>({present:false})}});
 const authMode=ref(props.oaCallback.present?'oa':session.source());
 if(props.oaCallback.present)session.rememberSource('oa');
-let oaTicket=props.oaCallback.ticket;
+let oaTicket=props.oaCallback.ticket,oaSystemToken=props.oaCallback.token;
 const booting=ref(true),authDenied=ref(false);
 const profile=ref(null),authBusy=ref(false),loading=ref(false),loaded=ref(false),error=ref(''),pending=ref([]),done=ref([]),doneTotal=ref(0),page=ref('home'),query=ref(''),filter=ref('all'),selected=ref(null),record=ref(null),choice=ref(null),file=ref(null),notice=ref(''),scroller=ref(null);
 const messageVersion=ref(0);
@@ -49,6 +50,7 @@ async function login(){
     if(authMode.value==='oa'){
       const ticket=oaTicket;oaTicket=undefined;
       if(props.oaCallback.error)throw Error(props.oaCallback.error);
+      if(oaSystemToken){const token=oaSystemToken;oaSystemToken=undefined;profile.value=await restoreOaToken(token,{session,request});page.value='home';await refresh();return;}
       if(!ticket)throw Error('请从 OA 工作台重新打开应用，取得新的登录票据');
       data=await request('/oa/login',{method:'POST',body:{ticket}});
     }else{
