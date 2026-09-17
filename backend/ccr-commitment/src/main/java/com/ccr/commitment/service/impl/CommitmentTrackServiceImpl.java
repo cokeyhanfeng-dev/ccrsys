@@ -124,6 +124,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
             List<CcrCommitmentTrack> expired = trackMapper.selectList(
                     new LambdaQueryWrapper<CcrCommitmentTrack>()
                             .eq(CcrCommitmentTrack::getStatus, STATUS_TRACKING)
+                            // 严格小于今天:截止日当天不定案、次日才结算。这是有意为之,给数仓 T+1 出数留缓冲,
+                            // 不是缺陷(2026-09-16 曾误判为 bug 改为 .le,核实后已回退)。
                             .lt(CcrCommitmentTrack::getEndDate, LocalDate.now())
                             .last("LIMIT " + SETTLE_BATCH));
             if (expired.isEmpty()) {

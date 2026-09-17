@@ -32,7 +32,13 @@ public class CommitmentInput {
     /** 指标范围:PUBLIC/PRIVATE_SELF/RELATED/GROUP/GROUP_MEMBER */
     private String metricScope;
 
-    /** 集团成员客户号(集团场景) */
+    /**
+     * 集团成员客户号(集团场景)。
+     *
+     * <p>2026-09-16 起<b>已废弃</b>:承诺去掉成员维度,集团承诺一律按集团编号判断
+     * (数仓 dw_contribution_metric 已按集团号汇总分指标行)。字段保留仅为兼容存量前端 payload,
+     * 后端 saveCommitments 起不再取用,统一按 null 落库。</p>
+     */
     private String memberCustomerNo;
 
     /** 承诺类型"其它"(§6.4)手工目标描述(金额或文本);该类型下 target_value 可空 */

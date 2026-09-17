@@ -918,15 +918,30 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 }
             }
         }
-        // 拟达成贡献度承诺:截止日期必填(§7.1 提交校验;草稿保存 saveCommitments 不强制,仅提交时把关)
-        checkCommitmentCompleteness(app);
+        // 拟达成贡献度承诺:至少一条 + 截止日期必填(§7.1 提交校验;草稿保存 saveCommitments 不强制,仅提交时把关)。
+        // §2026-09-16 仅对含贷款分项的申请校验:存款申请页无承诺录入入口,若一并对存款要求「至少一条」则存款业务
+        // 全线阻断(原先承诺为空时 for 不执行、恰好放行,是存款单的隐性兼容);混合单含贷款分项 → 仍需承诺。
+        boolean hasLoanItem = items.stream().anyMatch(it -> "LOAN_CONTRACT".equals(it.getPricingCarrierType()));
+        if (hasLoanItem) {
+            checkCommitmentCompleteness(app);
+        }
     }
 
-    /** 拟达成贡献度承诺完整性(§7.1):已录承诺的截止日期(end_date)必填,缺失阻断提交 */
+    /**
+     * 拟达成贡献度承诺完整性(§7.1;2026-09-16 新增「至少一条」):提交时至少录入一条拟达成贡献度承诺,
+     * 且已录承诺的截止日期(end_date)必填。仅在提交链路调用——草稿保存走 saveCommitments,不经过本方法,
+     * 客户经理可先存半成品(与 endDate 同款「草稿宽松、提交把关」口径)。
+     *
+     * <p>调用前提:申请含贷款分项(调用点已判定)。存款申请无承诺录入入口,不适用本校验。</p>
+     */
     private void checkCommitmentCompleteness(CcrApplication app) {
         List<CcrApplicationCommitment> commitments = commitmentMapper.selectList(
                 new LambdaQueryWrapper<CcrApplicationCommitment>()
                         .eq(CcrApplicationCommitment::getApplicationId, app.getId()));
+        if (commitments.isEmpty()) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "请至少录入一条拟达成贡献度承诺后提交");
+        }
         for (CcrApplicationCommitment c : commitments) {
             if (c.getEndDate() == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),

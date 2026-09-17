@@ -48,6 +48,7 @@ import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.read.SysUserRead;
 import com.ccr.application.support.AppLoginUser;
+import com.ccr.application.support.CommitmentBaselineResolver;
 import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.enums.ErrorCode;
 import com.ccr.common.exception.ServiceException;
@@ -503,12 +504,17 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         if (commitments == null) {
             return;
         }
-        // 基线后端自动取数回填需主客户号(集团申请 customer_no 为空;成员级按成员客户号取数)
+        // 基线自动取数需取数号:单户取 customer_no,集团申请该列为空(只落 group_no)故一并取出,
+        // 由 resolveBaseline 按「单户客户号 / 集团集团号」二选一(§2026-09-16 承诺去掉成员维度)
         String customerNo = null;
+        String groupNo = null;
         List<Map<String, Object>> appRows = jdbcTemplate.queryForList(
-                "SELECT customer_no customerNo FROM ccr_application WHERE id = ?", applicationId);
-        if (!appRows.isEmpty() && appRows.get(0).get("customerNo") != null) {
-            customerNo = appRows.get(0).get("customerNo").toString();
+                "SELECT customer_no customerNo, group_no groupNo FROM ccr_application WHERE id = ?", applicationId);
+        if (!appRows.isEmpty()) {
+            Object cn = appRows.get(0).get("customerNo");
+            Object gn = appRows.get(0).get("groupNo");
+            customerNo = cn == null ? null : cn.toString();
+            groupNo = gn == null ? null : gn.toString();
         }
         Map<String, Long> itemNoToId = new HashMap<>();
         for (CcrPricingItem pi : createdItems) {
@@ -541,20 +547,23 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             commitment.setPricingItemId(resolvedItemId);
             commitment.setMetricCode(c.getMetricCode());
             commitment.setTargetType(c.getTargetType());
-            BigDecimal baseline = resolveBaseline(c, customerNo, applicationId);
-            // 拟达成目标不得低于基线值(§2026-09-14 用户要求):基线=申请时点当前值,目标低于基线即负增长承诺,
-            // 前端提交校验同口径;此处兜底防绕过前端(直连 curl)提交。基线为空(数仓无数据/字典无该码)时不比较。
+            BigDecimal baseline = resolveBaseline(c, customerNo, groupNo);
+            // 拟达成目标须高于基线值(§2026-09-16 用户拍板收紧:原为"不得低于",等于基线即零增长承诺,现严格大于):
+            // 基线=申请时点当前贡献度,前端 validateStep(4) 同口径;此处兜底防绕过前端(直连 curl)提交。
+            // 基线为空(数仓无数据/字典无该码/成员级无数仓值)时不比较。
             if (!isOther && baseline != null && c.getTargetValue() != null
-                    && c.getTargetValue().compareTo(baseline) < 0) {
+                    && c.getTargetValue().compareTo(baseline) <= 0) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
-                        "承诺拟达成目标不得低于基线值(基线 " + baseline.stripTrailingZeros().toPlainString()
+                        "承诺拟达成目标须高于基线值(基线 " + baseline.stripTrailingZeros().toPlainString()
                                 + ",目标 " + c.getTargetValue().stripTrailingZeros().toPlainString() + ")");
             }
             commitment.setBaselineValue(baseline);
             commitment.setTargetValue(isOther ? null : c.getTargetValue());
             commitment.setUnit(StrUtil.blankToDefault(c.getUnit(), "WAN_YUAN"));
             commitment.setMetricScope(StrUtil.blankToDefault(c.getMetricScope(), "PUBLIC"));
-            commitment.setMemberCustomerNo(c.getMemberCustomerNo());
+            // 成员归属已废弃(§2026-09-16 用户拍板:集团承诺一律按集团编号判断,数仓已按集团号汇总贡献度),
+            // 统一落 null。存量行的 member_customer_no 保留不动——承诺跟踪表按它结算,不迁移。
+            commitment.setMemberCustomerNo(null);
             commitment.setCommitmentDesc(c.getCommitmentDesc());
             commitment.setEndDate(c.getEndDate());
             commitmentMapper.insert(commitment);
@@ -562,15 +571,18 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
     }
 
     /**
-     * 承诺基线(§基线=申请时点当前值,没有就是空的):前端传入值优先;
-     * 为空时后端按主客户(成员级取成员客户号)数仓最近批次回填,并归并关联人同码值(§关联人贡献度归并);
-     * 无数据/OTHER 手工承诺保持空。
+     * 承诺基线(§基线=申请时点当前值,没有就是空的):<b>一律以数仓为准</b>,不再采信前端传入的 baselineValue。
+     *
+     * <p>2026-09-16 用户拍板:基线不可由客户经理手工修改。此前「前端传入值优先」可被改小基线绕过
+     * 「目标须高于基线」校验,且落库 baseline_value 为改后值,审批人从页面无从察觉。</p>
+     *
+     * <p>取数号(§2026-09-16 承诺去掉成员维度):<b>单户按客户号,集团申请(customer_no 为空)按集团号</b>——
+     * 数仓 dw_contribution_metric 已按集团编号汇总分指标行,与申请页集团贡献度面板同口径。
+     * 单户按客户号取数时归并该客户名下关联人同码值(§关联人贡献度归并),集团号无关联人故不归并;
+     * 无数据/OTHER 手工承诺保持空。</p>
      */
-    private BigDecimal resolveBaseline(CommitmentInput c, String customerNo, Long applicationId) {
-        if (c.getBaselineValue() != null) {
-            return c.getBaselineValue();
-        }
-        String scopeCustNo = StrUtil.isNotBlank(c.getMemberCustomerNo()) ? c.getMemberCustomerNo() : customerNo;
+    private BigDecimal resolveBaseline(CommitmentInput c, String customerNo, String groupNo) {
+        String scopeCustNo = StrUtil.isNotBlank(customerNo) ? customerNo : groupNo;
         if (StrUtil.isBlank(scopeCustNo) || "OTHER".equals(c.getMetricCode())) {
             return null;
         }
@@ -589,19 +601,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         }
         List<Map<String, Object>> contribution = new ArrayList<>();
         contribution.add(mainRow);
-        // 成员级承诺按成员客户号单独取数,不归并关联人;其余归并申请录入关联人同码值
-        if (StrUtil.isBlank(c.getMemberCustomerNo()) && applicationId != null) {
-            List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                    "SELECT related_customer_no relatedCustomerNo FROM ccr_application_related_person"
-                            + " WHERE application_id = ? AND del_flag = '0'", applicationId);
-            Set<String> relatedNos = new LinkedHashSet<>();
-            for (Map<String, Object> rel : relations) {
-                Object no = rel.get("relatedCustomerNo");
-                if (no != null && !no.toString().isBlank()) {
-                    relatedNos.add(no.toString());
-                }
-            }
-            ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
+        // 单户按客户号取数时归并该客户名下关联人同码值;集团按集团号取数不归并(集团号无关联人)。
+        // §2026-09-16 口径收敛:改用 CommitmentBaselineResolver(与申请页 CustomerController 带出基线同一实现)。
+        // 此前此处按 application_id 只取本笔关联人、且无证件号兜底反查,而申请页按 customer_no 取历史全部关联人,
+        // 两套口径在「本笔新录关联人 / 历史录过关联人」时结果不同 → 前端判过、后端拦下。
+        if (StrUtil.isNotBlank(customerNo)) {
+            CommitmentBaselineResolver.mergeRelated(jdbcTemplate, contribution, scopeCustNo);
         }
         // 归并后可能被指标字典收敛为空(指标码不在 ACTIVE 字典),此时基线留空,不阻断草稿保存
         if (contribution.isEmpty()) {

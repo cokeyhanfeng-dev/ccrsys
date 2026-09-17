@@ -297,7 +297,12 @@ public class ItemFinalizationServiceImpl implements ItemFinalizationService {
             CcrCommitmentTrack track = new CcrCommitmentTrack();
             track.setApplicationId(application.getId());
             track.setApplicationNo(application.getApplicationNo());
-            track.setCustomerNo(application.getCustomerNo());
+            // 取数键(§2026-09-16 承诺去掉成员维度后必须补齐):单户按客户号;集团申请 customer_no 为空
+            // (只落 group_no),此前集团承诺靠 member_customer_no 才能取到数——去掉成员维度后若不回退,
+            // 取数键为空 → 结算根本取不到数。数仓 dw_contribution_metric 已按集团编号汇总分指标行,
+            // 回退集团号与集团承诺的基线取数同口径。
+            track.setCustomerNo(StrUtil.isNotBlank(application.getCustomerNo())
+                    ? application.getCustomerNo() : application.getGroupNo());
             track.setMemberCustomerNo(row.getMemberCustomerNo());
             // 机构/客户经理显式 set(申请人机构/申请人),不依赖 MetaObjectHandler session 兜底
             track.setOrgId(application.getApplicantOrgId());

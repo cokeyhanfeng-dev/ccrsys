@@ -5,6 +5,7 @@ import cn.dev33.satoken.annotation.SaMode;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.support.AppLoginUser;
+import com.ccr.application.support.CommitmentBaselineResolver;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.core.util.RelatedCustomerResolver;
@@ -153,8 +154,10 @@ public class CustomerController {
                        contract_amount contractAmount, contract_balance loanBalance, guarantee_type guaranteeType,
                        execution_rate contractRate, currency
                 FROM dw_loan_contract_snapshot WHERE borrower_customer_no = ?""", customerNo));
-        // 3. 当前贡献度(关联人贡献度归并:数仓有效关联人同码值加总,§关联人贡献度归并)
-        result.put("contribution", mergeWithRelated(jdbcTemplate.queryForList("""
+        // 3. 当前贡献度(关联人贡献度归并:按客户号反查历史申请关联人同码值加总,§关联人贡献度归并)
+        //    与后端提交时承诺基线(CcrApplicationServiceImpl.resolveBaseline)共用 CommitmentBaselineResolver,
+        //    保证申请页带出的基线值 = 后端校验用的基线值(§2026-09-16 口径收敛)
+        result.put("contribution", CommitmentBaselineResolver.mergeRelated(jdbcTemplate, jdbcTemplate.queryForList("""
                 SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
                 FROM dw_contribution_metric WHERE cust_no = ?""", customerNo), customerNo));
         // 4. 他行融资概要 + 明细(报告日期=数仓征信报告日期 dw_credit_report_snapshot,§2026-08-26)
@@ -172,29 +175,9 @@ public class CustomerController {
         return R.ok(result);
     }
 
-    /** 当前贡献度归并关联人:仅前台录入的申请关联人(ccr_application_related_person),同 metric_code 值加总进主客户(§关联人贡献度归并) */
-    private List<Map<String, Object>> mergeWithRelated(List<Map<String, Object>> contribution, String customerNo) {
-        if (contribution == null || contribution.isEmpty()) {
-            return contribution;
-        }
-        // 前台录入关联人:按申请客户号反查历史申请的关联人(数仓推的关系不参与归并);
-        // related_customer_no 为空时按证件号兜底反查数仓主数据补全
-        List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT rp.related_customer_no relatedCustomerNo, rp.cert_type certType, rp.cert_no certNo"
-                        + " FROM ccr_application_related_person rp"
-                        + " JOIN ccr_application a ON a.id = rp.application_id AND a.del_flag = '0'"
-                        + " WHERE a.customer_no = ? AND rp.del_flag = '0'", customerNo);
-        RelatedCustomerResolver.resolveBatch(jdbcTemplate, relations);
-        Set<String> relatedNos = new LinkedHashSet<>();
-        for (Map<String, Object> rel : relations) {
-            Object no = rel.get("relatedCustomerNo");
-            if (no != null && !no.toString().isBlank()) {
-                relatedNos.add(no.toString());
-            }
-        }
-        ContributionMerger.mergeRelatedContributions(jdbcTemplate, contribution, relatedNos);
-        return contribution;
-    }
+    // 原 mergeWithRelated(当前贡献度归并关联人)已抽到 CommitmentBaselineResolver(§2026-09-16 口径收敛):
+    // 该类与 CcrApplicationServiceImpl.resolveBaseline 共用同一实现,消除"前端显示 与 后端校验"两套口径。
+    // 归并规则未变:仅前台录入的申请关联人参与,按 customer_no 反查历史申请,证件号兜底反查数仓主数据。
 
     /** 存款账号反查(输入明文账号,查数仓最新批次;命中返回账户信息,未命中返回 null) */
     @GetMapping("/{customerNo}/deposit-account-lookup")
