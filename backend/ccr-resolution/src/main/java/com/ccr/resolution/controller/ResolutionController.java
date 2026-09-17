@@ -42,16 +42,18 @@ public class ResolutionController {
 
     /**
      * 决议书查询页(2026-09-08 resolution_query 专用,全量可见但仅「当前有效决议」):
-     * 客户名称/客户号(兼集团号)/决议书编号 三者组合子串模糊,分页;数据权限在 service 内判定
-     * (resolution_query 及全量角色可查,其余 403)。字面量 /query 优先于上方 /{resolutionId}。
+     * 客户名称/客户号(兼集团号)/决议书编号 三者组合子串模糊,证件号码(2026-09-16 新增)精确匹配,
+     * 分页;数据权限在 service 内判定(resolution_query 及全量角色可查,其余 403)。
+     * 字面量 /query 优先于上方 /{resolutionId}。
      */
     @GetMapping("/query")
     public R<Map<String, Object>> query(@RequestParam(defaultValue = "1") int pageNum,
                                         @RequestParam(defaultValue = "10") int pageSize,
                                         @RequestParam(required = false) String customerName,
                                         @RequestParam(required = false) String customerNo,
-                                        @RequestParam(required = false) String resolutionNo) {
-        return R.ok(resolutionService.queryResolutions(pageNum, pageSize, customerName, customerNo, resolutionNo));
+                                        @RequestParam(required = false) String resolutionNo,
+                                        @RequestParam(required = false) String certNo) {
+        return R.ok(resolutionService.queryResolutions(pageNum, pageSize, customerName, customerNo, resolutionNo, certNo));
     }
 
     /** 回填正式合同并校验一致性(§7.7 七项;绑定成功同事务自动触发两级核验) */

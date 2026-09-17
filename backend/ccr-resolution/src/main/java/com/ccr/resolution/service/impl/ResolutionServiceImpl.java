@@ -314,13 +314,13 @@ public class ResolutionServiceImpl implements ResolutionService {
      * CLOSED/VOID 与无执行记录的否决决议一律不列入(EXISTS 子查询天然排除,同时规避一条决议多条
      * 执行记录导致的 JOIN 重复行)。
      * 支持 客户名称(customer_info_json/group_info_json 快照子串)、客户号(兼集团号,匹配 customer_no/group_no)、
-     * 决议书编号 三者组合子串模糊;签发时间倒序分页。
+     * 决议书编号 三者组合子串模糊;证件号码(2026-09-16 新增)为精确匹配,落点见下方条件注释;签发时间倒序分页。
      *
      * @return {total, records}(record 含 customerName/customerNo/groupNo/resolutionNo/executionStatus/issueTime/applicationId)
      */
     @Override
     public Map<String, Object> queryResolutions(int pageNum, int pageSize, String customerName,
-                                                String customerNo, String resolutionNo) {
+                                                String customerNo, String resolutionNo, String certNo) {
         Long loginId = StpUtil.getLoginIdAsLong();
         String roleCode = currentRoleCode(loginId);
         // 本页只服务查询专岗与全量角色;客户经理等既有角色仍走 listResolutions(§13.2 数据权限)
@@ -361,6 +361,29 @@ public class ResolutionServiceImpl implements ResolutionService {
         if (StrUtil.isNotBlank(resolutionNo)) {
             where.append(" AND r.resolution_no LIKE ?");
             params.add("%" + resolutionNo.trim() + "%");
+        }
+        if (StrUtil.isNotBlank(certNo)) {
+            // 证件号统一大写后比较:JSON_UNQUOTE 的结果排序规则实测是 utf8mb4_bin,会压过库默认的 ci,
+            // 快照侧必须显式 UPPER,否则身份证末位敲小写 x 查不到;数仓三列(cert_no/cust_no/ucr_code)
+            // 实测均为 utf8mb4_general_ci,天然不敏感,故保持原样比较以留住索引。
+            String k = certNo.trim().toUpperCase();
+            // 证件号码(2026-09-16):精确匹配,非子串——证件号是唯一标识,模糊会互相误命中。
+            // 落点三处快照(单户对公 ucrCode=统一社会信用代码 / 单户个人 idNo / 集团 ucrCode,新增集团补录才有)
+            // + 数仓按 cert_no 反查兜底:存量单快照没带证件号时仍可查到(实测 72 单中 4 单 ucr/idNo 双缺,
+            // 本地 CUST001 与 GROUP001 即靠兜底命中),与上方客户名称「快照优先、数仓兜底」同源思路。
+            // JSON 键缺失时 JSON_EXTRACT 为 NULL,NULL = ? 不成立,故不会误命中无证件号的单(实测 0 行)。
+            where.append(" AND (UPPER(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.ucrCode'))) = ?"
+                    + " OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(a.customer_info_json, '$.idNo'))) = ?"
+                    + " OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(a.group_info_json, '$.ucrCode'))) = ?"
+                    + " OR a.customer_no IN (SELECT c.cust_no FROM caps_corp_cust_basic_info c"
+                    + "   WHERE c.cert_no = ? AND c.data_dt = (SELECT MAX(c2.data_dt) FROM caps_corp_cust_basic_info c2))"
+                    + " OR a.customer_no IN (SELECT i.cust_no FROM caps_indv_cust_basic_info i"
+                    + "   WHERE i.cert_no = ? AND i.data_dt = (SELECT MAX(i2.data_dt) FROM caps_indv_cust_basic_info i2))"
+                    + " OR a.group_no IN (SELECT d.group_no FROM dw_customer_group_snapshot d"
+                    + "   WHERE d.ucr_code = ? AND d.data_dt = (SELECT MAX(d2.data_dt) FROM dw_customer_group_snapshot d2)))");
+            for (int i = 0; i < 6; i++) {
+                params.add(k);
+            }
         }
         String from = """
                 FROM ccr_resolution r
