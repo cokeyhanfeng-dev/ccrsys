@@ -19,7 +19,7 @@
       <table class="table table--full" v-loading="listLoading">
         <thead>
           <tr>
-            <th>申请号</th><th>业务类型</th><th>客户/集团</th><th>提交时间</th>
+            <th>申请号</th><th>业务类型</th><th>客户/集团</th><th>申请人</th><th>提交时间</th>
             <th>状态</th><th>终态时间</th><th>操作</th>
           </tr>
         </thead>
@@ -28,6 +28,7 @@
             <td>{{ row.applicationNo }}</td>
             <td>{{ businessTypeText(row.businessType) }}</td>
             <td>{{ row.customerName || (row.groupNo ? `集团 ${row.groupNo}` : row.customerNo || '—') }}</td>
+            <td>{{ row.applicantName || '—' }}</td>
             <td>{{ fmtTime(row.submitTime || row.createTime) }}</td>
             <td><span :class="appStatusBadge(row.status)">{{ statusText(row.status) }}</span></td>
             <td>{{ fmtTime(row.finalTime) }}</td>
@@ -40,7 +41,7 @@
               <button v-if="row.hasResolution" class="btn btn--text" @click="downloadResolution(row)">决议书</button>
             </td>
           </tr>
-          <tr v-if="!records.length"><td colspan="7"><div class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div></td></tr>
+          <tr v-if="!records.length"><td colspan="8"><div class="empty">{{ listError ? '加载失败，请刷新' : '暂无数据' }}</div></td></tr>
         </tbody>
       </table>
 

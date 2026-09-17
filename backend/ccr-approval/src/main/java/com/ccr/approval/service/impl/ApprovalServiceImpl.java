@@ -921,6 +921,8 @@ public class ApprovalServiceImpl implements ApprovalService {
         fillDisplayCustomerName(result.getRecords());
         // 决议书可用性:仅已签发决议的申请提供决议书下载(前端"决议书"按钮显隐)
         markHasResolution(result.getRecords());
+        // 申请人姓名(§2026-09-17):原列表只返回 applicant_user_id,审批人看不出单子是谁发起的
+        fillApplicantName(result.getRecords());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("total", result.getTotal());
         data.put("records", result.getRecords());
@@ -1015,6 +1017,53 @@ public class ApprovalServiceImpl implements ApprovalService {
                 }
             }
         }
+    }
+
+    /** 历史列表申请人姓名(§2026-09-17):ccr_application 只存 applicant_user_id,姓名在 ccr_sys_user,
+     *  一次性 IN 批量补,避免 N+1;查不到(用户已删)留空,由前端回退占位。 */
+    private void fillApplicantName(List<CcrApplication> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> ids = new LinkedHashSet<>();
+        for (CcrApplication r : records) {
+            if (r.getApplicantUserId() != null) {
+                ids.add(r.getApplicantUserId());
+            }
+        }
+        Map<Long, String> nameById = loadUserNames(ids);
+        for (CcrApplication r : records) {
+            r.setApplicantName(nameById.get(r.getApplicantUserId()));
+        }
+    }
+
+    /** 批量取用户显示名(ccr_sys_user.nick_name,nick_name 空则回退 username 工号);列表与档案页共用。
+     *  不过滤 del_flag/status:历史单据的发起人即使账号已停用也要显示出来。 */
+    private Map<Long, String> loadUserNames(Set<Long> ids) {
+        Map<Long, String> nameById = new HashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return nameById;
+        }
+        StringBuilder in = new StringBuilder();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) {
+                in.append(',');
+            }
+            in.append('?');
+        }
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT id, nick_name, username FROM ccr_sys_user WHERE id IN (" + in + ")", ids.toArray())) {
+            Object id = row.get("id");
+            if (id == null) {
+                continue;
+            }
+            Object nick = row.get("nick_name");
+            Object uname = row.get("username");
+            String name = nick != null && !String.valueOf(nick).isBlank() ? String.valueOf(nick)
+                    : (uname == null ? null : String.valueOf(uname));
+            nameById.put(((Number) id).longValue(), name);
+        }
+        return nameById;
     }
 
     /** 从 JSON 快照提取指定 key 的字符串值(兼容紧凑/带空格两种序列化: "key":"value" 或 "key": "value";§2026-09-01 兼容) */
@@ -1122,6 +1171,15 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /** 档案 body 组装:审批详情/历史档案/决议书下载共用(表决/行长决策可见性按登录人角色决定) */
     private Map<String, Object> assembleArchive(Map<String, Object> application, Long applicationId, SysUserRead user) {
+        // 申请人姓名(§2026-09-17):档案页展示发起人。application 是 SELECT * 的列名 Map,只含
+        // applicant_user_id,姓名另查 ccr_sys_user(与列表 fillApplicantName 同口径,nick_name 空回退工号)
+        Object applicantId = application.get("applicant_user_id");
+        if (applicantId instanceof Number) {
+            long uid = ((Number) applicantId).longValue();
+            Set<Long> ids = new LinkedHashSet<>();
+            ids.add(uid);
+            application.put("applicantName", loadUserNames(ids).get(uid));
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("application", application);
         List<Map<String, Object>> members = jdbcTemplate.queryForList(

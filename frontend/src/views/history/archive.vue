@@ -30,6 +30,7 @@
           <!-- §2026-09-07 集团/单户互斥展示:集团申请不落 customer_no(恒空),只显集团号;单户/个人只显客户号 -->
           <div v-if="!isGroup" class="desc-item"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ val(archive.application, 'customer_no', 'customerNo') || '—' }}</div></div>
           <div v-else class="desc-item"><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ val(archive.application, 'group_no', 'groupNo') }}</div></div>
+          <div class="desc-item"><div class="desc-item__label">申请人</div><div class="desc-item__value">{{ val(archive.application, 'applicantName', 'applicant_name') }}</div></div>
           <div class="desc-item"><div class="desc-item__label">提交时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'submit_time', 'submitTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">终态时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'final_time', 'finalTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">关联原申请</div><div class="desc-item__value"><span v-if="sourceApplicationId"><a class="archive-link" @click="goSourceArchive">查看原申请</a></span><span v-else>—</span></div></div>

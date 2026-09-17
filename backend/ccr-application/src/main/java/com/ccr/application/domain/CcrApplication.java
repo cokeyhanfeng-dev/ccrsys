@@ -111,6 +111,10 @@ public class CcrApplication extends BaseEntity {
     @TableField(exist = false)
     private String customerName;
 
+    /** 申请人姓名(历史列表/档案展示发起人;非表字段,从 ccr_sys_user.nick_name 补,空回退 username 工号;§2026-09-17) */
+    @TableField(exist = false)
+    private String applicantName;
+
     /** 集团场景涉及成员(非表字段,仅接收,落 ccr_application_member;逐成员金额/币种/角色) */
     @TableField(exist = false)
     private List<MemberInput> members;
