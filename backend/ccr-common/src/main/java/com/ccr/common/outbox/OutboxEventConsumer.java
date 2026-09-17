@@ -1,6 +1,7 @@
 package com.ccr.common.outbox;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ccr.common.outbox.domain.CcrOutboxEvent;
@@ -144,7 +145,7 @@ public class OutboxEventConsumer {
             alert.setRecipientType("ROLE");
             alert.setRecipientId("admin");
             alert.setChannel("SYSTEM");
-            alert.setMessageKey("OUTBOX_FAIL:" + event.getEventNo());
+            alert.setMessageKey(failMessageKey(event.getEventNo()));
             alert.setMessageContent("Outbox 事件消费失败(" + event.getEventType() + "/" + event.getEventNo()
                     + "):" + StrUtil.maxLength(safeError, 1500));
             alert.setSendStatus("PENDING");
@@ -156,5 +157,23 @@ public class OutboxEventConsumer {
         } catch (Exception e) {
             log.error("Outbox 告警通知落库异常: {}", event.getEventNo(), e);
         }
+    }
+
+    /**
+     * 告警键定长保护(2026-09-16 修复生产 Data too long for column 'message_key'):
+     * eventNo 形如 NOTIFY:SUBMIT:APP:{19 位雪花 id}:{节点码},本地实测最长 52 字符;
+     * 加前缀 "OUTBOX_FAIL:"(12)后恰好贴着 ccr_notification_log.message_key varchar(64) 上限,
+     * 节点码换成 PARENT_BRANCH_MANAGER 之类更长值即溢出——以前是 DataIntegrityViolationException,
+     * 被下方 catch (Exception) 吞掉只记日志,表现为"事件置 FAILED 但告警丢失"。
+     * 超 64 时截为「前 32 + md5 全量 32」恒 =64,md5 保幂等唯一性;
+     * 未超限原样返回,历史记录幂等键不变(超长的那些本就没插进去过,无冲突可能)。
+     * 与 NotificationServiceImpl.scopedMessageKey 同口径。
+     */
+    private String failMessageKey(String eventNo) {
+        String base = "OUTBOX_FAIL:" + eventNo;
+        if (base.length() <= 64) {
+            return base;
+        }
+        return base.substring(0, 32) + DigestUtil.md5Hex(base);
     }
 }
