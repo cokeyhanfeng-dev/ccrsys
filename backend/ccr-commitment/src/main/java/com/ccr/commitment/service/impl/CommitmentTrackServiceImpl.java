@@ -193,10 +193,12 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         }
         w.orderByDesc(CcrCommitmentTrack::getCreateTime);
         List<CcrCommitmentTrack> rows = trackMapper.selectList(w);
-        Map<String, String> names = resolveCustomerNames(rows);
+        // 快照名按 application_id 索引:一次批查,resolveCustomerNames 与 toView 兜底两处共用
+        Map<Long, String> appNames = snapshotNames(rows);
+        Map<String, String> names = resolveCustomerNames(rows, appNames);
         List<Map<String, Object>> result = new ArrayList<>();
         for (CcrCommitmentTrack t : rows) {
-            result.add(toView(t, names));
+            result.add(toView(t, names, appNames));
         }
         return result;
     }
@@ -208,7 +210,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         if (t == null) {
             throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "承诺跟踪记录不存在: " + trackId);
         }
-        Map<String, Object> view = toView(t, resolveCustomerNames(List.of(t)));
+        Map<Long, String> appNames = snapshotNames(List.of(t));
+        Map<String, Object> view = toView(t, resolveCustomerNames(List.of(t), appNames), appNames);
         // 所属申请摘要(业务类型/状态/金额)
         if (t.getApplicationId() != null) {
             List<Map<String, Object>> app = jdbcTemplate.queryForList(
@@ -253,8 +256,14 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         return rows;
     }
 
-    /** 单条转视图:TRACKING 实时算完成度(数仓最新批次÷目标,无批次标暂无数据),终态读 final_* */
-    private Map<String, Object> toView(CcrCommitmentTrack t, Map<String, String> names) {
+    /**
+     * 单条转视图:TRACKING 实时算完成度(数仓最新批次÷目标,无批次标暂无数据),终态读 final_*。
+     *
+     * @param names    客户号 → 客户名(resolveCustomerNames 产出,按客户号索引)
+     * @param appNames applicationId → 快照名(snapshotNames 产出),仅供客户号为空的行兜底
+     */
+    private Map<String, Object> toView(CcrCommitmentTrack t, Map<String, String> names,
+                                       Map<Long, String> appNames) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", t.getId());
         view.put("trackNo", t.getTrackNo());
@@ -263,7 +272,16 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         view.put("customerNo", t.getCustomerNo());
         view.put("memberCustomerNo", t.getMemberCustomerNo());
         String key = StrUtil.blankToDefault(t.getMemberCustomerNo(), t.getCustomerNo());
-        view.put("customerName", names.get(key));
+        String customerName = names.get(key);
+        // 客户号为空的行取不到名——names 按客户号索引。集团单 customer_no 恒空(只落 group_no)、
+        // 成员维度废弃后 member_customer_no 亦空的历史数据会落到这里,此时按申请 id 回退取快照名
+        // (snapshotNames 已含 group_info_json.groupName 兜底)。§2026-09-17 用户报「贡献度跟踪只显示申请号、
+        // 指标详情里客户号与客户名称都缺失」。客户号栏本身保持空——track 表无 group_no 列,
+        // 集团单显示集团号须另接申请表,本次不做(用户 2026-09-17 拍板)。
+        if (StrUtil.isBlank(customerName) && appNames != null) {
+            customerName = appNames.get(t.getApplicationId());
+        }
+        view.put("customerName", customerName);
         view.put("orgId", t.getOrgId());
         view.put("managerId", t.getManagerId());
         view.put("metricCode", t.getMetricCode());
@@ -410,13 +428,18 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
      * 快照最先——它由申请时人工确认,且审批详情/历史列表(pageHistory)同为快照优先,保持全系统一致;
      * 后两级只用于快照缺失时尽量给出名字。实测 ECM… 等手工/外部客户号在数仓与集团表往往都无行,
      * 原口径(只查后两级)会直接落到前端回退显示客户号。
+     *
+     * <p>注意:本方法按<b>客户号</b>索引,客户号为空的行(集团单)不会产出条目——调用方
+     * {@code toView} 另有按 applicationId 的快照名兜底,故 snapNames 由调用方传入、两处共用一次批查。</p>
+     *
+     * @param snapNames applicationId → 快照名,由 {@link #snapshotNames} 预先批查
      */
-    private Map<String, String> resolveCustomerNames(List<CcrCommitmentTrack> tracks) {
+    private Map<String, String> resolveCustomerNames(List<CcrCommitmentTrack> tracks,
+                                                     Map<Long, String> snapNames) {
         Map<String, String> names = new LinkedHashMap<>();
         if (tracks.isEmpty()) {
             return names;
         }
-        Map<Long, String> snapNames = snapshotNames(tracks);
         for (CcrCommitmentTrack t : tracks) {
             String custNo = StrUtil.blankToDefault(t.getMemberCustomerNo(), t.getCustomerNo());
             if (StrUtil.isBlank(custNo) || names.containsKey(custNo)) {
