@@ -118,12 +118,15 @@ public class ApprovalController {
         String custNo = item.get("pricing_customer_no") == null ? "" : item.get("pricing_customer_no").toString();
         String businessType = null;
 
-        // 申请概要
+        // 申请概要(§2026-09-18 补 applicantName:审批详情页顶部概览卡新增「客户经理」;
+        // 与 ApprovalServiceImpl.loadUserNames 同口径——nick_name 优先、空回退工号、不过滤停用账号,
+        // 历史单据发起人账号即使已停用也要显示出姓名)
         if (appId != null) {
             List<Map<String, Object>> apps = jdbcTemplate.queryForList(
-                    "SELECT a.id, a.application_no applicationNo, a.business_type businessType, a.customer_no customerNo, a.group_no groupNo, a.application_remark applicationRemark, a.snapshot_bundle_id snapshotBundleId, a.customer_info_json customerInfoJson, a.credit_info_json creditInfoJson, a.submit_time submitTime, a.applicant_user_id applicantUserId, a.group_info_json groupInfoJson, a.applicant_org_id applicantOrgId, d.dept_name applicantOrgName,"
+                    "SELECT a.id, a.application_no applicationNo, a.business_type businessType, a.customer_no customerNo, a.group_no groupNo, a.application_remark applicationRemark, a.snapshot_bundle_id snapshotBundleId, a.customer_info_json customerInfoJson, a.credit_info_json creditInfoJson, a.submit_time submitTime, a.applicant_user_id applicantUserId, a.group_info_json groupInfoJson, a.applicant_org_id applicantOrgId, d.dept_name applicantOrgName, COALESCE(NULLIF(u.nick_name, ''), u.username) applicantName,"
                             + " a.route_chain routeChain, a.current_node_code currentNodeCode, a.route_code routeCode, a.start_node_code startNodeCode, a.boundary_rate boundaryRate, a.matched_matrix_no matchedMatrixNo, a.version_no versionNo, a.status applicationStatus"
-                            + " FROM ccr_application a LEFT JOIN ccr_sys_dept d ON d.id = a.applicant_org_id AND d.del_flag = '0' WHERE a.id = ?", appId);
+                            + " FROM ccr_application a LEFT JOIN ccr_sys_dept d ON d.id = a.applicant_org_id AND d.del_flag = '0'"
+                            + " LEFT JOIN ccr_sys_user u ON u.id = a.applicant_user_id WHERE a.id = ?", appId);
             result.put("application", apps);
             if (!apps.isEmpty()) {
                 businessType = apps.get(0).get("businessType") == null ? null : apps.get(0).get("businessType").toString();

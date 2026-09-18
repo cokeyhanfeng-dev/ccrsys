@@ -21,6 +21,10 @@
         <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">业务类型</span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
         <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请金额</span>{{ fmtAmount(applyAmountTotal) }} 万元</span>
         <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请时间</span>{{ fmtDate(application.submitTime) }}</span>
+        <!-- §2026-09-18 客户经理/申请机构:原「申请机构」单独挂在客户基本信息卡顶部,现与客户经理一并归到概览卡。
+             两值均由后端 detail 接口带出(LEFT JOIN ccr_sys_user / ccr_sys_dept) -->
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">客户经理</span>{{ application.applicantName || '—' }}</span>
+        <span class="summary-bar__desc-item"><span class="summary-bar__desc-label">申请机构</span>{{ application.applicantOrgName || '—' }}</span>
       </div>
       <nav class="summary-bar__nav">
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-apply' }" @click="scrollToSection('s-apply'); activeAnchor = 's-apply'">申请内容</a>
@@ -135,9 +139,6 @@
         <span class="badge" :class="source === 'MANUAL' || source === 'MANUAL_OVERRIDE' ? 'badge--danger' : 'badge--info'">
           {{ source === 'MANUAL' ? '人工录入' : source === 'MANUAL_OVERRIDE' ? '含人工修正' : '数仓' }}
         </span>
-      </div>
-      <div v-if="application.applicantOrgName" class="desc-grid desc-grid--3" style="margin-top:12px">
-        <div><div class="desc-item__label">申请机构</div><div class="desc-item__value">{{ application.applicantOrgName }}</div></div>
       </div>
       <div class="desc-grid desc-grid--3" v-if="hasCustomer">
         <!-- 对公客户(§20 ①:名称/客户号/统一社会信用代码/企业性质/行业/信用等级/五级分类等) -->
