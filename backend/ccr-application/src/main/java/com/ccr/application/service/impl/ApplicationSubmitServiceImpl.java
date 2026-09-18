@@ -178,6 +178,11 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         RouteResult anchorRoute = null;
         BigDecimal anchorRate = null;
         boolean isLoan = "LOAN".equals(app.getBusinessType());
+        // 存量新增(§docs/43)分流:与 submit 同口径——存量行(source_split_no 非空,数仓协议带出)不匹配矩阵、
+        // 不参与整单链锚定,待整单链确定后原样搭链。原先预览漏了这层分流,存量行照常调矩阵,
+        // 其低利率又把整单链带走,导致预览显示的长链与实际提交冻结的链不一致(§2026-09-17 用户报「流程是错的」)
+        boolean mixedExistingNew = isMixedExistingNew(app);
+        List<RoutePreviewResponse.ItemRoutePreview> carriedPreviews = new ArrayList<>();
         for (CcrPricingItem item : items) {
             RoutePreviewResponse.ItemRoutePreview preview = new RoutePreviewResponse.ItemRoutePreview();
             preview.setPricingItemId(item.getId());
@@ -194,6 +199,13 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             } catch (ServiceException e) {
                 preview.setHardBoundaryPass(Boolean.FALSE);
                 preview.setMessage(e.getMessage());
+            }
+            // 存量行:不匹配矩阵、不参与整单锚定,待整单链确定后统一回填(硬边界仍照常校验,
+            // 与 submit 的 e) 逐分项硬边界不区分来源同口径)
+            if (mixedExistingNew && StrUtil.isNotBlank(item.getSourceSplitNo())) {
+                previews.add(preview);
+                carriedPreviews.add(preview);
+                continue;
             }
             // 矩阵路由
             try {
@@ -243,6 +255,23 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             response.setNextApproverMessage(anchorPreview.getNextApproverMessage());
             response.setMatchedMatrixNo(anchorRoute.getMatchedMatrixNo());
             response.setBoundaryRate(anchorRoute.getBoundaryRate());
+        }
+        // 存量行预览补齐:路由字段原样取新增分项锚定出的整单链,不匹配矩阵、无自身矩阵行号语义
+        // (与 submit 存量行搭链完全同口径,保证预览与提交后冻结的链一致)
+        for (RoutePreviewResponse.ItemRoutePreview carried : carriedPreviews) {
+            if (anchorRoute != null) {
+                carried.setRateDirection(anchorRoute.getRateDirection());
+                carried.setStartNodeCode(anchorRoute.getStartNodeCode());
+                carried.setFinalNodeCode(anchorRoute.getFinalNodeCode());
+                carried.setRouteChain(anchorRoute.getRouteChain());
+                carried.setNextApproverNames(anchorPreview.getNextApproverNames());
+                carried.setNextApproverMessage(anchorPreview.getNextApproverMessage());
+                carried.setLprVersionId(anchorRoute.getLprVersionId());
+                carried.setLprVersionCode(anchorRoute.getLprVersionCode());
+                carried.setMessage("存量拆分项不参与矩阵定档,随整单链搭链上送");
+            } else {
+                carried.setMessage("存量新增须至少录入一个新增授信分项(数仓带出的存量拆分项不参与审批链定档)");
+            }
         }
         response.setItems(previews);
 
