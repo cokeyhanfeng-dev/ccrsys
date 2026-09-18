@@ -48,6 +48,8 @@ public class CustomerController {
     /**
      * 按客户姓名或客户号模糊查询(对公+对私),返回候选客户。
      * 管户过滤(2026-08-24 需求①):mgr_no 空=无管户,所有客户经理可见;非空=仅管户客户经理本人可见。
+     * §2026-09-18:结果多带 cert_no(前端个人候选以证件号替代客户号展示,按 custType 分流);
+     * 该列此前仅 by-cert 接口查询,此处多查一列不改筛选与管户过滤。
      */
     @GetMapping
     public R<List<Map<String, Object>>> search(@RequestParam String name) {
@@ -57,11 +59,11 @@ public class CustomerController {
         String like = "%" + name + "%";
         String mgrNo = appLoginUser.requireCurrentUser().getUsername();
         String sql = """
-                SELECT cust_no AS customerNo, cust_name AS customerName, 'CORP' AS custType, cust_class AS customerClass
+                SELECT cust_no AS customerNo, cust_name AS customerName, 'CORP' AS custType, cust_class AS customerClass, cert_no AS certNo
                 FROM caps_corp_cust_basic_info
                 WHERE (cust_name LIKE ? OR cust_no LIKE ?) AND (mgr_no IS NULL OR mgr_no = ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_corp_cust_basic_info d2 WHERE d2.cust_no = caps_corp_cust_basic_info.cust_no)
                 UNION ALL
-                SELECT cust_no AS customerNo, cust_nm AS customerName, 'INDV' AS custType, cust_class AS customerClass
+                SELECT cust_no AS customerNo, cust_nm AS customerName, 'INDV' AS custType, cust_class AS customerClass, cert_no AS certNo
                 FROM caps_indv_cust_basic_info
                 WHERE (cust_nm LIKE ? OR cust_no LIKE ?) AND (mgr_no IS NULL OR mgr_no = ?) AND data_dt = (SELECT MAX(d2.data_dt) FROM caps_indv_cust_basic_info d2 WHERE d2.cust_no = caps_indv_cust_basic_info.cust_no)
                 """;

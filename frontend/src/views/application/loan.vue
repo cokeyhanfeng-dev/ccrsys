@@ -1356,10 +1356,18 @@ async function queryCustomerSuggestions(queryString: string, cb: (list: any[]) =
   if (!queryString || !queryString.trim()) return cb([])
   try {
     const rows = await apiSearchCustomers(queryString.trim())
-    cb((rows || []).map(r => ({
-      value: `${r.customerName} · ${r.customerNo} · ${r.custType === 'CORP' ? '对公' : '个人'}`,
-      data: r,
-    })))
+    // §2026-09-18 个人客户候选中段改显证件号(原为客户号):个人客户号是数仓内部号(生产为长串数字),
+    // 新增客户还会是 NEW 占位号,选客户时靠它认不出是哪一笔;证件号(生产不脱敏推送)可直接对人对账。
+    // 仅个人分流,对公保持客户号(对公本身的识别靠客户名称已足够,USCC 另在基本信息系统录入)。
+    // 数仓该列为空时回退客户号,避免候选出现「张三 · · 个人」空中段。
+    cb((rows || []).map(r => {
+      const isIndv = r.custType === 'INDV'
+      const mid = isIndv ? (r.certNo || r.customerNo) : r.customerNo
+      return {
+        value: `${r.customerName} · ${mid} · ${isIndv ? '个人' : '对公'}`,
+        data: r,
+      }
+    }))
   } catch {
     cb([])
   }
