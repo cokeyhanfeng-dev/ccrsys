@@ -520,10 +520,17 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         for (CcrPricingItem pi : createdItems) {
             itemNoToId.put(pi.getPricingItemNo(), pi.getId());
         }
+        // 同一指标只允许一条承诺(§2026-09-18 用户拍板):保存草稿时即拦,不必等到提交;
+        // 前端下拉已按行过滤其他行占用的指标,此处兜底防绕过前端直连接口。
+        Set<String> seenMetrics = new LinkedHashSet<>();
         for (CommitmentInput c : commitments) {
             if (c == null || StrUtil.isBlank(c.getMetricCode()) || StrUtil.isBlank(c.getTargetType())) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "承诺缺少必填项(metricCode/targetType)");
+            }
+            if (!seenMetrics.add(c.getMetricCode())) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "同一贡献度指标只能录入一条承诺(重复指标:" + c.getMetricCode() + "),请删除重复项后重试");
             }
             // 承诺类型"其它"(§6.4):无数值目标(target_value 可空),以 commitment_desc 手工描述为准;
             // 其余类型目标值必填

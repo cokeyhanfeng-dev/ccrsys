@@ -1091,10 +1091,18 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                     "请至少录入一条拟达成贡献度承诺后提交");
         }
+        // 同一指标只允许一条承诺(§2026-09-18 用户拍板):保存草稿链路已拦,此处兜住加校验之前
+        // 就已落库的重复草稿——否则这类历史单会带着重复承诺一路走到审批。
+        Set<String> seenMetrics = new LinkedHashSet<>();
         for (CcrApplicationCommitment c : commitments) {
             if (c.getEndDate() == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "拟达成贡献度承诺缺少截止日期,请补录承诺截止日期后提交");
+            }
+            if (!seenMetrics.add(c.getMetricCode())) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "同一贡献度指标只能录入一条承诺(重复指标:" + c.getMetricCode()
+                                + "),请删除重复承诺后重新提交");
             }
         }
     }

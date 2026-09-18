@@ -843,7 +843,7 @@
             <div class="form-field">
               <label class="form-field__label">承诺指标 <span class="req">*</span></label>
               <select class="form-select" v-model="c.metricCode" @change="onMetricChange(c)">
-                <option v-for="m in metricDict" :key="m.code" :value="m.code">{{ m.name }}</option>
+                <option v-for="m in metricOptionsFor(i)" :key="m.code" :value="m.code">{{ m.name }}</option>
               </select>
             </div>
             <div class="form-field">
@@ -2218,9 +2218,30 @@ function onMetricChange(c: CommitmentRow) {
     c.targetValue = ''
   }
 }
+/** 某行可选的承诺指标:排除其他行已占用的(§2026-09-18 用户拍板:一个指标只能录入一条承诺)。
+ *  本行当前值须始终保留——否则加校验之前已存的重复草稿回显时下拉空白,用户无从查看/修正。 */
+function metricOptionsFor(index: number) {
+  const self = commitments.value[index]?.metricCode
+  const usedByOthers = new Set(
+    commitments.value
+      .filter((_, i) => i !== index)
+      .map((c) => c.metricCode)
+      .filter(Boolean)
+  )
+  return metricDict.value.filter((m) => !usedByOthers.has(m.code) || m.code === self)
+}
 function addCommitment() {
+  // 默认指标取字典里第一个未被占用的(§2026-09-18 用户拍板:一个指标只能录入一条承诺)。
+  // 原为硬编码 PUBLIC_DEPOSIT_AVG——连点两次「添加承诺指标」会直接造出两条同指标承诺,
+  // 绕过 metricOptionsFor:那道过滤只管用户手选,管不到程序化赋值。
+  const used = new Set(commitments.value.map((c) => c.metricCode).filter(Boolean))
+  const next = metricDict.value.find((m) => !used.has(m.code))
+  if (!next) {
+    ElMessage.warning('贡献度指标已全部录入,无法再添加承诺')
+    return
+  }
   commitments.value.push({
-    metricCode: 'PUBLIC_DEPOSIT_AVG', targetType: 'BALANCE',
+    metricCode: next.code, targetType: 'BALANCE',
     baselineValue: '', targetValue: '', commitmentDesc: '', unit: 'WAN_YUAN',
     // 适用范围概念已删除(§2026-08-26 用户要求):后台按客户号/证件号匹配,承诺不再携带 metricScope
     // 成员归属概念已删除(§2026-09-16):集团承诺一律按集团号判断,不再携带 memberCustomerNo
@@ -2576,6 +2597,10 @@ function validateStep(s: number): string | null {
     for (let i = 0; i < commitments.value.length; i++) {
       const c = commitments.value[i]
       if (isBlank(c.metricCode)) return `第 ${i + 1} 条承诺未选择指标`
+      // 同一指标只允许一条(§2026-09-18 用户拍板):前端这里先给出两条的具体序号,便于定位;
+      // 后端 saveCommitments(存草稿即拦)与 checkCommitmentCompleteness(提交兜底)同口径,防绕过前端直连接口。
+      const dupIdx = commitments.value.findIndex((x, j) => j < i && x.metricCode === c.metricCode)
+      if (dupIdx >= 0) return `第 ${i + 1} 条承诺指标与第 ${dupIdx + 1} 条重复,请删除或更换指标`
       if (c.metricCode === 'OTHER' ? isBlank(c.commitmentDesc) : isBlank(c.targetValue)) return `第 ${i + 1} 条承诺未录入目标`
       if (isBlank(c.endDate)) return `第 ${i + 1} 条承诺未录入截止日期`
       // 截止日期须在今天与今天+12个月之内(2026-09-01 用户要求,与 input min/max 同口径)
