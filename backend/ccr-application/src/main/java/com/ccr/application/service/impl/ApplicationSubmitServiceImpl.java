@@ -1548,7 +1548,13 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             copy.setPricingAmount(src.getPricingAmount());
             copy.setCurrency(src.getCurrency());
             copy.setOriginalRate(src.getOriginalRate());
+            // §2026-09-17 用户报:重提后测算利率为空——原实现只复制了 originalRate,漏了 calculatedRate;
+            // 前端测算利率为必填并有「未录入测算利率」校验,漏复制会导致重提草稿必须先手工重填才能提交
+            copy.setCalculatedRate(src.getCalculatedRate());
             copy.setRateDirection(src.getRateDirection());
+            // 存量拆分项标记:存量新增重提时必须保留,否则存量行丢失来源标记、
+            // 被当作手工新增行匹配 NEW 矩阵并参与整单锚定(§docs/43 分流判据即 sourceSplitNo)
+            copy.setSourceSplitNo(src.getSourceSplitNo());
             copy.setSourcePricingItemId(src.getId());
             if (approved) {
                 // 沿用原决议:连同最终利率保留,不重新审批
@@ -1597,6 +1603,39 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             copy.setMemberCustomerNo(c.getMemberCustomerNo());
             copy.setEndDate(c.getEndDate());
             commitmentMapper.insert(copy);
+        }
+
+        // 复制他行融资概要/明细(§2026-09-17 用户报:重提后融资情况全空——原实现整块漏复制;
+        // 前端 loadDraftIntoForm 从草稿详情的 otherLoans/creditSummary 回填,新草稿无数据则必然回填为空)
+        for (CcrApplicationOtherLoan loan : otherLoanMapper.selectList(
+                new LambdaQueryWrapper<CcrApplicationOtherLoan>()
+                        .eq(CcrApplicationOtherLoan::getApplicationId, id))) {
+            CcrApplicationOtherLoan copy = new CcrApplicationOtherLoan();
+            copy.setApplicationId(target.getId());
+            copy.setLenderName(loan.getLenderName());
+            copy.setCreditAmount(loan.getCreditAmount());
+            copy.setUsedAmount(loan.getUsedAmount());
+            copy.setBalanceAmount(loan.getBalanceAmount());
+            copy.setAnnualRate(loan.getAnnualRate());
+            copy.setInputMode(loan.getInputMode());
+            otherLoanMapper.insert(copy);
+        }
+        for (CcrApplicationCreditSummary summary : creditSummaryMapper.selectList(
+                new LambdaQueryWrapper<CcrApplicationCreditSummary>()
+                        .eq(CcrApplicationCreditSummary::getApplicationId, id))) {
+            CcrApplicationCreditSummary copy = new CcrApplicationCreditSummary();
+            copy.setApplicationId(target.getId());
+            copy.setLenderCount(summary.getLenderCount());
+            copy.setCreditAmountTotal(summary.getCreditAmountTotal());
+            copy.setUsedAmountTotal(summary.getUsedAmountTotal());
+            copy.setLoanAccountCount(summary.getLoanAccountCount());
+            copy.setOverdueAccountCount(summary.getOverdueAccountCount());
+            copy.setOverdueBalance(summary.getOverdueBalance());
+            copy.setNplBalance(summary.getNplBalance());
+            copy.setSpecialMentionBalance(summary.getSpecialMentionBalance());
+            copy.setExternalGuaranteeBalance(summary.getExternalGuaranteeBalance());
+            copy.setReportDate(summary.getReportDate());
+            creditSummaryMapper.insert(copy);
         }
 
         // 原申请保持原终态(已否决等)供溯源,重提只创建新申请、不改变原申请状态(§14.1)
