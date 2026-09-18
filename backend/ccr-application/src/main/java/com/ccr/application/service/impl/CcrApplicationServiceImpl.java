@@ -550,7 +550,7 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
             BigDecimal baseline = resolveBaseline(c, customerNo, groupNo);
             // 拟达成目标须高于基线值(§2026-09-16 用户拍板收紧:原为"不得低于",等于基线即零增长承诺,现严格大于):
             // 基线=申请时点当前贡献度,前端 validateStep(4) 同口径;此处兜底防绕过前端(直连 curl)提交。
-            // 基线为空(数仓无数据/字典无该码/成员级无数仓值)时不比较。
+            // 基线为 null(OTHER/无客户标识/指标已停用)时不比较;数仓无该指标值时基线为 0,等同「目标须大于 0」。
             if (!isOther && baseline != null && c.getTargetValue() != null
                     && c.getTargetValue().compareTo(baseline) <= 0) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
@@ -576,44 +576,16 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
      * <p>2026-09-16 用户拍板:基线不可由客户经理手工修改。此前「前端传入值优先」可被改小基线绕过
      * 「目标须高于基线」校验,且落库 baseline_value 为改后值,审批人从页面无从察觉。</p>
      *
-     * <p>取数号(§2026-09-16 承诺去掉成员维度):<b>单户按客户号,集团申请(customer_no 为空)按集团号</b>——
-     * 数仓 dw_contribution_metric 已按集团编号汇总分指标行,与申请页集团贡献度面板同口径。
-     * 单户按客户号取数时归并该客户名下关联人同码值(§关联人贡献度归并),集团号无关联人故不归并;
-     * 无数据/OTHER 手工承诺保持空。</p>
+     * <p>具体取数口径(取号规则/关联人归并/无值按 0)见 {@link CommitmentBaselineResolver#resolveBaseline}——
+     * 2026-09-17 起该逻辑单点定义,本条与提交链路 ApplicationSubmitServiceImpl 的重算共用,
+     * 此处只保留调用方语义,避免两处注释随实现漂移。</p>
      */
     private BigDecimal resolveBaseline(CommitmentInput c, String customerNo, String groupNo) {
-        String scopeCustNo = StrUtil.isNotBlank(customerNo) ? customerNo : groupNo;
-        if (StrUtil.isBlank(scopeCustNo) || "OTHER".equals(c.getMetricCode())) {
-            return null;
-        }
-        // 主客户该指标最近批次值(无数据构造空行供归并)
-        // §2026-09-14 修复:必须带出 metric_code——下游 ContributionMerger 按指标码收敛,缺该列会被整体移除,
-        // 致索引越界;仅数仓无数据走空行兜底时才由下方补码,故此处显式查询
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT metric_code metricCode, metric_value metricValue, value_type valueType FROM dw_contribution_metric"
-                        + " WHERE cust_no = ? AND metric_code = ?"
-                        + " AND data_dt = (SELECT MAX(d2.data_dt) FROM dw_contribution_metric d2"
-                        + "   WHERE d2.cust_no = dw_contribution_metric.cust_no AND d2.metric_code = dw_contribution_metric.metric_code)"
-                        + " LIMIT 1", scopeCustNo, c.getMetricCode());
-        Map<String, Object> mainRow = rows.isEmpty() ? new HashMap<>() : new HashMap<>(rows.get(0));
-        if (mainRow.isEmpty()) {
-            mainRow.put("metricCode", c.getMetricCode());
-        }
-        List<Map<String, Object>> contribution = new ArrayList<>();
-        contribution.add(mainRow);
-        // 单户按客户号取数时归并该客户名下关联人同码值;集团按集团号取数不归并(集团号无关联人)。
-        // §2026-09-16 口径收敛:改用 CommitmentBaselineResolver(与申请页 CustomerController 带出基线同一实现)。
-        // 此前此处按 application_id 只取本笔关联人、且无证件号兜底反查,而申请页按 customer_no 取历史全部关联人,
-        // 两套口径在「本笔新录关联人 / 历史录过关联人」时结果不同 → 前端判过、后端拦下。
-        if (StrUtil.isNotBlank(customerNo)) {
-            CommitmentBaselineResolver.mergeRelated(jdbcTemplate, contribution, scopeCustNo);
-        }
-        // 归并后可能被指标字典收敛为空(指标码不在 ACTIVE 字典),此时基线留空,不阻断草稿保存
-        if (contribution.isEmpty()) {
-            return null;
-        }
-        Object value = contribution.get(0).get("metricValue");
-        return value == null ? null : new BigDecimal(value.toString());
+        // §2026-09-17 收敛:具体口径(数仓最近批次 + 单户归并关联人 + 无值按 0)整体下沉到
+        // CommitmentBaselineResolver,与提交链路 ApplicationSubmitServiceImpl 的重算共用同一实现。
+        // 此前本方独有一份、提交链路不重算,致草稿期落 NULL 后永不回填(用户报「当前贡献度有值、基线显示空」)。
+        return CommitmentBaselineResolver.resolveBaseline(
+                jdbcTemplate, c.getMetricCode(), customerNo, groupNo);
     }
 
     /** 数据日期基线(数仓不可用时容忍,提交校验按无基线处理) */

@@ -45,6 +45,7 @@ import com.ccr.application.service.ApplicationAccessService;
 import com.ccr.application.service.DataWarehouseService;
 import com.ccr.application.service.ManualGroupService;
 import com.ccr.application.service.SnapshotGateway;
+import com.ccr.application.support.CommitmentBaselineResolver;
 import com.ccr.application.support.CustomerNoUtil;
 import com.ccr.common.core.util.BranchTypeSupport;
 import com.ccr.common.core.util.WarehouseCustomerSync;
@@ -963,6 +964,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         boolean hasLoanItem = items.stream().anyMatch(it -> "LOAN_CONTRACT".equals(it.getPricingCarrierType()));
         if (hasLoanItem) {
             checkCommitmentCompleteness(app);
+            // §2026-09-17 提交时重算基线(用户报「当前贡献度有值、历史申请与审批页基线显示空」)
+            recalcCommitmentBaselines(app);
         }
     }
 
@@ -985,6 +988,51 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
             if (c.getEndDate() == null) {
                 throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
                         "拟达成贡献度承诺缺少截止日期,请补录承诺截止日期后提交");
+            }
+        }
+    }
+
+    /**
+     * 提交时按数仓重算承诺基线并回写(§2026-09-17 用户报「当前贡献度有值、历史申请与审批页基线显示空」)。
+     *
+     * <p><b>为什么要有这一步:</b>baseline_value 原只在保存草稿那一刻由
+     * {@code CcrApplicationServiceImpl.saveCommitments}→{@code resolveBaseline} 算一次落库,
+     * <b>提交链路不重算</b>。草稿期数仓尚无该指标数据 → 落 NULL,此后数仓有值也不回填,
+     * 于是「当前贡献度」(实时取数仓)有值、而历史申请页/审批页读落库的基线恒空,两边对不上。
+     * 现提交时重算一次,把基线定格在<b>提交时点</b>的数仓值——这也正是「基线=申请时点当前值」的原意。</p>
+     *
+     * <p><b>顺带收口同一个洞的另一面:</b>「拟达成目标须高于基线」原先也只在保存草稿时校验
+     * ({@code saveCommitments} 内)。草稿期基线为 0 可以先存,待数仓值涨上来后提交不再校验,
+     * 就会落一条目标低于基线的承诺。此处与回写同一次遍历内比对,不通过即阻断提交(2026-09-17 用户拍板)。</p>
+     *
+     * <p>口径与保存草稿完全同源——共用 {@link CommitmentBaselineResolver#resolveBaseline}(2026-09-16 收敛),
+     * 不另立第二套;基线取不到(OTHER 手工承诺 / 无客户标识 / 指标已停用被字典收敛)时跳过本条,
+     * 不覆盖已落库值。</p>
+     */
+    private void recalcCommitmentBaselines(CcrApplication app) {
+        List<CcrApplicationCommitment> commitments = commitmentMapper.selectList(
+                new LambdaQueryWrapper<CcrApplicationCommitment>()
+                        .eq(CcrApplicationCommitment::getApplicationId, app.getId()));
+        for (CcrApplicationCommitment c : commitments) {
+            BigDecimal baseline = CommitmentBaselineResolver.resolveBaseline(
+                    jdbcTemplate, c.getMetricCode(), app.getCustomerNo(), app.getGroupNo());
+            if (baseline == null) {
+                continue;
+            }
+            if (c.getTargetValue() != null && c.getTargetValue().compareTo(baseline) <= 0) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                        "拟达成贡献度承诺「" + c.getMetricCode() + "」的目标值须高于基线值(提交时基线 "
+                                + baseline.stripTrailingZeros().toPlainString() + ",目标 "
+                                + c.getTargetValue().stripTrailingZeros().toPlainString()
+                                + ")。数仓已更新该指标,请重新录入目标值后提交");
+            }
+            if (c.getBaselineValue() == null || c.getBaselineValue().compareTo(baseline) != 0) {
+                // 用 LambdaUpdateWrapper 只 set baseline_value:updateById 会把 update_by/update_time
+                // 一并按 NULL 写进 SET(实测日志 SET baseline_value=0, update_by=NULL, update_time=NULL),
+                // 清掉原有的更新人/更新时间。这里只改基线值本身。
+                commitmentMapper.update(null, new LambdaUpdateWrapper<CcrApplicationCommitment>()
+                        .eq(CcrApplicationCommitment::getId, c.getId())
+                        .set(CcrApplicationCommitment::getBaselineValue, baseline));
             }
         }
     }

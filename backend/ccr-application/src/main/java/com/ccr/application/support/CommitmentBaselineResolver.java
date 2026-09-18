@@ -5,6 +5,9 @@ import com.ccr.common.core.util.ContributionMerger;
 import com.ccr.common.core.util.RelatedCustomerResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,58 @@ import java.util.Set;
 public final class CommitmentBaselineResolver {
 
     private CommitmentBaselineResolver() {
+    }
+
+    /**
+     * 承诺基线值(§基线=申请时点当前值):数仓该指标最近批次值,单户归并关联人同码值、集团不归并。
+     *
+     * <p>2026-09-16 收敛:原实现散在 {@code CcrApplicationServiceImpl.resolveBaseline}(保存草稿时算)
+     * 与 {@code ApplicationSubmitServiceImpl}(提交时算)两处,口径易分叉。现单点定义,两处共用——
+     * <b>保存草稿时算什么,提交时就重算什么。</b></p>
+     *
+     * <p>取数号(§2026-09-16 承诺去掉成员维度):<b>单户按客户号,集团申请(customer_no 为空)按集团号</b>——
+     * 数仓 dw_contribution_metric 已按集团编号汇总分指标行,与申请页集团贡献度面板同口径。</p>
+     *
+     * <p>§2026-09-17 用户拍板:<b>数仓无该指标数据时基线按 0</b>(原为空)。返回 null 仅剩三种非「数仓无值」场景:
+     * OTHER 手工承诺(无数值目标)、无客户标识(数据异常,前置完整性校验已拦)、指标码已停用被字典收敛。</p>
+     *
+     * @param metricCode 指标码;为 OTHER 时返回 null
+     * @param customerNo 单户客户号;为空则退而用 groupNo
+     * @param groupNo    集团号
+     */
+    public static BigDecimal resolveBaseline(JdbcTemplate jdbcTemplate, String metricCode,
+                                            String customerNo, String groupNo) {
+        String scopeCustNo = StrUtil.isNotBlank(customerNo) ? customerNo : groupNo;
+        if (StrUtil.isBlank(scopeCustNo) || "OTHER".equals(metricCode)) {
+            return null;
+        }
+        // 主客户该指标最近批次值(无数据构造空行供归并)
+        // §2026-09-14 修复:必须带出 metric_code——下游 ContributionMerger 按指标码收敛,缺该列会被整体移除,
+        // 致索引越界;仅数仓无数据走空行兜底时才由下方补码,故此处显式查询
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT metric_code metricCode, metric_value metricValue, value_type valueType FROM dw_contribution_metric"
+                        + " WHERE cust_no = ? AND metric_code = ?"
+                        + " AND data_dt = (SELECT MAX(d2.data_dt) FROM dw_contribution_metric d2"
+                        + "   WHERE d2.cust_no = dw_contribution_metric.cust_no AND d2.metric_code = dw_contribution_metric.metric_code)"
+                        + " LIMIT 1", scopeCustNo, metricCode);
+        Map<String, Object> mainRow = rows.isEmpty() ? new HashMap<>() : new HashMap<>(rows.get(0));
+        if (mainRow.isEmpty()) {
+            mainRow.put("metricCode", metricCode);
+        }
+        List<Map<String, Object>> contribution = new ArrayList<>();
+        contribution.add(mainRow);
+        // 单户按客户号取数时归并该客户名下关联人同码值;集团按集团号取数不归并(集团号无关联人)。
+        if (StrUtil.isNotBlank(customerNo)) {
+            mergeRelated(jdbcTemplate, contribution, scopeCustNo);
+        }
+        // 归并后可能被指标字典收敛为空(指标码不在 ACTIVE 字典),此时基线留空
+        if (contribution.isEmpty()) {
+            return null;
+        }
+        Object value = contribution.get(0).get("metricValue");
+        // §2026-09-17 用户拍板:数仓无该指标数据时基线按 0(原为空/不比较)。
+        // 口径=页面显示 0、前端与后端校验按 0(目标须严格大于 0)、落库 baseline_value=0,三处同源。
+        return value == null ? BigDecimal.ZERO : new BigDecimal(value.toString());
     }
 
     /**
