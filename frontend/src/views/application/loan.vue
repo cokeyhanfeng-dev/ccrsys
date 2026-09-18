@@ -854,13 +854,11 @@
               <div v-else class="section-tip commitment-static">—</div>
             </div>
             <div class="form-field">
-              <label class="form-field__label">目标类型 <span class="req">*</span></label>
+              <label class="form-field__label">目标类型</label>
               <span v-if="c.metricCode === 'OTHER'" class="badge badge--neutral commitment-static">手工描述</span>
-              <select v-else class="form-select" v-model="c.targetType" :disabled="isRatioMetric(c.metricCode)">
-                <option v-if="!isRatioMetric(c.metricCode)" value="BALANCE">余额</option>
-                <option v-if="!isRatioMetric(c.metricCode)" value="COUNT">笔数</option>
-                <option value="RATIO">比例</option>
-              </select>
+              <!-- §2026-09-17 用户拍板:目标类型不再由客户经理选,改为按指标自动推导(见 onMetricChange),
+                   与基线值同为只读展示;原下拉三选项(余额/笔数/比例)客户经理无从判断,易选错 -->
+              <div v-else class="commitment-static">{{ targetTypeText(c.targetType) }}</div>
             </div>
             <div class="form-field">
               <label class="form-field__label">拟达成目标 <span class="req">*</span></label>
@@ -1028,7 +1026,7 @@ import {
   inputModeText, LOAN_PRODUCTS, agreementTypeText, agreementStatusText, agreementStatusBadge,
   AGREEMENT_TYPES, maritalStatusCode,
   FIVE_LEVEL_OPTIONS, normalizeFiveLevelClass, fiveLevelClassText, customerNoText, isManualCustomerNo,
-  isPlaceholderCustomerNo, isRatioMetric
+  isPlaceholderCustomerNo, isRatioMetric, isCountMetric, targetTypeText
 } from '@/utils/dict'
 import { useMetricDict } from '@/store/metricDict'
 import RelatedPersonsEditor, { serializeRelations, parseRelations, validateRelations, occupiedRelations, type RelatedPersonRow } from './RelatedPersonsEditor.vue'
@@ -2175,11 +2173,11 @@ function currentOf(code: string) {
 }
 /**
  * 基线值只读展示(§2026-09-16 用户拍板:基线一律以数仓为准,客户经理不可手工修改)。
- * 数值由选择指标时从当前贡献度带出;数仓无该指标数据时显示「暂无数据」(此时后端也不做基线比较)。
+ * 数值由选择指标时从当前贡献度带出;§2026-09-17 用户拍板:数仓无该指标数据时按 0(原显示「暂无数据」)。
  * 仍随草稿/提交上报,后端 saveCommitments 以 resolveBaseline 重算落库 → 展示值、校验值、落库值同源。
  */
 function baselineText(c: CommitmentRow) {
-  return c.baselineValue === '' || c.baselineValue == null ? '暂无数据' : String(c.baselineValue)
+  return c.baselineValue === '' || c.baselineValue == null ? '0' : String(c.baselineValue)
 }
 /**
  * 选择承诺指标时,自动把当前贡献度值带出到基线值(只读,不可手工改)。
@@ -2189,18 +2187,23 @@ function onMetricChange(c: CommitmentRow) {
   const v = currentOf(c.metricCode)
   if (c.metricCode !== 'OTHER' && v !== '暂无数据' && v != null && v !== '') {
     c.baselineValue = String(v)
-  } else {
+  } else if (c.metricCode === 'OTHER') {
+    // 「其它」无数值目标,不设基线(模板亦不渲染基线行,后端 resolveBaseline 同样返回 null)
     c.baselineValue = ''
+  } else {
+    // §2026-09-17 用户拍板:数仓无该指标数据时基线按 0,与展示/校验/落库同口径(原留空)
+    c.baselineValue = '0'
   }
   // 比例型指标(存贷款比):数值即百分比量级(65=65%),目标类型锁定「比例」、单位锁定「%」,
   // 与指标定义(value_type=RATIO/unit='%')一致,防止被当金额(万元)处理(§2026-09-04)
   if (isRatioMetric(c.metricCode)) {
     c.targetType = 'RATIO'
     c.unit = '%'
-  } else if (c.unit === '%') {
-    // 离开比例型:清掉被强制锁定的 %/RATIO 残留,回金额型默认,防单位错配
-    c.unit = 'WAN_YUAN'
-    c.targetType = 'BALANCE'
+  } else {
+    // 非比例型:单位与目标类型均「按指标口径覆盖式赋值」——原单位仅当残留 '%' 时才重置为万元,
+    // 新增户数型后会残留 COUNT;目标类型原由客户经理手选,现随指标自动推导(§2026-09-17 用户拍板)。
+    c.unit = isCountMetric(c.metricCode) ? 'COUNT' : 'WAN_YUAN'
+    c.targetType = isCountMetric(c.metricCode) ? 'COUNT' : 'BALANCE'
   }
   // 「其它」无数值目标(提交以 commitmentDesc 为准,targetValue 序列化置 undefined),残留量化目标一并清空
   if (c.metricCode === 'OTHER' && c.targetValue !== '') {
@@ -2215,6 +2218,9 @@ function addCommitment() {
     // 成员归属概念已删除(§2026-09-16):集团承诺一律按集团号判断,不再携带 memberCustomerNo
     endDate: ''
   })
+  // 新行默认指标也走一次带出:基线值/单位/目标类型须与手工切换指标同口径,
+  // 否则新行基线停在空串(§2026-09-17 按 0 展示)、单位恒为万元(§2026-09-17 户数类指标单位错)
+  onMetricChange(commitments.value[commitments.value.length - 1])
 }
 /** 承诺截止日期可选项:今天 ~ 今天+12个月(2026-09-01 用户要求:拟达成目标截止日期只能在12个月内) */
 const commitmentDateRange = (() => {
@@ -2577,8 +2583,8 @@ function validateStep(s: number): string | null {
         const tgt = Number(c.targetValue)
         if (Number.isNaN(tgt) || tgt < 0 || tgt > 999999999.99) return `第 ${i + 1} 条承诺目标值须在 0~999999999.99 之间(当前 ${c.targetValue})`
         // 拟达成目标须高于基线值(§2026-09-16 用户拍板收紧:原为"不得低于",等于基线即零增长承诺,现严格大于);
-        // 基线=申请时点当前贡献度(只读带出,数仓口径;集团申请按集团号,与后端 resolveBaseline 同口径),
-        // 为空(数仓无该指标数据)时不比较;后端 saveCommitments 同口径兜底
+        // 基线=申请时点当前贡献度(只读带出,数仓口径;集团申请按集团号,与后端 resolveBaseline 同口径);
+        // §2026-09-17 起数仓无该指标数据时基线按 0,即「目标须大于 0」;后端 saveCommitments 同口径兜底
         const hasBaseline = c.baselineValue !== undefined && c.baselineValue !== null && c.baselineValue !== ''
         if (hasBaseline && !Number.isNaN(bv) && tgt <= bv) {
           return `第 ${i + 1} 条承诺拟达成目标须高于基线值(基线 ${c.baselineValue},目标 ${c.targetValue})`
@@ -3293,7 +3299,8 @@ async function loadDraftIntoForm(id: number | string) {
   commitments.value = (d.commitments || []).map((c) => ({
     metricCode: c.metricCode,
     targetType: c.targetType,
-    baselineValue: c.baselineValue != null ? String(c.baselineValue) : '',
+    // §2026-09-17:空基线(旧草稿落库 NULL)按 0 回填,与展示/校验同口径;提交时后端仍以 resolveBaseline 重算落库
+    baselineValue: c.baselineValue != null ? String(c.baselineValue) : (c.metricCode === 'OTHER' ? '' : '0'),
     targetValue: c.targetValue != null ? String(c.targetValue) : '',
     commitmentDesc: c.commitmentDesc || '',
     unit: c.unit || 'WAN_YUAN',

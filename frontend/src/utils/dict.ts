@@ -515,6 +515,14 @@ export function isRatioMetric(code?: string | null): boolean {
   return !!code && RATIO_METRIC_CODES.has(code)
 }
 
+/** 户数/笔数型贡献度指标(数值单位是「户」不是金额「万元」;§2026-09-17 用户报「当年代发户数」单位错显万元)。
+ *  与 RATIO_METRIC_CODES 同因:ccr_metric_definition.unit 已写「户」,但申请页原按非比例型一律置 WAN_YUAN,
+ *  字典单位未参与单位带出;此处按码特判,承诺单位取 COUNT(下拉显示「户/笔」)。 */
+export const COUNT_METRIC_CODES: ReadonlySet<string> = new Set(['PUBLIC_PAYROLL_CONTRIBUTION'])
+export function isCountMetric(code?: string | null): boolean {
+  return !!code && COUNT_METRIC_CODES.has(code)
+}
+
 /** 启用指标下拉(§9;对公启用指标恰好 8 项,20260820 收敛)
  * store/metricDict 初始回退源:接口未加载/数仓无数据时下拉仅展示这 8 项;
  * 数仓表 ccr_metric_definition 非空时以接口返回为准(覆盖此回退)。 */
