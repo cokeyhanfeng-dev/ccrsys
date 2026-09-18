@@ -106,6 +106,8 @@ class ApplicationSubmitServiceImplTest {
     @Mock
     private CcrApplicationCommitmentMapper commitmentMapper;
     @Mock
+    private com.ccr.application.mapper.CcrApplicationOtherLoanMapper otherLoanMapper;
+    @Mock
     private DataWarehouseService dataWarehouseService;
     @Mock
     private SnapshotGateway snapshotGateway;
@@ -147,6 +149,8 @@ class ApplicationSubmitServiceImplTest {
     @BeforeEach
     void stubCreditSummary() {
         lenient().when(creditSummaryMapper.selectList(any())).thenReturn(List.of());
+        // 通用提交用例提供合法手工承诺；承诺校验用例独立覆盖异常输入。
+        lenient().when(commitmentMapper.selectList(any())).thenReturn(List.of(validCommitment()));
         lenient().when(nodeAssigneeResolver.resolvePreview(anyString(), any(), any(), any()))
                 .thenReturn(branchManagerConfigured());
     }
@@ -164,6 +168,33 @@ class ApplicationSubmitServiceImplTest {
     private static com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult branchManagerMissing() {
         return new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
                 "BRANCH_MANAGER", "NONE", List.of());
+    }
+
+    private com.ccr.application.domain.CcrApplicationCommitment validCommitment() {
+        var commitment = new com.ccr.application.domain.CcrApplicationCommitment();
+        commitment.setMetricCode("OTHER");
+        commitment.setEndDate(LocalDate.of(2099, 12, 31));
+        commitment.setTargetValue(BigDecimal.ONE);
+        return commitment;
+    }
+
+    @Test
+    void submitRejectsMissingUndatedAndDuplicateCommitments() {
+        when(applicationMapper.selectById(1L)).thenReturn(groupApp());
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(loanItem(11L, "MEMBER_A")));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        var undated = validCommitment();
+        undated.setEndDate(null);
+        var inputs = List.of(List.<com.ccr.application.domain.CcrApplicationCommitment>of(),
+                List.of(undated), List.of(validCommitment(), validCommitment()));
+        var messages = List.of("至少录入一条", "缺少截止日期", "同一贡献度指标只能录入一条");
+        for (int i = 0; i < inputs.size(); i++) {
+            when(commitmentMapper.selectList(any())).thenReturn(inputs.get(i));
+            ServiceException error = assertThrows(ServiceException.class, () -> service.submit(1L));
+            assertEquals(400, error.getCode());
+            assertTrue(error.getMessage().contains(messages.get(i)), error.getMessage());
+        }
+        org.mockito.Mockito.verifyNoInteractions(snapshotGateway, rateMatrixRouter);
     }
 
     // ---------- 测试数据构造 ----------

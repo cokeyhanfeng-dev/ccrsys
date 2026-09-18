@@ -75,10 +75,26 @@ if [[ -z "$ARCHIVE_PATH" ]]; then
   shopt -s nullglob
   release_archives=("${RELEASE_ROOT%/}"/ccr-release-*.tar.gz)
   shopt -u nullglob
+  # 先仅比较文件时间排序，避免按文件名从旧到新反复解压历史包。
+  sorted_archives=()
   for candidate in "${release_archives[@]}"; do
     [[ -f "$candidate" ]] || continue
-    if [[ -z "$ARCHIVE_PATH" || "$candidate" -nt "$ARCHIVE_PATH" ]]; then
-      if package_matches "$candidate"; then ARCHIVE_PATH="$candidate"; fi
+    index=${#sorted_archives[@]}
+    while (( index > 0 )); do
+      previous=$((index - 1))
+      [[ "$candidate" -nt "${sorted_archives[$previous]}" ]] || break
+      sorted_archives[$index]="${sorted_archives[$previous]}"
+      index=$previous
+    done
+    sorted_archives[$index]="$candidate"
+  done
+  checked=0
+  for candidate in "${sorted_archives[@]}"; do
+    checked=$((checked + 1))
+    printf '检查候选包 [%s/%s]: %s\n' "$checked" "${#sorted_archives[@]}" "${candidate##*/}"
+    if package_matches "$candidate"; then
+      ARCHIVE_PATH="$candidate"
+      break
     fi
   done
 else

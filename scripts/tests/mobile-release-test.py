@@ -169,6 +169,28 @@ printf 'mobile js' > frontend/dist-mobile/assets/main.js
         self.assertIn('确认使用以上发布包部署？', result.stdout)
         self.assertTrue((self.mobile/'index.html').exists())
 
+    def test_auto_selection_does_not_read_older_archives(self):
+        archive = self.package('3')
+        newest = archive.parent/'ccr-release-zz newest.tar.gz'
+        shutil.copy(archive, newest)
+        os.utime(archive, (1000, 1000)); os.utime(newest, (3000, 3000))
+        broken = archive.parent/'ccr-release-aa-broken.tar.gz'
+        broken.write_text('unreadable old archive'); os.utime(broken, (2000, 2000))
+        # 记录真实 tar 调用，确保确认前只读取最新匹配包。
+        bindir = self.root/'bin'; bindir.mkdir()
+        calls = self.root/'tar-calls'
+        wrapper = bindir/'tar'
+        import shlex
+        wrapper.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> '+shlex.quote(str(calls))+'\nexec '+shlex.quote(shutil.which('tar'))+' "$@"\n')
+        wrapper.chmod(0o755)
+        self.env['PATH'] = str(bindir)+os.pathsep+self.env['PATH']
+        self.env['CCR_RELEASE_DIR'] = str(archive.parent)
+        result = self.deploy(answer='no\n')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertIn('待部署包: '+newest.name, result.stdout)
+        self.assertEqual(calls.read_text().splitlines(), ['-tzf '+str(newest)])
+        self.assertFalse(self.backup.exists())
+
     def test_cancel_blank_no_and_eof_never_touch_targets(self):
         archive = self.package()
         for answer in ['no\n', '\n', '', 'anything\n']:
