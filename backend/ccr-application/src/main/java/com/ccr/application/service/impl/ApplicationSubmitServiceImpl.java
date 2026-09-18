@@ -587,6 +587,13 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                     "存量新增须至少录入一个新增授信分项(数仓带出的存量拆分项不参与审批链定档);"
                             + "若本次仅调整存量分项,请改选「存量调息」");
         }
+        // 存量新增:反向也必须至少有一个存量分项(§2026-09-17 用户要求)——本类型语义是「原协议下新增分项」,
+        // 依托的是数仓原协议的存量拆分项;全是手工新增行则该类型名不副实,应直接走「新增授信」。
+        if (mixedExistingNew && carriedItems.isEmpty()) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(),
+                    "存量新增须至少包含一条存量分项(数仓带出的原协议拆分项);"
+                            + "若本次仅新增授信,请改选「新增授信」");
+        }
         // 存量行搭链:路由字段原样取新增锚定出的整单链,不匹配矩阵、无自身矩阵行号语义
         for (CcrPricingItem item : carriedItems) {
             item.setStatus(PricingItemStatus.ROUTING.getCode());

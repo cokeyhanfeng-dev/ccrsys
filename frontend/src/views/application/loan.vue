@@ -2507,6 +2507,12 @@ function validateStep(s: number): string | null {
         && !form.guarantees.some((g) => isBlank(g.sourceSplitNo))) {
       return '存量新增须至少录入一个新增授信分项(数仓带出的存量拆分项不参与审批链定档);若本次仅调整存量分项,请改选「存量调息」'
     }
+    // 存量新增反向拦截(§2026-09-17 用户要求):本类型语义是「在原协议下追加新增授信分项」,依托数仓原协议带出的存量拆分项;
+    // 若全是手工新增行,则该类型名不副实,应直接走「新增授信」——与后端 ApplicationSubmitServiceImpl 同口径镜像
+    if (form.businessType === 'EXISTING_NEW' && form.guarantees.length
+        && !form.guarantees.some((g) => !isBlank(g.sourceSplitNo))) {
+      return '存量新增须至少包含一条存量分项(数仓带出的原协议拆分项);若本次仅新增授信,请改选「新增授信」'
+    }
     // 存量调息申请利率上限(§2026-09-07):贷款存量(EXISTING)申请利率不得高于原利率,进入下一步即拦
     const rErr = validateExistingRateCap()
     if (rErr) return rErr
