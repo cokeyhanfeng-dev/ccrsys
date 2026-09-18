@@ -102,6 +102,14 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
     /** 已批准分项状态(沿用原决议,不重新审批) */
     private static final Set<String> APPROVED_ITEM_STATUS = Set.of("FINAL", "APPROVED_LEVEL");
 
+    /** 链首支行行长节点码(§2026-09-18):与 ccr-approval RouteChains.BRANCH_MANAGER 同值。
+     *  此处用字面量而非引常量——ccr-application 只依赖 ccr-common/ccr-rule,不依赖 ccr-approval,
+     *  引入会造成反向模块依赖。 */
+    private static final String BRANCH_MANAGER_NODE = "BRANCH_MANAGER";
+
+    /** 管理综合支行长节点码(§2026-09-18 零售支行):仅零售支行申请链含此节点,紧随 BRANCH_MANAGER 之后。 */
+    private static final String PARENT_BRANCH_MANAGER_NODE = "PARENT_BRANCH_MANAGER";
+
     /** 数据时效容忍天数(§9.4 默认 3 个自然日,超过 BLOCK 阻断提交;与快照质量规则同一配置) */
     @Value("${ccr.snapshot.data-stale-days:3}")
     private int dataStaleDays;
@@ -319,6 +327,8 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         precheck.addAll(guaranteeTotalPrecheck(app, items));
         // 存量调息申请利率上限(§2026-09-07 用户拍板):贷款存量(EXISTING)申请利率不得高于原利率,高于才 BLOCK
         precheck.addAll(existingRatePrecheck(app, items));
+        // 链首支行行长审批人(§2026-09-18):本机构未配置行长则 BLOCK,避免提交后审批无人可指派、提醒送不达
+        precheck.addAll(branchAssigneePrecheck(app));
         response.setQualityPrecheck(precheck);
 
         // 3. 硬边界校验(逐分项)
@@ -488,6 +498,64 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         return result;
     }
 
+    /**
+     * 链首支行行长审批人预校验(§2026-09-18 生产问题收口):链首节点恒为支行行长(贷款链/存款链首节点
+     * 均为 BRANCH_MANAGER,零售申请的管理综合支行长插在其后),按申请机构 applicant_org_id 解析本机构
+     * 行长、兜底按申请支行码 apply_branch_code 前缀匹配(与 NodeReminderHandler 的兜底同口径)。
+     * 解析为空即该机构未配置 branch_manager 账号:提交后支行行长节点无人可指派——审批侧原先退化为
+     * "任一支行行长可审"(越权),待办提醒则因收件人为空致 Outbox 事件终态失败(生产开发区支行案例)。
+     * 故在提交预检即 BLOCK,把问题暴露在业务发起时。与提交硬校验 checkBranchAssignee 同口径双拦截。
+     * 零售支行(2026-09-04 综合/零售两级支行,branch_type='RETAIL')申请链上另有管理综合支行长节点
+     * (PARENT_BRANCH_MANAGER),同样须有在岗行长,故一并预检;该节点仅零售申请走,非零售机构解析
+     * 恒空,不可无条件校验(否则综合支行/总行的单子会被误拦)。
+     */
+    private List<SubmitCheckResponse.QualityPrecheckItem> branchAssigneePrecheck(CcrApplication app) {
+        List<SubmitCheckResponse.QualityPrecheckItem> result = new ArrayList<>();
+        if (assigneeMissing(app, BRANCH_MANAGER_NODE)) {
+            result.add(precheckItem("NODE_BRANCH_ASSIGNEE", "BLOCK", app.getApplyBranchCode(),
+                    branchAssigneeMessage("支行行长", app.getApplyBranchCode())));
+        }
+        // 管理综合支行长:仅零售支行申请链含该节点,故先判管理综合支行是否存在——非零售机构该节点
+        // 解析恒空,若无条件校验会把综合支行/总行的单子全部误拦。
+        String parentOrgCode = BranchTypeSupport.managingComprehensiveBranchCode(
+                jdbcTemplate, app.getApplicantOrgId());
+        if (parentOrgCode != null && assigneeMissing(app, PARENT_BRANCH_MANAGER_NODE)) {
+            result.add(precheckItem("NODE_PARENT_BRANCH_ASSIGNEE", "BLOCK", app.getApplyBranchCode(),
+                    branchAssigneeMessage("管理综合支行长", parentOrgCode)));
+        }
+        return result;
+    }
+
+    /** 链首支行行长审批人硬校验:与 submitCheck 预校验 branchAssigneePrecheck 同口径,失败整单回滚。 */
+    private void checkBranchAssignee(CcrApplication app) {
+        if (assigneeMissing(app, BRANCH_MANAGER_NODE)) {
+            throw new ServiceException(ErrorCode.QUALITY_BLOCK.getCode(),
+                    branchAssigneeMessage("支行行长", app.getApplyBranchCode()));
+        }
+        String parentOrgCode = BranchTypeSupport.managingComprehensiveBranchCode(
+                jdbcTemplate, app.getApplicantOrgId());
+        if (parentOrgCode != null && assigneeMissing(app, PARENT_BRANCH_MANAGER_NODE)) {
+            throw new ServiceException(ErrorCode.QUALITY_BLOCK.getCode(),
+                    branchAssigneeMessage("管理综合支行长", parentOrgCode));
+        }
+    }
+
+    /** 该节点在申请机构下是否解析不到任何审批人(与提醒侧同口径:含 apply_branch_code 前缀兜底)。
+     *  配置查询本身异常(LEVEL_ERROR)不算缺失:属数据库/配置暂不可用,应由用户重试,不误判为"未配行长"。 */
+    private boolean assigneeMissing(CcrApplication app, String nodeCode) {
+        NodeAssigneeResolver.ResolveResult resolved = nodeAssigneeResolver.resolvePreview(
+                nodeCode, app.getApplicantOrgId(), null, app.getApplyBranchCode());
+        return resolved.users().isEmpty()
+                && !NodeAssigneeResolver.LEVEL_ERROR.equals(resolved.getHitLevel());
+    }
+
+    /** 未配审批人提示:带上待补配置的机构号(零售支行的上级管理综合支行),便于管理员直接定位。 */
+    private String branchAssigneeMessage(String roleLabel, String orgCode) {
+        String org = StrUtil.isBlank(orgCode) ? "—" : orgCode;
+        return "本申请机构未配置" + roleLabel + "审批人,无法提交:请联系管理员为该机构(机构号 " + org
+                + ")配置" + roleLabel + "账号后重试";
+    }
+
     private SubmitCheckResponse.QualityPrecheckItem precheckItem(String rule, String level, String subjectId, String message) {
         SubmitCheckResponse.QualityPrecheckItem item = new SubmitCheckResponse.QualityPrecheckItem();
         item.setRuleCode(rule);
@@ -543,6 +611,9 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         // e4) 存量调息申请利率上限(2026-09-07 用户拍板):贷款存量(EXISTING)申请利率不得高于原利率,高于整单回滚
         //     (与 submitCheck 预校验 existingRatePrecheck 同口径双拦截;等于放行,原利率空跳过)
         checkExistingRateCap(app, items);
+        // e5) 链首支行行长审批人(§2026-09-18):本机构未配置行长则拒绝提交、整单回滚
+        //     (与 submitCheck 预校验 branchAssigneePrecheck 同口径双拦截)
+        checkBranchAssignee(app);
         // 主申请先置 SUBMITTED(§7.2 步骤6 中间态:校验通过、快照采集/路由前),路由完成后置 ROUTING
         applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
                 .eq(CcrApplication::getId, id)

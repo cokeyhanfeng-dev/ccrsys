@@ -44,7 +44,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -153,6 +152,30 @@ class ApprovalServiceImplTest {
         perm.setBusinessType("LOAN");
         perm.setBoundaryMinRate(new BigDecimal("3.000000"));
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(perm);
+        // §2026-09-18:支行行长节点解析为空不再按角色兜底(与部门类节点同口径拒绝),故此处打桩命中
+        // 操作人 1001,保持既有用例"支行行长审批"的语义;专门验证"未配行长即拒绝"的用例自行覆盖为空。
+        // 走 resolvePreview 而非 resolveUserIds:该节点改用带 apply_branch_code 前缀兜底的口径。
+        // 用 lenient:部分用例(如幂等/重复处理守卫)在到达 guardNodeAssignee 前即提前返回,本桩未被消费。
+        lenient().when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any()))
+                .thenReturn(BRANCH_MANAGER_HIT);
+    }
+
+    /** 支行行长节点解析命中操作人 1001(申请机构已配行长)。
+     *  AssigneeUser 的三参数构造器为包内可见,跨模块测试只能 mock。提前构建为常量:若放进
+     *  thenReturn(...) 的参数里求值,会在 when(...) 未闭合时嵌套 stubbing(Mockito 不允许)。 */
+    private static final com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult BRANCH_MANAGER_HIT =
+            buildBranchManagerHit(1001L);
+
+    /** 支行行长节点解析命中他人 2999(当前登录人 1001 不在指派范围内) */
+    private static final com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult BRANCH_MANAGER_HIT_OTHER =
+            buildBranchManagerHit(2999L);
+
+    private static com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult buildBranchManagerHit(Long userId) {
+        com.ccr.common.core.assignee.NodeAssigneeResolver.AssigneeUser manager =
+                org.mockito.Mockito.mock(com.ccr.common.core.assignee.NodeAssigneeResolver.AssigneeUser.class);
+        when(manager.getUserId()).thenReturn(userId);
+        return new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
+                "BRANCH_MANAGER", "DEPT", List.of(manager));
     }
 
     /** 通用打桩:支行行长登录 + 单项在途分项(3.5 在支行权限内) */
@@ -199,16 +222,23 @@ class ApprovalServiceImplTest {
     }
 
     @Test
-    void approve_reject_whenRoleNotMatchNode() {
-        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_CUSTOMER_MANAGER));
+    void approve_reject_whenBranchManagerNotConfigured() {
+        // §2026-09-18 收口:支行行长节点解析为空=该机构未配 branch_manager 账号,直接拒绝,
+        // 不再落到 requireNodeRole 的角色兜底。旧口径只校验"登录人具有 branch_manager 角色",
+        // 等于任一支行行长都能审批其他支行的单子(越权),且待办提醒会解析不到收件人导致
+        // Outbox 事件终态失败(生产 2026-09-18 开发区支行零售支行案例)。此处即使登录人
+        // 本身就是支行行长也必须拒绝。
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(applicationMapper.selectById(30L)).thenReturn(application);
-        // 未配置指派→按节点角色校验兜底拒绝(§5.5.1)
-        doThrow(new ServiceException(ErrorCode.NODE_PERMISSION.getCode(), "不具备节点角色"))
-                .when(currentLoginUser).requireNodeRole("BRANCH_MANAGER");
+        // 带兜底口径下"解析为空"=本机构与上级行均无在岗行长
+        when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any()))
+                .thenReturn(new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
+                        "BRANCH_MANAGER", "NONE", List.of()));
 
         ServiceException e = assertThrows(ServiceException.class,
                 () -> approvalService.approve(30L, "BRANCH_MANAGER", null, null, 3, null, null));
         assertEquals(ErrorCode.NODE_PERMISSION.getCode(), e.getCode());
+        assertTrue(e.getMessage().contains("未配置支行行长"), "应给出未配行长的明确口径,实际:" + e.getMessage());
         verify(pricingItemMapper, never()).update(isNull(), any(Wrapper.class));
     }
 
@@ -223,6 +253,9 @@ class ApprovalServiceImplTest {
         when(applicationMapper.selectById(30L)).thenReturn(application);
         when(nodePermissionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        // §2026-09-18:支行行长节点解析为空改为拒绝(不再按角色兜底),故桩出本机构行长命中操作人
+        lenient().when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any()))
+                .thenReturn(BRANCH_MANAGER_HIT);
 
         approvalService.approve(30L, "BRANCH_MANAGER", null, "同意", 3, null, null);
 
@@ -597,7 +630,8 @@ class ApprovalServiceImplTest {
         // 节点配置了指定审批人,当前登录人不在指派范围 → 拒绝(指派校验先于权限边界查询)
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(applicationMapper.selectById(30L)).thenReturn(application);
-        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
+        when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any()))
+                .thenReturn(BRANCH_MANAGER_HIT_OTHER);
 
         ServiceException e = assertThrows(ServiceException.class,
                 () -> approvalService.approve(30L, "BRANCH_MANAGER", null, null, 3, null, null));

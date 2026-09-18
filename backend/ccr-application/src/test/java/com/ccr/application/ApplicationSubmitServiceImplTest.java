@@ -126,6 +126,9 @@ class ApplicationSubmitServiceImplTest {
     @Mock
     private ManualGroupService manualGroupService;
 
+    @Mock
+    private com.ccr.common.core.assignee.NodeAssigneeResolver nodeAssigneeResolver;
+
     @InjectMocks
     private ApplicationSubmitServiceImpl service;
 
@@ -137,10 +140,30 @@ class ApplicationSubmitServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, CcrPricingItem.class);
     }
 
-    /** creditSummary 授信汇总(近期合入):单测补 mock,避免提交勾稽路径 NPE */
+    /** creditSummary 授信汇总(近期合入):单测补 mock,避免提交勾稽路径 NPE;
+     *  §2026-09-18 同因:提交新增链首支行行长审批人校验(checkBranchAssignee),缺 mock 会 NPE。
+     *  这里默认打桩为「本机构已配行长」(解析出处理人),不干扰既有用例;
+     *  专门验证「未配行长则拒绝提交」的用例自行覆盖为返回空处理人。 */
     @BeforeEach
     void stubCreditSummary() {
         lenient().when(creditSummaryMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(nodeAssigneeResolver.resolvePreview(anyString(), any(), any(), any()))
+                .thenReturn(branchManagerConfigured());
+    }
+
+    /** 支行行长已配置的解析结果:处理人非空即通过提交侧行长校验。
+     *  AssigneeUser 构造器包内可见,跨模块测试用 mock 造实例(仅取 users() 是否为空)。 */
+    private static com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult branchManagerConfigured() {
+        return new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
+                "BRANCH_MANAGER", "DEPT",
+                List.of(org.mockito.Mockito.mock(
+                        com.ccr.common.core.assignee.NodeAssigneeResolver.AssigneeUser.class)));
+    }
+
+    /** 支行行长未配置的解析结果:NONE 命中层级 + 空处理人 = 确实未配(区别于 LEVEL_ERROR 查询异常) */
+    private static com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult branchManagerMissing() {
+        return new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
+                "BRANCH_MANAGER", "NONE", List.of());
     }
 
     // ---------- 测试数据构造 ----------
@@ -960,6 +983,33 @@ class ApplicationSubmitServiceImplTest {
         ServiceException e = assertThrows(ServiceException.class, () -> service.submit(1L));
         assertEquals(ErrorCode.QUALITY_BLOCK.getCode(), e.getCode());
         assertTrue(e.getMessage().contains("不得高于原利率"));
+    }
+
+    @Test
+    void submitCheckBlocksWhenBranchManagerNotConfigured() {
+        // §2026-09-18 生产问题收口:本机构未配置支行行长时提交预检 BLOCK(生产开发区支行案例)——
+        // 否则提交后支行行长节点无人可指派:审批侧退化为"任一支行行长可审"(越权),
+        // 待办提醒则因收件人为空让 Outbox 事件终态失败。与提交硬校验 checkBranchAssignee 同口径双拦截。
+        // 走 submitCheck 而非 submit:预检不经过完整性/承诺校验,可独立验证本项拦截。
+        CcrApplication app = groupApp();
+        stubGroupDw(new BigDecimal("50000"), List.of(exclusiveLimit("MEMBER_A", "6000")));
+        CcrPricingItem item = loanItem(11L, "MEMBER_A");
+        when(applicationMapper.selectById(1L)).thenReturn(app);
+        when(pricingItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(applicationMemberMapper.selectList(any())).thenReturn(List.of(member("MEMBER_A")));
+        lenient().when(contractRelMapper.selectCount(any())).thenReturn(1L);
+        lenient().when(ruleEngine.checkHardBoundary(anyString(), anyString(), any())).thenReturn(new BigDecimal("3.00"));
+        when(dataWarehouseService.latestDataDates(any())).thenReturn(new HashMap<>());
+        lenient().when(dataWarehouseService.contribution(anyString())).thenReturn(new ArrayList<>());
+        // 覆盖默认打桩:本机构解析不到支行行长(命中层级 NONE,非 LEVEL_ERROR 查询异常)
+        when(nodeAssigneeResolver.resolvePreview(anyString(), any(), any(), any()))
+                .thenReturn(branchManagerMissing());
+
+        SubmitCheckResponse resp = service.submitCheck(1L);
+
+        boolean blockBranch = resp.getQualityPrecheck().stream()
+                .anyMatch(p -> "NODE_BRANCH_ASSIGNEE".equals(p.getRuleCode()) && "BLOCK".equals(p.getLevel()));
+        assertTrue(blockBranch, "未配支行行长应在提交预检中 BLOCK,实际预检项:" + resp.getQualityPrecheck());
     }
 
     @Test

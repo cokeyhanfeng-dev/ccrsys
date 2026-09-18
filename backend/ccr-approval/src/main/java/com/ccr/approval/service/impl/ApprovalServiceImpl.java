@@ -2221,8 +2221,7 @@ public class ApprovalServiceImpl implements ApprovalService {
     /** 节点审批人配置校验(§5.5.1):配置了有效指派时,仅解析出的处理人可通过/否决 */
     private void guardNodeAssignee(String nodeCode, CcrApplication application, SysUserRead operator,
                                    String deptCode) {
-        List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
-                application.getApplicantOrgId(), deptCode);
+        List<Long> assignees = resolveAssignees(nodeCode, application, deptCode);
         if (assignees.isEmpty()) {
             // 部门类节点(部门总经理/分管行长)按分项 dept_code 部门归属解析:解析为空说明申请缺少部门归属
             // (如历史申请矩阵漏配冻结 dept_code=NULL),必须拒绝而非角色兜底放行——否则全部门总经理/
@@ -2232,6 +2231,20 @@ public class ApprovalServiceImpl implements ApprovalService {
                 throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
                         "申请缺少部门归属配置,请联系管理员补全矩阵部门归属后重新提交");
             }
+            // 支行行长/综合支行长(§2026-09-18 生产问题收口):这两个节点经 resolveAssignees 走 resolvePreview
+            // 口径,已含 apply_branch_code 前缀兜底(本机构未配行长时由管理它的上级行行长兜住,零售支行即
+            // 此形态,与提醒侧 NodeReminderHandler 同口径)。故"解析为空"已收紧为"连上级兜底都没有的机构":
+            // 原先落到下方 requireNodeRole 兜底,而该兜底只校验"登录人具有 branch_manager 角色",等于任一支行
+            // 行长都能审批其他支行的单子(越权);同时该节点待办提醒解析不到收件人会让 Outbox 事件终态失败
+            // (生产 2026-09-18 开发区支行零售支行案例)。此处与部门类节点同口径拒绝。
+            // PARENT_BRANCH_MANAGER 原先落 requireNodeRole 会因 NODE_ROLE 无此键抛"未知审批节点",
+            // 拦截行为虽正确但文案误导,一并给出明确口径。
+            if (RouteChains.BRANCH_MANAGER.equals(nodeCode)
+                    || RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
+                throw new ServiceException(ErrorCode.NODE_PERMISSION.getCode(),
+                        "该申请机构未配置" + (RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)
+                                ? "综合支行行长" : "支行行长") + "审批人,请联系管理员为该机构配置后重新提交");
+            }
             // 未配置指定审批人:按节点角色校验兜底(§5.5.1)
             currentLoginUser.requireNodeRole(nodeCode);
         } else if (!assignees.contains(operator.getId())) {
@@ -2240,6 +2253,28 @@ public class ApprovalServiceImpl implements ApprovalService {
         }
         // assignees 含当前登录人:指派命中即放行——兼岗节点(如秘书岗=计划财务部总经理兼任,指派 dept_gm)
         // 不再强制节点角色;§D16a 固定机构节点即此形态
+    }
+
+    /**
+     * 节点审批人解析(§2026-09-18):支行行长/综合支行长节点走 resolvePreview 口径——在 resolve 之上叠加
+     * apply_branch_code 前缀兜底(本机构未配行长时由管理它的上级行行长兜住,零售支行即此形态),与提醒侧
+     * NodeReminderHandler 及提交侧 ApplicationSubmitServiceImpl.branchAssigneePrecheck 三者同口径,
+     * 避免"提交侧放行、审批侧被卡"的分歧。其余节点两方法等价(resolvePreview 的兜底分支仅对 BRANCH_MANAGER 生效)。
+     */
+    private List<Long> resolveAssignees(String nodeCode, CcrApplication application, String deptCode) {
+        if (!RouteChains.BRANCH_MANAGER.equals(nodeCode)
+                && !RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode)) {
+            return nodeAssigneeResolver.resolveUserIds(nodeCode, application.getApplicantOrgId(), deptCode);
+        }
+        NodeAssigneeResolver.ResolveResult resolved = nodeAssigneeResolver.resolvePreview(nodeCode,
+                application.getApplicantOrgId(), null, application.getApplyBranchCode());
+        // 配置查询异常沿用 resolveUserIds 的语义(requireResolved 会抛,resolvePreview 不抛):
+        // 抛"暂不可用"由用户重试,不退化为"该机构未配行长"的误判
+        if (NodeAssigneeResolver.LEVEL_ERROR.equals(resolved.getHitLevel())) {
+            throw new ServiceException(ErrorCode.INTERNAL_ERROR.getCode(),
+                    "节点审批人配置暂不可用,请稍后重试");
+        }
+        return resolved.userIds();
     }
 
     /** 身份与节点校验:小组/行长节点不走普通审批通道;节点角色在 guardNodeAssignee 中按「指派优先」校验 */
