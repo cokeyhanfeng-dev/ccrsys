@@ -32,13 +32,15 @@ public class CommitmentController {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 贡献度跟踪列表(v2:平铺 track 记录,TRACKING 实时算完成度/终态读定案;读前惰性结算;数据权限在 trackService 内) */
+    /** 贡献度跟踪列表(v2:平铺 track 记录,TRACKING 实时算完成度/终态读定案;读前惰性结算;数据权限在 trackService 内)
+     *  §2026-09-18 新增 customerName 模糊查询(与 customerNo 可叠加)。 */
     @GetMapping("/tracks")
     public R<List<Map<String, Object>>> listTracks(@RequestParam(required = false) Long orgId,
                                                    @RequestParam(required = false) Long managerId,
                                                    @RequestParam(required = false) String customerNo,
-                                                   @RequestParam(required = false) String status) {
-        return R.ok(commitmentTrackService.listTracks(orgId, managerId, customerNo, status));
+                                                   @RequestParam(required = false) String status,
+                                                   @RequestParam(required = false) String customerName) {
+        return R.ok(commitmentTrackService.listTracks(orgId, managerId, customerNo, status, customerName));
     }
 
     /** 单条承诺跟踪详情(承诺要素 + 实时/定案信息 + 所属申请摘要) */

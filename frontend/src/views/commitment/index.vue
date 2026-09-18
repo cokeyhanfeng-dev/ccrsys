@@ -34,6 +34,8 @@
             <option value="FINISHED_MET">已完成</option>
             <option value="FINISHED_UNMET">未完成</option>
           </select>
+          <!-- §2026-09-18 客户名称查询:track 表无客户名列,后端按运行时拼出的客户名模糊匹配(新增客户也能搜到) -->
+          <input class="form-input" v-model="query.customerName" style="width:180px" placeholder="客户名称" @keyup.enter="load" />
           <input class="form-input" v-model="query.customerNo" style="width:180px" placeholder="客户号" @keyup.enter="load" />
           <button class="btn btn--primary" @click="load">查询</button>
         </span>
@@ -181,7 +183,7 @@ import { useMetricDict } from '@/store/metricDict'
 const rows = ref<any[]>([])
 const listLoading = ref(false)
 const listError = ref(false)
-const query = reactive({ status: '', customerNo: '' })
+const query = reactive({ status: '', customerName: '', customerNo: '' })
 const expanded = reactive(new Set<string>())
 
 // ---------- 客户聚合:按 customerNo 分组,平均比例 D2 口径(单项超100%按100%计,暂无数据不计入) ----------
@@ -262,6 +264,7 @@ async function load() {
   try {
     rows.value = await listCommitmentTracks({
       status: query.status || undefined,
+      customerName: query.customerName?.trim() || undefined,
       customerNo: query.customerNo?.trim() || undefined
     })
   } catch {

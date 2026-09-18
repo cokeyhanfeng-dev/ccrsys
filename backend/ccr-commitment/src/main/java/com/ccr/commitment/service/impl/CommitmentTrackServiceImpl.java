@@ -175,7 +175,8 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
     }
 
     @Override
-    public List<Map<String, Object>> listTracks(Long orgId, Long managerId, String customerNo, String status) {
+    public List<Map<String, Object>> listTracks(Long orgId, Long managerId, String customerNo, String status,
+                                                String customerName) {
         settleExpired();
         Scope scope = currentScope();
         LambdaQueryWrapper<CcrCommitmentTrack> w = new LambdaQueryWrapper<CcrCommitmentTrack>()
@@ -196,9 +197,21 @@ public class CommitmentTrackServiceImpl implements CommitmentTrackService {
         // 快照名按 application_id 索引:一次批查,resolveCustomerNames 与 toView 兜底两处共用
         Map<Long, String> appNames = snapshotNames(rows);
         Map<String, String> names = resolveCustomerNames(rows, appNames);
+        // §2026-09-18 客户名称模糊过滤只能在内存做,不能下推到 SQL:track 表没有 customer_name 列,
+        // 客户名是运行时拼的(resolveCustomerNames 按客户号查 + 快照 customer_info_json/group_info_json
+        // 按 application_id 兜底);新增客户尚未进数仓,若先按名字反查客户号集合再 in,整条会被漏掉。
+        // 口径与页面一致:页面显示出什么名字,就按什么名字搜。与 customerNo 条件可叠加。
+        String nameKeyword = StrUtil.isNotBlank(customerName) ? customerName.trim() : null;
         List<Map<String, Object>> result = new ArrayList<>();
         for (CcrCommitmentTrack t : rows) {
-            result.add(toView(t, names, appNames));
+            Map<String, Object> view = toView(t, names, appNames);
+            if (nameKeyword != null) {
+                Object viewName = view.get("customerName");
+                if (viewName == null || !viewName.toString().contains(nameKeyword)) {
+                    continue;
+                }
+            }
+            result.add(view);
         }
         return result;
     }

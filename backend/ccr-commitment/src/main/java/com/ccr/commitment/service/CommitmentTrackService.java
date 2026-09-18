@@ -38,8 +38,10 @@ public interface CommitmentTrackService {
      * @param managerId  客户经理过滤(可空)
      * @param customerNo 客户号过滤(可空)
      * @param status     状态过滤(可空)
+     * @param customerName 客户名称模糊过滤(可空;track 表无客户名列,由实现按运行时拼出的客户名过滤)
      */
-    List<Map<String, Object>> listTracks(Long orgId, Long managerId, String customerNo, String status);
+    List<Map<String, Object>> listTracks(Long orgId, Long managerId, String customerNo, String status,
+                                         String customerName);
 
     /**
      * 单条跟踪详情(承诺要素 + 实时/定案信息 + 所属申请摘要)

@@ -3,11 +3,13 @@ import { get } from './request'
 // 贡献度跟踪(承诺)接口封装(W3-C)——v2 简化(docs/28):一张跟踪表三种读法
 // 列表 TRACKING 行实时算完成度/终态行读定案;数据范围由服务端按登录人角色确定,前端不传 operatorId/roleCode
 
-/** 承诺跟踪列表(orgId/managerId/customerNo/status 可选过滤;读前惰性结算) */
+/** 承诺跟踪列表(orgId/managerId/customerNo/customerName/status 可选过滤;读前惰性结算)
+ *  §2026-09-18 新增 customerName:track 表无客户名列,服务端按运行时拼出的客户名模糊过滤,与 customerNo 可叠加 */
 export const listCommitmentTracks = (params?: {
   orgId?: number
   managerId?: number
   customerNo?: string
+  customerName?: string
   status?: string
 }) => get<any[]>('/ccr/commitments/tracks', params || {})
 
