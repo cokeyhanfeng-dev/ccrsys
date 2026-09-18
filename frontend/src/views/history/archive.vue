@@ -31,6 +31,8 @@
           <div v-if="!isGroup" class="desc-item"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ val(archive.application, 'customer_no', 'customerNo') || '—' }}</div></div>
           <div v-else class="desc-item"><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ val(archive.application, 'group_no', 'groupNo') }}</div></div>
           <div class="desc-item"><div class="desc-item__label">申请人</div><div class="desc-item__value">{{ val(archive.application, 'applicantName', 'applicant_name') }}</div></div>
+          <!-- §2026-09-18 申请机构:与申请人并列展示(后端 assembleArchive 按 applicant_org_id 查 ccr_sys_dept 补名字) -->
+          <div class="desc-item"><div class="desc-item__label">申请机构</div><div class="desc-item__value">{{ val(archive.application, 'applicantOrgName', 'applicant_org_name') || '—' }}</div></div>
           <div class="desc-item"><div class="desc-item__label">提交时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'submit_time', 'submitTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">终态时间</div><div class="desc-item__value">{{ fmtTime(val(archive.application, 'final_time', 'finalTime')) }}</div></div>
           <div class="desc-item"><div class="desc-item__label">关联原申请</div><div class="desc-item__value"><span v-if="sourceApplicationId"><a class="archive-link" @click="goSourceArchive">查看原申请</a></span><span v-else>—</span></div></div>

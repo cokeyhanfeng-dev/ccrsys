@@ -1180,6 +1180,19 @@ public class ApprovalServiceImpl implements ApprovalService {
             ids.add(uid);
             application.put("applicantName", loadUserNames(ids).get(uid));
         }
+        // 申请机构名称(§2026-09-18):档案页「申请内容」卡与「申请人」并列展示。application 是 SELECT *
+        // 的列名 Map,只含 applicant_org_id,机构名另查 ccr_sys_dept(与审批详情
+        // ApprovalController.detail 的 LEFT JOIN ccr_sys_dept 同口径:del_flag='0');
+        // 机构已删除时留空,由前端显 '—',不阻断档案加载
+        Object applicantOrgId = application.get("applicant_org_id");
+        if (applicantOrgId instanceof Number) {
+            List<Map<String, Object>> applicantOrgs = jdbcTemplate.queryForList(
+                    "SELECT dept_name FROM ccr_sys_dept WHERE id = ? AND del_flag = '0'",
+                    ((Number) applicantOrgId).longValue());
+            if (!applicantOrgs.isEmpty() && applicantOrgs.get(0).get("dept_name") != null) {
+                application.put("applicantOrgName", applicantOrgs.get(0).get("dept_name"));
+            }
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("application", application);
         List<Map<String, Object>> members = jdbcTemplate.queryForList(
