@@ -13,6 +13,7 @@ import com.ccr.admin.system.domain.CcrSysDept;
 import com.ccr.admin.system.domain.CcrSysUser;
 import com.ccr.admin.system.mapper.CcrSysDeptMapper;
 import com.ccr.admin.system.mapper.CcrSysUserMapper;
+import com.ccr.admin.system.service.OnlineSessionReader;
 import com.ccr.common.core.assignee.NodeAssigneeResolver;
 import com.ccr.common.core.domain.R;
 import com.ccr.common.core.util.PasswordUtil;
@@ -160,6 +161,10 @@ public class AuthController {
         } else {
             StpUtil.login(user.getId());
         }
+        // 登录元数据按 Token 保存，PC/移动同时登录互不覆盖；旧会话缺失字段在清单显示为空。
+        var tokenSession = StpUtil.getTokenSession();
+        tokenSession.set(OnlineSessionReader.LOGIN_TIME, System.currentTimeMillis());
+        tokenSession.set(OnlineSessionReader.LOGIN_IP, ip == null ? null : ip.substring(0, Math.min(ip.length(), 64)));
         // 写入当前用户机构上下文(公共字段自动填充用)
         CcrSysDept dept = user.getOrgId() == null ? null : sysDeptMapper.selectById(user.getOrgId());
         String orgCode = dept == null ? null : dept.getOrgCode();

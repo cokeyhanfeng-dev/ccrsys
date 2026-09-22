@@ -26,6 +26,7 @@
                 '/datacenter': 'DataAnalysis',
                 '/audit': 'View',
                 '/system/user': 'User',
+                '/system/online': 'Connection',
                 '/system/role': 'Key',
                 '/system/dept': 'OfficeBuilding',
                 '/system/flow': 'Share',
@@ -169,6 +170,7 @@ const allMenus = [
   { path: '/audit', title: '审计管理', roles: ['auditor'] },
   // 基础系统功能(管理端)
   { path: '/system/user', title: '用户管理', roles: ['admin'] },
+  { path: '/system/online', title: '在线用户', roles: ['admin'] },
   { path: '/system/role', title: '权限管理', roles: ['admin'] },
   { path: '/system/dept', title: '机构管理', roles: ['admin'] },
   { path: '/system/flow', title: '流程配置', roles: ['admin'] },
@@ -287,12 +289,21 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 
-function onCommand(cmd: string) {
+const signingOut = ref(false)
+async function onCommand(cmd: string) {
   if (cmd === 'changePassword') {
     router.push('/change-password')
   } else if (cmd === 'logout') {
-    userStore.logout()
-    router.push('/login')
+    if (signingOut.value) return
+    signingOut.value = true
+    try {
+      await userStore.signOut()
+      await router.push('/login')
+    } catch {
+      // 统一请求层已提示失败，保留当前页面供用户重试。
+    } finally {
+      signingOut.value = false
+    }
   }
 }
 </script>

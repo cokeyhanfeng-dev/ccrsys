@@ -105,6 +105,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理', roles: ['admin'] }
       },
       {
+        path: 'system/online',
+        name: 'SysOnline',
+        component: () => import('@/views/system/online.vue'),
+        meta: { title: '在线用户', roles: ['admin'] }
+      },
+      {
         path: 'system/role',
         name: 'SysRole',
         component: () => import('@/views/system/role.vue'),

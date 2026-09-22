@@ -46,6 +46,13 @@ export const useUserStore = defineStore('user', () => {
     clearAuth()
   }
 
+  // 用户主动退出须先注销服务端当前会话；网络失败保留本地身份，允许重试。
+  // logout() 仍用于单点登录初始化等纯本地清理，避免触发不必要的远端请求。
+  async function signOut() {
+    await post('/auth/logout')
+    logout()
+  }
+
   // 改密成功后标记已改,并同步持久化(sessionStorage),避免刷新后又被守卫弹回
   function markPasswordChanged() {
     if (userInfo.value) {
@@ -54,5 +61,5 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  return { token, userInfo, ssoError, login, loginByCode, logout, markPasswordChanged }
+  return { token, userInfo, ssoError, login, loginByCode, logout, signOut, markPasswordChanged }
 })

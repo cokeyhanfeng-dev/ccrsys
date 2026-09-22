@@ -26,8 +26,12 @@ class CodeLoginControllerTest {
         var response = new MockHttpServletResponse();
         try (var stp = mockStatic(StpUtil.class)) {
             stp.when(StpUtil::getSession).thenReturn(mock(SaSession.class));
+            var tokenSession = mock(SaSession.class);
+            stp.when(StpUtil::getTokenSession).thenReturn(tokenSession);
             stp.when(StpUtil::getTokenValue).thenReturn("ccr-session-token");
             var result = controller.codeLogin(new CodeLoginRequest("code"), new MockHttpServletRequest(), response);
+            verify(tokenSession).set(eq(com.ccr.admin.system.service.OnlineSessionReader.LOGIN_TIME), any(Long.class));
+            verify(tokenSession).set(com.ccr.admin.system.service.OnlineSessionReader.LOGIN_IP, "127.0.0.1");
             assertEquals("ccr-session-token", result.getData().get("token"));
             var info = (java.util.Map<?, ?>) result.getData().get("userInfo");
             assertEquals("001234", info.get("userName"));
