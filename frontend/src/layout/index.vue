@@ -81,19 +81,7 @@
         </div>
       </div>
 
-      <!-- §2026-09-16 修复「档案页返回后内容区空白」:Transition 的直接子节点必须是单个元素。
-           mode="out-in" 的语义是「等旧页面退场完成才挂载新页面」——新页面的挂载依赖旧页面过渡结束的
-           回调;若某次渲染产出多根组件,leave 钩子就挂不上,回调永不触发 → 新页面永不挂载,
-           表现为内容区空白、菜单完好、且不报任何错。此处包一层稳定的单根 div,页面组件内部无论
-           多少根都不再影响 Transition。:key 用 route.path,顺带修掉同一路由不同参数
-           (/history/archive/1 → /2)复用组件实例、onMounted 不重跑的问题。 -->
-      <router-view v-slot="{ Component, route }">
-        <transition name="page-fade" mode="out-in">
-          <div :key="route.path" class="page-shell">
-            <component :is="Component" />
-          </div>
-        </transition>
-      </router-view>
+      <WorkspaceTabs />
     </div>
 
     <!-- 消息抽屉(§12.2):approval/result/warning/system 四类分档,未读高亮,点击已读并跳转 -->
@@ -142,6 +130,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import WorkspaceTabs from './WorkspaceTabs.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { listNotificationLogs, receiptNotification, type NotificationLog } from '@/api/notification'
@@ -335,9 +324,8 @@ async function onCommand(cmd: string) {
   margin-left: 208px;
   min-height: 100vh;
 }
-/* 页面过渡容器(§2026-09-16):Transition 的稳定单根,页面组件改为其子元素。
-   min-height 兜底——页面若用 height:100%,不会因多出的中间层失去高度参照而塌陷。 */
-.page-shell {
+/* 标签页缓存容器保留高度参照，兼容多根页面组件。 */
+:deep(.page-shell) {
   min-height: 100%;
 }
 /* §UI审查:移动端隐藏侧栏后内容区不再预留 208px 空档 */
