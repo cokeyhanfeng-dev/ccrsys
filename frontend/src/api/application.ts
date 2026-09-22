@@ -476,3 +476,9 @@ export function getLatestExternalCreditResolution(params: {
 export function importLatestCreditResolution(applicationId: string | number) {
   return post<any>(`/ccr/external-credit-resolutions/applications/${applicationId}/import-latest`)
 }
+
+
+/** 预览本次录入关联人后的权威贡献度，主体取服务端申请。 */
+export function previewContribution(id: string | number, relatedPersons: ApplicationPayload['relatedPersons']) {
+  return post<any[]>(`/ccr/applications/${id}/contribution-preview`, { relatedPersons: relatedPersons || [] })
+}

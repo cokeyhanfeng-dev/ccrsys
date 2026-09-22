@@ -29,6 +29,9 @@ import java.util.Map;
 @SaCheckRole(value = {"customer_manager", "admin"}, mode = SaMode.OR)
 public class GroupQueryController {
 
+    @jakarta.annotation.Resource
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Resource
     private DataWarehouseService dataWarehouseService;
 
@@ -70,7 +73,7 @@ public class GroupQueryController {
         // 集团当前贡献度(2026-09-10):申请页录入承诺时「基线值」自动带出用(前端 currentOf 按指标码取值)。
         // 按集团号口径取数仓最新批次,与审批详情集团贡献度同款(排除 TOTAL);此前集团路径未带出,
         // 选指标时基线恒为空,与单户行为不一致。
-        result.put("contribution", camelRows(dataWarehouseService.groupContribution(groupNo)));
+        result.put("contribution", com.ccr.application.support.CommitmentBaselineResolver.loadContribution(jdbcTemplate, null, groupNo));
         if (credit != null) {
             List<Map<String, Object>> limits = dataWarehouseService.memberLimitsByGroup(
                     credit.get("group_credit_no") == null ? null : String.valueOf(credit.get("group_credit_no")));

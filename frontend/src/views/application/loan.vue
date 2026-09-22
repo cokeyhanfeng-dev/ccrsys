@@ -832,7 +832,13 @@
       </div>
 
       <!-- 当前贡献度仅审批页对照展示,申请页不展示给客户经理;选指标时基线值自动带出当前贡献度(§2026-08-26) -->
-      <div class="form-group-title">贡献承诺</div>
+      <div class="form-group-title">
+        贡献承诺
+        <button class="btn btn--text" :disabled="!draft.id || baselineRefreshing || saving" @click="refreshContributionBaselines">
+          {{ baselineRefreshing ? '正在核对基线…' : '刷新基线' }}
+        </button>
+      </div>
+      <p v-if="baselineRefreshFailed" class="section-tip">基线加载失败，请刷新后再保存或提交。</p>
       <div v-if="commitments.length" class="commitment-list">
         <div v-for="(c, i) in commitments" :key="i" class="commitment-card">
           <div class="commitment-card__head">
@@ -990,6 +996,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { syncCommitmentBaselines } from '@/utils/commitment-baselines.mjs'
 import { fmtSize } from '@/utils/format' // §UI审查:附件大小自适应 B/KB/MB
 import { listEnabledProducts } from '@/api/system'
 import {
@@ -1002,6 +1009,7 @@ import {
   suggestGroups,
   createApplication,
   saveApplication,
+  previewContribution,
   getApplicationDetail,
   routePreview,
   uploadAttachment,
@@ -2175,6 +2183,7 @@ function onCustomerScopeChange() {
 }
 
 // ---------- 贡献承诺 ----------
+watch(contributionCurrent, () => syncCommitmentBaselines(commitments.value, contributionCurrent.value))
 function currentOf(code: string) {
   const m = contributionCurrent.value.find((x) => x.metricCode === code)
   return m?.metricValue ?? '暂无数据'
@@ -2185,6 +2194,7 @@ function currentOf(code: string) {
  * 仍随草稿/提交上报,后端 saveCommitments 以 resolveBaseline 重算落库 → 展示值、校验值、落库值同源。
  */
 function baselineText(c: CommitmentRow) {
+  if (baselineRefreshFailed.value) return '待刷新'
   return c.baselineValue === '' || c.baselineValue == null ? '0' : String(c.baselineValue)
 }
 /**
@@ -2628,6 +2638,7 @@ function validateStep(s: number): string | null {
   return null
 }
 async function goNext(target: number) {
+  if (!(await refreshContributionBaselines())) return
   const err = validateStep(step.value)
   if (err) {
     ElMessage.warning(err)
@@ -2641,6 +2652,7 @@ async function goNext(target: number) {
   if (target === 5) onRoutePreview()
 }
 async function goStep(i: number) {
+  if (!(await refreshContributionBaselines())) return
   if (i <= step.value) {
     step.value = i
     return
@@ -2972,8 +2984,44 @@ function serializeGroupInfo(): Record<string, unknown> | undefined {
   return hasContent ? out : undefined
 }
 
+const baselineRefreshing = ref(false)
+const baselineRefreshFailed = ref(false)
+let contributionRefreshVersion = 0
+let savedContributionSubject: string | null = null
+function contributionSubjectKey(customerNo: unknown, groupNo: unknown) {
+  return JSON.stringify([customerNo || '', groupNo || ''])
+}
+
+/** 只刷新贡献度和只读基线，保留客户经理录入的目标及其他表单内容。 */
+async function refreshContributionBaselines(): Promise<boolean> {
+  if (!draft.id) return true
+  // 更换客户主体时先保存新主体；旧申请的预览不能覆盖新客户带出的贡献度。
+  if (savedContributionSubject !== null
+    && savedContributionSubject !== contributionSubjectKey(form.customerNo, form.groupNo)) return true
+  const version = ++contributionRefreshVersion
+  baselineRefreshing.value = true
+  try {
+    const relatedPersons = buildPayload().relatedPersons
+    const subject = [form.customerScope, form.customerNo, form.groupNo].join('|')
+    const rows = await previewContribution(draft.id, relatedPersons)
+    if (version !== contributionRefreshVersion
+      || subject !== [form.customerScope, form.customerNo, form.groupNo].join('|')
+      || JSON.stringify(relatedPersons) !== JSON.stringify(buildPayload().relatedPersons)) return false
+    contributionCurrent.value = rows
+    syncCommitmentBaselines(commitments.value, rows)
+    baselineRefreshFailed.value = false
+    return true
+  } catch {
+    if (version === contributionRefreshVersion) baselineRefreshFailed.value = true
+    return false
+  } finally {
+    if (version === contributionRefreshVersion) baselineRefreshing.value = false
+  }
+}
+
 /** 创建或保存草稿;保存(PUT)仅更新主单字段,需携带 versionNo */
 async function ensureDraft(): Promise<boolean> {
+  if (saving.value || !(await refreshContributionBaselines())) return false
   // 备注超长不落库(application_remark VARCHAR(1000),超长后端 Data too long):提示精简后再保存
   if (blockIfRemarkTooLong()) return false
   const err = validateForDraft()
@@ -2993,7 +3041,8 @@ async function ensureDraft(): Promise<boolean> {
       draft.versionNo = created.versionNo ?? 1
       draft.applicationNo = created.applicationNo
     }
-    return true
+    savedContributionSubject = contributionSubjectKey(payload.customerNo, payload.groupNo)
+    return await refreshContributionBaselines()
   } catch {
     return false
   } finally {
@@ -3006,7 +3055,7 @@ async function ensureDraft(): Promise<boolean> {
  *  已填完的步骤内容落库,未完成申请可从历史申请"继续编辑"接着填(§用户要求 2026-08-25)。
  *  失败静默不打断下一步(用户仍可手动点"存草稿"或提交时严格校验)。 */
 async function autoSaveDraft(): Promise<boolean> {
-  if (saving.value || submitted.value) return false
+  if (saving.value || submitted.value || !(await refreshContributionBaselines())) return false
   // 备注超长时自动暂存跳过(落库必失败):静默不打断下一步,手动存草稿/提交处会明确提示精简
   if (remarkTooLongTip()) return false
   saving.value = true
@@ -3021,7 +3070,8 @@ async function autoSaveDraft(): Promise<boolean> {
       draft.versionNo = created.versionNo ?? 1
       draft.applicationNo = created.applicationNo
     }
-    return true
+    savedContributionSubject = contributionSubjectKey(payload.customerNo, payload.groupNo)
+    return await refreshContributionBaselines()
   } catch {
     // 自动暂存失败不阻塞切步;提交/路由预览走 ensureDraft 严格校验并已做错误提示
     return false
@@ -3102,7 +3152,8 @@ async function onConfirmSubmit() {
     ElMessage.success(`申请 ${result.applicationNo} 已提交,当前节点:${nodeLabel(result.items?.[0]?.currentNodeCode)}`)
     router.push('/overview')
   } catch {
-    // 拦截器已提示
+    // 提交期间数仓可能更新，失败后回填最新基线供客户经理核对。
+    await refreshContributionBaselines()
   } finally {
     submitting.value = false
   }
@@ -3340,7 +3391,11 @@ async function loadDraftIntoForm(id: number | string) {
     endDate: c.endDate ? String(c.endDate).slice(0, 10) : ''
   }))
 
+  savedContributionSubject = contributionSubjectKey(form.customerNo, form.groupNo)
+  await refreshContributionBaselines()
+
   // 他行融资以草稿/已保存数据为准(数仓实时值仅作新建带出;草稿恢复不得被数仓空值覆盖,§2026-09-01)
+
   const savedLoans = d.otherLoans || []
   if (savedLoans.length) {
     otherLoans.value = savedLoans.map((loan: any) => ({

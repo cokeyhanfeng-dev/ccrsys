@@ -34,6 +34,16 @@ public class CcrApplicationController {
     @Resource
     private ApplicationSubmitService applicationSubmitService;
 
+    @Resource
+    private com.ccr.application.service.ContributionPreviewService contributionPreviewService;
+
+    /** 当前表单贡献度预览，权限和主体由服务端申请确定。 */
+    @PostMapping("/{id}/contribution-preview")
+    public R<java.util.List<java.util.Map<String, Object>>> contributionPreview(@PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.ccr.application.dto.ContributionPreviewRequest request) {
+        return R.ok(contributionPreviewService.preview(id, request));
+    }
+
     /** 创建草稿 */
     @PostMapping
     public R<CcrApplication> create(@RequestBody CcrApplication request) {

@@ -129,6 +129,50 @@ class CcrApplicationServiceImplTest {
         lenient().when(dataWarehouseService.latestDataDates(any())).thenReturn(Map.of());
     }
 
+    @Test
+    void createAndSaveCalculateBaselineAfterCurrentRelatedPeopleAreInserted() {
+        stubInsertIds();
+        var rp = new com.ccr.application.domain.CcrApplicationRelatedPerson();
+        rp.setPersonName("模拟关联人");
+        rp.setRelatedCustomerNo("FAKE_RELATED");
+        CommitmentInput commitment = new CommitmentInput();
+        commitment.setMetricCode("PUBLIC_PAYROLL_CONTRIBUTION");
+        commitment.setTargetType("COUNT");
+        commitment.setTargetValue(new BigDecimal("300"));
+        CcrApplication request = new CcrApplication();
+        request.setBusinessType("LOAN");
+        request.setCustomerScope("INDIVIDUAL");
+        request.setCustomerNo("FAKE_MAIN");
+        request.setRelatedPersons(List.of(rp));
+        request.setCommitments(List.of(commitment));
+        var inserted = new java.util.concurrent.atomic.AtomicBoolean();
+        org.mockito.Mockito.doAnswer(inv -> { inserted.set(true); return 1; })
+                .when(relatedPersonMapper).insert(any(com.ccr.application.domain.CcrApplicationRelatedPerson.class));
+        var warehouse = new CommitmentBaselineConsistencyTest.Warehouse();
+        when(jdbcTemplate.queryForList(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenAnswer(inv -> {
+            String sql = inv.getArgument(0);
+            if (sql.contains("FROM ccr_application WHERE id")) {
+                assertTrue(inserted.get(), "计算基线前必须已保存当前关联人");
+                return List.of(Map.of("customerNo", "FAKE_MAIN"));
+            }
+            return warehouse.queryForList(sql, new Object[]{});
+        });
+        when(jdbcTemplate.queryForList(anyString())).thenAnswer(inv -> warehouse.queryForList(inv.getArgument(0)));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(1001L))).thenReturn(List.of());
+        var created = service.createDraft(request);
+        inserted.set(false);
+        when(applicationMapper.selectById(100L)).thenReturn(created);
+        when(applicationMapper.updateById(any(CcrApplication.class))).thenReturn(1);
+        request.setVersionNo(created.getVersionNo());
+        service.saveDraft(100L, request);
+        assertTrue(inserted.get());
+        ArgumentCaptor<CcrApplicationCommitment> captured = ArgumentCaptor.forClass(CcrApplicationCommitment.class);
+        verify(commitmentMapper, org.mockito.Mockito.times(2)).insert(captured.capture());
+        captured.getAllValues().forEach(row -> assertEquals(new BigDecimal("253"), row.getBaselineValue()));
+        commitment.setTargetValue(new BigDecimal("50"));
+        assertThrows(ServiceException.class, () -> service.saveDraft(100L, request));
+    }
+
     // ---------- 存款分项生成(修复"存款申请 0 分项") ----------
 
     @Test

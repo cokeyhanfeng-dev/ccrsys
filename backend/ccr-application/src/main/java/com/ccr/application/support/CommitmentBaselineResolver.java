@@ -55,33 +55,49 @@ public final class CommitmentBaselineResolver {
         if (StrUtil.isBlank(scopeCustNo) || "OTHER".equals(metricCode)) {
             return null;
         }
-        // 主客户该指标最近批次值(无数据构造空行供归并)
-        // §2026-09-14 修复:必须带出 metric_code——下游 ContributionMerger 按指标码收敛,缺该列会被整体移除,
-        // 致索引越界;仅数仓无数据走空行兜底时才由下方补码,故此处显式查询
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT metric_code metricCode, metric_value metricValue, value_type valueType FROM dw_contribution_metric"
-                        + " WHERE cust_no = ? AND metric_code = ?"
-                        + " AND data_dt = (SELECT MAX(d2.data_dt) FROM dw_contribution_metric d2"
-                        + "   WHERE d2.cust_no = dw_contribution_metric.cust_no AND d2.metric_code = dw_contribution_metric.metric_code)"
-                        + " LIMIT 1", scopeCustNo, metricCode);
-        Map<String, Object> mainRow = rows.isEmpty() ? new HashMap<>() : new HashMap<>(rows.get(0));
-        if (mainRow.isEmpty()) {
-            mainRow.put("metricCode", metricCode);
+        return loadContribution(jdbcTemplate, customerNo, groupNo).stream()
+                .filter(row -> metricCode.equals(row.get("metricCode")))
+                .map(row -> new BigDecimal(row.get("metricValue").toString()))
+                .findFirst().orElse(null);
+    }
+
+    /** 页面、预览、保存和提交共用：逐指标最新批次，补齐启用指标后归并关联人。 */
+    public static List<Map<String, Object>> loadContribution(JdbcTemplate jdbc, String customerNo, String groupNo) {
+        return loadContribution(jdbc, customerNo, groupNo, relatedCustomerNos(jdbc, customerNo));
+    }
+
+    public static List<Map<String, Object>> loadContribution(JdbcTemplate jdbc, String customerNo,
+                                                             String groupNo, Set<String> relatedNos) {
+        String subject = StrUtil.isNotBlank(customerNo) ? customerNo : groupNo;
+        if (StrUtil.isBlank(subject)) return new ArrayList<>();
+        List<Map<String, Object>> rows = new ArrayList<>(jdbc.queryForList(
+                "SELECT metric_code metricCode, metric_name metricName, metric_value metricValue,"
+                        + " value_type valueType, metric_scope metricScope, data_dt dataDt"
+                        + " FROM dw_contribution_metric m WHERE cust_no = ?"
+                        + " AND data_dt = (SELECT MAX(d.data_dt) FROM dw_contribution_metric d"
+                        + " WHERE d.cust_no = m.cust_no AND d.metric_code = m.metric_code)", subject));
+        rows.replaceAll(HashMap::new);
+        List<Map<String, Object>> definitions = jdbc.queryForList(
+                "SELECT metric_code metricCode, metric_name metricName, value_type valueType,"
+                        + " metric_scope metricScope, unit FROM ccr_metric_definition"
+                        + " WHERE status = 'ACTIVE' AND del_flag = '0'");
+        Set<String> enabled = new LinkedHashSet<>();
+        for (Map<String, Object> definition : definitions) {
+            String code = String.valueOf(definition.get("metricCode"));
+            enabled.add(code);
+            if (rows.stream().noneMatch(row -> code.equals(row.get("metricCode")))) {
+                Map<String, Object> empty = new HashMap<>(definition);
+                empty.put("metricValue", BigDecimal.ZERO);
+                rows.add(empty);
+            }
         }
-        List<Map<String, Object>> contribution = new ArrayList<>();
-        contribution.add(mainRow);
-        // 单户按客户号取数时归并该客户名下关联人同码值;集团按集团号取数不归并(集团号无关联人)。
-        if (StrUtil.isNotBlank(customerNo)) {
-            mergeRelated(jdbcTemplate, contribution, scopeCustNo);
-        }
-        // 归并后可能被指标字典收敛为空(指标码不在 ACTIVE 字典),此时基线留空
-        if (contribution.isEmpty()) {
-            return null;
-        }
-        Object value = contribution.get(0).get("metricValue");
-        // §2026-09-17 用户拍板:数仓无该指标数据时基线按 0(原为空/不比较)。
-        // 口径=页面显示 0、前端与后端校验按 0(目标须严格大于 0)、落库 baseline_value=0,三处同源。
-        return value == null ? BigDecimal.ZERO : new BigDecimal(value.toString());
+        rows.removeIf(row -> !enabled.contains(row.get("metricCode")));
+        ContributionMerger.mergeRelatedContributions(jdbc, rows,
+                StrUtil.isNotBlank(customerNo) ? relatedNos : Set.of());
+        rows.forEach(row -> {
+            if (row.get("metricValue") == null) row.put("metricValue", BigDecimal.ZERO);
+        });
+        return rows;
     }
 
     /**
@@ -112,6 +128,10 @@ public final class CommitmentBaselineResolver {
      * @param customerNo 主客户号;为空返回空集合
      */
     public static Set<String> relatedCustomerNos(JdbcTemplate jdbcTemplate, String customerNo) {
+        return relatedCustomerNos(jdbcTemplate, customerNo, null);
+    }
+
+    public static Set<String> relatedCustomerNos(JdbcTemplate jdbcTemplate, String customerNo, Long excludedId) {
         Set<String> relatedNos = new LinkedHashSet<>();
         if (StrUtil.isBlank(customerNo)) {
             return relatedNos;
@@ -120,7 +140,9 @@ public final class CommitmentBaselineResolver {
                 "SELECT rp.related_customer_no relatedCustomerNo, rp.cert_type certType, rp.cert_no certNo"
                         + " FROM ccr_application_related_person rp"
                         + " JOIN ccr_application a ON a.id = rp.application_id AND a.del_flag = '0'"
-                        + " WHERE a.customer_no = ? AND rp.del_flag = '0'", customerNo);
+                        + " WHERE a.customer_no = ? AND rp.del_flag = '0'"
+                        + (excludedId == null ? "" : " AND a.id <> ?"),
+                excludedId == null ? new Object[]{customerNo} : new Object[]{customerNo, excludedId});
         RelatedCustomerResolver.resolveBatch(jdbcTemplate, relations);
         for (Map<String, Object> rel : relations) {
             Object no = rel.get("relatedCustomerNo");

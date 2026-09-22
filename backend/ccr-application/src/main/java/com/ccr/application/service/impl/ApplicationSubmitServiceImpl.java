@@ -1139,7 +1139,7 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                         "拟达成贡献度承诺「" + c.getMetricCode() + "」的目标值须高于基线值(提交时基线 "
                                 + baseline.stripTrailingZeros().toPlainString() + ",目标 "
                                 + c.getTargetValue().stripTrailingZeros().toPlainString()
-                                + ")。数仓已更新该指标,请重新录入目标值后提交");
+                                + ")。请刷新当前贡献度并调整目标值后提交");
             }
             if (c.getBaselineValue() == null || c.getBaselineValue().compareTo(baseline) != 0) {
                 // 用 LambdaUpdateWrapper 只 set baseline_value:updateById 会把 update_by/update_time

@@ -158,13 +158,12 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         List<CcrPricingItem> createdItems = createItemsByBusinessType(entity, request, businessType, groupScope);
 
         // 拟达成贡献度承诺(供审批通过后生成正式承诺计划读取)
+        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         // 人工补录他行融资(§7.1 步骤6,审批详情随申请展示)
         saveOtherLoans(entity.getId(), request.getOtherLoans());
         // 他行融资概要(数仓带出可编辑快照,§2026-08-25)
         saveCreditSummary(entity.getId(), request.getCreditSummary());
-        // 关联人(§12.4④,按客户经理实际录入保存并展示)
-        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         return entity;
     }
 
@@ -711,10 +710,10 @@ public class CcrApplicationServiceImpl implements CcrApplicationService {
         saveMembers(entity, request.getMembers(), groupScope);
         List<CcrPricingItem> createdItems = createItemsByBusinessType(
                 entity, request, entity.getBusinessType(), groupScope);
+        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
         saveCommitments(entity.getId(), request.getCommitments(), createdItems);
         saveOtherLoans(entity.getId(), request.getOtherLoans());
         saveCreditSummary(entity.getId(), request.getCreditSummary());
-        saveRelatedPersons(entity.getId(), request.getRelatedPersons());
     }
 
     /**

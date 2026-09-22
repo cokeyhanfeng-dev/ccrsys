@@ -61,7 +61,7 @@ public final class ContributionMerger {
             }
         }
         // ①b 同指标多 value_type 行收敛为一行(2026-09-02 用户拍板"只展示一行"):
-        //    折算(CONTRIBUTION_AMOUNT)行优先,其次余额行,其余取最新批次;归并在收敛后执行不受影响
+        //    先取最新批次，同批次折算(CONTRIBUTION_AMOUNT)行优先，其次余额行;归并在收敛后执行不受影响
         dedupByMetricCode(contribution);
         if (contribution.isEmpty() || relatedCustomerNos == null || relatedCustomerNos.isEmpty()) {
             return;
@@ -103,24 +103,9 @@ public final class ContributionMerger {
         for (Map.Entry<String, List<Map<String, Object>>> e : byKey.entrySet()) {
             Map<String, Object> chosen = null;
             for (Map<String, Object> row : e.getValue()) {
-                if ("CONTRIBUTION_AMOUNT".equals(String.valueOf(row.get("valueType")))) {
+                if (chosen == null || dataDt(row).compareTo(dataDt(chosen)) > 0
+                        || (dataDt(row).equals(dataDt(chosen)) && rank(row) < rank(chosen))) {
                     chosen = row;
-                    break;
-                }
-            }
-            if (chosen == null) {
-                String maxDt = null;
-                for (Map<String, Object> row : e.getValue()) {
-                    Object dt = row.get("data_dt");
-                    if (dt != null && (maxDt == null || dt.toString().compareTo(maxDt) > 0)) {
-                        maxDt = dt.toString();
-                    }
-                }
-                for (Map<String, Object> row : e.getValue()) {
-                    if (maxDt != null && maxDt.equals(String.valueOf(row.get("data_dt")))) {
-                        chosen = row;
-                        break;
-                    }
                 }
             }
             if (chosen != null && chosen.get("metricValue") != null) {
@@ -162,7 +147,7 @@ public final class ContributionMerger {
         return custNo + '|' + metricCode;
     }
 
-    /** 同 metric_code 多行(不同 value_type/批次)收敛为一行:折算行优先 → 余额行 → 最新批次 */
+    /** 同 metric_code 多行(不同 value_type/批次)收敛为一行:最新批次 → 折算行优先 → 余额行 */
     private static void dedupByMetricCode(List<Map<String, Object>> contribution) {
         Map<String, Map<String, Object>> best = new HashMap<>();
         for (Map<String, Object> row : contribution) {
@@ -172,8 +157,8 @@ public final class ContributionMerger {
             }
             String key = code.toString();
             Map<String, Object> cur = best.get(key);
-            if (cur == null || rank(row) < rank(cur)
-                    || (rank(row) == rank(cur) && dataDt(row).compareTo(dataDt(cur)) > 0)) {
+            if (cur == null || dataDt(row).compareTo(dataDt(cur)) > 0
+                    || (dataDt(row).equals(dataDt(cur)) && rank(row) < rank(cur))) {
                 best.put(key, row);
             }
         }

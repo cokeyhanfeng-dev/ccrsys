@@ -159,9 +159,7 @@ public class CustomerController {
         // 3. 当前贡献度(关联人贡献度归并:按客户号反查历史申请关联人同码值加总,§关联人贡献度归并)
         //    与后端提交时承诺基线(CcrApplicationServiceImpl.resolveBaseline)共用 CommitmentBaselineResolver,
         //    保证申请页带出的基线值 = 后端校验用的基线值(§2026-09-16 口径收敛)
-        result.put("contribution", CommitmentBaselineResolver.mergeRelated(jdbcTemplate, jdbcTemplate.queryForList("""
-                SELECT metric_code metricCode, metric_name metricName, metric_value metricValue, value_type valueType, metric_scope metricScope
-                FROM dw_contribution_metric WHERE cust_no = ?""", customerNo), customerNo));
+        result.put("contribution", CommitmentBaselineResolver.loadContribution(jdbcTemplate, customerNo, null));
         // 4. 他行融资概要 + 明细(报告日期=数仓征信报告日期 dw_credit_report_snapshot,§2026-08-26)
         result.put("creditSummary", jdbcTemplate.queryForList("""
                 SELECT f.lender_count lenderCount, f.npl_balance nplBalance, f.credit_amount_total creditAmountTotal,
