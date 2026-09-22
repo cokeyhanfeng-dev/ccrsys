@@ -379,9 +379,9 @@ onMounted(load)
 /* 名称列承担树层级缩进，其余三列固定宽度，所有层级右侧对齐。 */
 .dept-tree__columns, .tree-node {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px 78px 56px;
+  grid-template-columns: minmax(0, 1fr) 76px 64px 48px;
   align-items: center;
-  column-gap: 12px;
+  column-gap: 8px;
 }
 .dept-tree__columns {
   min-height: 38px;
@@ -403,7 +403,7 @@ onMounted(load)
 .tree-node__code { color: var(--color-text-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
 .tree-node__type, .tree-node__status { display: flex; align-items: center; }
 .tree-node__placeholder { color: var(--color-text-light); }
-.tree-node .badge { flex: none; white-space: nowrap; }
+.tree-node .badge { flex: none; white-space: nowrap; font-size: 12px; padding: 0 6px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 /* 768px 断点:树与详情纵向堆叠,双列表单转单列 */
 @media (max-width: 768px) {
