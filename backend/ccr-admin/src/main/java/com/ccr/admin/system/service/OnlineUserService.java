@@ -20,7 +20,12 @@ public class OnlineUserService {
 
     public record Row(String userId, String username, String nickName, String orgName, String roleName,
                       String client, LocalDateTime loginTime, LocalDateTime lastAccessTime, String loginIp) {}
-    public record Result(long total, long userCount, List<Row> records, LocalDateTime queriedAt) {}
+    public record UserRow(String userId, String username, String nickName, String orgName, String roleName,
+                          List<String> clients, int sessionCount, LocalDateTime lastLoginTime,
+                          LocalDateTime lastAccessTime, List<Row> sessions) {}
+    public record Result(long total, long userCount, long sessionCount,
+                         long pcUserCount, long mobileUserCount, long pcSessionCount, long mobileSessionCount,
+                         List<UserRow> records, LocalDateTime queriedAt) {}
     record Profile(long id, String username, String nickName, Long orgId, String orgName, String roleName) {}
 
     public Result list(OnlineUserQuery query) {
@@ -48,7 +53,6 @@ public class OnlineUserService {
         for (var session : active) {
             Profile user = profiles.get(session.userId());
             if (user == null || query.getOrgId() != null && !query.getOrgId().equals(user.orgId())) continue;
-            if (query.getClient() != null && !query.getClient().isEmpty() && !query.getClient().equals(session.client())) continue;
             if (!keyword.isEmpty() && !contains(user.username(), keyword) && !contains(user.nickName(), keyword)) continue;
             matched.add(new Row(Long.toString(user.id()), user.username(), user.nickName(), user.orgName(), user.roleName(),
                     session.client(), date(session.loginTime()), date(session.lastAccessTime()), session.loginIp()));
@@ -56,11 +60,32 @@ public class OnlineUserService {
         matched.sort(Comparator.comparing(Row::lastAccessTime, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(Row::userId).thenComparing(Row::client)
                 .thenComparing(Row::loginTime, Comparator.nullsLast(Comparator.reverseOrder())));
-        long userCount = matched.stream().map(Row::userId).distinct().count();
+        // 两类终端概况使用姓名/机构条件，覆盖所有分页，避免第一页仅有电脑用户时误判移动端无人。
+        long pcSessions = matched.stream().filter(row -> "PC".equals(row.client())).count();
+        long mobileSessions = matched.stream().filter(row -> "MOBILE".equals(row.client())).count();
+        long pcUsers = matched.stream().filter(row -> "PC".equals(row.client())).map(Row::userId).distinct().count();
+        long mobileUsers = matched.stream().filter(row -> "MOBILE".equals(row.client())).map(Row::userId).distinct().count();
+        Map<String, List<Row>> byUser = new LinkedHashMap<>();
+        for (Row row : matched) {
+            if (query.getClient() != null && !query.getClient().isEmpty() && !query.getClient().equals(row.client())) continue;
+            byUser.computeIfAbsent(row.userId(), ignored -> new ArrayList<>()).add(row);
+        }
+        List<UserRow> users = new ArrayList<>();
+        long sessionCount = 0;
+        for (List<Row> userSessions : byUser.values()) {
+            Row first = userSessions.get(0);
+            sessionCount += userSessions.size();
+            LocalDateTime latestLogin = userSessions.stream().map(Row::loginTime).filter(Objects::nonNull)
+                    .max(Comparator.naturalOrder()).orElse(null);
+            users.add(new UserRow(first.userId(), first.username(), first.nickName(), first.orgName(), first.roleName(),
+                    userSessions.stream().map(Row::client).distinct().sorted().toList(), userSessions.size(),
+                    latestLogin, first.lastAccessTime(), List.copyOf(userSessions)));
+        }
         long offset = (long) (query.getPageNum() - 1) * query.getPageSize();
-        int from = (int) Math.min(offset, matched.size());
-        int to = Math.min(from + query.getPageSize(), matched.size());
-        return new Result(matched.size(), userCount, List.copyOf(matched.subList(from, to)), LocalDateTime.now());
+        int from = (int) Math.min(offset, users.size());
+        int to = Math.min(from + query.getPageSize(), users.size());
+        return new Result(users.size(), users.size(), sessionCount, pcUsers, mobileUsers, pcSessions, mobileSessions,
+                List.copyOf(users.subList(from, to)), LocalDateTime.now());
     }
 
     private static boolean contains(String value, String keyword) {

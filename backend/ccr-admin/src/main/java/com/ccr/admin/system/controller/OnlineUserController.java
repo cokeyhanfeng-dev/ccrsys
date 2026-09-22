@@ -9,13 +9,24 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-/** 管理员只读在线清单，不返回凭证，不提供强制下线操作。 */
+/** 管理员在线清单及账号级强制下线，不返回凭证。 */
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/system/online-users")
 @SaCheckRole("admin")
 @RequiredArgsConstructor
 public class OnlineUserController {
     private final OnlineUserService service;
+    private final com.ccr.admin.system.service.OnlineUserKickoutService kickoutService;
+
+    @PostMapping("/{userId}/kickout")
+    public R<Void> kickout(@PathVariable @jakarta.validation.constraints.Positive Long userId,
+                          HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        kickoutService.kickout(userId);
+        return R.ok();
+    }
+
 
     @GetMapping
     public R<OnlineUserService.Result> list(@Valid @ModelAttribute OnlineUserQuery query, HttpServletResponse response) {

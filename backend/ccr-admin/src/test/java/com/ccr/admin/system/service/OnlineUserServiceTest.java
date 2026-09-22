@@ -28,6 +28,7 @@ class OnlineUserServiceTest {
         when(sessions.read()).thenReturn(List.of(
                 new OnlineSessionReader.Session(42, "PC", 1000L, 3000L, "127.0.0.1"),
                 new OnlineSessionReader.Session(42, "MOBILE", 2000L, 4000L, "127.0.0.2"),
+                new OnlineSessionReader.Session(42, "MOBILE", 3000L, 5000L, "127.0.0.2"),
                 new OnlineSessionReader.Session(43, "PC", null, null, null),
                 new OnlineSessionReader.Session(99, "PC", null, null, null)));
         doReturn(List.of(new OnlineUserService.Profile(42, "T042", "测试甲", 10L, "测试机构甲", "贷审会秘书岗"),
@@ -35,15 +36,26 @@ class OnlineUserServiceTest {
                 .when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
     }
 
-    @Test void countsDistinctUsersAndPaginatesFilteredSessionsWithoutCredentials() throws Exception {
+    @Test void groupsSessionsAndPaginatesUsersWithoutCredentials() throws Exception {
         fixtures();
         try (var stp = mockStatic(StpUtil.class)) {
             var query = new OnlineUserQuery(); query.setPageSize(1);
             var result = service.list(query);
-            assertEquals(3, result.total()); assertEquals(2, result.userCount());
-            assertEquals("MOBILE", result.records().get(0).client());
+            assertEquals(2, result.total()); assertEquals(2, result.userCount());
+            assertEquals(4, result.sessionCount());
+            assertEquals(2, result.pcUserCount()); assertEquals(1, result.mobileUserCount());
+            assertEquals(2, result.pcSessionCount()); assertEquals(2, result.mobileSessionCount());
+            var user = result.records().get(0);
+            assertEquals("42", user.userId()); assertEquals(3, user.sessionCount());
+            assertEquals(List.of("MOBILE", "PC"), user.clients());
+            assertEquals(3, user.sessions().size());
+            assertNotEquals(user.sessions().get(0).loginTime(), user.sessions().get(1).loginTime());
+            assertEquals(user.sessions().get(0).loginTime(), user.lastLoginTime());
             query.setPageNum(2);
-            assertEquals("PC", service.list(query).records().get(0).client());
+            var second = service.list(query);
+            assertEquals("43", second.records().get(0).userId());
+            assertNull(second.records().get(0).lastLoginTime());
+            assertEquals(1, second.mobileUserCount()); // 终端统计覆盖所有分页
             query.setPageNum(Integer.MAX_VALUE);
             assertTrue(service.list(query).records().isEmpty());
             String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(result);
@@ -67,6 +79,21 @@ class OnlineUserServiceTest {
         }
     }
 
+    @Test void mobileFilterShowsOnePersonWithTwoSessionsAndKeepsTerminalOverview() {
+        fixtures();
+        try (var stp = mockStatic(StpUtil.class)) {
+            var query = new OnlineUserQuery(); query.setClient("MOBILE");
+            var result = service.list(query);
+            assertEquals(1, result.total()); assertEquals(2, result.sessionCount());
+            var user = result.records().get(0);
+            assertEquals(2, user.sessionCount()); assertEquals(List.of("MOBILE"), user.clients());
+            assertTrue(user.sessions().stream().allMatch(row -> "MOBILE".equals(row.client())));
+            assertEquals(2, result.pcUserCount()); assertEquals(1, result.mobileUserCount());
+            query.setClient("");
+            assertEquals(2, service.list(query).total());
+        }
+    }
+
     @Test void unauthorizedRequestRejectedBeforeReadingRedisOrDatabase() {
         try (var stp = mockStatic(StpUtil.class)) {
             stp.when(() -> StpUtil.checkRole("admin")).thenThrow(new ServiceException(403, "无权限"));
@@ -80,7 +107,7 @@ class OnlineUserServiceTest {
         when(sessions.read()).thenReturn(List.of());
         try (var stp = mockStatic(StpUtil.class)) {
             var response = new MockHttpServletResponse();
-            var data = new OnlineUserController(service).list(new OnlineUserQuery(), response).getData();
+            var data = new OnlineUserController(service, mock(OnlineUserKickoutService.class)).list(new OnlineUserQuery(), response).getData();
             assertEquals(0, data.total()); assertEquals(0, data.userCount());
             assertEquals("no-store", response.getHeader("Cache-Control"));
             verifyNoInteractions(jdbc);
