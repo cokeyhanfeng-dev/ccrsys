@@ -9,6 +9,7 @@ export const pageHistory = (params: {
   applicationNo?: string
   status?: string
   keyword?: string
+  currentNodeCode?: string
 }) => get<{ total: number; records: any[] }>('/ccr/approval/history', params)
 
 /** 申请审批档案(§14.4 全区块 Map) */

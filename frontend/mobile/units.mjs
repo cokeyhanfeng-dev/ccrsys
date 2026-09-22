@@ -1,4 +1,5 @@
-export function contributionUnit(row,isRatio=false){
+export function contributionUnit(row,isRatio=false,isCount=false){
+  if(isCount)return '户';
   if(isRatio||['RATE','RATIO'].includes(row.valueType))return '%';
   return {AVG_BALANCE:'万元·日均',INCOME:'万元',CONTRIBUTION_AMOUNT:'万元'}[row.valueType]||'单位未提供';
 }

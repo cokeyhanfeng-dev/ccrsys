@@ -1466,8 +1466,9 @@ public class ApprovalController {
                                           @RequestParam(defaultValue = "10") int pageSize,
                                           @RequestParam(required = false) String applicationNo,
                                           @RequestParam(required = false) String status,
-                                          @RequestParam(required = false) String keyword) {
-        return R.ok(approvalService.pageHistory(pageNum, pageSize, applicationNo, status, keyword));
+                                          @RequestParam(required = false) String keyword,
+                                          @RequestParam(required = false) String currentNodeCode) {
+        return R.ok(approvalService.pageHistory(pageNum, pageSize, applicationNo, status, keyword, currentNodeCode));
     }
 
     /** 申请审批档案(§14.4) */

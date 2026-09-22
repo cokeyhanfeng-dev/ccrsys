@@ -68,9 +68,10 @@ public interface ApprovalService {
      * @param applicationNo 申请号模糊(可空)
      * @param status        状态筛选,逗号分隔多状态(可空;工作台「审批中/否决」聚合跳转)
      * @param keyword       客户/集团名称模糊(可空,匹配 JSON 快照)
+     * @param currentNodeCode 当前审批岗位节点(可空，仅匹配在途申请)
      * @return {total, records}
      */
-    Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword);
+    Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword, String currentNodeCode);
 
     /**
      * 申请审批档案(§14.4):申请+成员+分项+快照包与质量结果+审批轨迹+调价记录+

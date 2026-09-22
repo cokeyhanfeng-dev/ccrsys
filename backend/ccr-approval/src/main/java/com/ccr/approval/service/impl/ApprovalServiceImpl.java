@@ -864,7 +864,7 @@ public class ApprovalServiceImpl implements ApprovalService {
     // ---------- 历史审批(§13.2/§14.4) ----------
 
     @Override
-    public Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword) {
+    public Map<String, Object> pageHistory(int pageNum, int pageSize, String applicationNo, String status, String keyword, String currentNodeCode) {
         SysUserRead user = currentLoginUser.requireCurrentUser();
         Page<CcrApplication> page = new Page<>(Math.max(pageNum, 1), Math.min(Math.max(pageSize, 1), 200));
         LambdaQueryWrapper<CcrApplication> wrapper = new LambdaQueryWrapper<>();
@@ -876,6 +876,22 @@ public class ApprovalServiceImpl implements ApprovalService {
             // 审批人(含行长/委员/部门总经理/支行行长/副行长):仅本人审批/表决/决策过的申请;
             // 审计(admin)为全局监管视角,保留查看全部
             wrapper.inSql(CcrApplication::getId, participatedApplicationSql(user.getId()));
+        }
+        // 当前审批岗位只收窄原有数据权限；终态保留的节点不能作为待审批岗位命中。
+        if (StrUtil.isNotBlank(currentNodeCode)) {
+            String node = currentNodeCode.trim();
+            if (!CurrentLoginUser.NODE_ROLE.containsKey(node) && !RouteChains.PARENT_BRANCH_MANAGER.equals(node)) {
+                throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "未知审批岗位节点");
+            }
+            // 与实际待办同源读取在途分项，兼容旧申请未冻结整单节点；过会后的行长待决策
+            // 分项可能仍保留小组节点，按状态识别实际办理岗位，避免错归六人小组。
+            wrapper.notIn(CcrApplication::getStatus, List.of("DRAFT", "APPROVED", "FINAL", "REJECTED", "VETOED", "CLOSED"))
+                    .apply("EXISTS (SELECT 1 FROM ccr_pricing_item hp"
+                            + " WHERE hp.application_id = ccr_application.id AND hp.del_flag = '0'"
+                            + " AND hp.status IN ('ROUTING','VOTING','COMMITTEE_PASS','PRESIDENT_DECISION')"
+                            + " AND (CASE WHEN hp.status IN ('COMMITTEE_PASS','PRESIDENT_DECISION') THEN 'PRESIDENT'"
+                            + " WHEN hp.status = 'VOTING' THEN 'SIX_PEOPLE_GROUP'"
+                            + " ELSE hp.current_node_code END) = {0})", node);
         }
         // 筛选:申请号模糊(§2026-08-26 历史申请查询)
         if (StrUtil.isNotBlank(applicationNo)) {

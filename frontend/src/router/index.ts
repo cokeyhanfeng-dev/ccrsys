@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { clearHistoryListOutside } from '@/utils/history-list-state.mjs'
 
 // 路由菜单参照 demo(v3.3-html-demo)8 大页面组织
 const routes: RouteRecordRaw[] = [
@@ -182,6 +183,11 @@ router.beforeEach((to, _from, next) => {
     }
   }
   next()
+})
+
+// 档案往返保留查询结果；转到其他功能或退出登录后丢弃。
+router.afterEach((to, _from, failure) => {
+  if (!failure) clearHistoryListOutside(to.path)
 })
 
 export default router

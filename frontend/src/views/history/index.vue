@@ -12,6 +12,10 @@
         <el-select v-model="filters.status" placeholder="状态" aria-label="状态">
           <el-option v-for="s in statusOptions" :key="s.value || '_all'" :label="s.label" :value="s.value" />
         </el-select>
+        <el-select v-model="filters.currentNodeCode" placeholder="当前审批岗位" aria-label="当前审批岗位" clearable>
+          <el-option label="全部审批岗位" value="" />
+          <el-option v-for="node in approvalNodes" :key="node" :label="nodeLabel(node)" :value="node" />
+        </el-select>
         <input class="form-input" v-model="filters.keyword" placeholder="客户名称" aria-label="客户名称" />
         <button class="btn btn--primary" @click="onSearch">查询</button>
         <button class="btn btn--secondary" @click="onReset">重置</button>
@@ -105,14 +109,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, reactive, ref, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { pageHistory, getApprovalProgress, downloadResolutionDoc } from '@/api/history'
 import { del } from '@/api/request'
-import { appStatusText, businessTypeText, appStatusBadge, actionText } from '@/utils/dict'
+import { appStatusText, businessTypeText, appStatusBadge, actionText, nodeLabel } from '@/utils/dict'
 import { fmtDateTime } from '@/utils/format'
+import { saveHistoryList, takeHistoryList } from '@/utils/history-list-state.mjs'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -120,7 +125,7 @@ const role = computed(() => userStore.userInfo?.roles?.[0] || 'customer_manager'
 
 // 审批人角色:支行行长/部门总经理/分管行长/小组成员/行长
 const isApprover = computed(() =>
-  ['branch_manager', 'committee_member', 'president', 'dept_gm', 'vice_president'].includes(role.value)
+  ['branch_manager', 'committee_member', 'president', 'dept_gm', 'vice_president', 'secretary'].includes(role.value)
 )
 
 const records = ref<any[]>([])
@@ -132,7 +137,9 @@ const listError = ref(false)
 
 // ---------- 筛选(§13.2:申请号/状态/客户名称;工作台统计卡可带 query 跳转) ----------
 const route = useRoute()
-const filters = reactive({ applicationNo: '', status: '', keyword: '' })
+const filters = reactive({ applicationNo: '', status: '', keyword: '', currentNodeCode: '' })
+// 筛选当前仍在办理的节点，已结束申请不按保留的历史岗位匹配。
+const approvalNodes = ['BRANCH_MANAGER', 'PARENT_BRANCH_MANAGER', 'DEPT_GENERAL_MANAGER', 'VICE_PRESIDENT', 'SECRETARY', 'SIX_PEOPLE_GROUP', 'PRESIDENT']
 // 审批中=复合多状态(与工作台「审批中/在途」统计卡跳转的 query 值一致,便于回显)
 const IN_PROGRESS_STATUS = 'ROUTING,SUBMITTED,SUBMITTING,APPROVED_LEVEL,PROCESSING,VOTING,COMMITTEE_PASS,PRESIDENT_DECISION'
 const statusOptions = [
@@ -150,6 +157,8 @@ function initFromQuery() {
   filters.applicationNo = String(route.query.applicationNo || '')
   filters.status = String(route.query.status || '')
   filters.keyword = String(route.query.keyword || '')
+  const node = String(route.query.currentNodeCode || '')
+  filters.currentNodeCode = approvalNodes.includes(node) ? node : ''
 }
 
 async function load() {
@@ -161,7 +170,8 @@ async function load() {
       pageSize,
       applicationNo: filters.applicationNo || undefined,
       status: filters.status || undefined,
-      keyword: filters.keyword || undefined
+      keyword: filters.keyword || undefined,
+      currentNodeCode: filters.currentNodeCode || undefined
     })
     records.value = data.records || []
     total.value = Number(data.total) || 0
@@ -185,6 +195,7 @@ function onReset() {
   filters.applicationNo = ''
   filters.status = ''
   filters.keyword = ''
+  filters.currentNodeCode = ''
   pageNum.value = 1
   load()
 }
@@ -280,7 +291,30 @@ function downloadResolution(row: any) {
   downloadResolutionDoc(row.id)
 }
 
-onMounted(() => {
+onBeforeRouteLeave((to) => {
+  if (to.path.startsWith('/history/archive/') && !listLoading.value && !listError.value) {
+    saveHistoryList(userStore.token, {
+      filters: { ...filters }, pageNum: pageNum.value, records: records.value, total: total.value,
+      queryKey: JSON.stringify(route.query),
+      scrollTop: document.querySelector('.app-main')?.scrollTop || 0,
+      windowScrollY: window.scrollY
+    })
+  }
+})
+
+onMounted(async () => {
+  const saved = takeHistoryList(userStore.token, route.query)
+  if (saved) {
+    Object.assign(filters, saved.filters)
+    pageNum.value = saved.pageNum
+    records.value = saved.records
+    total.value = saved.total
+    await nextTick()
+    const main = document.querySelector('.app-main')
+    if (main) main.scrollTop = saved.scrollTop
+    window.scrollTo(0, saved.windowScrollY)
+    return
+  }
   initFromQuery()
   load()
 })
