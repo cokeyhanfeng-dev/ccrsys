@@ -20,6 +20,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import jakarta.validation.Valid;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ccr.message.service.dto.NotificationLogQuery;
+import com.ccr.message.service.dto.NotificationLogView;
 
 /**
  * 通知日志接口(§11.4 发送/重试/回执)
@@ -44,7 +48,7 @@ public class NotificationLogController {
     @GetMapping
     public R<List<CcrNotificationLog>> list(@RequestParam(required = false) String recipientId,
                                             @RequestParam(required = false) String sendStatus) {
-        boolean fullView = StpUtil.hasRole("admin") || StpUtil.hasRole("auditor");
+        boolean fullView = StpUtil.hasRole("admin");
         String effectiveRecipientId = fullView ? recipientId : StpUtil.getLoginIdAsString();
         return R.ok(logMapper.selectList(new LambdaQueryWrapper<CcrNotificationLog>()
                 .eq(effectiveRecipientId != null && !effectiveRecipientId.isBlank(),
@@ -55,6 +59,14 @@ public class NotificationLogController {
                         .or().notLikeRight(CcrNotificationLog::getMessageKey, "NR:"))
                 .orderByDesc(CcrNotificationLog::getCreateTime)
                 .last("LIMIT 200")));
+    }
+
+    /** 全量管理查询只对管理员开放，独立于本人消息中心。 */
+    @SaCheckRole("admin")
+    @GetMapping("/admin")
+    public R<Page<NotificationLogView>> adminPage(@Valid NotificationLogQuery query) {
+        StpUtil.checkRole("admin");
+        return R.ok(logMapper.selectAdminPage(new Page<>(query.getPageNum(), query.getPageSize()), query));
     }
 
     /** 手工触发一次重试/消费 */

@@ -111,6 +111,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '在线用户', roles: ['admin'] }
       },
       {
+        path: 'system/notification',
+        name: 'NotificationDelivery',
+        component: () => import('@/views/system/notification.vue'),
+        meta: { title: '消息投递记录', roles: ['admin'] }
+      },
+      {
         path: 'system/role',
         name: 'SysRole',
         component: () => import('@/views/system/role.vue'),

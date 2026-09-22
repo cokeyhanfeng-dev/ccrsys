@@ -89,7 +89,7 @@
             </div>
             <div class="form-field">
               <label class="form-field__label" for="u-role">角色 <span class="req">*</span></label>
-              <select id="u-role" class="form-select" v-model="dialog.form.roleCode">
+              <select id="u-role" class="form-select" v-model="dialog.form.roleCode" @change="syncDefaultBinding">
                 <option v-for="r in roleOptions" :key="r.value" :value="r.value">{{ r.label }}</option>
               </select>
             </div>
@@ -104,9 +104,11 @@
             </div>
             <div class="form-field">
               <label class="form-field__label" for="u-org">归属机构</label>
-              <select id="u-org" class="form-select" v-model="dialog.form.orgId">
-                <option v-for="d in depts" :key="d.id" :value="d.id">{{ d.deptName }}</option>
-              </select>
+              <el-select id="u-org" v-model="dialog.form.orgId" filterable
+                placeholder="输入机构名称检索" style="width:100%" @change="syncDefaultBinding">
+                <el-option v-for="d in depts" :key="d.id" :value="d.id"
+                  :label="d.deptName + (d.status !== 'ENABLE' ? '(已停用)' : '')" :disabled="d.status !== 'ENABLE'" />
+              </el-select>
             </div>
             <div class="form-field">
               <label class="form-field__label" for="u-phone">手机</label>
@@ -135,15 +137,14 @@
                     <input type="radio" name="binding-default" :checked="b.isDefault === '1'" @change="setDefault(i)" />
                   </td>
                   <td>
-                    <select class="form-select" v-model="b.orgId">
-                      <option value="" disabled>请选择机构</option>
-                      <option v-for="d in depts" :key="d.id" :value="d.id" :disabled="d.status !== 'ENABLE'">
-                        {{ d.deptName }}{{ d.status !== 'ENABLE' ? '(已停用)' : '' }}
-                      </option>
-                    </select>
+                    <el-select v-model="b.orgId" filterable placeholder="输入机构名称检索"
+                      style="width:100%" aria-label="绑定机构" @change="syncDefaultForm">
+                      <el-option v-for="d in depts" :key="d.id" :value="d.id"
+                        :label="d.deptName + (d.status !== 'ENABLE' ? '(已停用)' : '')" :disabled="d.status !== 'ENABLE'" />
+                    </el-select>
                   </td>
                   <td>
-                    <select class="form-select" v-model="b.postCode">
+                    <select class="form-select" v-model="b.postCode" @change="syncDefaultForm">
                       <option value="" disabled>请选择岗位</option>
                       <option v-for="r in roleOptions" :key="r.value" :value="r.value">{{ r.label }}</option>
                     </select>
@@ -156,7 +157,7 @@
               </tbody>
             </table>
             </div>
-            <div class="section-tip">绑定校验:停用机构不可绑定;同一机构+岗位不可重复;默认机构/岗位唯一。</div>
+            <div class="section-tip">默认绑定与上方归属机构、角色自动同步。停用机构不可绑定;同一机构+岗位不可重复;默认机构/岗位唯一。</div>
           </div>
         </div>
         <div class="modal__actions">
@@ -176,6 +177,7 @@ import {
   getUserBinding, saveUserBinding,
   type SysDept, type UserBinding
 } from '@/api/system'
+import { syncUserDefaultBinding, syncUserDefaultForm } from '@/utils/user-default-binding.mjs'
 import { pwdHint } from '@/utils/password'
 
 // 角色选项从后端角色表拉取(与 db/08_system.sql 角色种子一致;岗位编码与角色码对齐)
@@ -283,8 +285,16 @@ async function openEdit(u: any) {
 function addBinding() {
   dialog.bindings.push({ orgId: '', postCode: '', isDefault: dialog.bindings.length ? '0' : '1' })
 }
+// 仅响应用户改选，加载编辑数据时不覆盖现有附加绑定。
+function syncDefaultBinding() {
+  syncUserDefaultBinding(dialog.form, dialog.bindings)
+}
+function syncDefaultForm() {
+  syncUserDefaultForm(dialog.form, dialog.bindings)
+}
 function setDefault(index: number) {
   dialog.bindings.forEach((b, i) => (b.isDefault = i === index ? '1' : '0'))
+  syncDefaultForm()
 }
 
 function validateBindings(): boolean {

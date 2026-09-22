@@ -23,6 +23,13 @@
             <button class="btn btn--primary" @click="openCreate(null)">＋ 新增根机构</button>
           </div>
         </div>
+        <div class="dept-tree__table">
+          <div class="dept-tree__columns">
+            <span>机构名称</span>
+            <span>机构码</span>
+            <span>支行标识</span>
+            <span>状态</span>
+          </div>
         <el-tree
           ref="treeRef"
           :data="tree"
@@ -37,15 +44,21 @@
           <template #default="{ data }">
             <span class="tree-node">
               <span class="tree-node__name" :title="data.deptName">{{ data.deptName }}</span>
-              <span class="tree-node__code">{{ data.orgCode }}</span>
+              <span class="tree-node__code" :title="data.orgCode">{{ data.orgCode }}</span>
               <!-- 零售支行徽标(2026-09-04 综合/零售两级支行) -->
-              <span v-if="data.branchType === 'RETAIL'" class="badge badge--warning">零售支行</span>
-              <span :class="data.status === 'ENABLE' ? 'badge badge--success' : 'badge badge--neutral'">
-                {{ data.status === 'ENABLE' ? '启用' : '停用' }}
+              <span class="tree-node__type">
+                <span v-if="data.branchType === 'RETAIL'" class="badge badge--warning">零售支行</span>
+                <span v-else class="tree-node__placeholder">—</span>
+              </span>
+              <span class="tree-node__status">
+                <span :class="data.status === 'ENABLE' ? 'badge badge--success' : 'badge badge--neutral'">
+                  {{ data.status === 'ENABLE' ? '启用' : '停用' }}
+                </span>
               </span>
             </span>
           </template>
         </el-tree>
+        </div>
         <div v-if="!tree.length" class="empty-line">暂无机构</div>
       </div>
 
@@ -359,12 +372,37 @@ onMounted(load)
 <style scoped>
 /* §UI审查:树+详情窄屏换行兜底,避免挤压溢出 */
 .dept-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-.dept-tree { flex: 0 0 480px; max-width: 100%; max-height: calc(100vh - 220px); overflow: auto; }
+.dept-tree { flex: 0 0 560px; max-width: 100%; max-height: calc(100vh - 220px); overflow: auto; }
 .dept-detail { flex: 1 1 320px; min-width: 0; }
-/* 树节点整行不横向溢出:名称可收缩省略(title 显全名),徽标固定在行尾恒可见(2026-09-05 零售支行徽标被右缘遮挡修复) */
-.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
-.tree-node__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-node__code { flex: none; color: var(--color-text-sub); font-size: 12px; white-space: nowrap; } /* §UI审查:浅灰小字改 text-sub 提对比 */
+.dept-tree > .card-toolbar { flex-wrap: wrap; gap: 12px; }
+.dept-tree__table { min-width: 520px; }
+/* 名称列承担树层级缩进，其余三列固定宽度，所有层级右侧对齐。 */
+.dept-tree__columns, .tree-node {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 78px 56px;
+  align-items: center;
+  column-gap: 12px;
+}
+.dept-tree__columns {
+  min-height: 38px;
+  padding: 0 12px 0 24px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-sub);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dept-tree :deep(.el-tree-node__content) {
+  height: 42px;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.dept-tree :deep(.el-tree-node__expand-icon) { flex: none; }
+.tree-node { min-width: 0; flex: 1; }
+.tree-node__name, .tree-node__code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node__code { color: var(--color-text-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tree-node__type, .tree-node__status { display: flex; align-items: center; }
+.tree-node__placeholder { color: var(--color-text-light); }
 .tree-node .badge { flex: none; white-space: nowrap; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 /* 768px 断点:树与详情纵向堆叠,双列表单转单列 */

@@ -27,6 +27,7 @@
                 '/audit': 'View',
                 '/system/user': 'User',
                 '/system/online': 'Connection',
+                '/system/notification': 'Bell',
                 '/system/role': 'Key',
                 '/system/dept': 'OfficeBuilding',
                 '/system/flow': 'Share',
@@ -170,6 +171,7 @@ const allMenus = [
   // 基础系统功能(管理端)
   { path: '/system/user', title: '用户管理', roles: ['admin'] },
   { path: '/system/online', title: '在线用户', roles: ['admin'] },
+  { path: '/system/notification', title: '消息投递记录', roles: ['admin'] },
   { path: '/system/role', title: '权限管理', roles: ['admin'] },
   { path: '/system/dept', title: '机构管理', roles: ['admin'] },
   { path: '/system/flow', title: '流程配置', roles: ['admin'] },

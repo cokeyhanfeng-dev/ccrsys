@@ -29,3 +29,23 @@ export const listNotificationLogs = (params?: { recipientId?: string; sendStatus
 /** 登记回执(标记已读) */
 export const receiptNotification = (logId: number) =>
   post<NotificationLog>(`/ccr/notification/logs/${logId}/receipt`)
+
+export interface ManagedNotificationLog extends NotificationLog {
+  recipientName?: string
+  recipientUsername?: string
+  recipientOrgName?: string
+}
+export interface NotificationLogQuery {
+  pageNum: number
+  pageSize: number
+  recipient?: string
+  recipientOrgId?: number
+  keyword?: string
+  channel?: string
+  sendStatus?: string
+  receiptStatus?: string
+  startTime?: string
+  endTime?: string
+}
+export const listManagedNotificationLogs = (params: NotificationLogQuery) =>
+  get<{ records: ManagedNotificationLog[]; total: number }>('/ccr/notification/logs/admin', params)
