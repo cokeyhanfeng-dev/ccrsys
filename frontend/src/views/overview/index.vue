@@ -198,7 +198,7 @@ const orgId = computed(() => userStore.userInfo?.orgId)
 const orgName = computed(() => userStore.userInfo?.orgName)
 const roleName = computed(() => roleText(role.value, role.value))
 
-const APPROVAL_ROLES = ['branch_manager', 'dept_gm', 'vice_president']
+const APPROVAL_ROLES = ['branch_manager', 'dept_gm', 'vice_president', 'secretary']
 
 const roleHint = computed(() => {
   const map: Record<string, string> = {

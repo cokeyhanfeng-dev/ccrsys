@@ -73,7 +73,7 @@ const loadError = ref(false)
 const isCommitteeMember = computed(() => (userStore.userInfo?.roles || []).includes('committee_member'))
 // 审批角色(§D-7 兼岗):与委员身份并存,同时加载普通审批待办
 const isApprovalRole = computed(() => (userStore.userInfo?.roles || [])
-  .some((r) => ['branch_manager', 'dept_gm', 'vice_president'].includes(r)))
+  .some((r) => ['branch_manager', 'dept_gm', 'vice_president', 'secretary'].includes(r)))
 // 行长(总行):待决策分项走行长决策接口(表决通过/行长决议状态),在利率审批页一并展示
 const isPresident = computed(() => (userStore.userInfo?.roles || []).includes('president'))
 

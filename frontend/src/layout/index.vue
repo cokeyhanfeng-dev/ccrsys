@@ -157,7 +157,7 @@ const allMenus = [
   { path: '/application/loan', title: '贷款利率申请', roles: ['customer_manager'] },
   { path: '/application/deposit', title: '存款利率申请', roles: ['customer_manager'] },
   // 利率审批:单独菜单(审批人/6人小组/行长);行长决策并入其中(详情按角色展示同意/一票否决)
-  { path: '/approval', title: '利率审批', roles: ['branch_manager', 'dept_gm', 'vice_president', 'committee_member', 'president'] },
+  { path: '/approval', title: '利率审批', roles: ['branch_manager', 'dept_gm', 'vice_president', 'secretary', 'committee_member', 'president'] },
   // 贡献度跟踪:所有业务角色可见(审批人看自己审批过的客户,数据权限;6人小组/行长看全部)
   { path: '/commitment', title: '贡献度跟踪', roles: ['*'] },
   { path: '/history', title: '历史', roles: ['*'] },
@@ -182,7 +182,7 @@ const allMenus = [
 
 // 审批人角色:客户经理看到"历史申请",审批人看到"历史审批"
 const isApprover = computed(() =>
-  ['branch_manager', 'committee_member', 'president', 'dept_gm', 'vice_president'].includes(currentRole.value)
+  ['branch_manager', 'committee_member', 'president', 'dept_gm', 'vice_president', 'secretary'].includes(currentRole.value)
 )
 const menus = computed(() =>
   allMenus
