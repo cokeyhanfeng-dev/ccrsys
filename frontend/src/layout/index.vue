@@ -43,45 +43,54 @@
     </aside>
 
     <div class="app-main">
-      <!-- 顶栏:左侧当前页面名;右侧消息中心铃铛 + 用户信息 -->
-      <div class="topbar">
-        <div class="topbar__title">{{ route.meta.title || '工作台' }}</div>
-        <div class="topbar__actions">
-          <!-- 消息中心(§12.2):铃铛 + 未读 badge,点击开抽屉 -->
-          <el-badge
-            :value="unreadCount"
-            :hidden="unreadCount === 0"
-            :max="99"
-            class="msg-badge"
-          >
-            <!-- §UI审查:铃铛包 button 提供 32px+ 热区与键盘可达 -->
-            <button
-              type="button"
-              class="msg-bell-btn"
-              :aria-label="`消息中心${unreadCount ? `(${unreadCount}条未读)` : ''}`"
-              @click="openDrawer"
-            >
-              <el-icon class="msg-bell" :size="20"><Bell /></el-icon>
-            </button>
-          </el-badge>
-          <span class="topbar__divider"></span>
-          <el-dropdown @command="onCommand">
-            <span class="user-name">
-              <span class="user-avatar">{{ (userStore.userInfo?.nickName || '用').slice(0, 1) }}</span>
-              {{ userStore.userInfo?.nickName || '用户' }}
-              <el-icon><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
+      <!-- 上排目录层级与用户操作，下排已打开页签。 -->
+      <WorkspaceTabs>
+        <template #breadcrumb>
+          <nav class="workspace-breadcrumb" aria-label="目录层级">
+            <template v-for="(item, index) in breadcrumbs" :key="index">
+              <span v-if="index" class="workspace-breadcrumb__separator" aria-hidden="true">/</span>
+              <router-link v-if="item.path && index < breadcrumbs.length - 1" :to="item.path">{{ item.title }}</router-link>
+              <span v-else :aria-current="index === breadcrumbs.length - 1 ? 'page' : undefined"
+                :class="{ 'is-current': index === breadcrumbs.length - 1 }">{{ item.title }}</span>
             </template>
-          </el-dropdown>
-        </div>
-      </div>
-
-      <WorkspaceTabs />
+          </nav>
+        </template>
+        <template #actions>
+          <div class="topbar__actions">
+            <!-- 消息中心(§12.2):铃铛 + 未读 badge,点击开抽屉 -->
+            <el-badge
+              :value="unreadCount"
+              :hidden="unreadCount === 0"
+              :max="99"
+              class="msg-badge"
+            >
+              <!-- §UI审查:铃铛包 button 提供 32px+ 热区与键盘可达 -->
+              <button
+                type="button"
+                class="msg-bell-btn"
+                :aria-label="`消息中心${unreadCount ? `(${unreadCount}条未读)` : ''}`"
+                @click="openDrawer"
+              >
+                <el-icon class="msg-bell" :size="20"><Bell /></el-icon>
+              </button>
+            </el-badge>
+            <span class="topbar__divider"></span>
+            <el-dropdown @command="onCommand">
+              <span class="user-name">
+                <span class="user-avatar">{{ (userStore.userInfo?.nickName || '用').slice(0, 1) }}</span>
+                {{ userStore.userInfo?.nickName || '用户' }}
+                <el-icon><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
+                  <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </template>
+      </WorkspaceTabs>
     </div>
 
     <!-- 消息抽屉(§12.2):approval/result/warning/system 四类分档,未读高亮,点击已读并跳转 -->
@@ -131,6 +140,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import WorkspaceTabs from './WorkspaceTabs.vue'
+import { buildWorkspaceBreadcrumbs } from '@/utils/workspace-breadcrumbs.mjs'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { listNotificationLogs, receiptNotification, type NotificationLog } from '@/api/notification'
@@ -185,6 +195,8 @@ const menus = computed(() =>
         : m
     )
 )
+
+const breadcrumbs = computed(() => buildWorkspaceBreadcrumbs(route, menus.value))
 
 // ---------- 消息中心(§12.2) ----------
 type MsgType = 'approval' | 'result' | 'warning' | 'system'
@@ -347,36 +359,15 @@ async function onCommand(cmd: string) {
   width: 100%;
   height: auto;
 }
-/* 顶栏:AntD Pro 扁平白头条——通栏、吸顶、无圆角卡片感(负 margin 抵消 app-main 内边距) */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 20px;
-  margin: -16px -20px 20px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border-light);
-  box-shadow: 0 1px 4px rgba(0, 21, 41, .06);
-  position: sticky;
-  top: 0;
-  z-index: 9;
-}
-.topbar__title {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--color-text-sub); /* 弱化顶栏标题,层级让给页内 PageContainer 页头 */
-  display: flex;
-  align-items: center;
-}
+.workspace-breadcrumb { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; overflow-x: auto; white-space: nowrap; font-size: 14px; color: #303133; }
+.workspace-breadcrumb a { color: #303133; text-decoration: none; }
+.workspace-breadcrumb a:hover { text-decoration: underline; }
+.workspace-breadcrumb .is-current, .workspace-breadcrumb__separator { color: #909399; }
 .topbar__actions {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 18px;
-}
-/* 移动端:app-main 内边距变小,负 margin 同步(与 design-system 移动端 padding 对齐) */
-@media (max-width: 767px) {
-  .topbar { margin: -12px -16px 12px; }
 }
 .topbar__divider {
   width: 1px;
