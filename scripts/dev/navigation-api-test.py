@@ -98,6 +98,12 @@ try:
     secretary = new_user('secretary')
     reviewer = new_user('config_reviewer')
     check('客户经理具有申请入口且无系统管理入口', {'/application/loan', '/application/deposit'} <= paths(cm) and '/system/user' not in paths(cm))
+    special = [m for m in menu_rows if m['path'] == '/special-asset']
+    check('菜单15保留菜单管理，纾困调息使用独立编号',
+          next(m for m in menu_rows if str(m['id']) == '15')['path'] == '/system/menu'
+          and len(special) == 1 and str(special[0]['id']) != '15')
+    check('纾困调息对管理员和客户经理开放', '/special-asset' in paths(admin_token) and '/special-asset' in paths(cm))
+
     check('秘书有审批入口', '/approval' in paths(secretary))
     check('配置复核人仅保留参数管理入口', '/system/params' in paths(reviewer) and '/system/user' not in paths(reviewer))
     check('迁移保留原有各角色公共历史入口', all('/history' in paths(token) for token in [cm, secretary, reviewer]))
@@ -128,7 +134,7 @@ try:
     before_migration = admin('GET', '/system/menus')
     before_roles = admin('GET', '/system/roles')
     project = Path(__file__).resolve().parents[2]
-    for relative in ['db/incr/20260923_001_navigation_tree.sql', 'db/27_navigation_tree.sql']:
+    for relative in ['db/incr/20260923_001_navigation_tree.sql', 'db/27_navigation_tree.sql', 'db/incr/20260924_001_special_asset_rate_apply.sql']:
         migrated = subprocess.run(['docker', 'compose', '-f', str(project / 'compose.test.yml'), 'exec', '-T', '-e', 'MYSQL_PWD=root123', 'mysql', 'mysql', '-uroot', '--default-character-set=utf8mb4'], input=(project / relative).read_text(), text=True, capture_output=True)
         assert migrated.returncode == 0, '重复执行迁移失败：' + migrated.stderr[-500:]
     check('全量及增量迁移重复执行保留已有目录修改和角色配置', admin('GET', '/system/menus') == before_migration and admin('GET', '/system/roles') == before_roles)

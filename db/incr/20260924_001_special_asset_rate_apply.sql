@@ -114,9 +114,9 @@ SELECT @ccr_special_menu_id,0,'纾困调息','/special-asset','ccr:special-asset
 WHERE NOT EXISTS (SELECT 1 FROM ccr_sys_menu WHERE path='/special-asset');
 
 -- ---------- 4. 菜单授权：绑定实际编号，保留原有菜单管理授权 ----------
-UPDATE ccr_sys_role SET menu_ids=CONCAT_WS(',',NULLIF(menu_ids,''),CAST(@ccr_special_menu_id AS CHAR))
+UPDATE ccr_sys_role SET menu_ids=CONCAT_WS(',',NULLIF(menu_ids,''),CAST(@ccr_special_menu_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_general_ci)
 WHERE role_code IN ('customer_manager','admin')
-  AND FIND_IN_SET(CAST(@ccr_special_menu_id AS CHAR),COALESCE(menu_ids,''))=0;
+  AND FIND_IN_SET(CAST(@ccr_special_menu_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_general_ci,CONVERT(COALESCE(menu_ids,'') USING utf8mb4) COLLATE utf8mb4_general_ci)=0;
 
 -- ============================================================
 -- 执行后必做:清矩阵生效缓存(否则路由仍读旧矩阵)
