@@ -25,6 +25,7 @@ usage() {
   mobile-api-test   真实 HTTP 移动接口回归（隔离 MySQL/Redis、虚构验票服务）
   mobile-nginx-test 在测试前端容器内验证独立移动 Nginx 配置
   release-test      临时目录验证发布模式、备份、回滚和目录隔离
+  navigation-api-test  菜单与角色真实 HTTP 回归（仅 ccrsys-test）
   backend-test      执行后端全部单元测试
   frontend-test     npm ci 后执行前端生产构建
   verify            执行后端单测和前端构建
@@ -111,6 +112,10 @@ case "${command_name}" in
       ccr_npm ci
     fi
     exec npm run dev
+    ;;
+  navigation-api-test)
+    ccr_compose ps --status running
+    python3 "${CCR_PROJECT_ROOT}/scripts/dev/navigation-api-test.py"
     ;;
   backend-test)
     cd "${CCR_PROJECT_ROOT}/backend"

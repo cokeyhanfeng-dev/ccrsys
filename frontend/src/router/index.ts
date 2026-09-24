@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { useNavigationStore } from '@/store/navigation'
+import { matchingMenu } from '@/utils/navigation.mjs'
 import { clearHistoryListOutside } from '@/utils/history-list-state.mjs'
 
 // 路由菜单参照 demo(v3.3-html-demo)8 大页面组织
@@ -23,6 +25,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/overview',
     children: [
+      { path: 'system/menu', name: 'SysMenu', component: () => import('@/views/system/menu.vue'), meta: { title: '菜单管理', roles: ['admin'] } },
       {
         path: 'overview',
         name: 'Overview',
@@ -128,7 +131,7 @@ const routes: RouteRecordRaw[] = [
         path: 'system/role',
         name: 'SysRole',
         component: () => import('@/views/system/role.vue'),
-        meta: { title: '权限管理', roles: ['admin'] }
+        meta: { title: '角色管理', roles: ['admin'] }
       },
       {
         path: 'system/flow',
@@ -178,7 +181,7 @@ const router = createRouter({
 })
 
 // 登录守卫 + 角色守卫(meta.roles 与登录角色比对,admin 放行全部)
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
   if (to.path === '/login') {
     next()
@@ -193,10 +196,10 @@ router.beforeEach((to, _from, next) => {
     next({ path: '/change-password', query: { redirect: to.fullPath } })
     return
   }
-  const needRoles = to.meta.roles as string[] | undefined
-  if (needRoles?.length) {
-    const role = userStore.userInfo?.roles?.[0] || ''
-    if (role !== 'admin' && !needRoles.includes(role)) {
+  if (to.path !== '/change-password') {
+    const navigation = useNavigationStore()
+    try { await navigation.load() } catch { next(false); return }
+    if (to.path !== '/overview' && !matchingMenu(to.path, navigation.rows)) {
       ElMessage.warning('无权限访问该页面')
       next({ path: '/overview' })
       return

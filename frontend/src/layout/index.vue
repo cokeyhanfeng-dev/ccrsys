@@ -6,40 +6,10 @@
         <img class="brand-logo-img" src="/logo.png" alt="公司标" />
       </div>
       <nav class="app-sidebar__nav">
-        <router-link
-          v-for="item in menus"
-          :key="item.path"
-          :to="item.path"
-          class="app-sidebar__item"
-          :class="{ 'app-sidebar__item--active': route.path.startsWith(item.path) }"
-        >
-          <el-icon class="app-sidebar__icon" :size="17">
-            <component
-              :is="{
-                '/overview': 'HomeFilled',
-                '/application/loan': 'EditPen',
-                '/application/deposit': 'Coin',
-                '/special-asset': 'Money',
-                '/approval': 'Stamp',
-                '/commitment': 'Timer',
-                '/history': 'Document',
-                '/resolution': 'DocumentCopy',
-                '/datacenter': 'DataAnalysis',
-                '/audit': 'View',
-                '/system/user': 'User',
-                '/system/online': 'Connection',
-                '/system/notification': 'Bell',
-                '/system/role': 'Key',
-                '/system/dept': 'OfficeBuilding',
-                '/system/flow': 'Share',
-                '/system/params': 'Setting',
-                '/system/cache': 'Odometer', // §UI审查:缓存配置换 Odometer,与存款申请 Coin 区分
-                '/system/run-log': 'Monitor'
-              }[item.path] || 'Menu'"
-            />
-          </el-icon>
-          <span>{{ item.title }}</span>
-        </router-link>
+        <el-menu class="sidebar-tree" :default-active="activeMenu" :default-openeds="openDirectories"
+          background-color="transparent" text-color="#c4cede" active-text-color="#ffffff">
+          <SidebarNode v-for="item in tree" :key="item.id" :item="item" :roles="userStore.userInfo?.roles || []" />
+        </el-menu>
       </nav>
       <div class="app-sidebar__foot">客户贡献度与利率决策系统</div>
     </aside>
@@ -142,7 +112,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import WorkspaceTabs from './WorkspaceTabs.vue'
-import { buildWorkspaceBreadcrumbs } from '@/utils/workspace-breadcrumbs.mjs'
+import SidebarNode from './SidebarNode.vue'
+import { useNavigationStore } from '@/store/navigation'
+import { menuTree, matchingMenu, navigationBreadcrumbs } from '@/utils/navigation.mjs'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { listNotificationLogs, receiptNotification, type NotificationLog } from '@/api/notification'
@@ -151,57 +123,11 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const currentRole = computed(() => userStore.userInfo?.roles?.[0] || 'customer_manager')
-
-// 参照 design-system 工作台菜单(demo.html §6);按角色过滤(PRD §4 角色权限)
-const allMenus = [
-  { path: '/overview', title: '工作台', roles: ['*'] },
-  { path: '/application/loan', title: '贷款利率申请', roles: ['customer_manager'] },
-  { path: '/application/deposit', title: '存款利率申请', roles: ['customer_manager'] },
-  // 纾困调息(2026-09-24):所有客户经理可发起(特殊资产管理部对困难客户做存量贷款利率纾困)
-  { path: '/special-asset', title: '纾困调息', roles: ['customer_manager'] },
-  // 利率审批:单独菜单(审批人/6人小组/行长);行长决策并入其中(详情按角色展示同意/一票否决)
-  { path: '/approval', title: '利率审批', roles: ['branch_manager', 'dept_gm', 'vice_president', 'secretary', 'committee_member', 'president'] },
-  // 贡献度跟踪:所有业务角色可见(审批人看自己审批过的客户,数据权限;6人小组/行长看全部)
-  { path: '/commitment', title: '贡献度跟踪', roles: ['*'] },
-  { path: '/history', title: '历史', roles: ['*'] },
-  // 决议书查询(2026-09-08):决议书查询专岗 + admin(admin 守卫特判全可见)
-  { path: '/resolution', title: '决议书查询', roles: ['resolution_query'] },
-  // 数据中心(§9.6 F8):批次落地监控 + 数据源时效看板,仅 admin 可见
-  { path: '/datacenter', title: '数据中心', roles: ['admin'] },
-  // 审计管理(§12.14):审计人员专用(admin 全量可见)
-  { path: '/audit', title: '审计管理', roles: ['auditor'] },
-  // 基础系统功能(管理端)
-  { path: '/system/user', title: '用户管理', roles: ['admin'] },
-  { path: '/system/online', title: '在线用户', roles: ['admin'] },
-  { path: '/system/notification', title: '消息投递记录', roles: ['admin'] },
-  { path: '/system/role', title: '权限管理', roles: ['admin'] },
-  { path: '/system/dept', title: '机构管理', roles: ['admin'] },
-  { path: '/system/flow', title: '流程配置', roles: ['admin'] },
-  // 参数管理:管理员维护草稿/配置复核人复核发布(param_admin 角色已取消,并入 admin)
-  { path: '/system/params', title: '参数管理', roles: ['admin', 'config_reviewer'] },
-  // 缓存配置(§3.6):Redis 缓存项 TTL/写入开关,DB 覆盖立即生效
-  { path: '/system/cache', title: '缓存配置', roles: ['admin'] },
-  // 运行日志监控(增量014):系统运行报错采集查询/日志文件查看下载,仅 admin
-  { path: '/system/run-log', title: '运行监控', roles: ['admin'] }
-]
-
-// 审批人角色:客户经理看到"历史申请",审批人看到"历史审批"
-const isApprover = computed(() =>
-  ['branch_manager', 'committee_member', 'president', 'dept_gm', 'vice_president', 'secretary'].includes(currentRole.value)
-)
-const menus = computed(() =>
-  allMenus
-    // admin 可见全部功能与数据
-    .filter((m) => currentRole.value === 'admin' || m.roles.includes('*') || m.roles.includes(currentRole.value))
-    .map((m) =>
-      m.path === '/history'
-        ? { ...m, title: isApprover.value ? '历史审批' : '历史申请' }
-        : m
-    )
-)
-
-const breadcrumbs = computed(() => buildWorkspaceBreadcrumbs(route, menus.value))
+const navigation = useNavigationStore()
+const tree = computed(() => menuTree(navigation.rows, true))
+const activeMenu = computed(() => matchingMenu(route.path, navigation.rows)?.path || route.path)
+const openDirectories = computed(() => navigation.rows.filter(m => m.menuType === 'M').map(m => String(m.id)))
+const breadcrumbs = computed(() => navigationBreadcrumbs(route.path, navigation.rows, userStore.userInfo?.roles || [], route.meta?.title))
 
 // ---------- 消息中心(§12.2) ----------
 type MsgType = 'approval' | 'result' | 'warning' | 'system'
@@ -528,4 +454,11 @@ async function onCommand(cmd: string) {
   padding: 24px 0;
   text-align: center;
 }
+</style>
+
+<style scoped>
+.sidebar-tree { border-right: none; --el-menu-hover-bg-color: rgba(255,255,255,.08); }
+.sidebar-tree :deep(.el-menu-item.is-active) { background: rgba(255,255,255,.14); border-radius: 6px; }
+.sidebar-tree :deep(.el-sub-menu__title), .sidebar-tree :deep(.el-menu-item) { height: 44px; font-size: 13px; }
+.sidebar-tree :deep(.el-menu) { background: transparent; }
 </style>

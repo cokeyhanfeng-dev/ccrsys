@@ -102,22 +102,21 @@ INSERT INTO `ccr_dept_vp`
 SELECT 2092000000000000004,'000000','3202233915',2092000000000002003,'ACTIVE',1,'1004',NOW(),'0'
 WHERE NOT EXISTS (SELECT 1 FROM `ccr_dept_vp` WHERE dept_code='3202233915' AND del_flag='0');
 
--- ---------- 3. 菜单:纾困调息(id=15,现有最大 14=决议书查询) ----------
+-- ---------- 3. 菜单:纾困调息(按路径识别，编号动态分配) ----------
 -- 菜单名 2026-09-24 用户拍板由「特资利率申请」改为「纾困调息」;本 INSERT 的
--- ON DUPLICATE KEY UPDATE 已带 menu_name,故对目标库重复执行即完成改名,无需另写 UPDATE。
-INSERT INTO `ccr_sys_menu`
-  (`id`,`parent_id`,`menu_name`,`path`,`perms`,`sort_no`)
-VALUES
-  (15,0,'纾困调息','/special-asset','ccr:special-asset',15)
-ON DUPLICATE KEY UPDATE
-  menu_name=VALUES(menu_name), path=VALUES(path), perms=VALUES(perms), sort_no=VALUES(sort_no);
+-- 重复执行按路径复用既有菜单，不覆盖管理员后续维护的菜单名称。
+-- 生产 ID 15 已用于菜单管理：按路径复用，新增时分配未占用 ID，不覆盖任何既有菜单。
+SET @ccr_special_menu_id = (SELECT MIN(id) FROM ccr_sys_menu WHERE path='/special-asset');
+SET @ccr_special_menu_id = COALESCE(@ccr_special_menu_id,
+  (SELECT GREATEST(1000,COALESCE(MAX(id),0))+1 FROM ccr_sys_menu));
+INSERT INTO ccr_sys_menu (id,parent_id,menu_name,path,perms,sort_no)
+SELECT @ccr_special_menu_id,0,'纾困调息','/special-asset','ccr:special-asset',15
+WHERE NOT EXISTS (SELECT 1 FROM ccr_sys_menu WHERE path='/special-asset');
 
--- ---------- 4. 菜单授权:所有客户经理可发起(用户口径) + admin 全可见 ----------
-UPDATE `ccr_sys_role` SET `menu_ids` = CONCAT(`menu_ids`, ',15')
-WHERE `role_code` = 'customer_manager' AND FIND_IN_SET('15', `menu_ids`) = 0;
-
-UPDATE `ccr_sys_role` SET `menu_ids` = CONCAT(`menu_ids`, ',15')
-WHERE `role_code` = 'admin' AND FIND_IN_SET('15', `menu_ids`) = 0;
+-- ---------- 4. 菜单授权：绑定实际编号，保留原有菜单管理授权 ----------
+UPDATE ccr_sys_role SET menu_ids=CONCAT_WS(',',NULLIF(menu_ids,''),CAST(@ccr_special_menu_id AS CHAR))
+WHERE role_code IN ('customer_manager','admin')
+  AND FIND_IN_SET(CAST(@ccr_special_menu_id AS CHAR),COALESCE(menu_ids,''))=0;
 
 -- ============================================================
 -- 执行后必做:清矩阵生效缓存(否则路由仍读旧矩阵)
@@ -130,8 +129,8 @@ WHERE `role_code` = 'admin' AND FIND_IN_SET('15', `menu_ids`) = 0;
 --     FROM ccr_rate_matrix WHERE matrix_no LIKE 'M-SA-%' ORDER BY priority;
 --   -- 特资部分管行长(期望 1 行,vp_user_id=2092000000000002003)
 --   SELECT dept_code,vp_user_id FROM ccr_dept_vp WHERE dept_code='3202233915' AND del_flag='0';
---   -- 菜单与授权(期望 customer_manager/admin 的 menu_ids 均含 15)
---   SELECT id,menu_name,path FROM ccr_sys_menu WHERE id=15;
+--   -- 菜单与授权(期望 customer_manager/admin 的 menu_ids 均含纾困调息实际编号)
+--   SELECT id,menu_name,path FROM ccr_sys_menu WHERE path='/special-asset';
 --   SELECT role_code,menu_ids FROM ccr_sys_role WHERE role_code IN ('customer_manager','admin');
 --
 -- 端到端验收:发起两笔特资申请(一笔 4.2%、一笔 3.8%),提交后查冻结链路

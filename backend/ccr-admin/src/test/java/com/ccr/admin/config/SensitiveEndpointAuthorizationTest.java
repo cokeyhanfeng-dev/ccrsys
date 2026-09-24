@@ -31,6 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class SensitiveEndpointAuthorizationTest {
 
     @Test
+    void menuAndRoleConfiguration_requireAdmin() {
+        assertRoles(com.ccr.admin.system.controller.SysMenuController.class, Set.of("admin"));
+        assertRoles(com.ccr.admin.system.controller.SysRoleController.class, Set.of("admin"));
+    }
+
+    @Test
     void technicalDataEndpoints_requireAdmin() {
         assertRoles(DatacenterController.class, Set.of("admin"));
         assertRoles(SnapshotController.class, Set.of("admin"));

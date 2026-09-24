@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { menuTree, navigationTitle } from '../src/utils/navigation.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
@@ -23,11 +24,13 @@ function declarations(path, names, roles) {
   })
 }
 
-test('主角色秘书能看见利率审批菜单及历史审批入口', () => {
-  const state = declarations('../src/layout/index.vue',
-    ['currentRole', 'allMenus', 'isApprover', 'menus'], ['secretary'])
-  assert.ok(state.menus.value.some(menu => menu.path === '/approval'))
-  assert.equal(state.menus.value.find(menu => menu.path === '/history').title, '历史审批')
+test('秘书服务端授权菜单能显示审批入口和历史审批名称', () => {
+  const menus = menuTree([
+    {id:'10',parentId:'0',menuType:'C',path:'/approval',menuName:'利率审批',status:'ENABLE',visible:'SHOW'},
+    {id:'5',parentId:'0',menuType:'C',path:'/history',menuName:'历史',status:'ENABLE',visible:'SHOW'}
+  ], true)
+  assert.ok(menus.some(menu => menu.path === '/approval'))
+  assert.equal(navigationTitle(menus.find(menu => menu.path === '/history'), ['secretary']), '历史审批')
 })
 
 test('秘书工作台满足待办加载和待我审批统计的角色条件', () => {
