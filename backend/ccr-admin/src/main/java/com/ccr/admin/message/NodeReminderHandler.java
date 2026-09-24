@@ -144,6 +144,10 @@ public class NodeReminderHandler {
                     : jdbc.queryForList(sql + " AND a.voter_user_id = ?", Long.class, app.getId(), roundId, userId);
         }
         List<Long> ids = assignees.resolveUserIds(node, app.getApplicantOrgId(), app.getDeptCode());
+        if ("BRANCH_MANAGER".equals(node)
+                && com.ccr.common.core.util.BranchTypeSupport.isRetailBranch(jdbc, app.getApplicantOrgId())) {
+            return ids;
+        }
         if (!ids.isEmpty()) {
             // 行长决策仍要求 president 主角色，不能仅凭节点配置获得决策权。
             if ("PRESIDENT".equals(node)) {

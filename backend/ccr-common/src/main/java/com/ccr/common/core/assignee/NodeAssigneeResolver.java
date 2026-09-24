@@ -87,6 +87,11 @@ public class NodeAssigneeResolver {
             if (PARENT_BRANCH_MANAGER_NODE.equals(nodeCode)) {
                 return resolveParentBranchManager(orgId);
             }
+            // 零售首节点严格按申请机构取本行行长，禁止跨机构指派或上级前缀兜底。
+            if (BRANCH_MANAGER_NODE.equals(nodeCode) && BranchTypeSupport.isRetailBranch(jdbcTemplate, orgId)) {
+                List<AssigneeUser> users = findEnabledUsersByRoleAndDept(BRANCH_MANAGER_ROLE, orgCodeOf(orgId));
+                return new ResolveResult(nodeCode, "RETAIL_BRANCH", users);
+            }
             // §D16a 分管行领导:分项 dept_code 已冻结时按部门-分管行长映射解析(一人可分管多部门,纯配置)
             if (VICE_PRESIDENT_NODE.equals(nodeCode) && deptCode != null && !deptCode.isBlank()) {
                 List<AssigneeUser> vp = findDeptVpUsers(deptCode);
@@ -117,10 +122,10 @@ public class NodeAssigneeResolver {
         }
     }
 
-    /** 仅用于提交预览：指派为空时，按业务待办的支行范围展示行长候选人，不参与授权。 */
+    /** 提交、预览与审批共用口径：零售支行禁止向上兜底，其余机构保留原支行范围解析。 */
     public ResolveResult resolvePreview(String nodeCode, Long orgId, String deptCode, String applyBranchCode) {
         ResolveResult resolved = resolve(nodeCode, orgId, null, deptCode);
-        if (!resolved.users().isEmpty() || LEVEL_ERROR.equals(resolved.getHitLevel())
+        if (!resolved.users().isEmpty() || "RETAIL_BRANCH".equals(resolved.getHitLevel()) || LEVEL_ERROR.equals(resolved.getHitLevel())
                 || !BRANCH_MANAGER_NODE.equals(nodeCode)
                 || applyBranchCode == null || applyBranchCode.isBlank()) {
             return resolved;

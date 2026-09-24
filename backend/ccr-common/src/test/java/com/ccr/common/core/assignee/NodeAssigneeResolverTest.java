@@ -54,6 +54,8 @@ class NodeAssigneeResolverTest {
 
     @Test
     void preview_无指派时按申请支行查启用行长() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), any(Object.class)))
+                .thenReturn(List.of());
         stubConfigs(List.of());
         var user = new NodeAssigneeResolver.AssigneeUser(7L, "bm001", "行长甲");
         when(jdbcTemplate.query(contains("LEFT(?, CHAR_LENGTH(d.branch_code))"),
@@ -82,6 +84,8 @@ class NodeAssigneeResolverTest {
 
     @Test
     void preview_指派查询异常不降级放大人员范围() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), any(Object.class)))
+                .thenReturn(List.of());
         when(jdbcTemplate.queryForList(anyString(), any(Object.class), any(Object.class),
                 any(Object.class), any(Object.class)))
                 .thenThrow(new BadSqlGrammarException("query", "sql", new SQLException("error")));
@@ -143,7 +147,8 @@ class NodeAssigneeResolverTest {
      */
     private void stubOrgTree(long rootId, Map<Long, Long> parentOf) {
         when(jdbcTemplate.queryForList(anyString(), eq(Long.class), any(Object.class)))
-                .thenReturn(List.of(rootId));
+                .thenAnswer(inv -> ((String) inv.getArgument(0)).contains("branch_type = 'RETAIL'")
+                        ? List.of() : List.of(rootId));
         List<Map<String, Object>> rows = new ArrayList<>();
         parentOf.forEach((id, parent) -> rows.add(Map.of("id", id, "parent_id", parent)));
         when(jdbcTemplate.queryForList(anyString())).thenReturn(rows);
@@ -151,6 +156,8 @@ class NodeAssigneeResolverTest {
 
     @Test
     void resolve_tableMissing_marksErrorAndRejectsRoleFallback() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), any(Object.class)))
+                .thenReturn(List.of());
         // 配置表缺失或查询故障时拒绝按角色放行，避免故障扩大权限。
         when(jdbcTemplate.queryForList(anyString(), any(Object.class), any(Object.class),
                 any(Object.class), any(Object.class)))
@@ -274,5 +281,38 @@ class NodeAssigneeResolverTest {
         NodeAssigneeResolver.ResolveResult result = resolver.resolve("PARENT_BRANCH_MANAGER", 2001L);
         assertEquals(NodeAssigneeResolver.LEVEL_NONE, result.getHitLevel());
         assertTrue(result.getUsers().isEmpty());
+    }
+
+    @Test
+    void retailFirstNodeUsesOnlyLocalManagerWithoutGlobalAssignments() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), eq(2001L)))
+                .thenReturn(List.of(2001L));
+        when(jdbcTemplate.queryForList(contains("SELECT org_code"), eq(String.class), eq(2001L)))
+                .thenReturn(List.of("RETAIL001"));
+        when(jdbcTemplate.query(contains("WHERE d.org_code = ?"), any(RowMapper.class),
+                eq("RETAIL001"), eq("branch_manager")))
+                .thenReturn(List.of(new NodeAssigneeResolver.AssigneeUser(11L, "retail", "零售行长")));
+        assertEquals(List.of(11L), resolver.resolvePreview("BRANCH_MANAGER", 2001L, null, "PARENT001").userIds());
+        verify(jdbcTemplate, never()).query(contains("LEFT(?"), any(RowMapper.class), anyString());
+    }
+
+    @Test
+    void retailMissingManagerMustNotFallbackToParent() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), eq(2001L)))
+                .thenReturn(List.of(2001L));
+        when(jdbcTemplate.queryForList(contains("SELECT org_code"), eq(String.class), eq(2001L)))
+                .thenReturn(List.of("RETAIL001"));
+        var result = resolver.resolvePreview("BRANCH_MANAGER", 2001L, null, "PARENT001");
+        assertTrue(result.userIds().isEmpty());
+        assertEquals("RETAIL_BRANCH", result.getHitLevel());
+        verify(jdbcTemplate, never()).query(contains("LEFT(?"), any(RowMapper.class), anyString());
+    }
+
+    @Test
+    void retailLookupFailureDoesNotFallback() {
+        when(jdbcTemplate.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), eq(2001L)))
+                .thenThrow(new BadSqlGrammarException("query", "sql", new SQLException("error")));
+        assertEquals("ERROR", resolver.resolvePreview("BRANCH_MANAGER", 2001L, null, "PARENT001").getHitLevel());
+        verify(jdbcTemplate, never()).query(anyString(), any(RowMapper.class), anyString());
     }
 }

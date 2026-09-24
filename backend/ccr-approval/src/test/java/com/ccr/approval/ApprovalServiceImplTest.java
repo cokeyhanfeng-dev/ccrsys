@@ -595,6 +595,7 @@ class ApprovalServiceImplTest {
 
     @Test
     void listTodo_branchManagerFilteredByNode() {
+        when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any())).thenReturn(BRANCH_MANAGER_HIT);
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(currentLoginUser.nodeOfRole(CurrentLoginUser.ROLE_BRANCH_MANAGER)).thenReturn("BRANCH_MANAGER");
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
@@ -640,11 +641,11 @@ class ApprovalServiceImplTest {
 
     @Test
     void listTodo_assigneeConfigured_onlyAssigneeSees() {
+        when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any())).thenReturn(BRANCH_MANAGER_HIT_OTHER);
         // 节点配置了指定审批人,解析结果不含当前登录人 → 待办不可见
         when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
         when(currentLoginUser.nodeOfRole(CurrentLoginUser.ROLE_BRANCH_MANAGER)).thenReturn("BRANCH_MANAGER");
         when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
-        when(nodeAssigneeResolver.resolveUserIds("BRANCH_MANAGER", null, null)).thenReturn(List.of(2999L));
 
         assertTrue(approvalService.listTodo().isEmpty());
     }
@@ -702,5 +703,16 @@ class ApprovalServiceImplTest {
         verify(voteService).createGroupRound(30L);
         org.mockito.Mockito.verifyNoInteractions(nodeReminderPublisher);
         verify(itemFinalizationService, never()).afterItemTerminal(any(), any());
+    }
+
+    @Test
+    void listTodo_missingRetailManagerDoesNotExposeTaskToParent() {
+        when(currentLoginUser.requireCurrentUser()).thenReturn(user(CurrentLoginUser.ROLE_BRANCH_MANAGER));
+        when(currentLoginUser.nodeOfRole(CurrentLoginUser.ROLE_BRANCH_MANAGER)).thenReturn("BRANCH_MANAGER");
+        when(pricingItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(item));
+        when(nodeAssigneeResolver.resolvePreview(any(), any(), any(), any()))
+                .thenReturn(new com.ccr.common.core.assignee.NodeAssigneeResolver.ResolveResult(
+                    "BRANCH_MANAGER", "RETAIL_BRANCH", List.of()));
+        assertTrue(approvalService.listTodo().isEmpty());
     }
 }

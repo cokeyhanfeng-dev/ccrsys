@@ -147,6 +147,7 @@ class NodeReminderHandlerTest {
     }
 
     @Test void branchFallbackBindsApplicantBranchPrefixAndNeverQueriesAllManagers() {
+        when(jdbc.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), eq(2L))).thenReturn(List.of());
         payload.set("nodeCode", "BRANCH_MANAGER"); app.setApplyBranchCode("TEST_BRANCH");
         when(assignees.resolveUserIds("BRANCH_MANAGER", 2L, "DEPT_TEST")).thenReturn(List.of());
         when(jdbc.queryForList(contains("LEFT(?, CHAR_LENGTH(d.branch_code)) = d.branch_code"), eq(Long.class), eq("TEST_BRANCH")))
@@ -155,4 +156,15 @@ class NodeReminderHandlerTest {
         verify(notifications, times(2)).sendNotification(argThat(m -> "15".equals(m.getRecipientId())));
     }
 
+
+    @Test void retailMissingManagerNeverNotifiesParentAsFallback() {
+        payload.set("nodeCode", "BRANCH_MANAGER");
+        app.setApplyBranchCode("PARENT001");
+        when(assignees.resolveUserIds("BRANCH_MANAGER", 2L, "DEPT_TEST")).thenReturn(List.of());
+        when(jdbc.queryForList(contains("branch_type = 'RETAIL'"), eq(Long.class), eq(2L)))
+                .thenReturn(List.of(2L));
+        assertThrows(com.ccr.common.exception.ServiceException.class, () -> handler.handle(payload));
+        verifyNoInteractions(notifications);
+        verify(jdbc, never()).queryForList(contains("LEFT(?, CHAR_LENGTH"), eq(Long.class), anyString());
+    }
 }

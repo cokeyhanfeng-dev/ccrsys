@@ -2186,7 +2186,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /**
      * 节点审批人配置过滤(§5.5.1):节点配置了有效指派时,仅解析出的处理人可见;
-     * 解析为空(未配置)保持现有角色匹配,向后兼容
+     * 支行节点解析为空时拒绝展示；其他节点保留现有角色匹配
      */
     private List<CcrPricingItem> filterByNodeAssignee(List<CcrPricingItem> items, String nodeCode, Long userId) {
         if (items.isEmpty()) {
@@ -2195,16 +2195,19 @@ public class ApprovalServiceImpl implements ApprovalService {
         List<Long> appIds = items.stream().map(CcrPricingItem::getApplicationId)
                 .filter(Objects::nonNull).distinct().toList();
         // 申请id → 申请人机构(applicantOrgId 可能为空,不用 Collectors.toMap)
-        Map<Long, Long> appOrg = new LinkedHashMap<>();
+        Map<Long, CcrApplication> applications = new LinkedHashMap<>();
         for (CcrApplication app : applicationMapper.selectBatchIds(appIds)) {
-            appOrg.put(app.getId(), app.getApplicantOrgId());
+            applications.put(app.getId(), app);
         }
         List<CcrPricingItem> filtered = new ArrayList<>();
         for (CcrPricingItem item : items) {
             // §D16a 部门分流:部门总经理/分管行长按分项 dept_code 解析处理人,其他节点传 null 走原逻辑
-            List<Long> assignees = nodeAssigneeResolver.resolveUserIds(nodeCode,
-                    appOrg.get(item.getApplicationId()), item.getDeptCode());
-            if (!assignees.isEmpty() && !assignees.contains(userId)) {
+            CcrApplication app = applications.get(item.getApplicationId());
+            if (app == null) continue;
+            List<Long> assignees = resolveAssignees(nodeCode, app, item.getDeptCode());
+            boolean branchNode = RouteChains.BRANCH_MANAGER.equals(nodeCode)
+                    || RouteChains.PARENT_BRANCH_MANAGER.equals(nodeCode);
+            if ((branchNode || !assignees.isEmpty()) && !assignees.contains(userId)) {
                 continue;
             }
             filtered.add(item);
@@ -2248,8 +2251,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                         "申请缺少部门归属配置,请联系管理员补全矩阵部门归属后重新提交");
             }
             // 支行行长/综合支行长(§2026-09-18 生产问题收口):这两个节点经 resolveAssignees 走 resolvePreview
-            // 口径,已含 apply_branch_code 前缀兜底(本机构未配行长时由管理它的上级行行长兜住,零售支行即
-            // 此形态,与提醒侧 NodeReminderHandler 同口径)。故"解析为空"已收紧为"连上级兜底都没有的机构":
+            // 口径,已含 apply_branch_code 前缀兜底(非零售机构保留原支行范围兜底，零售机构仅本行行长,与提醒侧 NodeReminderHandler 同口径)。解析为空时拒绝审批，零售首节点缺人必须补齐本行配置。
             // 原先落到下方 requireNodeRole 兜底,而该兜底只校验"登录人具有 branch_manager 角色",等于任一支行
             // 行长都能审批其他支行的单子(越权);同时该节点待办提醒解析不到收件人会让 Outbox 事件终态失败
             // (生产 2026-09-18 开发区支行零售支行案例)。此处与部门类节点同口径拒绝。
@@ -2273,7 +2275,7 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     /**
      * 节点审批人解析(§2026-09-18):支行行长/综合支行长节点走 resolvePreview 口径——在 resolve 之上叠加
-     * apply_branch_code 前缀兜底(本机构未配行长时由管理它的上级行行长兜住,零售支行即此形态),与提醒侧
+     * apply_branch_code 前缀兜底(非零售机构保留原支行范围兜底，零售机构仅本行行长),与提醒侧
      * NodeReminderHandler 及提交侧 ApplicationSubmitServiceImpl.branchAssigneePrecheck 三者同口径,
      * 避免"提交侧放行、审批侧被卡"的分歧。其余节点两方法等价(resolvePreview 的兜底分支仅对 BRANCH_MANAGER 生效)。
      */
