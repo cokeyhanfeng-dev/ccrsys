@@ -172,7 +172,18 @@ public class RateMatrixRouterImpl implements RateMatrixRouter {
         Map<String, BigDecimal> lprMap = Map.of(
                 "1Y", lprValueOf(lpr, "1Y", input.getProductCode()),
                 "5Y", lprValueOf(lpr, "5Y", input.getProductCode()));
-        for (CcrRateMatrix row : matched) {
+        // §特资(2026-09-24):配了 product_code 的专属行命中时独占本轮遍历。
+        // 未配 product_code 的通配行(普通对公行)同样匹配该申请,且其 boundary 为空即
+        // 「权限内终审」,会抢先截断、把专属产品的申请吃进普通对公链。收窄后专属行自行定链,
+        // 小组兜底仍从全量 matched 取(buildChain 遇终审行即 break,通配行不会混入链路)。
+        // 现网贷款矩阵无 product_code 专属行,loopRows 为空即回退全量,普通贷款行为不变。
+        List<CcrRateMatrix> loopRows = matched.stream()
+                .filter(r -> StrUtil.isNotBlank(r.getProductCode()))
+                .toList();
+        if (loopRows.isEmpty()) {
+            loopRows = matched;
+        }
+        for (CcrRateMatrix row : loopRows) {
             if (GROUP_NODE.equals(row.getStartNodeCode())) {
                 continue; // 上会兜底行最后处理
             }

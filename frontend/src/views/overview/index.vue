@@ -107,6 +107,8 @@
               <div class="todo-card__body">
                 <div class="todo-card__customer">
                   {{ t.title }}
+                  <!-- 特资利率申请(2026-09-24 用户要求):待办卡片标红,与审批详情页头/利率审批列表同口径 -->
+                  <span v-if="t.isSpecialAsset" class="badge badge--danger">纾困调息</span>
                   <span class="badge" :class="t.kindBadge">{{ t.kindText }}</span>
                 </div>
                 <div class="todo-card__sub">{{ t.sub ? t.sub : `分项 ${t.itemNo} · ${t.nodeText}` + (t.time ? ` · ${t.time}` : '') }}</div>
@@ -269,6 +271,8 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
+      // 特资利率申请(2026-09-24):整单含 LOAN_SA 分项即特资单,卡片标红
+      isSpecialAsset: ps.some((x: any) => (x.productCode ?? x.product_code) === 'LOAN_SA'),
       // 整单详情入口用申请 id(后端 /ccr/approval/{applicationId}/detail);待办项带 applicationId,勿传分项 id 否则 404
       time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.id}`, actionText: '去审批',
       extra: single ? null : { label: '授信分项', value: `${ps.length} 个` }
@@ -299,6 +303,8 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
+      // 特资利率申请(2026-09-24):委员待办同为整单粒度,判定与审批待办一致
+      isSpecialAsset: ps.some((x: any) => (x.productCode ?? x.product_code) === 'LOAN_SA'),
       // 委员待办:同样用申请 id 进整单详情(分项 id 会导致 404)
       time: fmtTime(first.createTime), to: `/approval/${first.applicationId || first.pricingItemId}`, actionText: '去审批',
       sub: `申请 ${first.applicationNo || '—'} · ${nodeLabel(first.currentNodeCode)}`,
@@ -326,6 +332,8 @@ const todoItems = computed(() => {
         ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
         : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
       product: productName(first.productCode),
+      // 特资利率申请(2026-09-24):行长待办分项在 p.items[](ps),判定与审批待办一致
+      isSpecialAsset: ps.some((x: any) => (x.productCode ?? x.product_code) === 'LOAN_SA'),
       time: p.submitTime ? fmtTime(p.submitTime) : '',
       // §2026-09-02 行长整单审批与审批/委员同链:直达整单详情(外层锚点页签一致),行长决策卡在详情内按角色渲染;/president 行长工作台保留为返回地
       to: `/approval/${p.applicationId || first.pricingItemId || ''}`, actionText: '去决策',

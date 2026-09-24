@@ -72,6 +72,9 @@ async function load() {
       const single = items.length === 1
       const rates = items.map((x) => Number(x.requestedRate) || 0)
       const ors = items.map((x) => x.originalRate).filter((v) => v != null && v !== '').map(Number)
+      // 特资利率申请(2026-09-24 用户要求):纾困调息单无原执行利率,且不属于「新增业务」
+      // (存量困难客户的利率优惠),该格改显「纾困调息」,与利率审批待办卡同口径
+      const ssa = items.some((x: any) => (x.productCode ?? x.product_code) === 'LOAN_SA')
       return {
         applicationId: p.applicationId,
         applicationNo: p.applicationNo || '-',
@@ -85,9 +88,11 @@ async function load() {
         rate: single
           ? (first.requestedRate != null ? `${first.requestedRate}%` : '—')
           : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}%` : '—'),
-        originalRate: ors.length
-          ? (ors.length === 1 ? `${ors[0]}%` : `${Math.min(...ors)} ~ ${Math.max(...ors)}%`)
-          : '新增业务',
+        originalRate: ssa
+          ? '纾困调息'
+          : (ors.length
+            ? (ors.length === 1 ? `${ors[0]}%` : `${Math.min(...ors)} ~ ${Math.max(...ors)}%`)
+            : '新增业务'),
         votesText: first.approveCount != null
           ? `赞成 ${first.approveCount} / 反对 ${first.rejectCount ?? 0}`
           : '—',

@@ -25,7 +25,8 @@ import java.util.function.UnaryOperator;
  * 数据源同 ResolutionDocExporter(approvalService.historyDetail);
  * 排版: A4 + 公文页边距,黑体(simhei)标题 / 仿宋(simfang)正文,表头浅灰底纹。
  * 权限保护: PDF 标准加密,Owner 密码解锁权限(内部保管),User 密码为空(打开无需密码);
- *          AccessPermission 默认全禁,仅放行打印 → 下载后只读:不可编辑/复制/提取/组装/填表/改批注。
+ *          AccessPermission 须逐位显式拒绝(其默认值是全放行,不是全禁),最终仅放行打印 →
+ *          下载后只读:不可编辑/复制/提取/组装/填表/改批注。
  * 中文字体从 classpath fonts/ 加载并嵌入子集(simhei.ttf / simfang.ttf)。
  */
 public final class ResolutionPdfExporter {
@@ -259,6 +260,11 @@ public final class ResolutionPdfExporter {
         return switch (code) {
             case "LOAN_A" -> "对公贷款";
             case "LOAN_P" -> "个人经营性贷款";
+            // 纾困调息(2026-09-24):特殊资产管理部对已无力偿还的存量贷款客户给予利率优惠、
+            // 以促成其还款的专用产品码,仅由该申请页内定写入 ccr_pricing_item.product_code,
+            // 普通贷款页下拉不含此码。产品名 2026-09-24 用户拍板由「特殊资产贷款」改为「纾困调息」,
+            // 须与前端 dict.ts 的 LOAN_SA 名称保持一致(决议书 PDF 与页面同口径)
+            case "LOAN_SA" -> "纾困调息";
             case "CORP_TIME_DEPOSIT" -> "对公定期存款";
             case "AGREEMENT_DEPOSIT" -> "协定存款";
             case "NOTICE_DEPOSIT" -> "通知存款";
@@ -567,19 +573,20 @@ public final class ResolutionPdfExporter {
         }
         List<Map<String, Object>> items = list(archive.get("pricingItems"));
         List<Map<String, Object>> resolutions = list(archive.get("resolutions"));
-        List<Map<String, Object>> actions = list(archive.get("approvalActions"));
-        List<Map<String, Object>> decisions = list(archive.get("presidentDecisions"));
-        List<Map<String, Object>> voteResults = list(archive.get("voteResults"));
-        List<Map<String, Object>> execs = list(archive.get("resolutionExecutions"));
         List<Map<String, Object>> commitments = list(archive.get("commitments"));
         Map<String, Object> guarantees = map(archive.get("guaranteesByItem"));
         // 分项增强(§2026-08-26 决议书与申请档案同步):担保方式聚合 + 授信协议编号(存量分项取申请协议,新增显示「新增业务」)
         enrichPricingItems(archive, app, items, guarantees);
-        // 业务类型区分:存款决议书保留完整审批留痕;贷款决议书按用户要求精简为三部分(客户基本信息/审批利率调整/贡献度信息)
+        // 业务类型区分(2026-09-23 二次精简):存款决议书=抬头/一、客户信息/二、存款分项三项,其余一律不渲染
+        // (同日前含「四、审批情况」整节与「二、申请的存款信息」节标题及业务描述表、利率调整表、其他信息/担保/承诺/执行核验,
+        //  均已取消;审批结论已在抬头保留,不再重复留痕);贷款决议书维持精简三部分(客户基本信息/审批利率调整/贡献度信息)
         boolean isDeposit = "DEPOSIT".equals(pick(app, "business_type", "businessType"));
         // §2026-09-07 集团决议书按实际展示:集团客户只展集团相关内容(客户号=集团号,客户信息=集团信息),客户区走集团专属字段并空值不渲染
         boolean isGroup = "GROUP".equals(pick(app, "customer_scope", "customerScope"));
         Map<String, Object> res = resolutions.isEmpty() ? null : resolutions.get(0);
+        // 小组否决标记:业务上被小组否决的申请不签发决议书(2026-09-24 用户确认),故这里正常不会命中,
+        // 属防御性分支 —— 保留是为了万一出现「有 RES 记录但决策来源=小组否决」的历史/异常数据时,
+        // 抬头「审批结论」不至于误报为「同意」。(原据此渲染的逐分项否决说明段已删除,见下方利率调整节注)
         boolean committeeReject = res != null
                 && "COMMITTEE_REJECT".equals(pick(res, "decisionSource", "decision_source"));
 
@@ -593,20 +600,22 @@ public final class ResolutionPdfExporter {
             // ---- 标题 ----
             ctx.title("利率定价决议书");
 
-            // ---- 存款决议书:完整审批留痕(抬头/申请贷款信息/审批情况/担保/执行核验) ----
-            if (isDeposit) {
-            // ---- 抬头信息 ----
-            String[][] metaRows = {
-                    {"申请号", pick(app, "application_no", "applicationNo")},
-                    {"决议编号", res == null ? "—" : pick(res, "resolutionNo", "resolution_no")},
-                    {"决议签发时间", res == null ? "—" : pick(res, "issueTime", "issue_time")},
-                    {"审批结论", res == null ? "—" : (committeeReject
-                            ? "否决(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + ")"
-                            : "同意(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + ")")},
-            };
-            ctx.descTable(metaRows);
+            // ---- 抬头信息(2026-09-23:贷款决议书同样渲染,与存款决议书口径一致) ----
+            // §2026-09-24 新增有效期口径行(固定文案,不取数):系统此前无「利率审批有效期」概念
+            // (见 ApprovalController §12.7 ⑪ 注「决议日期=issue_time,无有效期周期」),本次按业务要求补提示 ——
+            // 贷款:利率审批到期日应与授信到期日保持一致;存款:利率审批有效期固定 7 个工作日。
+            List<String[]> metaRows = new ArrayList<>();
+            metaRows.add(new String[]{"申请号", pick(app, "application_no", "applicationNo")});
+            metaRows.add(new String[]{"决议编号", res == null ? "—" : pick(res, "resolutionNo", "resolution_no")});
+            metaRows.add(new String[]{"决议签发时间", res == null ? "—" : pick(res, "issueTime", "issue_time")});
+            metaRows.add(new String[]{"审批结论", res == null ? "—" : (committeeReject
+                    ? "否决(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + ")"
+                    : "同意(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + ")")});
+            metaRows.add(isDeposit
+                    ? new String[]{"利率审批有效期", "7 个工作日"}
+                    : new String[]{"利率审批到期日", "与授信到期日一致"});
+            ctx.descTable(metaRows.toArray(new String[0][]));
             ctx.gap(8);
-            }
 
             // ---- 一、客户信息(贷款决议书标题为"客户基本信息") ----
             // §2026-09-07 集团决议书按实际展示:集团客户区走集团专属字段(客户号=集团号,客户信息=集团信息,空值不渲染);
@@ -638,143 +647,59 @@ public final class ResolutionPdfExporter {
                     });
             ctx.gap(8);
 
-            // ---- 二、申请的贷款信息(仅存款决议书保留) ----
+            // ---- 二、存款分项(2026-09-23 二次精简:取消原「二、申请的存款信息」节标题及
+            //      业务类型/客户范围/客户号/集团号/提交时间/客户经理备注描述表;
+            //      表名「授信分项」改「存款分项」,因节标题已同名,表标题传 null 不再重复渲染) ----
+            // §2026-09-24 列调整(用户口径):去掉「担保方式」「授信协议编号」两列(后者列名本就不适用于存款),
+            //      利率内容不另设「利率调整」节,以本表末列「最终决议利率(%)」表达。
             if (isDeposit) {
-            ctx.section("二、申请的贷款信息");
-            String businessType = pick(app, "business_type", "businessType");
-            ctx.descTable(new String[][]{
-                    {"业务类型", "DEPOSIT".equals(businessType) ? "存款" : "贷款"},
-                    {"客户范围", scopeText(pick(app, "customer_scope", "customerScope"))},
-                    {"客户号", pick(app, "customer_no", "customerNo")},
-                    {"集团号", pick(app, "group_no", "groupNo")},
-                    {"提交时间", pick(app, "submit_time", "submitTime")},
-                    {"客户经理备注", pick(app, "application_remark", "applicationRemark")},
-            });
             Map<String, UnaryOperator<String>> itemFmt = new HashMap<>();
             itemFmt.put("pricing_customer_no", no -> customerNameByNo.getOrDefault(no, no));
             itemFmt.put("product_code", ResolutionPdfExporter::productText);
             itemFmt.put("term_unit", ResolutionPdfExporter::termUnitText);
             itemFmt.put("currency", ResolutionPdfExporter::currencyText);
-            ctx.dataTable("授信分项", items, new String[][]{
+            ctx.section("二、存款分项");
+            ctx.dataTable(null, items, new String[][]{
                     {"定价客户", "pricing_customer_no", "pricingCustomerNo"},
                     {"产品", "product_code", "productCode"},
-                    {"授信协议编号", "agreement_no_display"},
-                    {"担保方式", "guarantee_type_display"},
                     {"金额(万元)", "pricing_amount", "pricingAmount"},
                     {"期限", "term_value", "termValue"},
                     {"期限单位", "term_unit", "termUnit"},
                     {"币种", "currency"},
+                    {"最终决议利率(%)", "final_rate", "finalRate"},
             }, itemFmt);
             ctx.gap(8);
             }
 
-            // ---- 三、利率调整(贷款决议书标题为"审批利率调整") ----
+            // ---- 二、审批利率调整(仅贷款决议书) ----
+            // §2026-09-24 存款不设本节(用户口径):利率内容由「二、存款分项」表末列「最终决议利率(%)」表达,
+            // 存款分项表与利率调整表三列重复(产品/授信协议编号/担保方式),且「授信协议编号」列名不适用于存款。
             // §2026-09-07 贷款决议书授信分项带具体金额(万元):利率调整明细加「金额(万元)」列,顶部汇总本次决议授信总额,
-            // 授信协议编号列加宽(相对 7 列等宽约 +26%);存款决议书利率调整表维持原样(存款分项金额见「申请的贷款信息」分项表)。
-            ctx.section(isDeposit ? "三、利率调整" : "二、审批利率调整");
+            // 授信协议编号列加宽(相对 7 列等宽约 +26%)
             if (!isDeposit) {
-                ctx.para("本次决议授信总额合计 " + totalAmountOf(items) + " 万元,各授信分项金额明细如下。", 9, 0);
-                ctx.dataTable("利率调整明细", items, new String[][]{
-                        {"产品", "product_code", "productCode"},
-                        {"授信协议编号", "agreement_no_display"},
-                        {"担保方式", "guarantee_type_display"},
-                        {"金额(万元)", "pricing_amount", "pricingAmount"},
-                        {"原执行利率(%)", "original_rate", "originalRate"},
-                        {"申请利率(%)", "requested_rate", "requestedRate"},
-                        {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
-                        {"最终决议利率(%)", "final_rate", "finalRate"},
-                }, Map.of("product_code", ResolutionPdfExporter::productText), LOAN_RATE_COL_WIDTHS);
-            } else {
-                ctx.dataTable("利率调整明细", items, new String[][]{
-                        {"产品", "product_code", "productCode"},
-                        {"授信协议编号", "agreement_no_display"},
-                        {"担保方式", "guarantee_type_display"},
-                        {"原执行利率(%)", "original_rate", "originalRate"},
-                        {"申请利率(%)", "requested_rate", "requestedRate"},
-                        {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
-                        {"最终决议利率(%)", "final_rate", "finalRate"},
-                }, Map.of("product_code", ResolutionPdfExporter::productText));
+            ctx.section("二、审批利率调整");
+            ctx.para("本次决议授信总额合计 " + totalAmountOf(items) + " 万元,各授信分项金额明细如下。", 9, 0);
+            ctx.dataTable("利率调整明细", items, new String[][]{
+                    {"产品", "product_code", "productCode"},
+                    {"授信协议编号", "agreement_no_display"},
+                    {"担保方式", "guarantee_type_display"},
+                    {"金额(万元)", "pricing_amount", "pricingAmount"},
+                    {"原执行利率(%)", "original_rate", "originalRate"},
+                    {"申请利率(%)", "requested_rate", "requestedRate"},
+                    {"审批利率(%)", "current_approval_rate", "currentApprovalRate"},
+                    {"最终决议利率(%)", "final_rate", "finalRate"},
+            }, Map.of("product_code", ResolutionPdfExporter::productText), LOAN_RATE_COL_WIDTHS);
             }
-            // 利率调整明细以表格呈现,删除冗余文字描述(§2026-08-26 用户要求);
-            // 例外:小组表决否决时表格无法表达「未形成最终利率」,保留一行说明
-            if (committeeReject) {
-                for (Map<String, Object> item : items) {
-                    String no = pick(item, "pricing_item_no", "pricingItemNo");
-                    String original = pick(item, "original_rate", "originalRate");
-                    String from = rate(original != null && !original.isEmpty() ? original : null);
-                    ctx.para("该分项(" + no + ")经小组表决否决,未形成最终利率(原执行 " + from + "%)。", 9, 12);
-                }
-            }
+            // §2026-09-24 删除:原「该分项(X)经小组表决否决,未形成最终利率(原执行 Y%)」逐分项说明段。
+            // 业务口径(2026-09-24 用户确认):被小组否决的申请不签发决议书 —— 根本无决议书可下载,
+            // 故该段永远不会出现在真实文件中(死代码),贷款/存款均不再渲染;
+            // 「哪个分项被否」由审批留痕(审批轨迹/表决计票)承载,不由决议书承载。
             ctx.gap(8);
 
-            // ---- 四、审批情况(仅存款决议书保留) ----
-            if (isDeposit) {
-            ctx.section("四、审批情况");
-            if (resolutions != null && !resolutions.isEmpty()) {
-                ctx.para(committeeReject
-                        ? "审批结论:否决(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + "),决议已签发。"
-                        : "审批结论:同意(" + decisionSourceText(pick(res, "decisionSource", "decision_source")) + "),决议已签发。", 9, 0);
-            }
-            if (decisions != null && !decisions.isEmpty()) {
-                ctx.dataTable("行长决策", decisions, new String[][]{
-                        {"决策", "decision"},
-                        {"意见", "opinion"},
-                        {"决策时间", "decisionTime", "decision_time"},
-                }, Map.of("decision", ResolutionPdfExporter::decisionText));
-            }
-            if (voteResults != null && !voteResults.isEmpty()) {
-                ctx.dataTable("表决计票", voteResults, new String[][]{
-                        {"同意票", "approveCount", "approve_count"},
-                        {"否决票", "rejectCount", "reject_count"},
-                        {"计票结果", "result"},
-                        {"计票时间", "countTime", "count_time"},
-                }, Map.of("result", ResolutionPdfExporter::voteResultText));
-            }
-            // 审批轨迹:节点按职务名(六人小组=存贷款利率与审批小组)、动作/角色中文化,操作人已有姓名(nick_name)直接展示
-            Map<String, UnaryOperator<String>> actionFmt = new HashMap<>();
-            actionFmt.put("node_code", ResolutionPdfExporter::nodeText);
-            actionFmt.put("action_type", ResolutionPdfExporter::actionText);
-            actionFmt.put("operator_role", ResolutionPdfExporter::roleText);
-            // 操作人/意见列兜底:六人小组计票串存 action_comment(如「计票:赞成 5/6,结果 PASS」),存量英文结果在此替换
-            actionFmt.put("operatorName", ResolutionPdfExporter::operatorText);
-            actionFmt.put("action_comment", ResolutionPdfExporter::operatorText);
-            ctx.dataTable("审批轨迹", actions, new String[][]{
-                    {"节点", "node_code", "nodeCode"},
-                    {"动作", "action_type", "actionType"},
-                    {"操作人", "operatorName", "operator_name"},
-                    {"操作角色", "operator_role", "operatorRole"},
-                    {"调整前利率(%)", "before_rate", "beforeRate"},
-                    {"调整后利率(%)", "after_rate", "afterRate"},
-                    {"意见", "action_comment", "actionComment"},
-                    {"时间", "operation_time", "operationTime"},
-            }, actionFmt);
-            ctx.gap(8);
-            }
-
-            // ---- 五、其他信息(贷款决议书仅保留贡献度承诺,独立成"三、贡献度信息") ----
-            if (isDeposit) {
-            ctx.section("五、其他信息");
-            if (!guarantees.isEmpty()) {
-                List<String> types = new ArrayList<>();
-                for (Object v : guarantees.values()) {
-                    if (v instanceof List<?> list) {
-                        for (Object g : list) {
-                            if (g instanceof Map<?, ?> gm) {
-                                Object t = ((Map<?, ?>) gm).get("guaranteeType");
-                                if (t != null && !types.contains(t.toString())) {
-                                    types.add(t.toString());
-                                }
-                            }
-                        }
-                    }
-                }
-                ctx.para("担保方式:" + String.join("、",
-                        types.stream().map(ResolutionPdfExporter::guaranteeText).toList()), 9, 0);
-            }
-            } else if (commitments != null && !commitments.isEmpty()) {
+            // ---- 三、贡献度信息(仅贷款决议书;2026-09-23 存款决议书不再保留其他信息节,
+            //      原「四、其他信息」的担保方式聚合、承诺表、决议执行核验表对存款一律不渲染) ----
+            if (!isDeposit && commitments != null && !commitments.isEmpty()) {
             ctx.section("三、贡献度信息");
-            }
-            if (commitments != null && !commitments.isEmpty()) {
                 Map<String, UnaryOperator<String>> commitmentFmt = new HashMap<>();
                 commitmentFmt.put("metricCode", ResolutionPdfExporter::metricText);
                 commitmentFmt.put("targetType", ResolutionPdfExporter::targetTypeText);
@@ -790,25 +715,23 @@ public final class ResolutionPdfExporter {
                         {"截止日期", "endDate", "end_date"},
                 }, commitmentFmt);
             }
-            if (isDeposit && execs != null && !execs.isEmpty()) {
-                ctx.dataTable("决议执行核验", execs, new String[][]{
-                        {"贷款合同号", "loanContractNo", "loan_contract_no"},
-                        {"补充协议号", "supplementAgreementNo", "supplement_agreement_no"},
-                        {"执行利率(%)", "executionRate", "execution_rate"},
-                        {"执行状态", "executionStatus", "execution_status"},
-                        {"核验结果", "reconcileResult", "reconcile_result"},
-                        {"核验时间", "reconcileTime", "reconcile_time"},
-                }, Map.of("executionStatus", ResolutionPdfExporter::execStatusText,
-                        "reconcileResult", ResolutionPdfExporter::reconcileText));
-            }
             ctx.gap(12);
 
             // ---- 落款 ----
             ctx.footer("本决议书由利率定价审批系统依据审批留痕自动生成,已加密只读,可下载打印归档。");
 
             // ---- 权限保护:全权限关闭,仅打印放行(下载后不可编辑/复制) ----
+            // ⚠️ 2026-09-24 修正:PDFBox 的 new AccessPermission() 默认是「所有者全放行」(权限字节 -4),
+            // 只写 setCanPrint(true) 等于一位都没关——实测产出的 /P 全为 1,谁都能改、能复制提取。
+            // 必须逐位显式拒绝;print / printDegraded 两位保持放行,保证可打印且非降质打印。
             AccessPermission ap = new AccessPermission();
-            ap.setCanPrint(true);
+            ap.setCanPrint(true);          // 唯一放行项(默认已置位,显式写出以防 PDFBox 默认值变化)
+            ap.setCanModify(false);        // 不可编辑内容
+            ap.setCanModifyAnnotations(false); // 不可增删改批注
+            ap.setCanExtractContent(false);    // 不可复制/提取文本与图形
+            ap.setCanFillInForm(false);        // 不可填写表单域
+            ap.setCanAssembleDocument(false);  // 不可插入/删除/旋转页面组装文档
+            ap.setCanExtractForAccessibility(false); // 不可为无障碍用途提取
             StandardProtectionPolicy spp = new StandardProtectionPolicy(OWNER_PASSWORD, "", ap);
             spp.setEncryptionKeyLength(256);
             doc.protect(spp);
@@ -996,10 +919,13 @@ public final class ResolutionPdfExporter {
             if (rows == null || rows.isEmpty()) {
                 return;
             }
-            ensure(16);
-            y -= 12;
-            text(title, head, 10, ML, y);
-            y -= 12;
+            // 表标题为空时跳过(如存款决议书「二、存款分项」已由 section 渲染同名标题,避免重复且不占垂直空间)
+            if (title != null && !title.isEmpty()) {
+                ensure(16);
+                y -= 12;
+                text(title, head, 10, ML, y);
+                y -= 12;
+            }
             String[][] grid = new String[rows.size() + 1][cols.length];
             for (int c = 0; c < cols.length; c++) {
                 grid[0][c] = cols[c][0];

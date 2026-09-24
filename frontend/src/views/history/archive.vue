@@ -226,9 +226,10 @@
               <tr>
                 <td v-if="isLoan">{{ isGroup ? pricingMemberLabel(p) : val(p, 'pricing_customer_no', 'pricingCustomerNo') }}</td>
                 <td>{{ productName(val(p, 'product_code', 'productCode')) }}</td>
-                <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率) -->
-                <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务' }}</td>
-                <td v-if="isLoan" :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ itemAgreementNo(p) }}</td>
+                <!-- 原执行利率与审批详情页「申请内容」表口径一致(§2026-08-26 档案/审批保持一致;新增业务无原利率)。
+                     特资(纾困调息)单无原利率但不属新增授信,改显「纾困调息」(2026-09-24 用户要求) -->
+                <td :class="val(p, 'original_rate', 'originalRate') != null ? 'num' : ''">{{ isSpecialAsset ? '纾困调息' : (val(p, 'original_rate', 'originalRate') != null ? rateText(val(p, 'original_rate', 'originalRate')) : '新增业务') }}</td>
+                <td v-if="isLoan" :class="itemAgreementNo(p) === '新增业务' ? '' : 'num'">{{ isSpecialAsset ? '—' : itemAgreementNo(p) }}</td>
                 <!-- 担保方式(仅贷款场景,存款无担保概念):有担保措施可点开行内明细;信用/未录措施纯文本(无内容可展开) -->
                 <td v-if="isLoan">
                   <span v-if="hasMeasureRows(p)" class="expand-toggle" role="button" tabindex="0" @click.stop="toggleExpand(p)" @keydown.enter="toggleExpand(p)">{{ itemGuaranteeText(p) }}<span class="chev">{{ isExpanded(p) ? '▲' : '▼' }}</span></span>
@@ -563,6 +564,11 @@ const customerName = computed(() => customer.value.customerName || val(archive.v
 const isCorpCustomer = computed(() => customer.value.custType === 'CORP')
 const isIndivCustomer = computed(() => customer.value.custType === 'INDIV')
 const isLoan = computed(() => val(archive.value.application || {}, 'business_type', 'businessType') !== 'DEPOSIT')
+/** 特资/纾困调息(2026-09-24):整单含 LOAN_SA 分项即特资单。档案分项表的「原执行利率」格
+ *  对特资不能显示「新增业务」——纾困调息是存量困难客户的利率优惠,不是新增授信,
+ *  与两处待办卡、审批详情同行长决策表同口径改显「纾困调息」 */
+const isSpecialAsset = computed(() =>
+  (archive.value.pricingItems || []).some((p: any) => val(p, 'product_code', 'productCode') === 'LOAN_SA'))
 // 关联原申请(内部 source_application_id → 跳转原档案;§UI审查 ⑤)
 const sourceApplicationId = computed(() => {
   const v = val(archive.value.application || {}, 'source_application_id', 'sourceApplicationId')

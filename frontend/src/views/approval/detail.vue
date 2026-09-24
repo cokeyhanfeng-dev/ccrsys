@@ -11,6 +11,9 @@
       <div class="summary-bar__head">
         <button class="btn btn--ghost btn--back" @click="goBackList">‹ 返回列表</button>
         <h1 class="summary-bar__title">{{ customerName }}</h1>
+        <!-- 特资利率申请(2026-09-24 用户要求):整单标红,审批人不必翻分项明细即可识别归口部门与
+             分档口径(≥4.0% 止于特资部总经理、<4.0% 走完整链)。放在标题行(吸顶区)保证滚动时仍可见 -->
+        <span v-if="isSpecialAsset" class="badge badge--danger">纾困调息</span>
         <span class="summary-bar__kind">{{ isPresidentDecision ? '行长决策' : '审批详情' }}</span>
         <span class="summary-bar__tag">{{ nodeLabel(pi.current_node_code) }}</span>
         <InfoTip :content="isPresidentDecision ? '六人小组表决已通过,请审阅完整申请内容与六人匿名审批意见后整单决策:同意利率或一票否决。' : isCommitteeVoting ? '基础信息只读,六人小组成员仅可对申请内待表决分项投同意/否决,不能调整利率。' : '基础信息只读,普通审批人仅可编辑审批利率与审批意见。'" />
@@ -29,7 +32,7 @@
       <nav class="summary-bar__nav">
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-apply' }" @click="scrollToSection('s-apply'); activeAnchor = 's-apply'">申请内容</a>
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-customer' }" @click="scrollToSection('s-customer'); activeAnchor = 's-customer'">客户与集团</a>
-        <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-contrib' }" @click="scrollToSection('s-contrib'); activeAnchor = 's-contrib'">承诺与履约</a>
+        <a v-if="!isSpecialAsset" class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-contrib' }" @click="scrollToSection('s-contrib'); activeAnchor = 's-contrib'">承诺与履约</a>
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-flow' }" @click="scrollToSection('s-flow'); activeAnchor = 's-flow'">流程轨迹</a>
         <a class="anchor-link" :class="{ 'anchor-link--active': activeAnchor === 's-decide' }" @click="scrollToSection('s-decide'); activeAnchor = 's-decide'">利率审批 ⬇</a>
       </nav>
@@ -60,23 +63,38 @@
     <div class="card">
       <div class="card__head">
         <span>申请内容</span>
-        <span class="badge badge--info">共 {{ siblingItems.length }} 个分项</span>
+        <!-- 特资(2026-09-24 用户拍板):面向客户整体申请一个利率,不存在分项概念,故不显示分项计数 -->
+        <span v-if="!isSpecialAsset" class="badge badge--info">共 {{ siblingItems.length }} 个分项</span>
         <span v-if="pi.inherit_flag === 'Y' || pi.inheritFlag === 'Y'" class="badge badge--info">沿用原决议</span>
       </div>
       <div class="desc-grid desc-grid--3">
         <div><div class="desc-item__label">申请号</div><div class="desc-item__value">{{ application.applicationNo || '—' }}</div></div>
         <div><div class="desc-item__label">业务类型</div><div class="desc-item__value">{{ businessTypeText }}</div></div>
-        <div><div class="desc-item__label">申请类型</div><div class="desc-item__value">{{ applyBizTypeText }}</div></div>
+        <!-- 特资利率申请(2026-09-24 用户要求):特资单 businessType 恒为 EXISTING,「存量调息」看不出归口
+             部门与分档口径,故特资时以红标替换该文案,非特资维持原值 -->
+        <div><div class="desc-item__label">申请类型</div><div class="desc-item__value">
+          <span v-if="isSpecialAsset" class="badge badge--danger">纾困调息</span>
+          <template v-else>{{ applyBizTypeText }}</template>
+        </div></div>
         <!-- §2026-09-07 集团/单户互斥展示:集团申请 customer_no 为空(回退即成员号易误导),改显集团号;单户/个人维持客户号 -->
         <div v-if="!isGroup"><div class="desc-item__label">客户号</div><div class="desc-item__value">{{ customerNoText(application.customerNo || pi.pricing_customer_no) }}</div></div>
         <div v-else><div class="desc-item__label">集团号</div><div class="desc-item__value">{{ application.groupNo || '—' }}</div></div>
         <div><div class="desc-item__label">产品编码</div><div class="desc-item__value">{{ productName(pi.product_code) }}</div></div>
         <div v-if="applyTotalCredit != null"><div class="desc-item__label">授信总额(万元)</div><div class="desc-item__value desc-item__value--num">{{ fmtAmount(applyTotalCredit) }}</div></div>
+        <!-- 特资(2026-09-24 用户拍板):特资是原贷款客户已无力偿还、给予利率优惠以促成还款的纾困定价,
+             对象是「客户」而非某一笔贷款——原分项表(担保方式/原利率/测算利率/授信协议)与综合利率
+             (按分项加权)对特资均不适用,改为在此直接展示该客户的申请利率与流转状态。
+             pi 为当前分项,特资整单恒只有一个,即该客户这一个利率。 -->
+        <template v-if="isSpecialAsset">
+          <div><div class="desc-item__label">申请利率</div><div class="desc-item__value desc-item__value--num rate-req">{{ fmtRate(pi.requested_rate) }}</div></div>
+          <div><div class="desc-item__label">当前节点</div><div class="desc-item__value">{{ pi.current_node_code ? nodeLabel(pi.current_node_code) : '—' }}</div></div>
+          <div><div class="desc-item__label">状态</div><div class="desc-item__value">{{ itemStatusText(pi.status) }}</div></div>
+        </template>
       </div>
       <!-- 分项表(2026-09-01 调整:去「定价分项」列;原利率/申请利率/测算利率/授信协议全部上主表;产品/期限/部门归属不展示)
            2026-09-04 用户要求与授信总额字段区对齐:局部拉满卡片宽(覆盖全局 .table fit-content 收缩)
            2026-09-09 表头与内容错位根因=数据格 .num 右对齐、表头左对齐;用户拍板全列统一左对齐(勿回右对齐) -->
-      <table class="table detail-items" style="margin-top:12px">
+      <table v-if="!isSpecialAsset" class="table detail-items" style="margin-top:12px">
         <thead><tr>
           <th v-if="isGroup">成员</th><th v-if="isLoan">担保方式</th><th>金额(万元)</th>
           <th>原利率</th><th>申请利率</th><th>测算利率</th><th>授信协议</th>
@@ -121,7 +139,7 @@
         </tbody>
       </table>
       <!-- 综合利率(§2026-09-03 用户要求:与申请页同口径展示于审批界面;综合利率=Σ(分项金额×分项利率)÷授信总额,原执行/申请两口径) -->
-      <div v-if="isLoan" class="detail-blend">
+      <div v-if="isLoan && !isSpecialAsset" class="detail-blend">
         <span class="detail-blend__label">综合利率 <span class="detail-blend__formula" title="综合利率 = (分项1金额×分项1利率 + 分项2金额×分项2利率 + …) ÷ 授信总额">按分项加权</span></span>
         <span class="detail-blend__rate">原执行综合 <b>{{ detailBlendOriginalText }}</b></span>
         <span class="detail-blend__rate">申请综合 <b>{{ detailBlendRequestedText }}</b></span>
@@ -353,8 +371,9 @@
       <div v-else class="empty-line">暂无他行融资记录</div>
     </div>
 
-    <!-- 7c. 关联人情况(数仓客户关系 + 申请录入) -->
-    <div class="card" v-if="isLoan">
+    <!-- 7c. 关联人情况(数仓客户关系 + 申请录入)
+         纾困调息(2026-09-24 用户拍板):纾困定价只看该客户自身的困难情况与利率,关联人无参考价值,故隐藏 -->
+    <div class="card" v-if="isLoan && !isSpecialAsset">
       <div class="card__head"><span>关联人情况</span></div>
       <template v-if="relatedPersons.length || relations.length">
         <div v-if="fold.related" class="empty-line">关联人共 {{ relatedPersons.length || relations.length }} 人,已折叠 —— <button class="btn btn--text" @click="fold.related = false">展开 ▾</button></div>
@@ -430,14 +449,18 @@
 
     <!-- 第三段:承诺与履约(贡献度参考/历史履约/机构达成) -->
     <div class="anchor-section" id="s-contrib">
-    <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示) -->
-    <div class="card" v-if="isLoan">
+    <!-- 9. 当前与拟达成贡献度(双概念并排;存款场景不涉贡献度,仅贷款展示)
+         特资(2026-09-24 用户拍板):特资是纾困定价,已豁免贡献度承诺(后端 checkCompleteness 按 LOAN_SA
+         排除),本单无承诺可参考,贡献度对定价无约束力,故对特资隐藏 -->
+    <div class="card" v-if="isLoan && !isSpecialAsset">
       <div class="card__head"><span>贡献度参考</span><span class="badge badge--info">G3 定价依据</span></div>
       <ContributionPanel :contribution="contribution" :commitments="commitments" />
     </div>
 
-    <!-- 10. 历史履约:该客户每一次申请的履约比例 + 总额(按申请聚合,Σ实际/Σ目标,口径同承诺跟踪页);仅贷款场景,存款无承诺概念 -->
-    <div class="card" v-if="isLoan">
+    <!-- 10. 历史履约:该客户每一次申请的履约比例 + 总额(按申请聚合,Σ实际/Σ目标,口径同承诺跟踪页);仅贷款场景,存款无承诺概念
+         纾困调息(2026-09-24 用户拍板):与关联人同理,纾困定价不参考该客户历史承诺履约,故隐藏。
+         至此本段(贡献度参考/历史履约/机构达成)三个卡对特资全部隐藏,故上方「承诺与履约」锚点链接也一并不显示 -->
+    <div class="card" v-if="isLoan && !isSpecialAsset">
       <div class="card__head"><span>历史履约</span><span class="badge badge--info">按申请聚合</span></div>
       <template v-if="tracking.length">
         <div v-if="unmetTracking.length" class="warn-bar">
@@ -508,8 +531,10 @@
     </div>
 
     <!-- 11. 机构达成(仅贷款场景;存款无机构达成概念;2026-09-04 两版承诺计划合并改造:切 v2 track 到期终态口径,
-         只展示达成率+进度条,达成金额/目标金额/统计月份/数据日期已移除;badge 由「数仓」改「承诺」) -->
-    <div class="card" v-if="isLoan">
+         只展示达成率+进度条,达成金额/目标金额/统计月份/数据日期已移除;badge 由「数仓」改「承诺」)
+         特资(2026-09-24 用户拍板):机构达成是承诺计划的到期统计,特资无承诺,且实测该区块对特资
+         恒为空(orgPerformance 返回空数组、显示「暂无数据」),故对特资隐藏 -->
+    <div class="card" v-if="isLoan && !isSpecialAsset">
       <div class="card__head"><span>机构达成</span><span class="badge badge--info">承诺</span></div>
       <div class="org-perf" v-if="orgPerfRow">
         <div class="org-perf__main">
@@ -749,30 +774,49 @@
         <span class="badge badge--processing">当前节点:{{ nodeLabel(currentNodeCode) }} · 整单一次审批</span>
       </div>
       <div class="stat-card__sub" style="margin-bottom:10px">
-        {{ isLoan
-          ? `本申请共 ${siblingItems.length} 个分项,按利率最低分项定整单流程,一次审批处理整单(任一节点否决即整单否决)。`
-          : `本申请共 ${siblingItems.length} 个分项,按原流程整单审批,一次处理整单。` }}
+        {{ isSpecialAsset
+          ? '本申请为客户纾困利率申请:针对该客户整体定一个利率,一次审批处理整单(任一节点否决即整单否决)。'
+          : isLoan
+            ? `本申请共 ${siblingItems.length} 个分项,按利率最低分项定整单流程,一次审批处理整单(任一节点否决即整单否决)。`
+            : `本申请共 ${siblingItems.length} 个分项,按原流程整单审批,一次处理整单。` }}
       </div>
       <!-- 分项明细(整单统一决策,分项不再独立审批;2026-09-02 逐分项利率:非集团不展示成员列,审批利率列可逐项编辑) -->
-      <div class="op-item__subhead">分项明细</div>
+      <!-- 特资(2026-09-24 用户拍板):审批对象是客户整体利率,不是贷款分项——故特资只留
+           「申请利率 / 审批利率」两列(审批利率仍可编辑,审批人照常能调价),
+           金额/期限/产品/担保方式/测算利率/定链对特资均无意义 -->
+      <div class="op-item__subhead">{{ isSpecialAsset ? '客户利率' : '分项明细' }}</div>
       <table class="table">
         <thead><tr>
-          <th v-if="isGroup">成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
+          <template v-if="isSpecialAsset">
+            <th>申请利率</th><th>审批利率</th>
+          </template>
+          <template v-else>
+            <th v-if="isGroup">成员</th><th>金额(万元)</th><th>期限</th><th>产品</th><th>担保方式</th><th>申请利率</th><th>测算利率</th><th>审批利率</th><th>定链</th>
+          </template>
         </tr></thead>
         <tbody>
           <tr v-for="it in siblingItems" :key="it.id">
-            <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
-            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-            <td>{{ fmtTerm(it) }}</td>
-            <td>{{ productName(it.productCode) }}</td>
-            <td>{{ guaranteesText(it.guarantees) }}</td>
-            <td class="num">{{ fmtRate(it.requestedRate) }}</td>
-            <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
-            <td class="num">
-              <el-input-number v-if="canAdjustWholeOrderRate" v-model="itemRates[String(it.id)]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:120px" />
-              <template v-else>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</template>
-            </td>
-            <td><span v-if="isAnchorItem(it)" class="badge badge--info">定链分项</span><span v-else class="dg-label">—</span></td>
+            <template v-if="isSpecialAsset">
+              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+              <td class="num">
+                <el-input-number v-if="canAdjustWholeOrderRate" v-model="itemRates[String(it.id)]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:120px" />
+                <template v-else>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</template>
+              </td>
+            </template>
+            <template v-else>
+              <td v-if="isGroup">{{ memberLabel(it.memberCustomerNo || it.member_customer_no) }}</td>
+              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+              <td>{{ fmtTerm(it) }}</td>
+              <td>{{ productName(it.productCode) }}</td>
+              <td>{{ guaranteesText(it.guarantees) }}</td>
+              <td class="num">{{ fmtRate(it.requestedRate) }}</td>
+              <td class="num">{{ fmtRate(it.calculatedRate) }}</td>
+              <td class="num">
+                <el-input-number v-if="canAdjustWholeOrderRate" v-model="itemRates[String(it.id)]" :min="0" :max="36" :precision="4" :step="0.01" controls-position="right" style="width:120px" />
+                <template v-else>{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</template>
+              </td>
+              <td><span v-if="isAnchorItem(it)" class="badge badge--info">定链分项</span><span v-else class="dg-label">—</span></td>
+            </template>
           </tr>
         </tbody>
       </table>
@@ -786,7 +830,9 @@
         </template>
       </el-alert>
       <div class="stat-card__sub" v-if="canAdjustWholeOrderRate" style="margin-top:8px">
-        {{ isLoan ? '各分项审批利率可逐项调整(点击上表各分项「审批利率」列);调整后系统按新利率重新判定审批链路并沿新链推进,低于本节点下限将上送更高层级节点重新审批。' : '' }}
+        {{ isSpecialAsset
+          ? '客户审批利率可在此调整(点击上表「审批利率」列);调整后系统按新利率重新判定审批链路并沿新链推进,低于本节点下限将上送更高层级节点重新审批。'
+          : isLoan ? '各分项审批利率可逐项调整(点击上表各分项「审批利率」列);调整后系统按新利率重新判定审批链路并沿新链推进,低于本节点下限将上送更高层级节点重新审批。' : '' }}
       </div>
       <div class="stat-card__sub" v-else-if="isCommitteeVoting" style="margin-top:8px">
         委员仅同意/否决,不能调整利率;6 人全部投完后统计,≥4 同意上送总行行长,&lt;4 同意直接否决整单。
@@ -837,9 +883,13 @@
         <div class="op-confirm__row"><span class="op-confirm__label">客户</span><span>{{ customerName }}</span></div>
         <div class="op-confirm__row">
           <span class="op-confirm__label">业务类型</span>
-          <span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
+          <!-- 特资(2026-09-24):确认弹窗同样标红,并把「存量调息」换成特资口径(与详情页申请类型同口径) -->
+          <span>
+            <span v-if="isSpecialAsset" class="badge badge--danger">纾困调息</span>
+            <template v-else>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></template>
+          </span>
         </div>
-        <div class="op-confirm__row"><span class="op-confirm__label">分项数</span><span>{{ siblingItems.length }} 个</span></div>
+        <div class="op-confirm__row" v-if="!isSpecialAsset"><span class="op-confirm__label">分项数</span><span>{{ siblingItems.length }} 个</span></div>
         <div class="op-confirm__row"><span class="op-confirm__label">申请金额</span><span>{{ fmtAmount(applyAmountTotal) }} 万元</span></div>
         <div class="op-confirm__row"><span class="op-confirm__label">审批后利率</span><span>{{ fmtRate(opConfirmRate) }}</span></div>
         <div class="op-confirm__row">
@@ -873,24 +923,36 @@
         <div class="op-confirm__row"><span class="op-confirm__label">客户</span><span>{{ customerName }}</span></div>
         <div class="op-confirm__row">
           <span class="op-confirm__label">业务类型</span>
-          <span>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></span>
+          <span>
+            <span v-if="isSpecialAsset" class="badge badge--danger">纾困调息</span>
+            <template v-else>{{ businessTypeText }}<template v-if="applyBizTypeText !== '—'"> · {{ applyBizTypeText }}</template></template>
+          </span>
         </div>
         <div class="op-confirm__row">
           <span class="op-confirm__label">整单概要</span>
-          <span>待决策 <b>{{ presidentDecisionItems.length }}</b> 项 · 申请总额 <b>{{ fmtAmount(presidentTotalAmount) }} 万元</b> · 决策利率 <b>{{ decideFinalRateText }}</b></span>
+          <!-- 特资(2026-09-24):按客户一个利率,无「项/金额」概念,概要只留决策利率 -->
+          <span v-if="isSpecialAsset">决策利率 <b>{{ decideFinalRateText }}</b></span>
+          <span v-else>待决策 <b>{{ presidentDecisionItems.length }}</b> 项 · 申请总额 <b>{{ fmtAmount(presidentTotalAmount) }} 万元</b> · 决策利率 <b>{{ decideFinalRateText }}</b></span>
         </div>
         <div class="op-confirm__row"><span class="op-confirm__label">行长意见</span><span class="op-confirm__opinion">{{ presidentOpinion.trim() || '—' }}</span></div>
       </div>
       <div class="stat-card__sub" style="margin-top:12px">
-        各分项将按下表「审批利率」终审签发决议(六人表决已按分项分别通过,可含审批中逐项调价),行长统一整单决策。
+        {{ isSpecialAsset
+          ? '客户利率将按下表「审批利率」终审签发决议(六人表决已通过,可含审批中调价),行长统一整单决策。'
+          : '各分项将按下表「审批利率」终审签发决议(六人表决已按分项分别通过,可含审批中逐项调价),行长统一整单决策。' }}
       </div>
       <table class="table" style="margin-top:8px">
-        <thead><tr><th>分项</th><th>金额(万元)</th><th>期限</th><th>申请利率</th><th>审批利率</th><th>六人表决</th></tr></thead>
+        <thead><tr>
+          <template v-if="isSpecialAsset"><th>申请利率</th><th>审批利率</th><th>六人表决</th></template>
+          <template v-else><th>分项</th><th>金额(万元)</th><th>期限</th><th>申请利率</th><th>审批利率</th><th>六人表决</th></template>
+        </tr></thead>
         <tbody>
           <tr v-for="it in presidentDecisionItems" :key="it.id">
-            <td>{{ itemName(it) }}</td>
-            <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
-            <td>{{ fmtTerm(it) }}</td>
+            <template v-if="!isSpecialAsset">
+              <td>{{ itemName(it) }}</td>
+              <td class="num">{{ fmtAmount(it.pricingAmount) }}</td>
+              <td>{{ fmtTerm(it) }}</td>
+            </template>
             <td class="num">{{ fmtRate(it.requestedRate) }}</td>
             <td class="num">{{ fmtRate(it.currentApprovalRate ?? it.requestedRate) }}</td>
             <td><span v-if="voteResultOfItem(it)" class="badge badge--success">{{ voteText(voteResultOfItem(it)) }}</span><span v-else class="dg-label">—</span></td>
@@ -1112,8 +1174,11 @@ function fmtRateRange(vals: number[]): string {
   return vals.length === 1 ? fmtRate(vals[0]) : `${fmtRate(Math.min(...vals))} ~ ${fmtRate(Math.max(...vals))}`
 }
 const decideFinalRateText = computed(() => fmtRateRange(collectDecideRates((it: any) => it.currentApprovalRate ?? it.requestedRate)))
-// 原执行利率文案:存量调息分项有 originalRate 原样展示;新增授信(NEW)分项无原利率 → 显示「新增业务」
+// 原执行利率文案:存量调息分项有 originalRate 原样展示;新增授信(NEW)分项无原利率 → 显示「新增业务」。
+// 特资(纾困调息)单同样无原利率,但它不是新增授信而是存量困难客户的利率优惠,
+// 显示「新增业务」会误导审批人,故按业务属性显示「纾困调息」(2026-09-24 用户要求,与两处待办卡同口径)
 function origRateText(it: any): string {
+  if (isSpecialAsset.value) return '纾困调息'
   return it.originalRate != null && it.originalRate !== '' ? fmtRate(it.originalRate) : '新增业务'
 }
 // 分项是否审批中被调过价(审批通过利率 ≠ 申请利率):行长分项列表加「已调价」提示
@@ -1176,6 +1241,13 @@ const fold = ref({ credit: false, attach: false, otherLoan: false, related: true
 
 // 整单交付改造(2026-08-29):分项列表只读明细,审批按整单
 const siblingItems = ref<any[]>([])
+
+/** 特资利率申请(2026-09-24):整单含 LOAN_SA 分项即特资单,页头标红展示。
+ *  特资按客户申请一个利率,整单恒一个分项;仍扫分项集合而非只看当前分项,以防将来出现混合单。
+ *  字段名兼容:camel(分项接口)与 snake(详情接口原样透出)两种形态都见过。 */
+const isSpecialAsset = computed(() =>
+  pi.value?.product_code === 'LOAN_SA'
+  || siblingItems.value.some((it: any) => (it.productCode ?? it.product_code) === 'LOAN_SA'))
 
 // 角色→当前可操作节点集合(2026-09-04 综合/零售两级支行:
 // branch_manager 兼 BRANCH_MANAGER(本支行)与 PARENT_BRANCH_MANAGER(管理综合支行长批零售子行单),

@@ -806,7 +806,12 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
                 JSONObject json = JSONUtil.parseObj(app.getCustomerInfoJson());
                 json.set("customerNo", resolvedNo);
                 if (dw != null) {
-                    WarehouseCustomerSync.applyCustomerInfo(json, dw, "INDIVIDUAL".equals(app.getCustomerScope()));
+                    // 特资利率申请(2026-09-24 用户拍板):五级分类由客户经理按客户实际困难情况在申请页选定
+                    // (含数仓不推的「已核销/欠息」档),须保留人工值——故该申请跳过 #460 的数仓权威覆盖,
+                    // 否则人工选择提交瞬间被数仓值顶回,「带出可改」形同虚设。其余客户字段仍以数仓为权威。
+                    boolean saApply = items.stream().anyMatch(it -> "LOAN_SA".equals(it.getProductCode()));
+                    WarehouseCustomerSync.applyCustomerInfo(json, dw, "INDIVIDUAL".equals(app.getCustomerScope()),
+                            saApply ? Set.of("fiveLevelClass") : Set.of());
                 }
                 app.setCustomerInfoJson(json.toString());
                 applicationMapper.update(null, new LambdaUpdateWrapper<CcrApplication>()
@@ -1068,11 +1073,37 @@ public class ApplicationSubmitServiceImpl implements ApplicationSubmitService {
         // 拟达成贡献度承诺:至少一条 + 截止日期必填(§7.1 提交校验;草稿保存 saveCommitments 不强制,仅提交时把关)。
         // §2026-09-16 仅对含贷款分项的申请校验:存款申请页无承诺录入入口,若一并对存款要求「至少一条」则存款业务
         // 全线阻断(原先承诺为空时 for 不执行、恰好放行,是存款单的隐性兼容);混合单含贷款分项 → 仍需承诺。
-        boolean hasLoanItem = items.stream().anyMatch(it -> "LOAN_CONTRACT".equals(it.getPricingCarrierType()));
+        // 特资利率申请(2026-09-24 用户拍板):LOAN_SA 为特资专用产品码,该申请不录贡献度承诺,
+        // 故不参与「含贷款分项须至少一条承诺」的判定(特资页无承诺录入入口,否则提交必被拦);
+        // 混合单中只要还有普通贷款分项,承诺仍强制。
+        boolean hasLoanItem = items.stream().anyMatch(it -> "LOAN_CONTRACT".equals(it.getPricingCarrierType())
+                && !"LOAN_SA".equals(it.getProductCode()));
         if (hasLoanItem) {
             checkCommitmentCompleteness(app);
             // §2026-09-17 提交时重算基线(用户报「当前贡献度有值、历史申请与审批页基线显示空」)
             recalcCommitmentBaselines(app);
+        }
+        // 特资利率申请(2026-09-24 用户拍板):五级分类与违约概率是定价依据,两项必填。
+        // 仅约束 LOAN_SA 分项——普通贷款页无违约概率录入入口,一并要求会全线阻断。
+        if (items.stream().anyMatch(it -> "LOAN_SA".equals(it.getProductCode()))) {
+            checkSpecialAssetClassify(app);
+        }
+    }
+
+    /**
+     * 特资利率申请客户分类要素完整性(2026-09-24 用户拍板):五级分类与违约概率必填。
+     * 两项随 customer_info_json 提交(与 entpCharic/ucrCode 同通道,不新增独立列),审批详情页
+     * 按 customerInfoJson 模板自动带出;前端特资页已先拦,此处是直连接口的兜底
+     * (与承诺校验同款「前端先拦 + 后端把关」口径)。
+     */
+    private void checkSpecialAssetClassify(CcrApplication app) {
+        JSONObject info = StrUtil.isBlank(app.getCustomerInfoJson())
+                ? null : JSONUtil.parseObj(app.getCustomerInfoJson());
+        if (info == null || StrUtil.isBlank(info.getStr("fiveLevelClass"))) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "纾困调息:五级分类必填");
+        }
+        if (StrUtil.isBlank(info.getStr("defaultProb"))) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "纾困调息:违约概率必填");
         }
     }
 

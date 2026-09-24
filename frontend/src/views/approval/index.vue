@@ -23,6 +23,8 @@
         <div class="todo-card__body">
           <div class="todo-card__customer">
             {{ c.customer }}
+            <!-- 特资利率申请(2026-09-24 用户要求):待办卡片标红,审批人不必逐条点开即可看出归口特资部 -->
+            <span v-if="c.isSpecialAsset" class="badge badge--danger">纾困调息</span>
             <span class="tc-badge" v-if="!c.single">{{ c.itemCount }} 个授信分项</span>
           </div>
           <div class="todo-card__sub" v-if="c.single">申请 {{ c.applicationNo }} · 当前节点 {{ c.nodeText }}</div>
@@ -114,6 +116,9 @@ async function load() {
       const first = items[0]
       const rates = items.map((x) => Number(x.requestedRate) || 0)
       const single = items.length === 1
+      // 特资利率申请(2026-09-24):整单含 LOAN_SA 分项即特资单,卡片标红。字段名兼容
+      // camel(审批/委员待办行)与 snake(行长待办分项)两种透出形态
+      const ssa = items.some((x: any) => (x.productCode ?? x.product_code) === 'LOAN_SA')
       // 表决待办行主键为 pricingItemId、审批待办行为 id,按行取其一
       const keyId = first.pricingItemId || first.id
       return {
@@ -127,12 +132,15 @@ async function load() {
         customer: first.customerName || first.pricingCustomerNo || first.customerNo || '-',
         amount: single ? (first.pricingAmount ?? '-') : items.reduce((s, x) => s + (Number(x.pricingAmount) || 0), 0),
         rate: single ? (first.requestedRate ?? '-') : (rates.length ? `${Math.min(...rates)} ~ ${Math.max(...rates)}` : '-'),
-        // 原执行利率按全部分项收集:有值显区间、全空显「新增业务」,不再只取第一个分项
-        originalRate: (() => {
+        // 原执行利率按全部分项收集:有值显区间、全空显「新增业务」,不再只取第一个分项。
+        // 特资单无原利率,但「新增业务」会误导审批人(纾困调息是存量困难客户的利率优惠,
+        // 不是新增授信),故该格按业务属性显示「纾困调息」(2026-09-24 用户要求)
+        originalRate: ssa ? '纾困调息' : (() => {
           const ors = items.map((x) => x.originalRate).filter((v) => v != null && v !== '').map(Number)
           return ors.length ? (ors.length === 1 ? `${ors[0]}%` : `${Math.min(...ors)} ~ ${Math.max(...ors)}%`) : '新增业务'
         })(),
         productCode: productName(first.productCode),
+        isSpecialAsset: ssa,
         nodeText: nodeLabel(first.currentNodeCode),
         createTime: first.createTime ? String(first.createTime).replace('T', ' ').slice(0, 16) : '—',
         items: items.map((x) => ({

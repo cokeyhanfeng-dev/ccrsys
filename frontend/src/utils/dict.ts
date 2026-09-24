@@ -329,9 +329,12 @@ export function groupNatureText(code?: string, fallback = '—'): string {
   return textOf(GROUP_NATURE, code, fallback)
 }
 
-/** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存) */
+/** 五级分类(dw 数仓码值定稿:010 正常/020 关注/030 次级/040 可疑/050 损失;兼容旧中文直存)
+ *  060 已核销/070 欠息:2026-09-24 按特资利率申请口径扩档,数仓暂无此两档码值,
+ *  仅由特资申请页人工录入,故编码沿用 0x0 序列以便将来数仓对齐。 */
 export const FIVE_LEVEL_CLASS: Record<string, string> = {
-  '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失'
+  '010': '正常', '020': '关注', '030': '次级', '040': '可疑', '050': '损失',
+  '060': '已核销', '070': '欠息'
 }
 export function fiveLevelClassText(code?: string, fallback = '—'): string {
   return textOf(FIVE_LEVEL_CLASS, code, fallback)
@@ -343,8 +346,19 @@ export function normalizeFiveLevelClass(v?: string): string {
   const hit = (Object.entries(FIVE_LEVEL_CLASS) as [string, string][]).find(([, zh]) => zh === v)
   return hit ? hit[0] : v
 }
-/** 五级分类下拉选项(010-050) */
+/** 五级分类下拉选项(010-070) */
 export const FIVE_LEVEL_OPTIONS: DictItem[] = Object.entries(FIVE_LEVEL_CLASS).map(([code, name]) => ({ code, name }))
+
+/** 违约概率(2026-09-24 特资利率申请口径):A-E 为内部评级档,OVERDUE=逾欠客户。
+ *  数仓无此字段(全系统无落点),仅由特资申请页人工录入,存英文码、展示中文。 */
+export const DEFAULT_PROBABILITY: Record<string, string> = {
+  A: 'A', B: 'B', C: 'C', D: 'D', E: 'E', OVERDUE: '逾欠客户'
+}
+export function defaultProbabilityText(code?: string, fallback = '—'): string {
+  return textOf(DEFAULT_PROBABILITY, code, fallback)
+}
+/** 违约概率下拉选项 */
+export const DEFAULT_PROBABILITY_OPTIONS: DictItem[] = Object.entries(DEFAULT_PROBABILITY).map(([code, name]) => ({ code, name }))
 
 /** 企业规模(caps_corp_cust_basic_info.entp_scale;数仓直存中文「大型/中型/小型」,兼容英文码) */
 export const ENTP_SCALE: Record<string, string> = { LARGE: '大型', MEDIUM: '中型', SMALL: '小型', MICRO: '微型' }
@@ -462,6 +476,9 @@ export function roleText(code?: string, fallback = '—'): string {
 export const PRODUCTS: DictItem[] = [
   { code: 'LOAN_A', name: '对公贷款' },
   { code: 'LOAN_P', name: '个人经营性贷款' },
+  // 纾困调息(2026-09-24)专用:不进 LOAN_PRODUCTS 下拉,由纾困调息申请页内定写入分项
+  // 名称 2026-09-24 用户拍板由「特殊资产贷款」改为「纾困调息」——面向客户的纾困定价统称,与菜单/红标一致
+  { code: 'LOAN_SA', name: '纾困调息' },
   { code: 'CORP_TIME_DEPOSIT', name: '对公定期存款' },
   { code: 'AGREEMENT_DEPOSIT', name: '协定存款' },
   { code: 'NOTICE_DEPOSIT', name: '通知存款' },

@@ -3,6 +3,7 @@ package com.ccr.common.core.util;
 import cn.hutool.core.util.StrUtil;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 数仓客户主档行 → 客户人工快照(customer_info_json)权威回填(2026-09-02 #460)。
@@ -56,11 +57,28 @@ public final class WarehouseCustomerSync {
      * @param indv   true=对私(caps_indv_cust_basic_info),false=对公
      */
     public static void applyCustomerInfo(Map<String, Object> target, Map<String, Object> dw, boolean indv) {
+        applyCustomerInfo(target, dw, indv, Set.of());
+    }
+
+    /**
+     * 带「跳过键」的重载:个别申请的人工录入值优先于数仓主档,不能被权威覆盖。
+     *
+     * <p>特资利率申请(2026-09-24 用户拍板)即此类:五级分类由客户经理按客户实际困难情况在申请页
+     * 选定(可选「已核销/欠息」等数仓不推的档位),若照 #460 以数仓整体覆盖,人工选择提交瞬间被顶回
+     * 数仓值,「带出可改」形同虚设。故该申请在调用侧跳过 fiveLevelClass,其余字段维持数仓权威。</p>
+     *
+     * @param skipKeys customer_info_json 键名集合(如 "fiveLevelClass"),命中者不从数仓覆盖
+     */
+    public static void applyCustomerInfo(Map<String, Object> target, Map<String, Object> dw, boolean indv,
+                                         Set<String> skipKeys) {
         if (target == null || dw == null || dw.isEmpty()) {
             return;
         }
         String[][] cols = indv ? INDV_COLS : CORP_COLS;
         for (String[] col : cols) {
+            if (skipKeys != null && skipKeys.contains(col[1])) {
+                continue; // 人工录入优先:调用侧声明该键不由数仓覆盖
+            }
             Object v = dw.get(col[0]);
             if (v == null) {
                 continue; // 数仓未查出/为空:保留人工值

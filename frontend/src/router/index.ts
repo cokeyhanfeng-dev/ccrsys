@@ -42,6 +42,14 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '存款利率申请', icon: 'EditPen', roles: ['customer_manager'] }
       },
       {
+        // 特资利率申请(2026-09-24):特殊资产部对困难客户存量调息的独立入口,
+        // 客户经理发起;链路 = 支行行长→特殊资产部总经理(≥4%止)→分管行长→六人小组→总行行长
+        path: 'special-asset',
+        name: 'SpecialAsset',
+        component: () => import('@/views/special-asset/index.vue'),
+        meta: { title: '纾困调息', icon: 'Money', roles: ['customer_manager'] }
+      },
+      {
         path: 'approval',
         name: 'Approval',
         component: () => import('@/views/approval/index.vue'),

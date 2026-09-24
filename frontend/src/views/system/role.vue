@@ -95,6 +95,8 @@ async function load() {
   //         权威表无对应行、不可按角色授权,列在授权清单会误导(2026-09-09 对齐)
   menus.value = [
     { id: 1, menuName: '工作台' }, { id: 2, menuName: '贷款利率申请' }, { id: 3, menuName: '存款利率申请' },
+    // 纾困调息(2026-09-24 增量 id=15,所有客户经理可发起;菜单名同日由「特资利率申请」统一改口径)
+    { id: 15, menuName: '纾困调息' },
     { id: 10, menuName: '利率审批' }, { id: 4, menuName: '贡献度跟踪' }, { id: 5, menuName: '历史' },
     // 决议书查询(2026-09-08 增量 id=14,决议书查询专岗 resolution_query 授权)
     { id: 14, menuName: '决议书查询' },

@@ -19,6 +19,7 @@
                 '/overview': 'HomeFilled',
                 '/application/loan': 'EditPen',
                 '/application/deposit': 'Coin',
+                '/special-asset': 'Money',
                 '/approval': 'Stamp',
                 '/commitment': 'Timer',
                 '/history': 'Document',
@@ -157,6 +158,8 @@ const allMenus = [
   { path: '/overview', title: '工作台', roles: ['*'] },
   { path: '/application/loan', title: '贷款利率申请', roles: ['customer_manager'] },
   { path: '/application/deposit', title: '存款利率申请', roles: ['customer_manager'] },
+  // 纾困调息(2026-09-24):所有客户经理可发起(特殊资产管理部对困难客户做存量贷款利率纾困)
+  { path: '/special-asset', title: '纾困调息', roles: ['customer_manager'] },
   // 利率审批:单独菜单(审批人/6人小组/行长);行长决策并入其中(详情按角色展示同意/一票否决)
   { path: '/approval', title: '利率审批', roles: ['branch_manager', 'dept_gm', 'vice_president', 'secretary', 'committee_member', 'president'] },
   // 贡献度跟踪:所有业务角色可见(审批人看自己审批过的客户,数据权限;6人小组/行长看全部)
